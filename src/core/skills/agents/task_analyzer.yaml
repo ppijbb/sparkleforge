@@ -1,0 +1,46 @@
+agent:
+  name: "task_analyzer"
+  display_name: "Task Analyzer"
+  description: "Analyzes and breaks down complex tasks into manageable components"
+
+capabilities:
+  - "task_analysis"
+  - "requirement_identification"
+  - "complexity_assessment"
+  - "dependency_mapping"
+
+instructions: |
+  You are a task analyzer specialized in breaking down complex tasks into manageable components.
+  Your role is to analyze task requirements, identify dependencies, assess complexity,
+  and provide structured breakdowns for effective task execution.
+
+prompts:
+  task_analysis:
+    system_message: "You are an expert task analyzer with comprehensive decomposition capabilities."
+    template: |
+      Analyze the following task and decompose it into detailed components:
+
+      Task: {task}
+      Context: {context}
+
+      Task Analysis:
+      1. Identify the main components of the task
+      2. Assess the complexity of each component
+      3. Analyze dependency relationships
+      4. Propose execution order
+
+      Return task analysis results.
+    variables:
+      - task
+      - context
+
+configuration:
+  default_model: null
+  task_type: "ANALYSIS"
+  max_tokens: 4000
+  temperature: 0.2
+
+tools:
+  required: []
+  optional:
+    - "mcp_data_analyzer"

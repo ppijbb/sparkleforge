@@ -1,0 +1,80 @@
+# SparkleForge Agent Evaluation Thresholds
+# Standard agent evaluation criteria based on academic benchmarks
+
+thresholds:
+  # Web Navigation Performance (WebArena-style)
+  navigation_success_rate: 0.8  # 80% successful navigation
+  information_accuracy: 0.85  # 85% accurate information retrieval
+  page_load_success_rate: 0.9  # 90% successful page loads
+  search_query_effectiveness: 0.8  # 80% effective search queries
+  
+  # Tool Usage Performance (ToolBench-style)
+  tool_usage_success_rate: 0.85  # 85% successful tool usage
+  tool_coordination_efficiency: 0.8  # 80% efficient tool coordination
+  output_quality: 0.8  # 80% high-quality outputs
+  error_recovery_rate: 0.7  # 70% successful error recovery
+  
+  # Multi-Agent Collaboration (AgentBench-style)
+  coordination_efficiency: 0.8  # 80% efficient agent coordination
+  task_completion_rate: 0.9  # 90% task completion rate
+  result_consistency: 0.85  # 85% consistent results across agents
+  conflict_resolution_rate: 0.8  # 80% successful conflict resolution
+  agent_satisfaction: 0.8  # 80% agent satisfaction score
+  
+  # Reasoning and Planning (ALFWorld-style)
+  reasoning_accuracy: 0.9  # 90% accurate reasoning
+  logical_consistency: 0.95  # 95% logical consistency
+  conclusion_validity: 0.85  # 85% valid conclusions
+  plan_feasibility: 0.9  # 90% feasible plans
+  strategy_quality: 0.85  # 85% high-quality strategies
+  
+  # Agent Performance Metrics
+  execution_efficiency: 0.8  # 80% execution efficiency
+  resource_utilization: 0.7  # 70% optimal resource utilization
+  scalability_score: 0.8  # 80% scalability performance
+  reliability_score: 0.9  # 90% system reliability
+  
+  # Task-Specific Thresholds
+  min_sources: 5  # minimum sources per task
+  max_execution_time: 300  # maximum execution time (seconds)
+  success_rate: 0.8  # overall success rate threshold
+  quality_score: 0.8  # overall quality score threshold
+
+# Weighted scoring for overall benchmark score
+scoring_weights:
+  research_quality: 0.3
+  performance: 0.2
+  source_validation: 0.15
+  creative_insights: 0.15
+  memory_learning: 0.1
+  collaboration: 0.1
+
+# Regression detection thresholds
+regression_thresholds:
+  performance_degradation: 0.1  # 10% performance degradation triggers regression
+  quality_degradation: 0.05  # 5% quality degradation triggers regression
+  new_failures: 1  # Any new test failures trigger regression
+
+# Benchmark categories and their importance
+category_weights:
+  critical: 1.0  # Must pass for overall success
+  important: 0.8  # High weight in overall score
+  nice_to_have: 0.5  # Lower weight in overall score
+
+# Test case categories
+test_categories:
+  research_quality:
+    weight: 1.0
+    required_tests: ["tech-001", "science-001"]
+  performance:
+    weight: 0.8
+    required_tests: ["tech-001", "business-001"]
+  creative_insights:
+    weight: 0.8
+    required_tests: ["creative-001", "health-001"]
+  source_validation:
+    weight: 1.0
+    required_tests: ["science-001", "health-001"]
+  memory_learning:
+    weight: 0.6
+    required_tests: ["tech-001", "business-001"]

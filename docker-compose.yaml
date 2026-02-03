@@ -1,0 +1,103 @@
+# SparkleForge Docker Compose Configuration
+# Production-ready containerized deployment
+
+version: '3.8'
+
+services:
+  # Main SparkleForge API Server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DATABASE_URL=${DATABASE_URL:-postgresql://sparkleforge:password@db:5432/sparkleforge}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - STREAMLIT_PORT=${STREAMLIT_PORT:-8501}
+      - STREAMLIT_ADDRESS=${STREAMLIT_ADDRESS:-0.0.0.0}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+    depends_on:
+      - redis
+      - db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Web Dashboard (Streamlit)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "${FRONTEND_PORT:-8501}:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL Database (Optional)
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=sparkleforge
+      - POSTGRES_USER=sparkleforge
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-password}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparkleforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Code Execution Sandbox (Optional)
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    environment:
+      - SANDBOX_TIMEOUT=30
+      - SANDBOX_MEMORY_LIMIT=512m
+      - SANDBOX_CPU_LIMIT=0.5
+    volumes:
+      - ./sandbox_workspace:/workspace
+    restart: unless-stopped
+    profiles:
+      - sandbox
+
+volumes:
+  redis_data:
+  db_data:
+
+networks:
+  default:
+    name: sparkleforge_network

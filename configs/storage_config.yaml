@@ -1,0 +1,56 @@
+# Storage Configuration
+# Phase 1-4 통합 설정
+
+storage:
+  # Database Driver 선택
+  driver: "sqlite"  # "sqlite" | "postgresql"
+  
+  # SQLite 설정
+  sqlite:
+    path: "./storage/sessions.db"
+    pool_size: 10
+    max_overflow: 5
+    timeout: 5.0
+  
+  # PostgreSQL 설정
+  postgresql:
+    url: "postgresql://user:pass@localhost:5432/sparkleforge"
+    pool_size: 20
+    max_overflow: 10
+    min_size: 10
+    max_size: 30
+  
+  # 트랜잭션 설정
+  transaction:
+    enabled: true
+    isolation_level: "read_committed"  # "read_uncommitted" | "read_committed" | "repeatable_read" | "serializable"
+    timeout: 30.0
+  
+  # 메모리 업데이트 모드 (Phase 2)
+  memory:
+    update_mode: "realtime"  # "background" | "realtime"
+    realtime_threshold: 100  # 실시간 처리 임계값 (토큰 수)
+    background:
+      max_concurrent_tasks: 5
+      retry_delays: [1.0, 5.0, 15.0]
+      inactivity_delay: 30.0
+  
+  # 컨텍스트 압축 설정 (Phase 3)
+  compaction:
+    enabled: true
+    trigger_threshold: 0.85  # 85% 임계값
+    strategy: "hybrid"  # "prune" | "summarize" | "hybrid"
+    preserve_last_n: 20  # 마지막 N개 메시지 보호
+    preserve_last_tokens: 40000  # 마지막 40K 토큰 보호
+    auto_compact: true
+    max_context_tokens: 200000  # 최대 컨텍스트 토큰 수
+  
+  # 확장성 설정 (Phase 4)
+  scalability:
+    use_redis: true
+    redis_url: "redis://localhost:6379"
+    cache_ttl: 3600  # 캐시 TTL (초)
+    sharding:
+      enabled: false
+      shard_count: 4
+

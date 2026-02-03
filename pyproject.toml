@@ -1,0 +1,131 @@
+[project]
+name = "local-researcher-project"
+version = "2.0.0"
+description = "Advanced Multi-Agent Research System with 9 Core Innovations"
+authors = [
+    { name = "Local Researcher Team" }
+]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "langchain>=0.3.15",
+    "langgraph>=0.2.45",
+    "langchain-community>=0.3.15",
+    "langchain-core>=0.3.15",
+    "langchain-google-genai>=2.1.5",
+    "langchain-mcp-adapters>=0.1.6",
+    "google-generativeai>=0.8.0",
+    "langchain-google-vertexai>=2.0.25",
+    "openrouter>=0.1.0",
+    "requests>=2.32.3",
+    "beautifulsoup4>=4.12.3",
+    "selenium>=4.27.0",
+    "scrapy>=2.11.2",
+    "aiohttp>=3.10.11",
+    "httpx>=0.28.1",
+    "duckduckgo-search>=6.3.0",
+    "tavily-python>=0.5.0",
+    "browser-use>=0.1.40",
+    "playwright>=1.51.0",
+    "exa-py>=1.8.8",
+    "azure-search-documents>=11.5.2",
+    "supabase>=2.15.3",
+    "arxiv>=2.1.3",
+    "scholarly>=1.7.11",
+    "pandas>=2.2.3",
+    "numpy>=1.26.4",
+    "pydantic>=2.10.4",
+    "redis>=5.0.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.12.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+    "typer>=0.9.0",
+    "streamlit>=1.39.0",
+    "plotly>=5.17.0",
+    "jinja2>=3.1.0",
+    "markdown>=3.5.0",
+    "pdfkit>=1.0.0",
+    "python-docx>=0.8.11",
+    "psutil>=5.9.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+    "markdownify>=0.11.6",
+    "mcp>=1.9.4",
+    "reportlab>=4.0.0",
+    "weasyprint>=60.0",
+    "PyPDF2>=3.0.1",
+    "PyMuPDF>=1.23.0",
+    "structlog>=24.1.0",
+    "prometheus-client>=0.20.0",
+    "tenacity>=8.2.0",
+    "circuit-breaker>=0.1.1",
+    "asyncio-mqtt>=0.16.0",
+    "cryptography>=41.0.0",
+    "passlib>=1.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.12.0",
+    "isort>=5.13.0",
+    "flake8>=6.1.0",
+    "mypy>=1.8.0",
+    "sphinx>=7.2.0",
+    "sphinx-rtd-theme>=2.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=73.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+sparkle = "main:main_entry"
+
+[tool.setuptools]
+packages = ["src", "configs", "scripts", "docs"]
+
+[tool.setuptools.package-dir]
+"src" = "src"
+"configs" = "configs"
+"scripts" = "scripts"
+"docs" = "docs"
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
+
+[tool.ruff]
+lint.select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "D",    # pydocstyle
+    "D401", # First line should be in imperative mood
+    "T201",
+    "UP",
+]
+lint.ignore = [
+    "UP006",
+    "UP007",
+    "UP035",
+    "D417",
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D", "UP"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+line_length = 100

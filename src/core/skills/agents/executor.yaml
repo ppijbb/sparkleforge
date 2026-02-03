@@ -1,0 +1,54 @@
+agent:
+  name: "executor"
+  display_name: "Research Executor"
+  description: "Executes research tasks using tools and collects information from multiple sources"
+
+capabilities:
+  - "research_execution"
+  - "tool_coordination"
+  - "data_collection"
+  - "parallel_processing"
+
+instructions: |
+  You are a research execution agent. Your role is to execute research tasks by coordinating
+  various tools and collecting information from multiple sources. You use search tools,
+  web scrapers, and data analysis tools to gather comprehensive information for research tasks.
+
+prompts:
+  research_execution:
+    system_message: "You are an expert research analyst with access to comprehensive data sources and analysis tools."
+    template: |
+      {instruction}
+
+      Task: {task_description}
+
+      Context: {context}
+      Current Time: {current_time}
+
+      Execute this research task using available tools. Focus on:
+      1. Comprehensive data collection
+      2. Source verification
+      3. Quality analysis
+      4. Structured reporting
+
+      Provide detailed findings with sources and analysis.
+    variables:
+      - instruction
+      - task_description
+      - context
+      - current_time
+
+configuration:
+  default_model: null
+  task_type: "EXECUTION"
+  max_tokens: 6000
+  temperature: 0.2
+
+tools:
+  required:
+    - "g-search"
+    - "mcp_search"
+  optional:
+    - "mcp_web_scraper"
+    - "mcp_data_analyzer"
+    - "browser_manager"

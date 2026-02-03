@@ -1,0 +1,91 @@
+# Browser Automation Configuration
+# Optimized for CLI, background, and Streamlit environments
+
+browser:
+  # Basic settings
+  headless: true  # Default to headless for better compatibility
+  disable_security: true
+  disable_images: true  # Faster loading
+  disable_javascript: false  # Keep JS for dynamic content
+  disable_css: false  # Keep CSS for proper rendering
+  disable_plugins: true
+  disable_extensions: true
+  
+  # Performance optimizations
+  disable_dev_shm_usage: true  # Avoid /dev/shm issues
+  no_sandbox: true  # Required for some environments
+  disable_gpu: true  # Reduce resource usage
+  disable_web_security: true
+  disable_features: "VizDisplayCompositor"  # Headless optimization
+  
+  # Window settings
+  window_size: [1920, 1080]
+  
+  # User agent
+  user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  
+  # Content limits
+  max_content_length: 2000
+  
+  # Timeouts (in milliseconds)
+  navigation_timeout: 30000
+  load_state_timeout: 10000
+  
+  # Retry settings
+  max_retries: 3
+  retry_delay: 2  # Base delay for exponential backoff
+
+# Environment-specific overrides
+environments:
+  streamlit:
+    headless: true
+    disable_images: true
+    disable_css: true
+    disable_plugins: true
+    disable_extensions: true
+    disable_gpu: true
+    disable_dev_shm_usage: true
+    no_sandbox: true
+    
+  cli:
+    headless: true
+    disable_images: true
+    disable_gpu: true
+    disable_dev_shm_usage: true
+    no_sandbox: true
+    
+  background:
+    headless: true
+    disable_images: true
+    disable_gpu: true
+    disable_dev_shm_usage: true
+    no_sandbox: true
+    
+  desktop:
+    headless: false
+    disable_images: false
+    disable_gpu: false
+
+# Fallback settings
+fallback:
+  enabled: true
+  method: "requests"  # Use requests when browser fails
+  timeout: 30
+  max_retries: 3
+  
+  # Requests headers
+  headers:
+    User-Agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+    Accept-Language: "en-US,en;q=0.5"
+    Accept-Encoding: "gzip, deflate"
+    DNT: "1"
+    Connection: "keep-alive"
+    Upgrade-Insecure-Requests: "1"
+
+# Logging settings
+logging:
+  level: "INFO"
+  log_browser_events: true
+  log_fallback_usage: true
+  log_performance_metrics: true

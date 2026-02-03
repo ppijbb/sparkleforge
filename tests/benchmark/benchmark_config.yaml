@@ -1,0 +1,136 @@
+# SparkleForge Agent Evaluation Benchmark Configuration
+# Standard agent evaluation metrics based on academic benchmarks (WebArena, ToolBench, AgentBench)
+
+agent_tasks:
+  # Web Navigation Tasks (WebArena-style)
+  - id: "web-nav-001"
+    category: "WebNavigation"
+    task_type: "information_gathering"
+    description: "Navigate web to find specific information about AI trends"
+    query: "Latest AI developments in 2025"
+    expected_actions: ["web_search", "page_navigation", "content_extraction"]
+    success_criteria:
+      min_sources: 5
+      navigation_success_rate: 0.8
+      information_accuracy: 0.85
+      max_execution_time: 120
+    
+  - id: "web-nav-002"
+    category: "WebNavigation"
+    task_type: "multi_step_research"
+    description: "Research climate change solutions across multiple sources"
+    query: "Climate change mitigation strategies"
+    expected_actions: ["web_search", "academic_search", "source_validation", "synthesis"]
+    success_criteria:
+      min_sources: 8
+      navigation_success_rate: 0.85
+      information_accuracy: 0.9
+      max_execution_time: 180
+
+  # Tool Usage Tasks (ToolBench-style)
+  - id: "tool-usage-001"
+    category: "ToolUsage"
+    task_type: "data_analysis"
+    description: "Use tools to analyze research data and generate insights"
+    query: "Analyze remote work productivity trends"
+    expected_actions: ["data_retrieval", "analysis_tools", "visualization", "report_generation"]
+    success_criteria:
+      tool_usage_success_rate: 0.9
+      analysis_quality: 0.8
+      output_completeness: 0.85
+      max_execution_time: 150
+    
+  - id: "tool-usage-002"
+    category: "ToolUsage"
+    task_type: "content_synthesis"
+    description: "Synthesize information from multiple tools and sources"
+    query: "Mental health technology solutions synthesis"
+    expected_actions: ["multi_tool_coordination", "content_aggregation", "quality_assessment"]
+    success_criteria:
+      tool_usage_success_rate: 0.85
+      synthesis_quality: 0.8
+      coherence_score: 0.85
+      max_execution_time: 200
+
+  # Multi-Agent Collaboration Tasks (AgentBench-style)
+  - id: "collab-001"
+    category: "MultiAgent"
+    task_type: "collaborative_research"
+    description: "Coordinate multiple agents for comprehensive research"
+    query: "Innovation in education and learning methods"
+    expected_actions: ["agent_coordination", "task_distribution", "result_aggregation"]
+    success_criteria:
+      coordination_efficiency: 0.8
+      task_completion_rate: 0.9
+      result_consistency: 0.85
+      max_execution_time: 300
+    
+  - id: "collab-002"
+    category: "MultiAgent"
+    task_type: "conflict_resolution"
+    description: "Resolve conflicts between different agent findings"
+    query: "Conflicting views on renewable energy adoption"
+    expected_actions: ["conflict_detection", "evidence_evaluation", "consensus_building"]
+    success_criteria:
+      conflict_resolution_rate: 0.8
+      solution_quality: 0.85
+      agent_satisfaction: 0.8
+      max_execution_time: 180
+
+  # Reasoning and Planning Tasks (ALFWorld-style)
+  - id: "reasoning-001"
+    category: "Reasoning"
+    task_type: "logical_inference"
+    description: "Perform logical reasoning on complex research questions"
+    query: "Logical analysis of AI ethics implications"
+    expected_actions: ["premise_analysis", "logical_inference", "conclusion_synthesis"]
+    success_criteria:
+      reasoning_accuracy: 0.9
+      logical_consistency: 0.95
+      conclusion_validity: 0.85
+      max_execution_time: 120
+    
+  - id: "reasoning-002"
+    category: "Reasoning"
+    task_type: "strategic_planning"
+    description: "Develop strategic research plan for complex topics"
+    query: "Strategic plan for sustainable technology adoption"
+    expected_actions: ["goal_analysis", "strategy_development", "plan_optimization"]
+    success_criteria:
+      plan_feasibility: 0.9
+      strategy_quality: 0.85
+      execution_efficiency: 0.8
+      max_execution_time: 150
+
+# Benchmark execution settings (Production Configuration)
+execution:
+  timeout: 300  # 5 minutes per test case
+  parallel_workers: 1  # Sequential execution for comprehensive measurement
+  retry_attempts: 2  # Retry failed tests
+  output_format: "json"  # Output format for results
+  comprehensive_mode: true  # Measure all metrics in single run
+
+# Production environment settings
+environment:
+  # LLM Configuration - OpenRouter + Gemini 2.5 Flash Lite
+  llm_provider: "openrouter"
+  llm_model: "google/gemini-2.5-flash-lite"
+  enable_auto_fallback: false  # No fallbacks in production
+  
+  # MCP Configuration
+  mcp_enabled: true
+  mcp_timeout: 30
+  
+  # Feature flags
+  enable_streaming: true
+  enable_creative_insights: true
+  enable_memory_learning: true
+  enable_source_validation: true
+  enable_browser_automation: true
+  
+  # Production reliability
+  enable_circuit_breaker: true
+  enable_exponential_backoff: true
+  enable_state_persistence: true
+  
+  log_level: "INFO"

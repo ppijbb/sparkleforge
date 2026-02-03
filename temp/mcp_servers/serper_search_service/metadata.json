@@ -1,0 +1,50 @@
+{
+  "server_name": "serper_search_service",
+  "created_at": "2026-01-09T16:27:41.519826",
+  "requirements": {
+    "server_name": "serper_search_service",
+    "api_base_url": "https://google.serper.dev",
+    "auth_method": "api_key",
+    "api_key_env": "SERPER_API_KEY",
+    "tools": [
+      {
+        "name": "mcp_search",
+        "method": "POST",
+        "endpoint": "/search",
+        "input_schema": {
+          "query": {
+            "type": "string",
+            "description": "The search query or question to look up.",
+            "required": true,
+            "default": null
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "The maximum number of search results to return.",
+            "required": false,
+            "default": 10
+          }
+        },
+        "output_format": "json"
+      }
+    ],
+    "dependencies": [
+      "httpx",
+      "pydantic"
+    ],
+    "error_handling": {
+      "common_errors": [
+        "rate_limit",
+        "auth_failed",
+        "invalid_request",
+        "service_unavailable"
+      ],
+      "retry_strategy": "exponential_backoff"
+    }
+  },
+  "server_file": "/home/user/workspace/mcp_agent/sparkleforge/temp/mcp_servers/serper_search_service/server.py",
+  "dependencies": [
+    "httpx",
+    "pydantic"
+  ]
+}

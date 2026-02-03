@@ -1,0 +1,34 @@
+# SparkleForge Code Execution Sandbox
+FROM python:3.11-slim
+
+# Install system dependencies for code execution
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js tools
+RUN npm install -g typescript @types/node
+
+# Set working directory
+WORKDIR /workspace
+
+# Create sandbox user for security
+RUN useradd -m -s /bin/bash sandbox && \
+    chown sandbox:sandbox /workspace
+
+# Switch to sandbox user
+USER sandbox
+
+# Set environment variables
+ENV PYTHONPATH=/workspace
+ENV NODE_PATH=/usr/local/lib/node_modules
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python3 -c "print('Sandbox ready')" || exit 1
+
+# Default command (keep container running)
+CMD ["tail", "-f", "/dev/null"]

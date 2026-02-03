@@ -1,0 +1,90 @@
+{
+  "mcpServers": {
+    "local-search": {
+      "command": "python",
+      "args": ["-m", "local_mcp_servers.search_server"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent"
+      },
+      "disabled": false
+    },
+    "code-executor": {
+      "command": "python",
+      "args": ["-m", "local_mcp_servers.code_executor"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent"
+      },
+      "disabled": false
+    },
+    "data-analyzer": {
+      "command": "python",
+      "args": ["-m", "local_mcp_servers.data_analyzer"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent"
+      },
+      "disabled": false
+    },
+    "web-fetch": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.web_fetch_server"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
+        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge"
+      },
+      "disabled": false
+    },
+    "search": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.search_server"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
+        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge"
+      },
+      "disabled": false
+    },
+    "arxiv": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.arxiv_server"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
+        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge"
+      },
+      "disabled": false
+    },
+    "memory": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.memory_server"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
+        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge",
+        "MEMORY_STORAGE_DIR": "data/memory"
+      },
+      "disabled": false
+    },
+    "filesystem": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.filesystem_server"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
+        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge",
+        "MCP_FILESYSTEM_ALLOWED_PATHS": "/home/user/workspace/mcp_agent/sparkleforge,/tmp"
+      },
+      "disabled": false
+    },
+    "github": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.github_server"],
+      "env": {
+        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
+        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge",
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "disabled": false
+    }
+  },
+  "_metadata": {
+    "description": "MCP servers - 3 local + 5 embedded (src/core/mcp_servers/)",
+    "embedded_servers": ["web-fetch", "search", "arxiv", "memory", "filesystem", "github"],
+    "local_servers": ["local-search", "code-executor", "data-analyzer"]
+  }
+}

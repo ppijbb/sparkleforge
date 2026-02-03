@@ -1,0 +1,132 @@
+{
+  "version": "1.0.0",
+  "registry_updated_at": "2025-10-29T19:13:42+09:00",
+  "skills": {
+    "research_planner": {
+      "skill_id": "research_planner",
+      "name": "Research Planner",
+      "description": "Advanced task analysis and research planning skill with Multi-Model Orchestration capabilities",
+      "version": "1.0.0",
+      "category": "planning",
+      "tags": ["planning", "analysis", "research"],
+      "path": "skills/research_planner",
+      "enabled": true,
+      "dependencies": ["multi_model_orchestration"],
+      "required_tools": [],
+      "author": "Local Researcher Team",
+      "created_at": "2025-10-29",
+      "updated_at": "2025-10-29",
+      "metadata": {
+        "capabilities": [
+          "task_analysis",
+          "objective_breakdown",
+          "research_planning",
+          "resource_allocation",
+          "risk_assessment",
+          "adaptive_planning"
+        ],
+        "compatibility": {
+          "min_system_version": "2.0.0",
+          "python_version": ">=3.10"
+        }
+      }
+    },
+    "research_executor": {
+      "skill_id": "research_executor",
+      "name": "Research Executor",
+      "description": "Advanced research execution skill with Universal MCP Hub integration",
+      "version": "1.0.0",
+      "category": "execution",
+      "tags": ["research", "execution", "mcp", "streaming"],
+      "path": "skills/research_executor",
+      "enabled": true,
+      "dependencies": ["universal_mcp_hub", "streaming_pipeline", "hierarchical_compression"],
+      "required_tools": ["g-search", "fetch", "filesystem"],
+      "author": "Local Researcher Team",
+      "created_at": "2025-10-29",
+      "updated_at": "2025-10-29",
+      "metadata": {
+        "capabilities": [
+          "mcp_tool_execution",
+          "multi_source_gathering",
+          "real_time_validation",
+          "streaming_delivery",
+          "data_compression"
+        ],
+        "compatibility": {
+          "min_system_version": "2.0.0",
+          "python_version": ">=3.10"
+        }
+      }
+    },
+    "evaluator": {
+      "skill_id": "evaluator",
+      "name": "Evaluator",
+      "description": "Advanced evaluation skill with Continuous Verification capabilities",
+      "version": "1.0.0",
+      "category": "evaluation",
+      "tags": ["evaluation", "verification", "quality", "fact-checking"],
+      "path": "skills/evaluator",
+      "enabled": true,
+      "dependencies": ["multi_model_orchestration", "continuous_verification"],
+      "required_tools": [],
+      "author": "Local Researcher Team",
+      "created_at": "2025-10-29",
+      "updated_at": "2025-10-29",
+      "metadata": {
+        "capabilities": [
+          "self_verification",
+          "cross_verification",
+          "external_verification",
+          "confidence_scoring",
+          "fact_checking",
+          "gap_identification"
+        ],
+        "compatibility": {
+          "min_system_version": "2.0.0",
+          "python_version": ">=3.10"
+        }
+      }
+    },
+    "synthesizer": {
+      "skill_id": "synthesizer",
+      "name": "Synthesizer",
+      "description": "Advanced synthesis skill with Adaptive Context Window capabilities",
+      "version": "1.0.0",
+      "category": "synthesis",
+      "tags": ["synthesis", "reporting", "formatting", "context-management"],
+      "path": "skills/synthesizer",
+      "enabled": true,
+      "dependencies": ["adaptive_context_window", "hierarchical_compression"],
+      "required_tools": ["filesystem", "python_coder"],
+      "author": "Local Researcher Team",
+      "created_at": "2025-10-29",
+      "updated_at": "2025-10-29",
+      "metadata": {
+        "capabilities": [
+          "multi_source_integration",
+          "report_generation",
+          "multi_format_output",
+          "context_management",
+          "insight_generation"
+        ],
+        "compatibility": {
+          "min_system_version": "2.0.0",
+          "python_version": ">=3.10"
+        }
+      }
+    }
+  },
+  "skill_categories": {
+    "planning": ["research_planner"],
+    "execution": ["research_executor"],
+    "evaluation": ["evaluator"],
+    "synthesis": ["synthesizer"]
+  },
+  "skill_dependencies": {
+    "research_executor": ["research_planner"],
+    "evaluator": ["research_executor"],
+    "synthesizer": ["evaluator", "research_executor"]
+  }
+}
+
