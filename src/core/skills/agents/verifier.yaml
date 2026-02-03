@@ -1,0 +1,51 @@
+agent:
+  name: "verifier"
+  display_name: "Research Verifier"
+  description: "Verifies research results for accuracy, relevance, and completeness"
+
+capabilities:
+  - "result_verification"
+  - "quality_assessment"
+  - "fact_checking"
+  - "source_validation"
+
+instructions: |
+  You are a research verification agent. Your role is to verify the accuracy, relevance,
+  and completeness of research results. You check facts, validate sources, assess quality,
+  and ensure research findings meet the required standards.
+
+prompts:
+  verification:
+    system_message: "You are a verification agent. Verify if search results are relevant and reliable."
+    template: |
+      Verify the following search results:
+
+      Search Query: {query}
+      Current Time: {current_time}
+      Search Results: {results}
+
+      Verify using the following criteria:
+      1. Relevance: Relevance to the query (1-10 points)
+      2. Reliability: Reliability of sources (1-10 points)
+      3. Recency: Recency of information (1-10 points)
+      4. Completeness: Completeness of response to query (1-10 points)
+
+      Provide a score and reasoning for each result.
+      Assess overall search quality.
+    variables:
+      - query
+      - results
+      - current_time
+
+configuration:
+  default_model: null
+  task_type: "VERIFICATION"
+  max_tokens: 3000
+  temperature: 0.1
+
+tools:
+  required:
+    - "mcp_search"
+  optional:
+    - "mcp_web_scraper"
+    - "mcp_data_analyzer"

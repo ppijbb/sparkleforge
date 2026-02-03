@@ -1,0 +1,130 @@
+# Core dependencies (2025년 10월 최신)
+langchain>=0.3.15
+langgraph>=0.2.45
+langchain-community>=0.3.15
+langchain-core>=0.3.15
+langchain-google-genai>=2.1.5
+langchain-mcp-adapters>=0.1.6
+
+# AI/ML dependencies (Gemini 중심)
+google-generativeai>=0.8.0
+langchain-google-vertexai>=2.0.25
+
+# OpenRouter integration (Primary)
+openrouter>=0.1.0
+
+# Web scraping and search
+requests>=2.32.3
+beautifulsoup4>=4.12.3
+selenium>=4.27.0
+scrapy>=2.11.2
+aiohttp>=3.10.11
+httpx>=0.28.1
+duckduckgo-search>=6.3.0
+tavily-python>=0.5.0
+browser-use>=0.1.40
+playwright>=1.51.0
+
+# Advanced search APIs
+exa-py>=1.8.8
+azure-search-documents>=11.5.2
+supabase>=2.15.3
+
+# Academic search
+arxiv>=2.1.3
+scholarly>=1.7.11
+
+# Data processing
+pandas>=2.2.3
+numpy>=1.26.4
+pydantic>=2.10.4
+
+# Database and caching
+redis>=5.0.0
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+# Phase 1: Transaction support
+aiosqlite>=0.19.0  # SQLite async driver
+asyncpg>=0.29.0  # PostgreSQL async driver
+
+# CLI and interface
+click>=8.1.0
+rich>=13.7.0
+typer>=0.9.0
+prompt-toolkit>=3.0.43
+
+# Web interface
+streamlit>=1.39.0
+streamlit-aggrid>=0.3.4
+streamlit-autorefresh>=0.0.1
+plotly>=5.18.0
+
+# Phase 1: Real-time Dashboard
+websockets>=12.0
+asyncio-mqtt>=0.16.2
+
+# Phase 2: Source Validation
+newspaper3k>=0.2.8
+lxml[html_clean]>=5.3.0
+lxml_html_clean>=0.1.1
+scholarly>=1.7.11
+
+# Phase 3: Research Memory
+chromadb>=0.4.18
+sentence-transformers>=2.2.2
+
+# Report generation
+jinja2>=3.1.0
+markdown>=3.5.0
+pdfkit>=1.0.0
+python-docx>=0.8.11
+python-pptx>=0.6.23
+
+# System monitoring
+psutil>=5.9.0
+
+# Enhanced browser automation (already included above)
+
+# File handling and utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+markdownify>=0.11.6
+mcp>=1.9.4
+
+# Document generation
+reportlab>=4.0.0
+weasyprint>=60.0
+PyPDF2>=3.0.1
+PyMuPDF>=1.23.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Development tools
+black>=23.12.0
+isort>=5.13.0
+flake8>=6.1.0
+mypy>=1.8.0
+
+# Security
+cryptography>=41.0.0
+passlib>=1.7.0
+
+# Monitoring and logging (Production-Grade Reliability)
+structlog>=24.1.0
+prometheus-client>=0.20.0
+tenacity>=8.2.0  # Circuit Breaker, Retry logic
+
+# Documentation
+sphinx>=7.2.0
+sphinx-rtd-theme>=2.0.0
+
+# Production-Grade Reliability (혁신 8)
+circuit-breaker>=1.4.0
+redis>=5.0.0  # State persistence
+asyncio-mqtt>=0.16.0  # Health monitoring
+
+# Dependency graph (ROMA integration)
+networkx>=3.0  # Task dependency graph for smart parallel execution 

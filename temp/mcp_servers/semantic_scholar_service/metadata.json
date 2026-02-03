@@ -1,0 +1,48 @@
+{
+  "server_name": "semantic_scholar_service",
+  "created_at": "2026-01-15T10:01:39.284199",
+  "requirements": {
+    "server_name": "semantic_scholar_service",
+    "api_base_url": "https://api.semanticscholar.org",
+    "auth_method": "api_key",
+    "api_key_env": "SEMANTIC_SCHOLAR_API_KEY",
+    "tools": [
+      {
+        "name": "semantic_scholar::papers-search-basic",
+        "method": "GET",
+        "endpoint": "/v1/papers/search",
+        "input_schema": {
+          "query": {
+            "type": "string",
+            "description": "Search query",
+            "required": true
+          },
+          "max_results": {
+            "type": "int",
+            "description": "Maximum number of search results",
+            "required": true,
+            "default": 10
+          }
+        },
+        "output_format": "json"
+      }
+    ],
+    "dependencies": [
+      "httpx",
+      "pydantic"
+    ],
+    "error_handling": {
+      "common_errors": [
+        "rate_limit",
+        "auth_failed",
+        "invalid_query"
+      ],
+      "retry_strategy": "exponential_backoff"
+    }
+  },
+  "server_file": "/home/user/workspace/mcp_agent/sparkleforge/temp/mcp_servers/semantic_scholar_service/server.py",
+  "dependencies": [
+    "httpx",
+    "pydantic"
+  ]
+}

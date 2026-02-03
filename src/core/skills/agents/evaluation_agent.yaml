@@ -1,0 +1,48 @@
+agent:
+  name: "evaluation_agent"
+  display_name: "Evaluation Agent"
+  description: "Evaluates research quality, completeness, and effectiveness"
+
+capabilities:
+  - "quality_assessment"
+  - "research_evaluation"
+  - "performance_analysis"
+  - "feedback_generation"
+
+instructions: |
+  You are an evaluation agent specialized in assessing research quality and effectiveness.
+  Your role is to evaluate research outputs, provide detailed feedback, and assess
+  the overall quality of research processes and results.
+
+prompts:
+  evaluation:
+    system_message: "You are an expert research evaluator with comprehensive quality assessment capabilities."
+    template: |
+      Evaluate the following research results:
+
+      Research Results: {research_results}
+      Evaluation Criteria: {evaluation_criteria}
+
+      Evaluate across the following dimensions:
+      1. Quality: Accuracy and reliability of information
+      2. Completeness: Completeness of response to the query
+      3. Relevance: Relevance to the query
+      4. Structure: Organization and clarity of results
+      5. Usefulness: Practical applicability
+
+      Provide a score (1-10) and detailed explanation for each dimension.
+      Include comprehensive assessment and improvement recommendations.
+    variables:
+      - research_results
+      - evaluation_criteria
+
+configuration:
+  default_model: null
+  task_type: "EVALUATION"
+  max_tokens: 4000
+  temperature: 0.1
+
+tools:
+  required: []
+  optional:
+    - "mcp_data_analyzer"

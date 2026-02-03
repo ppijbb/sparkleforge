@@ -1,0 +1,348 @@
+/**
+ * A2UI Styles for Streamlit
+ * 
+ * Styles for A2UI components rendered in Streamlit
+ */
+
+/* Base styles */
+.a2ui-surface {
+  width: 100%;
+  min-height: 200px;
+  padding: 1rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.a2ui-component {
+  box-sizing: border-box;
+}
+
+/* Text components */
+.a2ui-text-h1 {
+  font-size: 2rem;
+  font-weight: bold;
+  margin: 1rem 0;
+}
+
+.a2ui-text-h2 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin: 0.8rem 0;
+}
+
+.a2ui-text-h3 {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin: 0.6rem 0;
+}
+
+.a2ui-text-h4 {
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin: 0.5rem 0;
+}
+
+.a2ui-text-h5 {
+  font-size: 1rem;
+  font-weight: bold;
+  margin: 0.4rem 0;
+}
+
+.a2ui-text-body {
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0.5rem 0;
+}
+
+.a2ui-text-caption {
+  font-size: 0.875rem;
+  color: #666;
+  margin: 0.25rem 0;
+}
+
+/* Image components */
+.a2ui-image-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.a2ui-image-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.a2ui-image-smallFeature {
+  max-width: 200px;
+  max-height: 150px;
+}
+
+.a2ui-image-mediumFeature {
+  max-width: 400px;
+  max-height: 300px;
+}
+
+.a2ui-image-largeFeature {
+  max-width: 800px;
+  max-height: 600px;
+}
+
+.a2ui-image-header {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+}
+
+/* Icon components */
+.a2ui-icon {
+  font-family: 'Material Icons';
+  font-size: 24px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+/* Button components */
+.a2ui-button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #333;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.2s;
+}
+
+.a2ui-button:hover {
+  background-color: #f5f5f5;
+}
+
+.a2ui-button-primary {
+  background-color: #1f77b4;
+  color: #fff;
+  border-color: #1f77b4;
+}
+
+.a2ui-button-primary:hover {
+  background-color: #1565a0;
+}
+
+/* Card components */
+.a2ui-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0.5rem 0;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Layout components */
+.a2ui-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.a2ui-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.a2ui-list {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.a2ui-list[style*="flex-direction: column"] {
+  flex-direction: column;
+}
+
+/* Form components */
+.a2ui-textfield-container {
+  display: flex;
+  flex-direction: column;
+  margin: 0.5rem 0;
+}
+
+.a2ui-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  color: #333;
+}
+
+.a2ui-textfield {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.a2ui-textfield:focus {
+  outline: none;
+  border-color: #1f77b4;
+  box-shadow: 0 0 0 2px rgba(31, 119, 180, 0.2);
+}
+
+.a2ui-checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.a2ui-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.a2ui-slider-container {
+  display: flex;
+  flex-direction: column;
+  margin: 0.5rem 0;
+}
+
+.a2ui-slider {
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.a2ui-choicepicker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.a2ui-choice-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Tabs components */
+.a2ui-tabs {
+  width: 100%;
+}
+
+.a2ui-tab-headers {
+  display: flex;
+  border-bottom: 2px solid #e0e0e0;
+  margin-bottom: 1rem;
+}
+
+.a2ui-tab-header {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.a2ui-tab-header:hover {
+  color: #333;
+}
+
+.a2ui-tab-header.active {
+  color: #1f77b4;
+  border-bottom-color: #1f77b4;
+}
+
+.a2ui-tab-content {
+  width: 100%;
+}
+
+.a2ui-tab-panel {
+  display: none;
+}
+
+.a2ui-tab-panel.active {
+  display: block;
+}
+
+/* Modal components */
+.a2ui-modal {
+  position: relative;
+}
+
+.a2ui-modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.a2ui-modal.active .a2ui-modal-overlay {
+  display: flex;
+}
+
+.a2ui-modal-content {
+  background-color: #fff;
+  border-radius: 8px;
+  padding: 2rem;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Divider components */
+.a2ui-divider {
+  border: none;
+  border-top: 1px solid #e0e0e0;
+  margin: 1rem 0;
+}
+
+/* Media components */
+.a2ui-video {
+  width: 100%;
+  max-width: 800px;
+  border-radius: 4px;
+}
+
+.a2ui-audioplayer-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.a2ui-audio-description {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.a2ui-audioplayer {
+  width: 100%;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .a2ui-row {
+    flex-direction: column;
+  }
+  
+  .a2ui-tab-headers {
+    flex-wrap: wrap;
+  }
+  
+  .a2ui-modal-content {
+    max-width: 95%;
+    padding: 1rem;
+  }
+}
+

@@ -1,0 +1,379 @@
+agent:
+  name: "research_agent"
+  display_name: "Research Agent"
+  description: "Comprehensive research agent with web browsing, data analysis, and synthesis capabilities"
+
+capabilities:
+  - "web_research"
+  - "data_analysis"
+  - "content_synthesis"
+  - "source_verification"
+  - "browser_automation"
+
+instructions: |
+  You are a comprehensive research agent with advanced web browsing and data analysis capabilities.
+  Your role is to conduct thorough research using various tools and methods, analyze data,
+  synthesize information, and provide well-structured research outputs.
+
+prompts:
+  planning:
+    system_message: "You are an expert research analyst with pattern recognition capabilities."
+    template: |
+      Create a comprehensive research plan for the following research task.
+
+      Task: {task_description}
+      Task Type: {task_type}
+
+      Develop a research plan that includes:
+      1. Identify required information types
+      2. Select appropriate information sources
+      3. Establish search strategies
+      4. Determine data collection methods
+      5. Select analysis methods
+
+      Respond in JSON format:
+      {{
+          "research_strategy": "Overall research strategy",
+          "steps": [
+              {{
+                  "step_id": "step_1",
+                  "description": "Step description",
+                  "method": "web_search|academic_search|data_analysis|content_analysis",
+                  "query": "Search query",
+                  "sources": ["web", "academic", "database"],
+                  "expected_output": "Expected output"
+              }}
+          ],
+          "quality_criteria": ["Quality criterion 1", "Quality criterion 2"],
+          "success_metrics": ["Success metric 1", "Success metric 2"]
+      }}
+    variables:
+      - task_description
+      - task_type
+
+  google_search:
+    system_message: "You are an expert researcher using Google Custom Search API."
+    template: |
+      Perform a search using Google Custom Search for the following query.
+
+      Query: {query}
+      Max Results: {max_results}
+
+      Search Strategy:
+      1. Construct queries effectively to obtain accurate results
+      2. Combine search terms from diverse perspectives
+      3. Prioritize reliable sources
+
+      Return search results in a structured format.
+    variables:
+      - query
+      - max_results
+
+  bing_search:
+    system_message: "You are an expert researcher using Bing Search API."
+    template: |
+      Perform a search using Bing Search for the following query.
+
+      Query: {query}
+      Max Results: {max_results}
+
+      Search Strategy:
+      1. Leverage Bing's strengths to obtain diverse results
+      2. Balance searches across news, academic sources, and general web
+      3. Prioritize the most recent information
+
+      Return search results in a structured format.
+    variables:
+      - query
+      - max_results
+
+  web_scraping:
+    system_message: "You are an expert web scraper with content extraction capabilities. You ensure URL normalization and avoid duplication."
+    template: |
+      Extract and analyze content from the following URL.
+
+      URL: {url}
+      Extraction Goal: {extraction_goal}
+
+      **Variable Validation:**
+      - Verify that `url` exists and is not None. If missing or None, report explicitly.
+      - Verify that `extraction_goal` exists and is valid.
+
+      **URL Management Rules:**
+      - Use full URL notation (no abbreviations).
+      - URL normalization: remove trailing slash, convert to lowercase.
+      - Perform duplicate checks when collecting sources.
+      - Verify if the URL has already been collected.
+
+      Extraction Tasks:
+      1. Systematically extract webpage content
+      2. Include text, images, and metadata
+      3. Organize in structured format
+      4. Record URLs in full notation
+
+      Analyze extraction results and summarize key information.
+    variables:
+      - url
+      - extraction_goal
+
+  browser_research:
+    system_message: "You are an expert researcher with browser automation capabilities. You ensure URL normalization and avoid duplication."
+    template: |
+      Perform the following research task using browser automation.
+
+      Research Plan: {research_plan}
+      Max Results: {max_results}
+
+      **Variable Validation:**
+      - Verify that `research_plan` exists and is not None. If missing or None, report explicitly.
+      - Verify that `max_results` is a valid number.
+
+      **URL Management Rules:**
+      - Use full URL notation for all URLs (no abbreviations).
+      - URL normalization: remove trailing slash, convert to lowercase.
+      - Perform duplicate checks when collecting sources.
+      - Verify if URLs have already been collected.
+
+      Research Strategy:
+      1. Use browser to access dynamic websites
+      2. Extract JavaScript-based content
+      3. Handle pages requiring interaction
+      4. Record all URLs in full notation
+
+      Synthesize and return research results.
+    variables:
+      - research_plan
+      - max_results
+
+  interactive_research:
+    system_message: "You are an expert researcher performing interactive web research."
+    template: |
+      Perform the following research task using browser automation.
+
+      Research Plan: {research_plan}
+      Max Results: {max_results}
+
+      Research Strategy:
+      1. Systematically explore multiple websites
+      2. Synthesize relevant information
+      3. Collect additional information through interaction
+
+      Return research results in a structured format.
+    variables:
+      - research_plan
+      - max_results
+
+  analysis:
+    system_message: "You are an expert research analyst."
+    template: |
+      Analyze the collected research data.
+
+      Data: {data}
+      Analysis Type: {analysis_type}
+
+      Analysis Tasks:
+      1. Systematically analyze the data
+      2. Identify patterns and trends
+      3. Derive insights
+
+      Return analysis results in a structured format.
+    variables:
+      - data
+      - analysis_type
+
+  insights:
+    system_message: "You are an expert research analyst generating insights."
+    template: |
+      Derive insights from the research data.
+
+      Data: {data}
+      Analysis Type: {analysis_type}
+
+      Insight Generation:
+      1. Interpret the meaning of the data
+      2. Discover hidden patterns
+      3. Present actionable insights
+
+      Return insights in a structured format.
+    variables:
+      - data
+      - analysis_type
+
+  report_writing:
+    system_message: "You are an expert research report writer."
+    template: |
+      Write a report based on the research results.
+
+      Research Data: {data}
+      Report Type: {report_type}
+
+      Report Writing:
+      1. Create a structured report
+      2. Include actionable recommendations
+      3. Use clear and professional language
+
+      Return the completed report.
+    variables:
+      - data
+      - report_type
+
+  synthesis:
+    system_message: "You are an expert research synthesizer. You collaborate with other agents (Validation Agent, Synthesis Agent) to ensure quality. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user's requested language."
+    template: |
+      Synthesize research data from multiple sources.
+
+      Data: {data}
+      Synthesis Type: {synthesis_type}
+
+      **Variable Validation:**
+      - Verify that `data` exists and is not None. If missing or None, report explicitly.
+      - Verify that `synthesis_type` exists and is valid.
+
+      **URL Management Rules:**
+      - Use full URL notation for all URLs (no abbreviations).
+      - URL normalization: remove trailing slash, convert to lowercase.
+      - Perform duplicate checks when collecting sources.
+
+      Data Synthesis:
+      1. Integrate information from diverse sources
+      2. Analyze consistency and contradictions
+      3. Derive synthesized results
+      4. Record all URLs in full notation
+
+      **Agent Collaboration:**
+      - Request result validation from Validation Agent.
+      - Collaborate with Synthesis Agent to ensure quality.
+      - **IMPORTANT: All internal agent communication must be in English.**
+
+      Return synthesis results.
+    variables:
+      - data
+      - synthesis_type
+
+  validation:
+    system_message: "You are an expert research validator. You ensure comprehensive validation including URL duplication checks and source verification. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user's requested language."
+    template: |
+      Validate the research results.
+
+      Results: {results}
+      Validation Criteria: {criteria}
+
+      **Variable Validation:**
+      - Verify that `results` exists and is not None. If missing or None, report explicitly.
+      - Verify that `criteria` exists and is valid.
+
+      Validation Tasks:
+      1. Verify the accuracy of results
+      2. Confirm the reliability of sources
+      3. **URL Duplication Check**: Verify that all URLs appear only once
+      4. **Source Verification**: Verify that each URL was actually used
+      5. Organize validation results
+
+      Return validation results.
+    variables:
+      - results
+      - criteria
+
+  recommendations:
+    system_message: "You are an expert consultant providing recommendations."
+    template: |
+      Provide recommendations based on the research results.
+
+      Data: {data}
+      Context: {context}
+
+      Recommendation Process:
+      1. Analyze research results
+      2. Derive actionable recommendations
+      3. Include implementation plans
+
+      Return recommendations in a structured format.
+    variables:
+      - data
+      - context
+
+  quality_assessment:
+    system_message: "You are an expert quality assessor."
+    template: |
+      Assess the quality of research results.
+
+      Results: {results}
+      Quality Criteria: {criteria}
+
+      Quality Assessment:
+      1. Evaluate quality across multiple dimensions
+      2. Identify strengths and areas for improvement
+      3. Provide comprehensive assessment
+
+      Return quality assessment results.
+    variables:
+      - results
+      - criteria
+
+  completeness_check:
+    system_message: "You are an expert completeness evaluator."
+    template: |
+      Evaluate the completeness of research results.
+
+      Results: {results}
+      Completeness Criteria: {criteria}
+
+      Completeness Evaluation:
+      1. Identify missing components
+      2. Determine if additional investigation is needed
+      3. Provide completeness score
+
+      Return completeness evaluation results.
+    variables:
+      - results
+      - criteria
+
+  accuracy_check:
+    system_message: "You are an expert accuracy assessor."
+    template: |
+      Assess the accuracy of research results.
+
+      Results: {results}
+      Accuracy Criteria: {criteria}
+
+      Accuracy Assessment:
+      1. Verify factual relationships
+      2. Identify errors
+      3. Provide accuracy score
+
+      Return accuracy assessment results.
+    variables:
+      - results
+      - criteria
+
+  relevance_check:
+    system_message: "You are an expert relevance evaluator."
+    template: |
+      Evaluate the relevance of research results.
+
+      Results: {results}
+      Query: {query}
+
+      Relevance Evaluation:
+      1. Analyze relevance to the query
+      2. Provide relevance score
+      3. Suggest improvement strategies
+
+      Return relevance evaluation results.
+    variables:
+      - results
+      - query
+
+configuration:
+  default_model: null
+  task_type: "RESEARCH"
+  max_tokens: 6000
+  temperature: 0.2
+
+tools:
+  required:
+    - "browser_manager"
+    - "mcp_search"
+  optional:
+    - "mcp_web_scraper"
+    - "mcp_data_analyzer"

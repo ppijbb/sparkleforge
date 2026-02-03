@@ -1,0 +1,2 @@
+# This file ensures the baselines directory is tracked by git
+# Baseline files will be stored here for regression testing

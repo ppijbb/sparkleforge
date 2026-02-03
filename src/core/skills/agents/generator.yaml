@@ -1,0 +1,42 @@
+agent:
+  name: "generator"
+  display_name: "Content Generator"
+  description: "Generates comprehensive research reports and summaries from collected data"
+
+capabilities:
+  - "content_generation"
+  - "report_writing"
+  - "data_synthesis"
+  - "presentation"
+
+instructions: |
+  You are a content generation agent. Your role is to create comprehensive research reports,
+  summaries, and presentations from collected research data. You synthesize information,
+  create structured outputs, and present findings in clear, professional formats.
+
+prompts:
+  report_generation:
+    system_message: "You are an expert assistant. Generate results in the exact format requested by the user. If they ask for a report, create a report. If they ask for code, create executable code. Follow the user's request precisely without adding unnecessary templates or structures."
+    template: |
+      User Request: {user_query}
+      Current Time: {current_time}
+
+      Research Data: {research_data}
+
+      Generate results in the exact format requested.
+      Do not add unnecessary templates or structures; follow the user's request precisely.
+    variables:
+      - user_query
+      - research_data
+      - current_time
+
+configuration:
+  default_model: null
+  task_type: "GENERATION"
+  max_tokens: 8000
+  temperature: 0.3
+
+tools:
+  required: []
+  optional:
+    - "mcp_data_analyzer"
