@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 import anyio
 
+from src.core.observability import get_langfuse_run_config
+
 
 # -----------------------------
 # Public API surface
@@ -107,14 +109,15 @@ class _AskAgentTool(BaseTool):
         # 에이전트 입력 구성
         agent_input = {"messages": [{"role": "user", "content": full_message}]}
 
+        run_config = get_langfuse_run_config()
         # 타임아웃 적용 (선택적)
         if timeout_s:
             with anyio.move_on_after(timeout_s) as cancel_scope:
-                result = await self._agent.ainvoke(agent_input)
+                result = await self._agent.ainvoke(agent_input, config=run_config)
                 if cancel_scope.cancelled_caught:
                     return f"피어 '{self._peer_name}'이(가) 타임아웃되었습니다."
         else:
-            result = await self._agent.ainvoke(agent_input)
+            result = await self._agent.ainvoke(agent_input, config=run_config)
 
         # 결과에서 최종 답변 추출
         return _extract_final_answer(result)

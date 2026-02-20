@@ -34,6 +34,7 @@ from src.core.agent_tool_selector import AgentToolSelector, AgentType
 from src.core.session_manager import get_session_manager, SessionManager
 from src.core.context_engineer import get_context_engineer
 from src.core.memory_service import get_background_memory_service
+from src.core.observability import get_langfuse_run_config
 # prompt refiner는 execute_llm_task의 decorator에서 자동 적용됨
 
 logger = logging.getLogger(__name__)
@@ -5144,10 +5145,10 @@ class AgentOrchestrator:
                 except Exception as e:
                     logger.warning(f"Pipeline execution failed, falling back to traditional workflow: {e}")
                     # Fallback to traditional workflow
-                    result = await self.graph.ainvoke(initial_state)
+                    result = await self.graph.ainvoke(initial_state, config=get_langfuse_run_config(session_id=session_id))
             else:
                 # Traditional workflow execution
-                result = await self.graph.ainvoke(initial_state)
+                result = await self.graph.ainvoke(initial_state, config=get_langfuse_run_config(session_id=session_id))
             
             # 세션 자동 저장 (워크플로우 완료 후)
             try:
@@ -5308,7 +5309,8 @@ class AgentOrchestrator:
         )
         
         # Stream execution
-        async for event in self.graph.astream(agent_initial_state):
+        run_config = get_langfuse_run_config(session_id=session_id)
+        async for event in self.graph.astream(agent_initial_state, config=run_config):
             yield event
 
 

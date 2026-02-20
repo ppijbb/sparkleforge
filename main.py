@@ -2306,7 +2306,18 @@ async def handle_cli_command(args):
 
 def main_entry():
     """Entry point for sparkle command."""
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        # Flush Langfuse traces for short-lived CLI (optional; no-op if disabled)
+        try:
+            from src.core.observability import get_langfuse_client
+            client = get_langfuse_client()
+            if client is not None:
+                client.flush()
+        except Exception:
+            # Do not log exception message: may contain URLs or internal details
+            logger.warning("Langfuse trace flush failed (traces may be incomplete).")
 
 
 if __name__ == "__main__":

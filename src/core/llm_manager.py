@@ -18,6 +18,7 @@ from collections import defaultdict
 from src.core.researcher_config import get_llm_config, get_agent_config, get_cascade_config
 from src.core.reliability import execute_with_reliability
 from src.core.prompt_refiner_wrapper import refine_llm_call
+from src.core.observability import get_langfuse_run_config
 
 logger = logging.getLogger(__name__)
 
@@ -1877,7 +1878,7 @@ class MultiModelOrchestrator:
         messages.append(HumanMessage(content=prompt))
         
         # 실행
-        response = await client.ainvoke(messages)
+        response = await client.ainvoke(messages, config=get_langfuse_run_config())
         
         return {
             "content": response.content,
