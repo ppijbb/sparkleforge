@@ -64,6 +64,7 @@ dependencies = [
     "asyncio-mqtt>=0.16.0",
     "cryptography>=41.0.0",
     "passlib>=1.7.0",
+    "langfuse>=2.0.0",
 ]
 
 [project.optional-dependencies]

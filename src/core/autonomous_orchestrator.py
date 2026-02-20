@@ -28,6 +28,7 @@ from src.core.mcp_integration import execute_tool, ToolCategory, health_check
 from src.core.reliability import execute_with_reliability, get_system_status
 from src.core.compression import compress_data, get_compression_stats
 from src.core.streaming_manager import EventType, AgentStatus
+from src.core.observability import get_langfuse_run_config
 
 logger = logging.getLogger(__name__)
 
@@ -3245,7 +3246,7 @@ class AutonomousOrchestrator:
 
         # LangGraph 워크플로우 실행
         logger.info("🔄 Executing LangGraph workflow with 8 core innovations")
-        final_state = await self.graph.ainvoke(initial_state)
+        final_state = await self.graph.ainvoke(initial_state, config=get_langfuse_run_config())
         
         # 결과 포맷팅
         result = {

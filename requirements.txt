@@ -116,6 +116,7 @@ passlib>=1.7.0
 structlog>=24.1.0
 prometheus-client>=0.20.0
 tenacity>=8.2.0  # Circuit Breaker, Retry logic
+langfuse>=2.0.0  # LLM observability / LangChain tracing
 
 # Documentation
 sphinx>=7.2.0

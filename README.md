@@ -636,6 +636,10 @@ ENABLE_ACADEMIC_FORGE=true
 - Audit trail: 모든 작업 로그 기록
 - Secrets via environment variables or dedicated secret files; do not hardcode keys
 
+### Observability (Langfuse)
+
+Optional [Langfuse](https://langfuse.com/) integration for LLM tracing. Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in your environment (or in `.env`) to enable; all LangChain/LangGraph invocations will then report traces (latency, cost, tool usage) to Langfuse. Optional: `LANGFUSE_BASE_URL` for EU/US cloud or self-hosted URL.
+
 ## 📈 Use Cases
 
 - **Academic Research**: Comprehensive literature reviews with source validation
