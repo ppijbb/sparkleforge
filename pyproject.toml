@@ -7,7 +7,7 @@ authors = [
 ]
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.11,<4.0"
 dependencies = [
     "langchain>=0.3.15",
     "langgraph>=0.2.45",
@@ -113,8 +113,29 @@ lint.ignore = [
     "UP006",
     "UP007",
     "UP035",
+    "UP042",
     "D417",
+    "D415",
+    "D200",
+    "D205",
+    "D401",
     "E501",
+    "E722",
+    "E731",
+    "E741",
+    "E721",
+    "T201",
+    "E402",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+    "F841",
+    "F401",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -130,3 +151,8 @@ target-version = ['py310']
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.2",
+]

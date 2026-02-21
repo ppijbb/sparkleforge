@@ -14,18 +14,18 @@ print("📊 AgentBench Scores in README.md")
 print("=" * 80)
 print()
 
-with open(readme_path, 'r', encoding='utf-8') as f:
+with open(readme_path, "r", encoding="utf-8") as f:
     content = f.read()
-    
+
     # SparkleForge 행 찾기
-    lines = content.split('\n')
+    lines = content.split("\n")
     for i, line in enumerate(lines):
-        if 'SparkleForge' in line and 'AgentBench' in line:
-            print(f"Line {i+1}: {line.strip()}")
+        if "SparkleForge" in line and "AgentBench" in line:
+            print(f"Line {i + 1}: {line.strip()}")
             print()
-            
+
             # 다음 몇 줄 확인
-            for j in range(i, min(i+3, len(lines))):
+            for j in range(i, min(i + 3, len(lines))):
                 print(f"  {lines[j]}")
             break
 
@@ -41,4 +41,3 @@ print()
 print("이 값들은 실제 벤치마크 실행 결과가 아니라면")
 print("실제 측정이 필요합니다.")
 print("=" * 80)
-

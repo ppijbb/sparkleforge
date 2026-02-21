@@ -1,5 +1,4 @@
-"""
-Base CLI Agent - CLI 기반 에이전트들의 공통 추상화 레이어
+"""Base CLI Agent - CLI 기반 에이전트들의 공통 추상화 레이어
 
 모든 CLI 기반 에이전트(claudecode, opencode, gemini cli, cline cli 등)의
 공통 인터페이스를 정의하고 실행/결과 파싱을 표준화.
@@ -7,12 +6,12 @@ Base CLI Agent - CLI 기반 에이전트들의 공통 추상화 레이어
 
 import asyncio
 import logging
-import subprocess
+import os
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List, Union
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CLIExecutionResult:
     """CLI 실행 결과"""
+
     success: bool
     output: str
     error: str
@@ -31,19 +31,19 @@ class CLIExecutionResult:
 @dataclass
 class CLIAgentConfig:
     """CLI 에이전트 설정"""
+
     name: str
     command: Union[str, List[str]]
     args: List[str] = None
     env: Dict[str, str] = None
     timeout: int = 300
-    working_dir: Optional[Path] = None
+    working_dir: Path | None = None
     parse_output: bool = True
     output_format: str = "text"  # text, json, markdown 등
 
 
 class BaseCLIAgent(ABC):
-    """
-    CLI 기반 에이전트의 추상 기본 클래스
+    """CLI 기반 에이전트의 추상 기본 클래스
 
     모든 CLI 에이전트는 이 클래스를 상속받아 구현해야 함.
     """
@@ -54,8 +54,7 @@ class BaseCLIAgent(ABC):
 
     @abstractmethod
     async def execute_query(self, query: str, **kwargs) -> Dict[str, Any]:
-        """
-        쿼리를 실행하고 결과를 반환
+        """쿼리를 실행하고 결과를 반환
 
         Args:
             query: 실행할 쿼리
@@ -68,8 +67,7 @@ class BaseCLIAgent(ABC):
 
     @abstractmethod
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
-        """
-        CLI 출력을 파싱하여 표준화된 형식으로 변환
+        """CLI 출력을 파싱하여 표준화된 형식으로 변환
 
         Args:
             result: CLI 실행 결과
@@ -79,10 +77,10 @@ class BaseCLIAgent(ABC):
         """
         pass
 
-    async def _execute_command(self, command: Union[str, List[str]],
-                              input_text: Optional[str] = None) -> CLIExecutionResult:
-        """
-        CLI 명령을 실제로 실행
+    async def _execute_command(
+        self, command: Union[str, List[str]], input_text: str | None = None
+    ) -> CLIExecutionResult:
+        """CLI 명령을 실제로 실행
 
         Args:
             command: 실행할 명령어
@@ -118,13 +116,13 @@ class BaseCLIAgent(ABC):
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
                 cwd=self.config.working_dir,
-                timeout=self.config.timeout
+                timeout=self.config.timeout,
             )
 
             # 입력 전송 및 출력 수신
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(input=input_text.encode() if input_text else None),
-                timeout=self.config.timeout
+                timeout=self.config.timeout,
             )
 
             execution_time = time.time() - start_time
@@ -132,21 +130,25 @@ class BaseCLIAgent(ABC):
             # 결과 생성
             result = CLIExecutionResult(
                 success=process.returncode == 0,
-                output=stdout.decode('utf-8', errors='replace'),
-                error=stderr.decode('utf-8', errors='replace'),
+                output=stdout.decode("utf-8", errors="replace"),
+                error=stderr.decode("utf-8", errors="replace"),
                 exit_code=process.returncode or 0,
                 execution_time=execution_time,
                 metadata={
-                    'command': cmd,
-                    'working_dir': str(self.config.working_dir) if self.config.working_dir else None
-                }
+                    "command": cmd,
+                    "working_dir": str(self.config.working_dir)
+                    if self.config.working_dir
+                    else None,
+                },
             )
 
-            self.logger.debug(f"CLI execution completed in {execution_time:.2f}s with exit code {result.exit_code}")
+            self.logger.debug(
+                f"CLI execution completed in {execution_time:.2f}s with exit code {result.exit_code}"
+            )
 
             return result
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             execution_time = time.time() - start_time
             self.logger.error(f"CLI command timed out after {execution_time:.2f}s")
             return CLIExecutionResult(
@@ -154,7 +156,7 @@ class BaseCLIAgent(ABC):
                 output="",
                 error=f"Command timed out after {self.config.timeout} seconds",
                 exit_code=-1,
-                execution_time=execution_time
+                execution_time=execution_time,
             )
 
         except Exception as e:
@@ -165,12 +167,11 @@ class BaseCLIAgent(ABC):
                 output="",
                 error=str(e),
                 exit_code=-1,
-                execution_time=execution_time
+                execution_time=execution_time,
             )
 
     def _validate_result(self, result: CLIExecutionResult) -> bool:
-        """
-        실행 결과를 검증
+        """실행 결과를 검증
 
         Args:
             result: 실행 결과
@@ -189,8 +190,7 @@ class BaseCLIAgent(ABC):
         return True
 
     async def health_check(self) -> bool:
-        """
-        에이전트 상태 확인
+        """에이전트 상태 확인
 
         Returns:
             건강 상태
@@ -198,22 +198,21 @@ class BaseCLIAgent(ABC):
         try:
             # 간단한 테스트 쿼리 실행
             result = await self.execute_query("echo 'test'")
-            return result.get('success', False)
+            return result.get("success", False)
         except Exception as e:
             self.logger.error(f"Health check failed: {e}")
             return False
 
     def get_info(self) -> Dict[str, Any]:
-        """
-        에이전트 정보 반환
+        """에이전트 정보 반환
 
         Returns:
             에이전트 정보
         """
         return {
-            'name': self.config.name,
-            'type': 'cli_agent',
-            'command': self.config.command,
-            'timeout': self.config.timeout,
-            'output_format': self.config.output_format
+            "name": self.config.name,
+            "type": "cli_agent",
+            "command": self.config.command,
+            "timeout": self.config.timeout,
+            "output_format": self.config.output_format,
         }

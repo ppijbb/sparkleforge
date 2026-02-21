@@ -1,5 +1,4 @@
-"""
-실시간 진행 상황 추적 시스템
+"""실시간 진행 상황 추적 시스템
 
 워크플로우 단계별 진행, 에이전트 실행 상태, 예상 완료 시간,
 중간 결과 미리보기를 제공하는 진행 상황 추적 시스템
@@ -7,16 +6,14 @@
 
 import asyncio
 import time
-import threading
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Dict, Any, Optional, List, Callable, Union
 from dataclasses import dataclass, field
-from collections import defaultdict
+from enum import Enum
+from typing import Any, Callable, Dict, List, Union
 
 
 class WorkflowStage(Enum):
     """워크플로우 단계."""
+
     INITIALIZING = "initializing"
     PLANNING = "planning"
     EXECUTING = "executing"
@@ -28,6 +25,7 @@ class WorkflowStage(Enum):
 
 class AgentStatus(Enum):
     """에이전트 상태."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -38,18 +36,19 @@ class AgentStatus(Enum):
 @dataclass
 class AgentProgress:
     """에이전트 진행 상황."""
+
     agent_id: str
     agent_type: str
     status: AgentStatus = AgentStatus.PENDING
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
+    start_time: float | None = None
+    end_time: float | None = None
     progress: float = 0.0  # 0.0 to 1.0
-    current_task: Optional[str] = None
-    error_message: Optional[str] = None
+    current_task: str | None = None
+    error_message: str | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """실행 시간 (초)."""
         if self.start_time and self.end_time:
             return self.end_time - self.start_time
@@ -66,17 +65,18 @@ class AgentProgress:
 @dataclass
 class WorkflowProgress:
     """워크플로우 진행 상황."""
+
     session_id: str
     current_stage: WorkflowStage = WorkflowStage.INITIALIZING
     overall_progress: float = 0.0  # 0.0 to 1.0
-    start_time: Optional[float] = None
-    estimated_completion: Optional[float] = None
+    start_time: float | None = None
+    estimated_completion: float | None = None
     agents: Dict[str, AgentProgress] = field(default_factory=dict)
     stage_history: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """총 실행 시간 (초)."""
         if self.start_time:
             return time.time() - self.start_time
@@ -90,17 +90,24 @@ class WorkflowProgress:
     @property
     def completed_agents(self) -> List[AgentProgress]:
         """완료된 에이전트 목록."""
-        return [agent for agent in self.agents.values() if agent.status == AgentStatus.COMPLETED]
+        return [
+            agent
+            for agent in self.agents.values()
+            if agent.status == AgentStatus.COMPLETED
+        ]
 
     @property
     def failed_agents(self) -> List[AgentProgress]:
         """실패한 에이전트 목록."""
-        return [agent for agent in self.agents.values() if agent.status == AgentStatus.FAILED]
+        return [
+            agent
+            for agent in self.agents.values()
+            if agent.status == AgentStatus.FAILED
+        ]
 
 
 class ProgressTracker:
-    """
-    실시간 진행 상황 추적 시스템.
+    """실시간 진행 상황 추적 시스템.
 
     워크플로우 및 에이전트별 진행 상황을 추적하고 실시간 업데이트를 제공.
     """
@@ -109,7 +116,7 @@ class ProgressTracker:
         self,
         session_id: str,
         enable_real_time_updates: bool = True,
-        update_interval: float = 1.0
+        update_interval: float = 1.0,
     ):
         """초기화."""
         self.session_id = session_id
@@ -126,7 +133,7 @@ class ProgressTracker:
         self.agent_status_callbacks: List[Callable] = []
 
         # 업데이트 태스크
-        self.update_task: Optional[asyncio.Task] = None
+        self.update_task: asyncio.Task | None = None
         self.running = False
 
         # 잠금
@@ -134,11 +141,11 @@ class ProgressTracker:
 
         # 통계
         self.stats = {
-            'total_agents_created': 0,
-            'agents_completed': 0,
-            'agents_failed': 0,
-            'stage_transitions': 0,
-            'last_update': time.time()
+            "total_agents_created": 0,
+            "agents_completed": 0,
+            "agents_failed": 0,
+            "stage_transitions": 0,
+            "last_update": time.time(),
         }
 
     async def start_tracking(self):
@@ -170,11 +177,11 @@ class ProgressTracker:
             except Exception as e:
                 # 업데이트 실패 시 로깅만 하고 계속 진행
                 try:
-                    from src.utils.output_manager import get_output_manager, OutputLevel
+                    from src.utils.output_manager import OutputLevel, get_output_manager
+
                     output_manager = get_output_manager()
                     await output_manager.output(
-                        f"진행 상황 업데이트 실패: {e}",
-                        level=OutputLevel.DEBUG
+                        f"진행 상황 업데이트 실패: {e}", level=OutputLevel.DEBUG
                     )
                 except:
                     pass  # 출력 매니저도 실패하면 무시
@@ -192,7 +199,7 @@ class ProgressTracker:
         # 콜백 호출
         await self._trigger_callbacks()
 
-        self.stats['last_update'] = current_time
+        self.stats["last_update"] = current_time
 
     def _calculate_overall_progress(self) -> float:
         """전체 진행률 계산."""
@@ -204,11 +211,11 @@ class ProgressTracker:
             WorkflowStage.VERIFYING: 0.25,
             WorkflowStage.GENERATING: 0.10,
             WorkflowStage.COMPLETED: 1.0,
-            WorkflowStage.FAILED: 1.0
+            WorkflowStage.FAILED: 1.0,
         }
 
         base_progress = stage_weights.get(self.workflow_progress.current_stage, 0.0)
-        
+
         # 에이전트가 없어도 단계별 기본 진행률은 반환
         if not self.workflow_progress.agents:
             # 초기화 단계에서는 시간 기반으로 약간의 진행률 표시
@@ -221,14 +228,20 @@ class ProgressTracker:
             return base_progress
 
         # 현재 단계 내 세부 진행률
-        if self.workflow_progress.current_stage in [WorkflowStage.EXECUTING, WorkflowStage.VERIFYING]:
+        if self.workflow_progress.current_stage in [
+            WorkflowStage.EXECUTING,
+            WorkflowStage.VERIFYING,
+        ]:
             agents_in_stage = [
-                agent for agent in self.workflow_progress.agents.values()
+                agent
+                for agent in self.workflow_progress.agents.values()
                 if self._is_agent_in_current_stage(agent)
             ]
 
             if agents_in_stage:
-                stage_progress = sum(agent.progress for agent in agents_in_stage) / len(agents_in_stage)
+                stage_progress = sum(agent.progress for agent in agents_in_stage) / len(
+                    agents_in_stage
+                )
                 # 단계 내 진행률을 전체 진행률에 반영
                 stage_weight = stage_weights[self.workflow_progress.current_stage]
                 additional_progress = stage_progress * stage_weight
@@ -236,20 +249,26 @@ class ProgressTracker:
         elif self.workflow_progress.current_stage == WorkflowStage.PLANNING:
             # Planning 단계에서는 에이전트 진행률 반영
             planning_agents = [
-                agent for agent in self.workflow_progress.agents.values()
-                if 'planner' in agent.agent_type.lower()
+                agent
+                for agent in self.workflow_progress.agents.values()
+                if "planner" in agent.agent_type.lower()
             ]
             if planning_agents:
-                stage_progress = sum(agent.progress for agent in planning_agents) / len(planning_agents)
+                stage_progress = sum(agent.progress for agent in planning_agents) / len(
+                    planning_agents
+                )
                 base_progress += stage_progress * 0.15
         elif self.workflow_progress.current_stage == WorkflowStage.GENERATING:
             # Generating 단계에서는 에이전트 진행률 반영
             generating_agents = [
-                agent for agent in self.workflow_progress.agents.values()
-                if 'generator' in agent.agent_type.lower()
+                agent
+                for agent in self.workflow_progress.agents.values()
+                if "generator" in agent.agent_type.lower()
             ]
             if generating_agents:
-                stage_progress = sum(agent.progress for agent in generating_agents) / len(generating_agents)
+                stage_progress = sum(
+                    agent.progress for agent in generating_agents
+                ) / len(generating_agents)
                 base_progress += stage_progress * 0.10
 
         return min(base_progress, 1.0)
@@ -257,16 +276,20 @@ class ProgressTracker:
     def _is_agent_in_current_stage(self, agent: AgentProgress) -> bool:
         """에이전트가 현재 단계에 속하는지 확인."""
         stage_agent_types = {
-            WorkflowStage.PLANNING: ['planner'],
-            WorkflowStage.EXECUTING: ['executor', 'parallel_executor'],
-            WorkflowStage.VERIFYING: ['verifier', 'parallel_verifier'],
-            WorkflowStage.GENERATING: ['generator']
+            WorkflowStage.PLANNING: ["planner"],
+            WorkflowStage.EXECUTING: ["executor", "parallel_executor"],
+            WorkflowStage.VERIFYING: ["verifier", "parallel_verifier"],
+            WorkflowStage.GENERATING: ["generator"],
         }
 
-        current_stage_types = stage_agent_types.get(self.workflow_progress.current_stage, [])
-        return any(agent_type in agent.agent_type.lower() for agent_type in current_stage_types)
+        current_stage_types = stage_agent_types.get(
+            self.workflow_progress.current_stage, []
+        )
+        return any(
+            agent_type in agent.agent_type.lower() for agent_type in current_stage_types
+        )
 
-    def _estimate_completion_time(self) -> Optional[float]:
+    def _estimate_completion_time(self) -> float | None:
         """예상 완료 시간 추정."""
         if not self.workflow_progress.start_time:
             return None
@@ -289,11 +312,11 @@ class ProgressTracker:
             except Exception as e:
                 # 콜백 실패는 로깅만 하고 계속 진행
                 try:
-                    from src.utils.output_manager import get_output_manager, OutputLevel
+                    from src.utils.output_manager import OutputLevel, get_output_manager
+
                     output_manager = get_output_manager()
                     await output_manager.output(
-                        f"진행 상황 콜백 실패: {e}",
-                        level=OutputLevel.DEBUG
+                        f"진행 상황 콜백 실패: {e}", level=OutputLevel.DEBUG
                     )
                 except:
                     pass
@@ -302,13 +325,11 @@ class ProgressTracker:
     def register_agent(self, agent_id: str, agent_type: str) -> AgentProgress:
         """새 에이전트 등록."""
         agent = AgentProgress(
-            agent_id=agent_id,
-            agent_type=agent_type,
-            status=AgentStatus.PENDING
+            agent_id=agent_id, agent_type=agent_type, status=AgentStatus.PENDING
         )
 
         self.workflow_progress.agents[agent_id] = agent
-        self.stats['total_agents_created'] += 1
+        self.stats["total_agents_created"] += 1
 
         return agent
 
@@ -316,9 +337,9 @@ class ProgressTracker:
         self,
         agent_id: str,
         status: AgentStatus,
-        current_task: Optional[str] = None,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        current_task: str | None = None,
+        error_message: str | None = None,
+        metadata: Dict[str, Any] | None = None,
     ):
         """에이전트 상태 업데이트."""
         if agent_id not in self.workflow_progress.agents:
@@ -339,24 +360,30 @@ class ProgressTracker:
         # 시간 기록
         if status == AgentStatus.RUNNING and not agent.start_time:
             agent.start_time = time.time()
-        elif status in [AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED]:
+        elif status in [
+            AgentStatus.COMPLETED,
+            AgentStatus.FAILED,
+            AgentStatus.CANCELLED,
+        ]:
             agent.end_time = time.time()
 
         # 통계 업데이트
         if status == AgentStatus.COMPLETED and old_status != AgentStatus.COMPLETED:
-            self.stats['agents_completed'] += 1
+            self.stats["agents_completed"] += 1
         elif status == AgentStatus.FAILED and old_status != AgentStatus.FAILED:
-            self.stats['agents_failed'] += 1
+            self.stats["agents_failed"] += 1
 
         # 에이전트 상태 변경 콜백
         for callback in self.agent_status_callbacks:
             try:
                 asyncio.create_task(callback(agent_id, agent))
-            except Exception as e:
+            except Exception:
                 # 콜백 실패는 로깅만 하고 계속 진행
                 pass
 
-    def update_agent_progress(self, agent_id: str, progress: float, current_task: Optional[str] = None):
+    def update_agent_progress(
+        self, agent_id: str, progress: float, current_task: str | None = None
+    ):
         """에이전트 진행률 업데이트."""
         if agent_id not in self.workflow_progress.agents:
             return
@@ -368,17 +395,19 @@ class ProgressTracker:
             agent.current_task = current_task
 
     # 워크플로우 관리 메서드들
-    def set_workflow_stage(self, stage: WorkflowStage, metadata: Optional[Dict[str, Any]] = None):
+    def set_workflow_stage(
+        self, stage: WorkflowStage, metadata: Dict[str, Any] | None = None
+    ):
         """워크플로우 단계 설정."""
         old_stage = self.workflow_progress.current_stage
         self.workflow_progress.current_stage = stage
 
         # 단계 변경 기록
         stage_record = {
-            'stage': stage.value,
-            'timestamp': time.time(),
-            'previous_stage': old_stage.value if old_stage else None,
-            'metadata': metadata or {}
+            "stage": stage.value,
+            "timestamp": time.time(),
+            "previous_stage": old_stage.value if old_stage else None,
+            "metadata": metadata or {},
         }
         self.workflow_progress.stage_history.append(stage_record)
 
@@ -386,13 +415,13 @@ class ProgressTracker:
         if metadata:
             self.workflow_progress.metadata.update(metadata)
 
-        self.stats['stage_transitions'] += 1
+        self.stats["stage_transitions"] += 1
 
         # 단계 변경 콜백
         for callback in self.stage_change_callbacks:
             try:
                 asyncio.create_task(callback(old_stage, stage, self.workflow_progress))
-            except Exception as e:
+            except Exception:
                 # 콜백 실패는 로깅만 하고 계속 진행
                 pass
 
@@ -413,42 +442,44 @@ class ProgressTracker:
     def get_workflow_summary(self) -> Dict[str, Any]:
         """워크플로우 요약 정보."""
         return {
-            'session_id': self.session_id,
-            'current_stage': self.workflow_progress.current_stage.value,
-            'overall_progress': self.workflow_progress.overall_progress,
-            'duration': self.workflow_progress.duration,
-            'estimated_completion': self.workflow_progress.estimated_completion,
-            'active_agents': len(self.workflow_progress.active_agents),
-            'completed_agents': len(self.workflow_progress.completed_agents),
-            'failed_agents': len(self.workflow_progress.failed_agents),
-            'total_agents': len(self.workflow_progress.agents)
+            "session_id": self.session_id,
+            "current_stage": self.workflow_progress.current_stage.value,
+            "overall_progress": self.workflow_progress.overall_progress,
+            "duration": self.workflow_progress.duration,
+            "estimated_completion": self.workflow_progress.estimated_completion,
+            "active_agents": len(self.workflow_progress.active_agents),
+            "completed_agents": len(self.workflow_progress.completed_agents),
+            "failed_agents": len(self.workflow_progress.failed_agents),
+            "total_agents": len(self.workflow_progress.agents),
         }
 
-    def get_agent_summary(self, agent_id: Optional[str] = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    def get_agent_summary(
+        self, agent_id: str | None = None
+    ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """에이전트 요약 정보."""
         if agent_id:
             agent = self.workflow_progress.agents.get(agent_id)
             if not agent:
                 return {}
             return {
-                'agent_id': agent.agent_id,
-                'agent_type': agent.agent_type,
-                'status': agent.status.value,
-                'progress': agent.progress,
-                'duration': agent.duration,
-                'current_task': agent.current_task,
-                'error_message': agent.error_message
+                "agent_id": agent.agent_id,
+                "agent_type": agent.agent_type,
+                "status": agent.status.value,
+                "progress": agent.progress,
+                "duration": agent.duration,
+                "current_task": agent.current_task,
+                "error_message": agent.error_message,
             }
         else:
             return [
                 {
-                    'agent_id': agent.agent_id,
-                    'agent_type': agent.agent_type,
-                    'status': agent.status.value,
-                    'progress': agent.progress,
-                    'duration': agent.duration,
-                    'current_task': agent.current_task,
-                    'error_message': agent.error_message
+                    "agent_id": agent.agent_id,
+                    "agent_type": agent.agent_type,
+                    "status": agent.status.value,
+                    "progress": agent.progress,
+                    "duration": agent.duration,
+                    "current_task": agent.current_task,
+                    "error_message": agent.error_message,
                 }
                 for agent in self.workflow_progress.agents.values()
             ]
@@ -461,8 +492,10 @@ class ProgressTracker:
         """통계 정보."""
         return {
             **self.stats,
-            'current_time': time.time(),
-            'uptime': time.time() - self.workflow_progress.start_time if self.workflow_progress.start_time else 0
+            "current_time": time.time(),
+            "uptime": time.time() - self.workflow_progress.start_time
+            if self.workflow_progress.start_time
+            else 0,
         }
 
 
@@ -470,7 +503,8 @@ class ProgressTracker:
 _progress_tracker = None
 _current_session_id = None
 
-def get_progress_tracker(session_id: Optional[str] = None) -> ProgressTracker:
+
+def get_progress_tracker(session_id: str | None = None) -> ProgressTracker:
     """전역 진행 추적기 인스턴스 반환."""
     global _progress_tracker, _current_session_id
 
@@ -479,6 +513,7 @@ def get_progress_tracker(session_id: Optional[str] = None) -> ProgressTracker:
         _current_session_id = session_id
 
     return _progress_tracker
+
 
 def set_progress_tracker(tracker: ProgressTracker):
     """전역 진행 추적기 설정."""
@@ -489,6 +524,7 @@ def set_progress_tracker(tracker: ProgressTracker):
 # 편의 함수들
 def create_agent_progress_context(agent_id: str, agent_type: str):
     """에이전트 진행 상황 컨텍스트 매니저."""
+
     class AgentProgressContext:
         def __init__(self, agent_id: str, agent_type: str):
             self.agent_id = agent_id
@@ -498,29 +534,24 @@ def create_agent_progress_context(agent_id: str, agent_type: str):
         async def __aenter__(self):
             self.tracker.register_agent(self.agent_id, self.agent_type)
             self.tracker.update_agent_status(
-                self.agent_id,
-                AgentStatus.RUNNING,
-                current_task="Initializing"
+                self.agent_id, AgentStatus.RUNNING, current_task="Initializing"
             )
             return self
 
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             if exc_type:
                 self.tracker.update_agent_status(
-                    self.agent_id,
-                    AgentStatus.FAILED,
-                    error_message=str(exc_val)
+                    self.agent_id, AgentStatus.FAILED, error_message=str(exc_val)
                 )
             else:
-                self.tracker.update_agent_status(
-                    self.agent_id,
-                    AgentStatus.COMPLETED
-                )
+                self.tracker.update_agent_status(self.agent_id, AgentStatus.COMPLETED)
 
-        def update_progress(self, progress: float, task: Optional[str] = None):
+        def update_progress(self, progress: float, task: str | None = None):
             self.tracker.update_agent_progress(self.agent_id, progress, task)
 
-        def update_status(self, status: AgentStatus, task: Optional[str] = None, error: Optional[str] = None):
+        def update_status(
+            self, status: AgentStatus, task: str | None = None, error: str | None = None
+        ):
             self.tracker.update_agent_status(self.agent_id, status, task, error)
 
     return AgentProgressContext(agent_id, agent_type)

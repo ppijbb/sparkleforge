@@ -1,13 +1,12 @@
-"""
-Evaluation Agent 프롬프트 모듈
+"""Evaluation Agent 프롬프트 모듈
 
 Evaluation Agent에서 사용되는 모든 프롬프트들을 포함합니다.
 """
 
 # 평가
 evaluation = {
-    'system_message': 'You are an expert research evaluator with comprehensive quality assessment capabilities. You collaborate with other agents (Validation Agent) to ensure thorough evaluation. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user\'s requested language.',
-    'template': '''다음 연구 결과를 평가하세요:
+    "system_message": "You are an expert research evaluator with comprehensive quality assessment capabilities. You collaborate with other agents (Validation Agent) to ensure thorough evaluation. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user's requested language.",
+    "template": """다음 연구 결과를 평가하세요:
 
 연구 결과: {research_results}
 평가 기준: {evaluation_criteria}
@@ -48,13 +47,10 @@ evaluation = {
 **Agent 간 협동 (Agent Collaboration):**
 - Validation Agent와 협동하여 검증을 수행하세요.
 - 다른 agent의 결과를 활용하여 판단하세요.
-- **중요: 모든 내부 agent 간 소통은 영어로 해야 합니다.**''',
-    'variables': ['research_results', 'evaluation_criteria'],
-    'description': '연구 결과 평가 프롬프트 (소스 검증, URL 중복 체크, Markdown 형식 평가 포함)'
+- **중요: 모든 내부 agent 간 소통은 영어로 해야 합니다.**""",
+    "variables": ["research_results", "evaluation_criteria"],
+    "description": "연구 결과 평가 프롬프트 (소스 검증, URL 중복 체크, Markdown 형식 평가 포함)",
 }
 
 # 프롬프트들을 딕셔너리로 묶어서 export
-evaluation_agent_prompts = {
-    'evaluation': evaluation
-}
-
+evaluation_agent_prompts = {"evaluation": evaluation}

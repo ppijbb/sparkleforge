@@ -8,11 +8,19 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from src.core.mcp_auto_discovery import FastMCPClientWrapper, FastMCPMulti, discover_server_tools
+from src.core.mcp_auto_discovery import (
+    FastMCPClientWrapper,
+    FastMCPMulti,
+    discover_server_tools,
+)
 from src.core.mcp_tool_loader import MCPToolLoader, ToolInfo, _jsonschema_to_pydantic
 from src.core.agent_tool_selector import AgentToolSelector, AgentType, ToolCategory
 from src.core.config import HTTPServerSpec, servers_to_mcp_config
-from src.core.cross_agent_tools import CrossAgent, make_cross_agent_tools, _extract_final_answer
+from src.core.cross_agent_tools import (
+    CrossAgent,
+    make_cross_agent_tools,
+    _extract_final_answer,
+)
 from langchain_core.tools import BaseTool
 
 
@@ -21,10 +29,7 @@ def test_config_conversion():
     print("=== Testing Config Conversion ===")
 
     servers = {
-        "test": HTTPServerSpec(
-            url="http://localhost:8000/mcp",
-            transport="http"
-        )
+        "test": HTTPServerSpec(url="http://localhost:8000/mcp", transport="http")
     }
 
     config = servers_to_mcp_config(servers)
@@ -42,9 +47,9 @@ def test_jsonschema_to_pydantic():
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Search query"},
-            "limit": {"type": "integer", "description": "Result limit", "default": 10}
+            "limit": {"type": "integer", "description": "Result limit", "default": 10},
         },
-        "required": ["query"]
+        "required": ["query"],
     }
 
     model = _jsonschema_to_pydantic(schema, model_name="TestArgs")
@@ -68,7 +73,7 @@ def test_tool_category_inference():
         server_guess="search",
         name="web_search",
         description="Search the web for information",
-        input_schema={}
+        input_schema={},
     )
     assert selector._infer_tool_category(search_info) == ToolCategory.SEARCH
 
@@ -77,7 +82,7 @@ def test_tool_category_inference():
         server_guess="code",
         name="run_python",
         description="Execute Python code",
-        input_schema={}
+        input_schema={},
     )
     assert selector._infer_tool_category(code_info) == ToolCategory.CODE
 
@@ -86,7 +91,7 @@ def test_tool_category_inference():
         server_guess="unknown",
         name="unknown_tool",
         description="Some unknown tool",
-        input_schema={}
+        input_schema={},
     )
     assert selector._infer_tool_category(unknown_info) == ToolCategory.UTILITY
 
@@ -101,19 +106,21 @@ def test_agent_tool_assignment():
 
     # 모의 도구 생성
     mock_tools = [
-        type('MockTool', (), {
-            'name': 'web_search',
-            '_arun': lambda self, **kwargs: "Search results"
-        })(),
-        type('MockTool', (), {
-            'name': 'run_code',
-            '_arun': lambda self, **kwargs: "Code output"
-        })()
+        type(
+            "MockTool",
+            (),
+            {"name": "web_search", "_arun": lambda self, **kwargs: "Search results"},
+        )(),
+        type(
+            "MockTool",
+            (),
+            {"name": "run_code", "_arun": lambda self, **kwargs: "Code output"},
+        )(),
     ]
 
     mock_infos = [
         ToolInfo("search", "web_search", "Search the web", {}),
-        ToolInfo("code", "run_code", "Execute code", {})
+        ToolInfo("code", "run_code", "Execute code", {}),
     ]
 
     # 각 에이전트별 도구 할당
@@ -137,15 +144,16 @@ def test_cross_agent_tools():
 
     # 모의 에이전트 생성
     async def mock_agent_response(input_data):
-        return {"messages": [{"content": f"Response to: {input_data['messages'][0]['content']}"}]}
+        return {
+            "messages": [
+                {"content": f"Response to: {input_data['messages'][0]['content']}"}
+            ]
+        }
 
-    mock_agent = type('MockAgent', (), {'ainvoke': mock_agent_response})()
+    mock_agent = type("MockAgent", (), {"ainvoke": mock_agent_response})()
 
     peers = {
-        "researcher": CrossAgent(
-            agent=mock_agent,
-            description="Research assistant"
-        )
+        "researcher": CrossAgent(agent=mock_agent, description="Research assistant")
     }
 
     # Cross-Agent 도구 생성
@@ -210,6 +218,7 @@ def main():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

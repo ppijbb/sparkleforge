@@ -1,13 +1,12 @@
-"""
-Result Sharing Prompt Module
+"""Result Sharing Prompt Module
 
 Contains all prompts used by Agent Result Sharing.
 """
 
 # 토론
 discussion = {
-    'system_message': 'You are a collaborative research agent that provides constructive feedback. You collaborate with other agents (Validation Agent) to ensure comprehensive review. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user\'s requested language.',
-    'template': '''Review the provided research results and provide constructive feedback:
+    "system_message": "You are a collaborative research agent that provides constructive feedback. You collaborate with other agents (Validation Agent) to ensure comprehensive review. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user's requested language.",
+    "template": """Review the provided research results and provide constructive feedback:
 
 Research Results: {research_results}
 Discussion Context: {discussion_context}
@@ -32,13 +31,10 @@ Feedback Tasks:
 - When reviewing results from other agents, check URL duplication, Markdown validation, etc.
 - **IMPORTANT: All internal agent communication must be in English.**
 
-Return constructive feedback.''',
-    'variables': ['research_results', 'discussion_context'],
-    'description': 'Research results discussion and feedback prompt (includes collaborative verification instructions)'
+Return constructive feedback.""",
+    "variables": ["research_results", "discussion_context"],
+    "description": "Research results discussion and feedback prompt (includes collaborative verification instructions)",
 }
 
 # 프롬프트들을 딕셔너리로 묶어서 export
-result_sharing_prompts = {
-    'discussion': discussion
-}
-
+result_sharing_prompts = {"discussion": discussion}

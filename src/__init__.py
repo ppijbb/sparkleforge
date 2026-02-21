@@ -1,5 +1,4 @@
-"""
-Local Researcher - Main Package
+"""Local Researcher - Main Package
 
 This package provides the core functionality for the Local Researcher system,
 integrating Gemini CLI with Open Deep Research for local research automation.

@@ -33,7 +33,9 @@ class MCPClientError(RuntimeError):
     """MCP 클라이언트 통신 실패 시 발생하는 예외."""
 
 
-def _jsonschema_to_pydantic(schema: dict[str, Any], *, model_name: str = "Args") -> type[BaseModel]:
+def _jsonschema_to_pydantic(
+    schema: dict[str, Any], *, model_name: str = "Args"
+) -> type[BaseModel]:
     """JSON Schema를 Pydantic 모델로 변환."""
     props = (schema or {}).get("properties", {}) or {}
 
@@ -117,7 +119,9 @@ class _FastMCPTool(BaseTool):
             if self._on_error:
                 with contextlib.suppress(Exception):
                     self._on_error(self.name, exc)
-            raise MCPClientError(f"Failed to call MCP tool '{self._tool_name}': {exc}") from exc
+            raise MCPClientError(
+                f"Failed to call MCP tool '{self._tool_name}': {exc}"
+            ) from exc
 
         if self._on_after:
             with contextlib.suppress(Exception):
@@ -190,7 +194,9 @@ class MCPToolLoader:
         _, tools = await self._list_tools_raw()
         return [
             ToolInfo(
-                server_guess=(getattr(t, "server", None) or getattr(t, "serverName", None) or ""),
+                server_guess=(
+                    getattr(t, "server", None) or getattr(t, "serverName", None) or ""
+                ),
                 name=t.name,
                 description=getattr(t, "description", "") or "",
                 input_schema=getattr(t, "inputSchema", None) or {},

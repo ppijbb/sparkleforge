@@ -1,16 +1,15 @@
-"""
-SparkleForge A2A Wrapper
+"""SparkleForge A2A Wrapper
 
 sparkleforge 프로젝트를 A2A 통신이 가능한 형태로 감싸는 wrapper
 """
 
 import asyncio
-import logging
-import sys
-from typing import Dict, Any, Optional, List
-from pathlib import Path
-import os
 import json
+import logging
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, List
 
 # sparkleforge 프로젝트 경로 추가
 # __file__이 sparkleforge/common/sparkleforge_a2a_wrapper.py이므로
@@ -20,12 +19,9 @@ sys.path.insert(0, str(sparkleforge_path))
 
 from srcs.common.a2a_integration import (
     A2AAdapter,
-    A2AMessage,
     MessagePriority,
-    get_global_broker,
-    get_global_registry,
 )
-from srcs.common.agent_interface import AgentMetadata, AgentType
+from srcs.common.agent_interface import AgentType
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +32,9 @@ class SparkleForgeA2AWrapper(A2AAdapter):
     def __init__(
         self,
         agent_id: str = "sparkleforge_agent",
-        agent_metadata: Optional[Dict[str, Any]] = None
+        agent_metadata: Dict[str, Any] | None = None,
     ):
-        """
-        SparkleForge A2A Wrapper 초기화
+        """SparkleForge A2A Wrapper 초기화
 
         Args:
             agent_id: Agent ID
@@ -48,18 +43,18 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         # 기본 메타데이터 설정
         if agent_metadata is None:
             agent_metadata = {
-                'agent_id': agent_id,
-                'agent_name': 'SparkleForge Multi-Agent Research System',
-                'entry_point': 'sparkleforge.common.sparkleforge_a2a_wrapper',
-                'agent_type': AgentType.MCP_AGENT,  # MCP_AGENT로 취급
-                'capabilities': [
-                    'research',
-                    'multi_agent_collaboration',
-                    'source_validation',
-                    'creative_synthesis',
-                    'domain_exploration'
+                "agent_id": agent_id,
+                "agent_name": "SparkleForge Multi-Agent Research System",
+                "entry_point": "sparkleforge.common.sparkleforge_a2a_wrapper",
+                "agent_type": AgentType.MCP_AGENT,  # MCP_AGENT로 취급
+                "capabilities": [
+                    "research",
+                    "multi_agent_collaboration",
+                    "source_validation",
+                    "creative_synthesis",
+                    "domain_exploration",
                 ],
-                'description': '혁신적인 다중 에이전트 연구 시스템. 아이디어가 반짝이고 단련되는 곳'
+                "description": "혁신적인 다중 에이전트 연구 시스템. 아이디어가 반짝이고 단련되는 곳",
             }
 
         super().__init__(agent_id, agent_metadata)
@@ -71,13 +66,13 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         self._orchestrator = None
 
     def _setup_sparkleforge_env(self):
-        """sparkleforge 환경 설정"""
+        """Sparkleforge 환경 설정"""
         try:
             # sparkleforge 프로젝트 디렉토리로 이동
             os.chdir(sparkleforge_path)
 
             # 환경 변수 설정 (필요한 경우)
-            if 'OPENROUTER_API_KEY' not in os.environ:
+            if "OPENROUTER_API_KEY" not in os.environ:
                 logger.warning("OPENROUTER_API_KEY 환경 변수가 설정되지 않았습니다.")
 
             logger.info("SparkleForge 환경 설정 완료")
@@ -92,10 +87,12 @@ class SparkleForgeA2AWrapper(A2AAdapter):
             try:
                 # sparkleforge 설정 로드
                 from src.core.researcher_config import load_config_from_env
+
                 config = load_config_from_env()
 
                 # AgentOrchestrator 초기화
                 from src.core.agent_orchestrator import AgentOrchestrator
+
                 self._orchestrator = AgentOrchestrator()
 
                 logger.info("SparkleForge AgentOrchestrator 초기화 완료")
@@ -107,13 +104,9 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         return self._orchestrator
 
     async def _execute_sparkleforge_request(
-        self,
-        request: str,
-        output_path: Optional[str] = None,
-        streaming: bool = False
+        self, request: str, output_path: str | None = None, streaming: bool = False
     ) -> Dict[str, Any]:
-        """
-        sparkleforge 연구 요청 실행
+        """Sparkleforge 연구 요청 실행
 
         Args:
             request: 연구 요청
@@ -148,7 +141,7 @@ class SparkleForgeA2AWrapper(A2AAdapter):
 
             # 출력 파일 저장 (요청된 경우)
             if output_path:
-                with open(output_path, 'w', encoding='utf-8') as f:
+                with open(output_path, "w", encoding="utf-8") as f:
                     json.dump(formatted_result, f, ensure_ascii=False, indent=2)
 
             logger.info("SparkleForge 연구 완료")
@@ -157,45 +150,50 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         except Exception as e:
             logger.error(f"SparkleForge 실행 실패: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {
-                'success': False,
-                'error': f'SparkleForge 실행 실패: {str(e)}',
-                'agent': 'sparkleforge'
+                "success": False,
+                "error": f"SparkleForge 실행 실패: {str(e)}",
+                "agent": "sparkleforge",
             }
         finally:
             # 원래 작업 디렉토리 복원
             os.chdir(original_cwd)
 
     def _format_sparkleforge_result(self, raw_result: Any) -> Dict[str, Any]:
-        """sparkleforge 결과를 표준 포맷으로 변환"""
+        """Sparkleforge 결과를 표준 포맷으로 변환"""
         try:
             if isinstance(raw_result, dict):
                 # 이미 dict 형태인 경우
                 formatted = {
-                    'success': True,
-                    'agent': 'sparkleforge',
-                    'result': raw_result,
-                    'summary': raw_result.get('summary', '연구 완료'),
-                    'timestamp': raw_result.get('timestamp', str(asyncio.get_event_loop().time()))
+                    "success": True,
+                    "agent": "sparkleforge",
+                    "result": raw_result,
+                    "summary": raw_result.get("summary", "연구 완료"),
+                    "timestamp": raw_result.get(
+                        "timestamp", str(asyncio.get_event_loop().time())
+                    ),
                 }
             elif isinstance(raw_result, str):
                 # 문자열 결과인 경우
                 formatted = {
-                    'success': True,
-                    'agent': 'sparkleforge',
-                    'result': {'content': raw_result},
-                    'summary': raw_result[:200] + '...' if len(raw_result) > 200 else raw_result,
-                    'timestamp': str(asyncio.get_event_loop().time())
+                    "success": True,
+                    "agent": "sparkleforge",
+                    "result": {"content": raw_result},
+                    "summary": raw_result[:200] + "..."
+                    if len(raw_result) > 200
+                    else raw_result,
+                    "timestamp": str(asyncio.get_event_loop().time()),
                 }
             else:
                 # 기타 형태
                 formatted = {
-                    'success': True,
-                    'agent': 'sparkleforge',
-                    'result': {'data': str(raw_result)},
-                    'summary': 'SparkleForge 연구 결과',
-                    'timestamp': str(asyncio.get_event_loop().time())
+                    "success": True,
+                    "agent": "sparkleforge",
+                    "result": {"data": str(raw_result)},
+                    "summary": "SparkleForge 연구 결과",
+                    "timestamp": str(asyncio.get_event_loop().time()),
                 }
 
             return formatted
@@ -203,14 +201,13 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         except Exception as e:
             logger.error(f"결과 포맷팅 실패: {e}")
             return {
-                'success': False,
-                'error': f'결과 포맷팅 실패: {str(e)}',
-                'agent': 'sparkleforge'
+                "success": False,
+                "error": f"결과 포맷팅 실패: {str(e)}",
+                "agent": "sparkleforge",
             }
 
     async def execute_request(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        A2A를 통해 들어온 요청 처리
+        """A2A를 통해 들어온 요청 처리
 
         Args:
             input_data: 입력 데이터 (A2A 메시지 payload)
@@ -220,25 +217,23 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         """
         try:
             # 요청 데이터 추출
-            request = input_data.get('request', input_data.get('query', ''))
+            request = input_data.get("request", input_data.get("query", ""))
             if not request:
                 return {
-                    'success': False,
-                    'error': '요청이 비어있습니다. request 또는 query 필드를 제공해주세요.',
-                    'agent': 'sparkleforge'
+                    "success": False,
+                    "error": "요청이 비어있습니다. request 또는 query 필드를 제공해주세요.",
+                    "agent": "sparkleforge",
                 }
 
             # 옵션 파라미터들
-            output_path = input_data.get('output_path')
-            streaming = input_data.get('streaming', False)
+            output_path = input_data.get("output_path")
+            streaming = input_data.get("streaming", False)
 
             logger.info(f"SparkleForge A2A 요청 처리: {request[:100]}...")
 
             # sparkleforge 실행
             result = await self._execute_sparkleforge_request(
-                request=request,
-                output_path=output_path,
-                streaming=streaming
+                request=request, output_path=output_path, streaming=streaming
             )
 
             return result
@@ -246,13 +241,10 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         except Exception as e:
             logger.error(f"A2A 요청 처리 실패: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
 
-            return {
-                'success': False,
-                'error': str(e),
-                'agent': 'sparkleforge'
-            }
+            return {"success": False, "error": str(e), "agent": "sparkleforge"}
 
     # A2A 필수 메서드들 (부모 클래스에서 상속)
 
@@ -261,7 +253,7 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         target_agent: str,
         message_type: str,
         payload: Dict[str, Any],
-        priority: MessagePriority = MessagePriority.MEDIUM
+        priority: MessagePriority = MessagePriority.MEDIUM,
     ) -> bool:
         """메시지 전송"""
         return await super().send_message(target_agent, message_type, payload, priority)
@@ -281,19 +273,16 @@ class SparkleForgeA2AWrapper(A2AAdapter):
 
 # 편의를 위한 함수들
 async def create_sparkleforge_agent(
-    agent_id: str = "sparkleforge_agent"
+    agent_id: str = "sparkleforge_agent",
 ) -> SparkleForgeA2AWrapper:
     """SparkleForge A2A agent 생성"""
     return SparkleForgeA2AWrapper(agent_id)
 
 
 async def execute_sparkleforge_via_a2a(
-    request: str,
-    output_path: Optional[str] = None,
-    streaming: bool = False
+    request: str, output_path: str | None = None, streaming: bool = False
 ) -> Dict[str, Any]:
-    """
-    A2A를 통해 SparkleForge 실행
+    """A2A를 통해 SparkleForge 실행
 
     Args:
         request: 연구 요청
@@ -305,9 +294,9 @@ async def execute_sparkleforge_via_a2a(
     """
     wrapper = await create_sparkleforge_agent()
     input_data = {
-        'request': request,
-        'output_path': output_path,
-        'streaming': streaming
+        "request": request,
+        "output_path": output_path,
+        "streaming": streaming,
     }
 
     return await wrapper.execute_request(input_data)
@@ -320,8 +309,7 @@ if __name__ == "__main__":
 
         try:
             result = await execute_sparkleforge_via_a2a(
-                request="인공지능의 미래 전망 분석",
-                streaming=False
+                request="인공지능의 미래 전망 분석", streaming=False
             )
 
             print("✅ 테스트 성공:")
@@ -330,6 +318,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ 테스트 실패: {e}")
             import traceback
+
             traceback.print_exc()
 
     asyncio.run(test())

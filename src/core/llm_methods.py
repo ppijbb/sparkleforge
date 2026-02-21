@@ -1,26 +1,23 @@
 #!/usr/bin/env python3
-"""
-LLM-based methods for research tasks
-"""
+"""LLM-based methods for research tasks"""
 
 import asyncio
 import json
-from typing import Dict, Any, List, Optional
+import logging
 from datetime import datetime
 from pathlib import Path
-import google.generativeai as genai
-import logging
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 
 class LLMMethods:
     """LLM-based methods for autonomous research."""
-    
+
     def __init__(self, llm):
         self.llm = llm
         self.decision_memory = []
-    
+
     async def llm_decompose_tasks(self, objective: Any) -> Dict[str, Any]:
         """LLM-based task decomposition."""
         try:
@@ -62,52 +59,60 @@ class LLMMethods:
                 "strategy": "sequential|parallel|iterative|hierarchical"
             }}
             """
-            
+
             response = await asyncio.to_thread(self.llm.generate_content, prompt)
             result = json.loads(response.text)
-            
+
             # Store decision for learning
-            self.decision_memory.append({
-                'type': 'task_decomposition',
-                'input': objective.analyzed_objectives,
-                'output': result,
-                'timestamp': datetime.now().isoformat()
-            })
-            
+            self.decision_memory.append(
+                {
+                    "type": "task_decomposition",
+                    "input": objective.analyzed_objectives,
+                    "output": result,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
             return result
-            
+
         except Exception as e:
             logger.error(f"LLM task decomposition failed: {e}")
-            return {'tasks': [], 'assignments': []}
-    
-    async def llm_coordinate_execution(self, objective: Any, agents: Dict[str, Any]) -> List[Dict[str, Any]]:
+            return {"tasks": [], "assignments": []}
+
+    async def llm_coordinate_execution(
+        self, objective: Any, agents: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """LLM-coordinated task execution."""
         try:
             execution_results = []
-            
+
             # Execute tasks with LLM coordination
             for task in objective.decomposed_tasks:
-                agent_name = task.get('assigned_to')
+                agent_name = task.get("assigned_to")
                 if agent_name and agent_name in agents:
                     agent = agents[agent_name]
-                    
+
                     # Get LLM guidance for task execution
                     guidance = await self.get_llm_execution_guidance(task, objective)
-                    
+
                     # Execute task with guidance
-                    if hasattr(agent, 'execute_task'):
-                        result = await agent.execute_task(task, guidance, objective.objective_id)
+                    if hasattr(agent, "execute_task"):
+                        result = await agent.execute_task(
+                            task, guidance, objective.objective_id
+                        )
                     else:
-                        result = await agent.conduct_research(task, guidance, objective.objective_id)
-                    
+                        result = await agent.conduct_research(
+                            task, guidance, objective.objective_id
+                        )
+
                     execution_results.append(result)
-            
+
             return execution_results
-            
+
         except Exception as e:
             logger.error(f"LLM-coordinated execution failed: {e}")
             return []
-    
+
     async def llm_evaluate_results(self, objective: Any) -> Dict[str, Any]:
         """LLM-based result evaluation."""
         try:
@@ -141,24 +146,29 @@ class LLMMethods:
                 "recommendations": ["추천사항1", "추천사항2"]
             }}
             """
-            
+
             response = await asyncio.to_thread(self.llm.generate_content, prompt)
             result = json.loads(response.text)
-            
+
             # Store decision for learning
-            self.decision_memory.append({
-                'type': 'result_evaluation',
-                'input': {'objectives': objective.analyzed_objectives, 'results': objective.execution_results},
-                'output': result,
-                'timestamp': datetime.now().isoformat()
-            })
-            
+            self.decision_memory.append(
+                {
+                    "type": "result_evaluation",
+                    "input": {
+                        "objectives": objective.analyzed_objectives,
+                        "results": objective.execution_results,
+                    },
+                    "output": result,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
             return result
-            
+
         except Exception as e:
             logger.error(f"LLM result evaluation failed: {e}")
-            return {'overall_score': 0.0, 'needs_recursion': False}
-    
+            return {"overall_score": 0.0, "needs_recursion": False}
+
     async def llm_validate_results(self, objective: Any) -> Dict[str, Any]:
         """LLM-based result validation."""
         try:
@@ -186,16 +196,16 @@ class LLMMethods:
                 "validation_feedback": "검증 피드백"
             }}
             """
-            
+
             response = await asyncio.to_thread(self.llm.generate_content, prompt)
             result = json.loads(response.text)
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"LLM result validation failed: {e}")
-            return {'validation_score': 0.0, 'is_valid': False}
-    
+            return {"validation_score": 0.0, "is_valid": False}
+
     async def llm_synthesize_deliverable(self, objective: Any) -> Dict[str, Any]:
         """LLM-based final synthesis."""
         try:
@@ -225,21 +235,23 @@ class LLMMethods:
                 "references": ["참고자료1", "참고자료2"]
             }}
             """
-            
+
             response = await asyncio.to_thread(self.llm.generate_content, prompt)
             result = json.loads(response.text)
-            
+
             # Generate actual deliverable file
             deliverable_path = await self.generate_deliverable_file(result, objective)
-            result['deliverable_path'] = deliverable_path
-            
+            result["deliverable_path"] = deliverable_path
+
             return result
-            
+
         except Exception as e:
             logger.error(f"LLM synthesis failed: {e}")
-            return {'deliverable_path': None, 'error': str(e)}
-    
-    async def get_llm_execution_guidance(self, task: Dict[str, Any], objective: Any) -> Dict[str, Any]:
+            return {"deliverable_path": None, "error": str(e)}
+
+    async def get_llm_execution_guidance(
+        self, task: Dict[str, Any], objective: Any
+    ) -> Dict[str, Any]:
         """Get LLM guidance for task execution."""
         try:
             prompt = f"""
@@ -256,58 +268,60 @@ class LLMMethods:
             
             JSON 형태로 응답하세요.
             """
-            
+
             response = await asyncio.to_thread(self.llm.generate_content, prompt)
             return json.loads(response.text)
-            
+
         except Exception as e:
             logger.error(f"LLM execution guidance failed: {e}")
             return {}
-    
-    async def generate_deliverable_file(self, synthesis_result: Dict[str, Any], objective: Any) -> str:
+
+    async def generate_deliverable_file(
+        self, synthesis_result: Dict[str, Any], objective: Any
+    ) -> str:
         """Generate the actual deliverable file."""
         try:
             # Create output directory
             output_dir = Path("./outputs")
             output_dir.mkdir(exist_ok=True)
-            
+
             # Generate filename
             filename = f"research_report_{objective.objective_id}.md"
             file_path = output_dir / filename
-            
+
             # Create markdown content
             content = f"""# 연구 보고서: {objective.user_request}
 
 ## 요약
-{synthesis_result.get('summary', '')}
+{synthesis_result.get("summary", "")}
 
 ## 핵심 발견사항
-{chr(10).join(f"- {finding}" for finding in synthesis_result.get('key_findings', []))}
+{chr(10).join(f"- {finding}" for finding in synthesis_result.get("key_findings", []))}
 
 ## 상세 분석
-{synthesis_result.get('detailed_analysis', '')}
+{synthesis_result.get("detailed_analysis", "")}
 
 ## 결론
-{synthesis_result.get('conclusions', '')}
+{synthesis_result.get("conclusions", "")}
 
 ## 권고사항
-{chr(10).join(f"- {rec}" for rec in synthesis_result.get('recommendations', []))}
+{chr(10).join(f"- {rec}" for rec in synthesis_result.get("recommendations", []))}
 
 ## 참고자료
-{chr(10).join(f"- {ref}" for ref in synthesis_result.get('references', []))}
+{chr(10).join(f"- {ref}" for ref in synthesis_result.get("references", []))}
 
 ---
 *생성일시: {datetime.now().isoformat()}*
 *목표 ID: {objective.objective_id}*
 """
-            
+
             # Write file
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            
+
             logger.info(f"Deliverable generated: {file_path}")
             return str(file_path)
-            
+
         except Exception as e:
             logger.error(f"Deliverable generation failed: {e}")
             return None

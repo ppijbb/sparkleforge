@@ -1,5 +1,4 @@
-"""
-Common System Messages Module
+"""Common System Messages Module
 
 Contains system messages commonly used across multiple agents.
 """
@@ -74,14 +73,13 @@ language_principles = """
 
 # 시스템 메시지들을 딕셔너리로 묶어서 export
 system_messages = {
-    'researcher_base': researcher_base,
-    'evaluator_base': evaluator_base,
-    'synthesizer_base': synthesizer_base,
-    'validator_base': validator_base,
-    'creativity_expert': creativity_expert,
-    'collaboration_principles': collaboration_principles,
-    'variable_validation_principles': variable_validation_principles,
-    'source_management_principles': source_management_principles,
-    'language_principles': language_principles
+    "researcher_base": researcher_base,
+    "evaluator_base": evaluator_base,
+    "synthesizer_base": synthesizer_base,
+    "validator_base": validator_base,
+    "creativity_expert": creativity_expert,
+    "collaboration_principles": collaboration_principles,
+    "variable_validation_principles": variable_validation_principles,
+    "source_management_principles": source_management_principles,
+    "language_principles": language_principles,
 }
-

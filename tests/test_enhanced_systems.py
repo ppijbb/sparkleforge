@@ -21,10 +21,20 @@ from src.utils.output_manager import (
     OutputLevel,
     OutputFormat,
     ToolExecutionResult,
-    AgentCommunicationInfo
+    AgentCommunicationInfo,
 )
-from src.core.error_handler import ErrorHandler, get_error_handler, ErrorCategory, ErrorContext
-from src.core.progress_tracker import ProgressTracker, get_progress_tracker, WorkflowStage, AgentStatus
+from src.core.error_handler import (
+    ErrorHandler,
+    get_error_handler,
+    ErrorCategory,
+    ErrorContext,
+)
+from src.core.progress_tracker import (
+    ProgressTracker,
+    get_progress_tracker,
+    WorkflowStage,
+    AgentStatus,
+)
 from src.utils.logger import setup_enhanced_logger, get_enhanced_logger
 
 
@@ -34,9 +44,7 @@ async def test_output_manager():
 
     # 출력 매니저 초기화
     output_manager = UserCenteredOutputManager(
-        output_level=OutputLevel.USER,
-        enable_colors=True,
-        stream_output=True
+        output_level=OutputLevel.USER, enable_colors=True, stream_output=True
     )
 
     # 기본 출력 테스트
@@ -48,15 +56,13 @@ async def test_output_manager():
         success=True,
         execution_time=1.5,
         result_summary="테스트 성공",
-        confidence=0.95
+        confidence=0.95,
     )
     await output_manager.output_tool_execution(tool_result)
 
     # 에이전트 통신 테스트
     comm_info = AgentCommunicationInfo(
-        agent_id="test_agent",
-        action="result_shared",
-        shared_results_count=5
+        agent_id="test_agent", action="result_shared", shared_results_count=5
     )
     await output_manager.output_agent_communication(comm_info)
 
@@ -84,9 +90,8 @@ async def test_error_handler():
             e,
             category=ErrorCategory.VALIDATION,
             context=ErrorContext(
-                component="test_component",
-                operation="test_operation"
-            )
+                component="test_component", operation="test_operation"
+            ),
         )
         assert error_info.category == ErrorCategory.VALIDATION
         assert error_info.severity.name == "MEDIUM"
@@ -116,15 +121,15 @@ async def test_progress_tracker():
     tracker.update_agent_progress("agent_1", 0.5)
 
     agent1_progress = tracker.get_agent_summary("agent_1")
-    assert agent1_progress['status'] == 'running'
-    assert agent1_progress['progress'] == 0.5
+    assert agent1_progress["status"] == "running"
+    assert agent1_progress["progress"] == 0.5
 
     # 워크플로우 단계 변경
     tracker.set_workflow_stage(WorkflowStage.EXECUTING)
 
     summary = tracker.get_workflow_summary()
-    assert summary['current_stage'] == 'executing'
-    assert summary['total_agents'] == 2
+    assert summary["current_stage"] == "executing"
+    assert summary["total_agents"] == 2
 
     # 완료
     tracker.update_agent_status("agent_1", AgentStatus.COMPLETED)
@@ -137,28 +142,25 @@ async def test_enhanced_logger():
     """향상된 로거 테스트."""
     print("🧪 Testing Enhanced Logger...")
 
-    logger = setup_enhanced_logger("test_logger", log_level="INFO", console_output=False)
+    logger = setup_enhanced_logger(
+        "test_logger", log_level="INFO", console_output=False
+    )
 
     # 기본 로깅
     logger.info("테스트 로그 메시지")
 
     # 도구 실행 로깅
     from src.utils.logger import log_tool_execution
+
     log_tool_execution(
-        logger,
-        tool_name="test_tool",
-        execution_time=2.1,
-        success=True,
-        confidence=0.88
+        logger, tool_name="test_tool", execution_time=2.1, success=True, confidence=0.88
     )
 
     # 에이전트 통신 로깅
     from src.utils.logger import log_agent_communication
+
     log_agent_communication(
-        logger,
-        from_agent="agent_1",
-        action="shared_results",
-        result_count=3
+        logger, from_agent="agent_1", action="shared_results", result_count=3
     )
 
     # 컨텍스트 매니저
@@ -185,7 +187,7 @@ async def test_integration():
         progress_pct = int(workflow_progress.overall_progress * 100)
         await output_manager.output(
             f"진행률: {progress_pct}% - {workflow_progress.current_stage.value}",
-            level=output_manager.OutputLevel.SERVICE
+            level=output_manager.OutputLevel.SERVICE,
         )
 
     progress_tracker.add_progress_callback(progress_callback)
@@ -273,6 +275,7 @@ async def main():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

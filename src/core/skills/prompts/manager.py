@@ -1,14 +1,11 @@
-"""
-프롬프트 관리자
+"""프롬프트 관리자
 
 하드코딩된 프롬프트들을 구조화된 방식으로 관리하고,
 템플릿 변수 치환을 지원하는 중앙 집중 관리 시스템입니다.
 """
 
-import os
 from string import Template
-from typing import Dict, Any, Optional
-from pathlib import Path
+from typing import Any, Dict
 
 
 class PromptManager:
@@ -24,22 +21,22 @@ class PromptManager:
             return
 
         try:
-            if module_name == 'orchestrator':
+            if module_name == "orchestrator":
                 from . import orchestrator as mod
-            elif module_name == 'agents':
+            elif module_name == "agents":
                 from . import agents as mod
-            elif module_name == 'core':
+            elif module_name == "core":
                 from . import core as mod
-            elif module_name == 'shared':
+            elif module_name == "shared":
                 from . import shared as mod
             else:
                 raise ValueError(f"Unknown module: {module_name}")
 
             # 모듈의 모든 프롬프트 로드
             for attr_name in dir(mod):
-                if not attr_name.startswith('_'):
+                if not attr_name.startswith("_"):
                     attr_value = getattr(mod, attr_name)
-                    if isinstance(attr_value, dict) and 'template' in attr_value:
+                    if isinstance(attr_value, dict) and "template" in attr_value:
                         category = module_name
                         prompt_name = attr_name
                         if category not in self._prompts:
@@ -56,10 +53,12 @@ class PromptManager:
         self._load_module_if_needed(category)
 
         if category not in self._prompts or prompt_name not in self._prompts[category]:
-            raise ValueError(f"Prompt '{prompt_name}' not found in category '{category}'")
+            raise ValueError(
+                f"Prompt '{prompt_name}' not found in category '{category}'"
+            )
 
         prompt_config = self._prompts[category][prompt_name]
-        template_str = prompt_config['template']
+        template_str = prompt_config["template"]
 
         # 템플릿 변수 치환
         template = Template(template_str)
@@ -73,27 +72,31 @@ class PromptManager:
         self._load_module_if_needed(category)
 
         if category not in self._prompts or prompt_name not in self._prompts[category]:
-            raise ValueError(f"Prompt '{prompt_name}' not found in category '{category}'")
+            raise ValueError(
+                f"Prompt '{prompt_name}' not found in category '{category}'"
+            )
 
-        return self._prompts[category][prompt_name].get('system_message', '')
+        return self._prompts[category][prompt_name].get("system_message", "")
 
     def get_prompt_config(self, category: str, prompt_name: str) -> Dict[str, Any]:
         """프롬프트 설정 전체 반환"""
         self._load_module_if_needed(category)
 
         if category not in self._prompts or prompt_name not in self._prompts[category]:
-            raise ValueError(f"Prompt '{prompt_name}' not found in category '{category}'")
+            raise ValueError(
+                f"Prompt '{prompt_name}' not found in category '{category}'"
+            )
 
         return self._prompts[category][prompt_name]
 
-    def list_available_prompts(self, category: Optional[str] = None) -> Dict[str, list]:
+    def list_available_prompts(self, category: str | None = None) -> Dict[str, list]:
         """사용 가능한 프롬프트 목록 반환"""
         if category:
             self._load_module_if_needed(category)
             return {category: list(self._prompts.get(category, {}).keys())}
         else:
             # 모든 카테고리 로드
-            for cat in ['orchestrator', 'agents', 'core', 'shared']:
+            for cat in ["orchestrator", "agents", "core", "shared"]:
                 self._load_module_if_needed(cat)
 
             return {cat: list(prompts.keys()) for cat, prompts in self._prompts.items()}
@@ -102,6 +105,7 @@ class PromptManager:
 # 전역 인스턴스
 _manager = None
 
+
 def get_prompt_manager() -> PromptManager:
     """전역 프롬프트 매니저 인스턴스 반환"""
     global _manager
@@ -109,11 +113,12 @@ def get_prompt_manager() -> PromptManager:
         _manager = PromptManager()
     return _manager
 
+
 def get_prompt(category: str, prompt_name: str, **kwargs) -> str:
     """편의 함수: 프롬프트 템플릿 렌더링"""
     return get_prompt_manager().get_prompt(category, prompt_name, **kwargs)
 
+
 def get_system_message(category: str, prompt_name: str) -> str:
     """편의 함수: 시스템 메시지 반환"""
     return get_prompt_manager().get_system_message(category, prompt_name)
-

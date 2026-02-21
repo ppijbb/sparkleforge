@@ -1,37 +1,40 @@
-"""
-Logging system for Local Researcher
+"""Logging system for Local Researcher
 
 This module provides a centralized logging system with configurable
 log levels, formats, and output destinations with color support.
 Enhanced with structured logging, agent-specific contexts, and tool execution tracking.
 """
 
+import json
 import logging
 import logging.handlers
 import sys
-import json
 import threading
-from pathlib import Path
-from typing import Optional, Dict, Any, List
-from datetime import datetime
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List
 
 # Context variables for agent-specific logging
-current_agent_id: ContextVar[Optional[str]] = ContextVar('current_agent_id', default=None)
-current_session_id: ContextVar[Optional[str]] = ContextVar('current_session_id', default=None)
-current_workflow_stage: ContextVar[Optional[str]] = ContextVar('current_workflow_stage', default=None)
+current_agent_id: ContextVar[str | None] = ContextVar("current_agent_id", default=None)
+current_session_id: ContextVar[str | None] = ContextVar(
+    "current_session_id", default=None
+)
+current_workflow_stage: ContextVar[str | None] = ContextVar(
+    "current_workflow_stage", default=None
+)
 
 
 @dataclass
 class LogContext:
     """Logging context for structured logging."""
-    agent_id: Optional[str] = None
-    session_id: Optional[str] = None
-    workflow_stage: Optional[str] = None
-    tool_name: Optional[str] = None
-    operation: Optional[str] = None
+
+    agent_id: str | None = None
+    session_id: str | None = None
+    workflow_stage: str | None = None
+    tool_name: str | None = None
+    operation: str | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
 
@@ -39,23 +42,25 @@ class LogContext:
 @dataclass
 class ToolExecutionLog:
     """Tool execution logging data."""
+
     tool_name: str
     execution_time: float
     success: bool
     confidence: float = 0.0
-    error_message: Optional[str] = None
-    input_params: Optional[Dict[str, Any]] = None
-    output_summary: Optional[str] = None
+    error_message: str | None = None
+    input_params: Dict[str, Any] | None = None
+    output_summary: str | None = None
 
 
 @dataclass
 class AgentCommunicationLog:
     """Agent communication logging data."""
+
     from_agent: str
     action: str
-    to_agent: Optional[str] = None
+    to_agent: str | None = None
     result_count: int = 0
-    discussion_topic: Optional[str] = None
+    discussion_topic: str | None = None
     shared_data_size: int = 0
 
 
@@ -76,25 +81,25 @@ class StructuredFormatter(logging.Formatter):
         }
 
         # 컨텍스트 정보 추가
-        if hasattr(record, 'agent_id') and record.agent_id:
+        if hasattr(record, "agent_id") and record.agent_id:
             log_data["agent_id"] = record.agent_id
-        if hasattr(record, 'session_id') and record.session_id:
+        if hasattr(record, "session_id") and record.session_id:
             log_data["session_id"] = record.session_id
-        if hasattr(record, 'workflow_stage') and record.workflow_stage:
+        if hasattr(record, "workflow_stage") and record.workflow_stage:
             log_data["workflow_stage"] = record.workflow_stage
 
         # 추가 메타데이터
-        if hasattr(record, 'metadata') and record.metadata:
+        if hasattr(record, "metadata") and record.metadata:
             log_data["metadata"] = record.metadata
-        if hasattr(record, 'tags') and record.tags:
+        if hasattr(record, "tags") and record.tags:
             log_data["tags"] = record.tags
 
         # 도구 실행 정보
-        if hasattr(record, 'tool_execution') and record.tool_execution:
+        if hasattr(record, "tool_execution") and record.tool_execution:
             log_data["tool_execution"] = record.tool_execution
 
         # 에이전트 통신 정보
-        if hasattr(record, 'agent_communication') and record.agent_communication:
+        if hasattr(record, "agent_communication") and record.agent_communication:
             log_data["agent_communication"] = record.agent_communication
 
         # 예외 정보
@@ -106,69 +111,73 @@ class StructuredFormatter(logging.Formatter):
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter with color support for console output."""
-    
+
     # ANSI color codes
     COLORS = {
-        'DEBUG': '\033[36m',      # Cyan
-        'INFO': '\033[32m',       # Green
-        'WARNING': '\033[33m',    # Yellow
-        'ERROR': '\033[31m',      # Red
-        'CRITICAL': '\033[35m',   # Magenta
-        'RESET': '\033[0m'        # Reset
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Yellow
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
+        "RESET": "\033[0m",  # Reset
     }
-    
+
     # Agent-specific colors
     AGENT_COLORS = {
-        'autonomous_orchestrator': '\033[94m',    # Blue
-        'task_analyzer': '\033[95m',              # Magenta
-        'task_decomposer': '\033[96m',            # Cyan
-        'research_agent': '\033[92m',             # Light Green
-        'evaluation_agent': '\033[93m',           # Light Yellow
-        'validation_agent': '\033[91m',           # Light Red
-        'synthesis_agent': '\033[97m',            # White
-        'mcp_integration': '\033[90m',            # Gray
-        'llm_methods': '\033[94m',                # Blue
-        'RESET': '\033[0m'                        # Reset
+        "autonomous_orchestrator": "\033[94m",  # Blue
+        "task_analyzer": "\033[95m",  # Magenta
+        "task_decomposer": "\033[96m",  # Cyan
+        "research_agent": "\033[92m",  # Light Green
+        "evaluation_agent": "\033[93m",  # Light Yellow
+        "validation_agent": "\033[91m",  # Light Red
+        "synthesis_agent": "\033[97m",  # White
+        "mcp_integration": "\033[90m",  # Gray
+        "llm_methods": "\033[94m",  # Blue
+        "RESET": "\033[0m",  # Reset
     }
-    
+
     def __init__(self, fmt=None, datefmt=None, use_colors=True):
         super().__init__(fmt, datefmt)
         self.use_colors = use_colors
-    
+
     def format(self, record):
-        if not self.use_colors or not hasattr(record, 'levelname'):
+        if not self.use_colors or not hasattr(record, "levelname"):
             return super().format(record)
-        
+
         # Get base format
         formatted = super().format(record)
-        
+
         # Add colors
-        level_color = self.COLORS.get(record.levelname, '')
-        agent_color = self.AGENT_COLORS.get(record.name, '')
-        reset_color = self.COLORS['RESET']
-        
+        level_color = self.COLORS.get(record.levelname, "")
+        agent_color = self.AGENT_COLORS.get(record.name, "")
+        reset_color = self.COLORS["RESET"]
+
         # Apply colors to different parts
         if level_color:
-            formatted = formatted.replace(record.levelname, f"{level_color}{record.levelname}{reset_color}")
-        
+            formatted = formatted.replace(
+                record.levelname, f"{level_color}{record.levelname}{reset_color}"
+            )
+
         if agent_color and record.name in self.AGENT_COLORS:
-            formatted = formatted.replace(record.name, f"{agent_color}{record.name}{reset_color}")
-        
+            formatted = formatted.replace(
+                record.name, f"{agent_color}{record.name}{reset_color}"
+            )
+
         return formatted
 
 
 def setup_logger(
     name: str,
     log_level: str = "INFO",
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     console_output: bool = True,
     max_file_size: str = "10MB",
     backup_count: int = 5,
     detailed_format: bool = True,
-    use_colors: bool = True
+    use_colors: bool = True,
 ) -> logging.Logger:
     """Setup and configure a logger instance.
-    
+
     Args:
         name: Logger name
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -178,103 +187,95 @@ def setup_logger(
         backup_count: Number of backup files to keep
         detailed_format: Whether to use detailed formatting
         use_colors: Whether to use colors in console output
-        
+
     Returns:
         Configured logger instance
     """
     logger = logging.getLogger(name)
-    
+
     # Avoid duplicate handlers
     if logger.handlers:
         return logger
-    
+
     # Set log level
     level = getattr(logging, log_level.upper(), logging.INFO)
     logger.setLevel(level)
-    
+
     # Create formatters
     if detailed_format:
-        console_format = '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s'
-        file_format = '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s'
+        console_format = "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s"
+        file_format = "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s"
     else:
-        console_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        file_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    
+        console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        file_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
     # Console formatter with colors
     console_formatter = ColoredFormatter(
-        console_format,
-        datefmt='%Y-%m-%d %H:%M:%S',
-        use_colors=use_colors
+        console_format, datefmt="%Y-%m-%d %H:%M:%S", use_colors=use_colors
     )
-    
+
     # File formatter without colors
-    file_formatter = logging.Formatter(
-        file_format,
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
+    file_formatter = logging.Formatter(file_format, datefmt="%Y-%m-%d %H:%M:%S")
+
     # Console handler
     if console_output:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(level)
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
-    
+
     # File handler
     if log_file:
         try:
             # Create logs directory if it doesn't exist
             log_path = Path(log_file)
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Parse max file size
             max_bytes = _parse_size(max_file_size)
-            
+
             # Create rotating file handler
             file_handler = logging.handlers.RotatingFileHandler(
-                log_file,
-                maxBytes=max_bytes,
-                backupCount=backup_count,
-                encoding='utf-8'
+                log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
             )
             file_handler.setLevel(level)
             file_handler.setFormatter(file_formatter)
             logger.addHandler(file_handler)
-            
-        except Exception as e:
+
+        except Exception:
             # Fallback to basic file handler if rotation fails
             try:
-                file_handler = logging.FileHandler(log_file, encoding='utf-8')
+                file_handler = logging.FileHandler(log_file, encoding="utf-8")
                 file_handler.setLevel(level)
                 file_handler.setFormatter(file_formatter)
                 logger.addHandler(file_handler)
             except Exception as e2:
                 logger.warning(f"Failed to setup file logging: {e2}")
-    
+
     # Prevent propagation to root logger
     logger.propagate = False
-    
+
     return logger
 
 
 def _parse_size(size_str: str) -> int:
     """Parse size string to bytes.
-    
+
     Args:
         size_str: Size string (e.g., "10MB", "1GB", "100KB")
-        
+
     Returns:
         Size in bytes
     """
     size_str = size_str.upper()
-    
-    if size_str.endswith('KB'):
+
+    if size_str.endswith("KB"):
         return int(float(size_str[:-2]) * 1024)
-    elif size_str.endswith('MB'):
+    elif size_str.endswith("MB"):
         return int(float(size_str[:-2]) * 1024 * 1024)
-    elif size_str.endswith('GB'):
+    elif size_str.endswith("GB"):
         return int(float(size_str[:-2]) * 1024 * 1024 * 1024)
-    elif size_str.endswith('B'):
+    elif size_str.endswith("B"):
         return int(float(size_str[:-1]))
     else:
         # Assume bytes if no unit specified
@@ -283,10 +284,10 @@ def _parse_size(size_str: str) -> int:
 
 def get_logger(name: str) -> logging.Logger:
     """Get an existing logger instance.
-    
+
     Args:
         name: Logger name
-        
+
     Returns:
         Logger instance
     """
@@ -295,7 +296,7 @@ def get_logger(name: str) -> logging.Logger:
 
 def set_log_level(logger_name: str, level: str):
     """Set log level for a specific logger.
-    
+
     Args:
         logger_name: Name of the logger
         level: Log level to set
@@ -303,7 +304,7 @@ def set_log_level(logger_name: str, level: str):
     logger = logging.getLogger(logger_name)
     level_enum = getattr(logging, level.upper(), logging.INFO)
     logger.setLevel(level_enum)
-    
+
     # Update all handlers
     for handler in logger.handlers:
         handler.setLevel(level_enum)
@@ -315,10 +316,10 @@ def add_file_handler(
     level: str = "INFO",
     max_file_size: str = "10MB",
     backup_count: int = 5,
-    detailed_format: bool = True
+    detailed_format: bool = True,
 ):
     """Add a file handler to an existing logger.
-    
+
     Args:
         logger_name: Name of the logger
         log_file: Path to log file
@@ -328,58 +329,56 @@ def add_file_handler(
         detailed_format: Whether to use detailed formatting
     """
     logger = logging.getLogger(logger_name)
-    
+
     # Create formatter
     if detailed_format:
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
     else:
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
-    
+
     try:
         # Create logs directory if it doesn't exist
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Parse max file size
         max_bytes = _parse_size(max_file_size)
-        
+
         # Create rotating file handler
         file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding='utf-8'
+            log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
         )
         file_handler.setLevel(getattr(logging, level.upper(), logging.INFO))
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
-        
+
     except Exception as e:
         logger.warning(f"Failed to add file handler: {e}")
 
 
 def remove_file_handler(logger_name: str, log_file: str):
     """Remove a specific file handler from a logger.
-    
+
     Args:
         logger_name: Name of the logger
         log_file: Path to the log file to remove
     """
     logger = logging.getLogger(logger_name)
-    
+
     # Find and remove handlers for the specific file
     handlers_to_remove = []
     for handler in logger.handlers:
-        if (isinstance(handler, logging.FileHandler) and 
-            handler.baseFilename == str(Path(log_file).absolute())):
+        if isinstance(handler, logging.FileHandler) and handler.baseFilename == str(
+            Path(log_file).absolute()
+        ):
             handlers_to_remove.append(handler)
-    
+
     for handler in handlers_to_remove:
         logger.removeHandler(handler)
         handler.close()
@@ -387,12 +386,12 @@ def remove_file_handler(logger_name: str, log_file: str):
 
 def setup_default_logging(
     log_level: str = "INFO",
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     console_output: bool = True,
-    use_colors: bool = True
+    use_colors: bool = True,
 ):
     """Setup default logging configuration for the application.
-    
+
     Args:
         log_level: Default log level
         log_file: Default log file path
@@ -403,32 +402,47 @@ def setup_default_logging(
         # Create default log file in logs directory
         project_root = Path(__file__).parent.parent.parent
         log_file = str(project_root / "logs" / "local_researcher.log")
-    
+
     # Setup root logger
     root_logger = setup_logger(
         "local_researcher",
         log_level=log_level,
         log_file=log_file,
         console_output=console_output,
-        use_colors=use_colors
+        use_colors=use_colors,
     )
-    
+
     # Setup common loggers
-    setup_logger("research_orchestrator", log_level=log_level, console_output=console_output, use_colors=use_colors)
-    setup_logger("gemini_cli_integration", log_level=log_level, console_output=console_output, use_colors=use_colors)
-    setup_logger("open_deep_research_adapter", log_level=log_level, console_output=console_output, use_colors=use_colors)
-    
+    setup_logger(
+        "research_orchestrator",
+        log_level=log_level,
+        console_output=console_output,
+        use_colors=use_colors,
+    )
+    setup_logger(
+        "gemini_cli_integration",
+        log_level=log_level,
+        console_output=console_output,
+        use_colors=use_colors,
+    )
+    setup_logger(
+        "open_deep_research_adapter",
+        log_level=log_level,
+        console_output=console_output,
+        use_colors=use_colors,
+    )
+
     return root_logger
 
 
 # Convenience function for quick logging setup
 def quick_logger(name: str, use_colors: bool = True) -> logging.Logger:
     """Quick setup for a logger with default settings.
-    
+
     Args:
         name: Logger name
         use_colors: Whether to use colors in console output
-        
+
     Returns:
         Logger instance
     """
@@ -455,7 +469,7 @@ class EnhancedLogger(logging.Logger):
                 return self._context_stack.pop()
         return None
 
-    def get_current_context(self) -> Optional[LogContext]:
+    def get_current_context(self) -> LogContext | None:
         """Get current logging context."""
         with self._lock:
             return self._context_stack[-1] if self._context_stack else None
@@ -469,7 +483,7 @@ class EnhancedLogger(logging.Logger):
         extra=None,
         stack_info=False,
         stacklevel=1,
-        **kwargs
+        **kwargs,
     ):
         """Log with context information."""
         # 기본 extra 생성
@@ -480,45 +494,47 @@ class EnhancedLogger(logging.Logger):
         context = self.get_current_context()
         if context:
             if context.agent_id:
-                extra['agent_id'] = context.agent_id
+                extra["agent_id"] = context.agent_id
             if context.session_id:
-                extra['session_id'] = context.session_id
+                extra["session_id"] = context.session_id
             if context.workflow_stage:
-                extra['workflow_stage'] = context.workflow_stage
+                extra["workflow_stage"] = context.workflow_stage
             if context.tool_name:
-                extra['tool_name'] = context.tool_name
+                extra["tool_name"] = context.tool_name
             if context.operation:
-                extra['operation'] = context.operation
+                extra["operation"] = context.operation
             if context.metadata:
-                extra['metadata'] = context.metadata
+                extra["metadata"] = context.metadata
             if context.tags:
-                extra['tags'] = context.tags
+                extra["tags"] = context.tags
 
         # ContextVar 정보 추가
         agent_id = current_agent_id.get()
         session_id = current_session_id.get()
         workflow_stage = current_workflow_stage.get()
 
-        if agent_id and 'agent_id' not in extra:
-            extra['agent_id'] = agent_id
-        if session_id and 'session_id' not in extra:
-            extra['session_id'] = session_id
-        if workflow_stage and 'workflow_stage' not in extra:
-            extra['workflow_stage'] = workflow_stage
+        if agent_id and "agent_id" not in extra:
+            extra["agent_id"] = agent_id
+        if session_id and "session_id" not in extra:
+            extra["session_id"] = session_id
+        if workflow_stage and "workflow_stage" not in extra:
+            extra["workflow_stage"] = workflow_stage
 
         # 도구 실행 정보 추가
-        if 'tool_execution' in kwargs:
-            extra['tool_execution'] = kwargs['tool_execution']
+        if "tool_execution" in kwargs:
+            extra["tool_execution"] = kwargs["tool_execution"]
 
         # 에이전트 통신 정보 추가
-        if 'agent_communication' in kwargs:
-            extra['agent_communication'] = kwargs['agent_communication']
+        if "agent_communication" in kwargs:
+            extra["agent_communication"] = kwargs["agent_communication"]
 
         super()._log(level, msg, args, exc_info, extra, stack_info, stacklevel)
 
     def log_tool_execution(self, tool_log: ToolExecutionLog, level: int = logging.INFO):
         """Log tool execution with structured data."""
-        message = f"Tool '{tool_log.tool_name}' executed in {tool_log.execution_time:.2f}s"
+        message = (
+            f"Tool '{tool_log.tool_name}' executed in {tool_log.execution_time:.2f}s"
+        )
         if tool_log.success:
             message += f" (success, confidence: {tool_log.confidence:.2f})"
         else:
@@ -529,17 +545,19 @@ class EnhancedLogger(logging.Logger):
             message,
             (),
             tool_execution={
-                'tool_name': tool_log.tool_name,
-                'execution_time': tool_log.execution_time,
-                'success': tool_log.success,
-                'confidence': tool_log.confidence,
-                'error_message': tool_log.error_message,
-                'input_params': tool_log.input_params,
-                'output_summary': tool_log.output_summary,
-            }
+                "tool_name": tool_log.tool_name,
+                "execution_time": tool_log.execution_time,
+                "success": tool_log.success,
+                "confidence": tool_log.confidence,
+                "error_message": tool_log.error_message,
+                "input_params": tool_log.input_params,
+                "output_summary": tool_log.output_summary,
+            },
         )
 
-    def log_agent_communication(self, comm_log: AgentCommunicationLog, level: int = logging.INFO):
+    def log_agent_communication(
+        self, comm_log: AgentCommunicationLog, level: int = logging.INFO
+    ):
         """Log agent communication with structured data."""
         message = f"Agent {comm_log.from_agent}"
         if comm_log.to_agent:
@@ -556,16 +574,16 @@ class EnhancedLogger(logging.Logger):
             message,
             (),
             agent_communication={
-                'from_agent': comm_log.from_agent,
-                'to_agent': comm_log.to_agent,
-                'action': comm_log.action,
-                'result_count': comm_log.result_count,
-                'discussion_topic': comm_log.discussion_topic,
-                'shared_data_size': comm_log.shared_data_size,
-            }
+                "from_agent": comm_log.from_agent,
+                "to_agent": comm_log.to_agent,
+                "action": comm_log.action,
+                "result_count": comm_log.result_count,
+                "discussion_topic": comm_log.discussion_topic,
+                "shared_data_size": comm_log.shared_data_size,
+            },
         )
 
-    def agent_context(self, agent_id: str, session_id: Optional[str] = None):
+    def agent_context(self, agent_id: str, session_id: str | None = None):
         """Context manager for agent-specific logging."""
         return AgentContextManager(self, agent_id, session_id)
 
@@ -573,7 +591,9 @@ class EnhancedLogger(logging.Logger):
 class AgentContextManager:
     """Context manager for agent-specific logging."""
 
-    def __init__(self, logger: EnhancedLogger, agent_id: str, session_id: Optional[str] = None):
+    def __init__(
+        self, logger: EnhancedLogger, agent_id: str, session_id: str | None = None
+    ):
         self.logger = logger
         self.agent_id = agent_id
         self.session_id = session_id
@@ -583,14 +603,11 @@ class AgentContextManager:
         # ContextVar 설정
         self.context_token = (
             current_agent_id.set(self.agent_id),
-            current_session_id.set(self.session_id) if self.session_id else None
+            current_session_id.set(self.session_id) if self.session_id else None,
         )
 
         # 로거 컨텍스트 설정
-        context = LogContext(
-            agent_id=self.agent_id,
-            session_id=self.session_id
-        )
+        context = LogContext(agent_id=self.agent_id, session_id=self.session_id)
         self.logger.push_context(context)
 
         return self
@@ -609,13 +626,13 @@ class AgentContextManager:
 def setup_enhanced_logger(
     name: str,
     log_level: str = "INFO",
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     console_output: bool = True,
     structured_output: bool = False,
     max_file_size: str = "10MB",
     backup_count: int = 5,
     detailed_format: bool = True,
-    use_colors: bool = True
+    use_colors: bool = True,
 ) -> EnhancedLogger:
     """Setup enhanced logger with structured logging support.
 
@@ -646,17 +663,21 @@ def setup_enhanced_logger(
         console_formatter = StructuredFormatter()
         file_formatter = StructuredFormatter()
     else:
-        console_formatter = ColoredFormatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-            use_colors=use_colors
-        ) if use_colors else logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+        console_formatter = (
+            ColoredFormatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+                use_colors=use_colors,
+            )
+            if use_colors
+            else logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
         )
         file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
     # 콘솔 핸들러
@@ -675,10 +696,7 @@ def setup_enhanced_logger(
             max_bytes = _parse_size(max_file_size)
 
             file_handler = logging.handlers.RotatingFileHandler(
-                log_file,
-                maxBytes=max_bytes,
-                backupCount=backup_count,
-                encoding='utf-8'
+                log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
             )
             file_handler.setLevel(logger.level)
             file_handler.setFormatter(file_formatter)
@@ -716,7 +734,7 @@ def get_enhanced_logger(name: str) -> EnhancedLogger:
 
 
 # 전역 헬퍼 함수들
-def set_agent_context(agent_id: str, session_id: Optional[str] = None):
+def set_agent_context(agent_id: str, session_id: str | None = None):
     """Set current agent context for logging."""
     current_agent_id.set(agent_id)
     if session_id:
@@ -731,9 +749,9 @@ def set_workflow_stage(stage: str):
 def get_current_agent_context() -> Dict[str, Any]:
     """Get current logging context."""
     return {
-        'agent_id': current_agent_id.get(),
-        'session_id': current_session_id.get(),
-        'workflow_stage': current_workflow_stage.get(),
+        "agent_id": current_agent_id.get(),
+        "session_id": current_session_id.get(),
+        "workflow_stage": current_workflow_stage.get(),
     }
 
 
@@ -743,9 +761,9 @@ def log_tool_execution(
     execution_time: float,
     success: bool,
     confidence: float = 0.0,
-    error_message: Optional[str] = None,
-    input_params: Optional[Dict[str, Any]] = None,
-    output_summary: Optional[str] = None
+    error_message: str | None = None,
+    input_params: Dict[str, Any] | None = None,
+    output_summary: str | None = None,
 ):
     """Helper function to log tool execution."""
     tool_log = ToolExecutionLog(
@@ -755,7 +773,7 @@ def log_tool_execution(
         confidence=confidence,
         error_message=error_message,
         input_params=input_params,
-        output_summary=output_summary
+        output_summary=output_summary,
     )
 
     if isinstance(logger, EnhancedLogger):
@@ -771,10 +789,10 @@ def log_agent_communication(
     logger: logging.Logger,
     from_agent: str,
     action: str,
-    to_agent: Optional[str] = None,
+    to_agent: str | None = None,
     result_count: int = 0,
-    discussion_topic: Optional[str] = None,
-    shared_data_size: int = 0
+    discussion_topic: str | None = None,
+    shared_data_size: int = 0,
 ):
     """Helper function to log agent communication."""
     comm_log = AgentCommunicationLog(
@@ -783,7 +801,7 @@ def log_agent_communication(
         action=action,
         result_count=result_count,
         discussion_topic=discussion_topic,
-        shared_data_size=shared_data_size
+        shared_data_size=shared_data_size,
     )
 
     if isinstance(logger, EnhancedLogger):

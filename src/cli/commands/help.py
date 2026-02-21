@@ -1,10 +1,7 @@
-"""
-도움말 명령어
-"""
+"""도움말 명령어"""
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 
 
 async def help_command(console: Console):
@@ -54,5 +51,5 @@ async def help_command(console: Console):
   clear                         Clear screen
   exit / quit                   Exit REPL
 """
-    
+
     console.print(Panel(help_text.strip(), title="Help", border_style="cyan"))
