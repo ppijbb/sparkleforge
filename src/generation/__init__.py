@@ -1,9 +1,5 @@
-"""
-Document Generation Package
-"""
+"""Document Generation Package"""
 
 from .markdown_generator import MarkdownGenerator
 
-__all__ = [
-    'MarkdownGenerator'
-]
+__all__ = ["MarkdownGenerator"]

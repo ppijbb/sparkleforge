@@ -1,0 +1,2 @@
+[console_scripts]
+sparkle = main:main_entry

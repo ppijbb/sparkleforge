@@ -1,5 +1,4 @@
-"""
-Typed server specifications and conversion helpers for FastMCP configuration.
+"""Typed server specifications and conversion helpers for FastMCP configuration.
 
 This module provides models for configuring MCP (Model Context Protocol) servers
 with support for both stdio and HTTP/SSE transports. It ensures type safety and validation
@@ -17,7 +16,7 @@ Usage:
         url="http://127.0.0.1:8000/mcp",
         headers={"Authorization": "Bearer token"}
     )
-    
+
     stdio_spec = StdioServerSpec(
         command="python",
         args=["server.py"],
@@ -28,23 +27,27 @@ Usage:
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Literal, Any, Dict, List, Optional, Union
+from typing import Dict, List
+
 
 # Simple fallback implementation without pydantic dependency
 class BaseModel:
     """Simple base model for server specs.
-    
+
     Provides basic attribute initialization without requiring pydantic dependency.
     This lightweight implementation allows for flexible configuration while maintaining
     compatibility with the existing codebase.
     """
+
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
+
 def ConfigDict(**kwargs):
     """Placeholder for pydantic ConfigDict compatibility."""
     return kwargs
+
 
 def Field(default=None, **kwargs):
     """Placeholder for pydantic Field compatibility."""
@@ -62,13 +65,20 @@ class _BaseServer:
 class StdioServerSpec(_BaseServer):
     """Specification for a local MCP server launched via stdio.
 
-    NOTE:
+    Note:
         The FastMCP Python client typically expects HTTP/SSE transports. Using
         `StdioServerSpec` requires a different adapter or an HTTP shim in front
         of the stdio server. Keep this for future expansion or custom runners.
     """
 
-    def __init__(self, command: str, args: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None, cwd: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        command: str,
+        args: List[str] | None = None,
+        env: Dict[str, str] | None = None,
+        cwd: str | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.command = command
         self.args = args or []
@@ -86,7 +96,14 @@ class HTTPServerSpec(_BaseServer):
         auth: Optional auth hint if your FastMCP deployment consumes it.
     """
 
-    def __init__(self, url: str, transport: str = "http", headers: Optional[Dict[str, str]] = None, auth: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        url: str,
+        transport: str = "http",
+        headers: Dict[str, str] | None = None,
+        auth: str | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.url = url
         self.transport = transport
@@ -98,7 +115,9 @@ ServerSpec = StdioServerSpec | HTTPServerSpec
 """Union of supported server specifications."""
 
 
-def servers_to_mcp_config(servers: Mapping[str, ServerSpec]) -> dict[str, dict[str, object]]:
+def servers_to_mcp_config(
+    servers: Mapping[str, ServerSpec],
+) -> dict[str, dict[str, object]]:
     """Convert programmatic server specs to the FastMCP configuration dict.
 
     Args:
@@ -119,7 +138,7 @@ def servers_to_mcp_config(servers: Mapping[str, ServerSpec]) -> dict[str, dict[s
             if s.env:
                 entry["env"] = s.env
             # cwd가 있으면 추가
-            if hasattr(s, 'cwd') and s.cwd:
+            if hasattr(s, "cwd") and s.cwd:
                 entry["cwd"] = s.cwd
             cfg[name] = entry
         else:

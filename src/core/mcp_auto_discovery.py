@@ -20,7 +20,9 @@ class FastMCPClientWrapper:
             servers: 서버 이름 -> ServerSpec 매핑
         """
         mcp_cfg = {"mcpServers": servers_to_mcp_config(servers)}
-        self._client: Any = FastMCPClient(mcp_cfg)  # <-- annotate as Any to avoid unparameterized generic
+        self._client: Any = FastMCPClient(
+            mcp_cfg
+        )  # <-- annotate as Any to avoid unparameterized generic
 
     @property
     def client(self) -> Any:  # <-- return Any to avoid unparameterized generic
@@ -31,7 +33,9 @@ class FastMCPClientWrapper:
 class FastMCPMulti:
     """다중 서버를 위한 FastMCP 클라이언트 래퍼."""
 
-    def __init__(self, servers: Mapping[str, ServerSpec] | dict[str, dict[str, Any]]) -> None:
+    def __init__(
+        self, servers: Mapping[str, ServerSpec] | dict[str, dict[str, Any]]
+    ) -> None:
         """다중 서버 FastMCP 클라이언트 초기화.
 
         Args:
@@ -50,7 +54,9 @@ class FastMCPMulti:
         else:
             # 빈 dict인 경우
             mcp_cfg = {"mcpServers": {}}
-        self._client: Any = FastMCPClient(mcp_cfg)  # <-- annotate as Any to avoid unparameterized generic
+        self._client: Any = FastMCPClient(
+            mcp_cfg
+        )  # <-- annotate as Any to avoid unparameterized generic
 
     @property
     def client(self) -> Any:  # <-- return Any to avoid unparameterized generic

@@ -1,16 +1,16 @@
-"""
-Custom Exception Classes for Local Researcher Project (v2.0 - 8대 혁신)
+"""Custom Exception Classes for Local Researcher Project (v2.0 - 8대 혁신)
 
 Production-grade error handling with standardized exception types for
 all components of the advanced multi-agent research system.
 """
 
-from typing import Optional, Dict, Any, List
 from enum import Enum
+from typing import Any, Dict, List
 
 
 class ErrorSeverity(Enum):
     """Error severity levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -19,6 +19,7 @@ class ErrorSeverity(Enum):
 
 class ErrorCategory(Enum):
     """Error categories for better classification."""
+
     CONFIGURATION = "configuration"
     NETWORK = "network"
     AUTHENTICATION = "authentication"
@@ -32,15 +33,15 @@ class ErrorCategory(Enum):
 
 class BaseResearcherException(Exception):
     """Base exception class for all Local Researcher exceptions."""
-    
+
     def __init__(
         self,
         message: str,
         category: ErrorCategory = ErrorCategory.SYSTEM,
         severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-        details: Optional[Dict[str, Any]] = None,
-        suggestions: Optional[List[str]] = None,
-        context: Optional[Dict[str, Any]] = None
+        details: Dict[str, Any] | None = None,
+        suggestions: List[str] | None = None,
+        context: Dict[str, Any] | None = None,
     ):
         super().__init__(message)
         self.message = message
@@ -49,14 +50,14 @@ class BaseResearcherException(Exception):
         self.details = details or {}
         self.suggestions = suggestions or []
         self.context = context or {}
-    
+
     def __str__(self) -> str:
         """Return formatted string representation of the exception."""
         base_msg = f"[{self.category.value.upper()}] {self.message}"
         if self.details:
             base_msg += f" | Details: {self.details}"
         return base_msg
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert exception to dictionary for logging."""
         return {
@@ -66,27 +67,27 @@ class BaseResearcherException(Exception):
             "severity": self.severity.value,
             "details": self.details,
             "suggestions": self.suggestions,
-            "context": self.context
+            "context": self.context,
         }
 
 
 # Configuration Exceptions
 class ConfigurationError(BaseResearcherException):
     """Configuration-related errors."""
-    
-    def __init__(self, message: str, config_key: Optional[str] = None, **kwargs):
+
+    def __init__(self, message: str, config_key: str | None = None, **kwargs):
         super().__init__(
             message,
             category=ErrorCategory.CONFIGURATION,
             severity=ErrorSeverity.HIGH,
             details={"config_key": config_key} if config_key else {},
-            **kwargs
+            **kwargs,
         )
 
 
 class MissingConfigurationError(ConfigurationError):
     """Missing required configuration."""
-    
+
     def __init__(self, config_key: str, **kwargs):
         super().__init__(
             f"Missing required configuration: {config_key}",
@@ -95,15 +96,15 @@ class MissingConfigurationError(ConfigurationError):
             suggestions=[
                 f"Set the {config_key} environment variable",
                 f"Add {config_key} to your configuration file",
-                "Check the documentation for required configuration"
+                "Check the documentation for required configuration",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class InvalidConfigurationError(ConfigurationError):
     """Invalid configuration value."""
-    
+
     def __init__(self, config_key: str, value: Any, expected: str, **kwargs):
         super().__init__(
             f"Invalid configuration for {config_key}: {value}. Expected: {expected}",
@@ -113,34 +114,42 @@ class InvalidConfigurationError(ConfigurationError):
             suggestions=[
                 f"Check the {config_key} value in your configuration",
                 f"Ensure {config_key} matches the expected format: {expected}",
-                "Refer to the configuration documentation"
+                "Refer to the configuration documentation",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # Network and API Exceptions
 class NetworkError(BaseResearcherException):
     """Network-related errors."""
-    
-    def __init__(self, message: str, url: Optional[str] = None, status_code: Optional[int] = None, **kwargs):
+
+    def __init__(
+        self,
+        message: str,
+        url: str | None = None,
+        status_code: int | None = None,
+        **kwargs,
+    ):
         super().__init__(
             message,
             category=ErrorCategory.NETWORK,
             severity=ErrorSeverity.MEDIUM,
-            details={"url": url, "status_code": status_code} if url or status_code else {},
+            details={"url": url, "status_code": status_code}
+            if url or status_code
+            else {},
             suggestions=[
                 "Check your internet connection",
                 "Verify the API endpoint is accessible",
-                "Check if the service is temporarily unavailable"
+                "Check if the service is temporarily unavailable",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class APIConnectionError(NetworkError):
     """API connection errors."""
-    
+
     def __init__(self, service: str, url: str, **kwargs):
         super().__init__(
             f"Failed to connect to {service} API: {url}",
@@ -151,15 +160,15 @@ class APIConnectionError(NetworkError):
                 f"Check if {service} service is running",
                 "Verify the API endpoint URL",
                 "Check your network connectivity",
-                "Review API rate limits and quotas"
+                "Review API rate limits and quotas",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class APIResponseError(NetworkError):
     """API response errors."""
-    
+
     def __init__(self, service: str, status_code: int, response_text: str, **kwargs):
         super().__init__(
             f"{service} API returned error {status_code}: {response_text}",
@@ -170,16 +179,16 @@ class APIResponseError(NetworkError):
                 "Check the API documentation for error codes",
                 "Verify your request parameters",
                 "Check your API key and permissions",
-                "Review rate limits and quotas"
+                "Review rate limits and quotas",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # Authentication Exceptions
 class AuthenticationError(BaseResearcherException):
     """Authentication-related errors."""
-    
+
     def __init__(self, service: str, **kwargs):
         super().__init__(
             f"Authentication failed for {service}",
@@ -190,15 +199,15 @@ class AuthenticationError(BaseResearcherException):
                 f"Check your {service} API key",
                 "Verify the API key has correct permissions",
                 "Ensure the API key is not expired",
-                "Check if the service requires additional authentication"
+                "Check if the service requires additional authentication",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class InvalidAPIKeyError(AuthenticationError):
     """Invalid API key error."""
-    
+
     def __init__(self, service: str, **kwargs):
         super().__init__(
             f"Invalid API key for {service}",
@@ -207,17 +216,19 @@ class InvalidAPIKeyError(AuthenticationError):
                 f"Verify your {service} API key is correct",
                 "Check if the API key has been regenerated",
                 "Ensure the API key is properly set in environment variables",
-                f"Get a new API key from {service} if needed"
+                f"Get a new API key from {service} if needed",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # Validation Exceptions
 class ValidationError(BaseResearcherException):
     """Data validation errors."""
-    
-    def __init__(self, message: str, field: Optional[str] = None, value: Optional[Any] = None, **kwargs):
+
+    def __init__(
+        self, message: str, field: str | None = None, value: Any | None = None, **kwargs
+    ):
         super().__init__(
             message,
             category=ErrorCategory.VALIDATION,
@@ -226,30 +237,30 @@ class ValidationError(BaseResearcherException):
             suggestions=[
                 "Check the input data format",
                 "Verify all required fields are provided",
-                "Ensure data types match expected format"
+                "Ensure data types match expected format",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class DataValidationError(ValidationError):
     """Data validation errors."""
-    
+
     def __init__(self, field: str, value: Any, expected_type: str, **kwargs):
         super().__init__(
             f"Invalid data for field '{field}': {value}. Expected type: {expected_type}",
             field=field,
             value=value,
             details={"expected_type": expected_type},
-            **kwargs
+            **kwargs,
         )
 
 
 # Execution Exceptions
 class ExecutionError(BaseResearcherException):
     """Execution-related errors."""
-    
-    def __init__(self, message: str, component: Optional[str] = None, **kwargs):
+
+    def __init__(self, message: str, component: str | None = None, **kwargs):
         super().__init__(
             message,
             category=ErrorCategory.EXECUTION,
@@ -258,15 +269,15 @@ class ExecutionError(BaseResearcherException):
             suggestions=[
                 "Check the component logs for more details",
                 "Verify all dependencies are installed",
-                "Check system resources and permissions"
+                "Check system resources and permissions",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class TaskExecutionError(ExecutionError):
     """Task execution errors."""
-    
+
     def __init__(self, task_name: str, error_details: str, **kwargs):
         super().__init__(
             f"Task '{task_name}' execution failed: {error_details}",
@@ -276,17 +287,17 @@ class TaskExecutionError(ExecutionError):
                 f"Check the {task_name} task configuration",
                 "Verify all required inputs are provided",
                 "Check if the task dependencies are available",
-                "Review the task execution logs"
+                "Review the task execution logs",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # Resource Exceptions
 class ResourceError(BaseResearcherException):
     """Resource-related errors."""
-    
-    def __init__(self, message: str, resource_type: Optional[str] = None, **kwargs):
+
+    def __init__(self, message: str, resource_type: str | None = None, **kwargs):
         super().__init__(
             message,
             category=ErrorCategory.RESOURCE,
@@ -295,15 +306,15 @@ class ResourceError(BaseResearcherException):
             suggestions=[
                 "Check available system resources",
                 "Free up memory or disk space if needed",
-                "Check resource limits and quotas"
+                "Check resource limits and quotas",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class InsufficientResourcesError(ResourceError):
     """Insufficient resources error."""
-    
+
     def __init__(self, resource_type: str, required: str, available: str, **kwargs):
         super().__init__(
             f"Insufficient {resource_type}: required {required}, available {available}",
@@ -313,17 +324,17 @@ class InsufficientResourcesError(ResourceError):
                 f"Free up {resource_type} resources",
                 f"Request additional {resource_type} if possible",
                 "Optimize resource usage",
-                "Check resource allocation settings"
+                "Check resource allocation settings",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # Integration Exceptions
 class IntegrationError(BaseResearcherException):
     """Integration-related errors."""
-    
-    def __init__(self, message: str, service: Optional[str] = None, **kwargs):
+
+    def __init__(self, message: str, service: str | None = None, **kwargs):
         super().__init__(
             message,
             category=ErrorCategory.INTEGRATION,
@@ -332,15 +343,15 @@ class IntegrationError(BaseResearcherException):
             suggestions=[
                 "Check the service integration configuration",
                 "Verify the service is available and accessible",
-                "Check API compatibility and version requirements"
+                "Check API compatibility and version requirements",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class MCPIntegrationError(IntegrationError):
     """MCP integration errors."""
-    
+
     def __init__(self, tool_name: str, error_details: str, **kwargs):
         super().__init__(
             f"MCP tool '{tool_name}' integration failed: {error_details}",
@@ -350,17 +361,17 @@ class MCPIntegrationError(IntegrationError):
                 f"Check MCP tool '{tool_name}' configuration",
                 "Verify the MCP tool is properly installed",
                 "Check MCP tool dependencies and requirements",
-                "Review MCP tool logs for more details"
+                "Review MCP tool logs for more details",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # Data Exceptions
 class DataError(BaseResearcherException):
     """Data-related errors."""
-    
-    def __init__(self, message: str, data_type: Optional[str] = None, **kwargs):
+
+    def __init__(self, message: str, data_type: str | None = None, **kwargs):
         super().__init__(
             message,
             category=ErrorCategory.DATA,
@@ -369,15 +380,15 @@ class DataError(BaseResearcherException):
             suggestions=[
                 "Check data format and structure",
                 "Verify data integrity and completeness",
-                "Check data source accessibility"
+                "Check data source accessibility",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class DataProcessingError(DataError):
     """Data processing errors."""
-    
+
     def __init__(self, operation: str, error_details: str, **kwargs):
         super().__init__(
             f"Data processing failed during '{operation}': {error_details}",
@@ -386,17 +397,17 @@ class DataProcessingError(DataError):
                 f"Check the '{operation}' operation parameters",
                 "Verify input data format and quality",
                 "Check data processing dependencies",
-                "Review data processing logs"
+                "Review data processing logs",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # System Exceptions
 class SystemError(BaseResearcherException):
     """System-level errors."""
-    
-    def __init__(self, message: str, component: Optional[str] = None, **kwargs):
+
+    def __init__(self, message: str, component: str | None = None, **kwargs):
         super().__init__(
             message,
             category=ErrorCategory.SYSTEM,
@@ -406,15 +417,15 @@ class SystemError(BaseResearcherException):
                 "Check system logs for more details",
                 "Verify system requirements and dependencies",
                 "Check system permissions and access rights",
-                "Restart the system if necessary"
+                "Restart the system if necessary",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 class InitializationError(SystemError):
     """System initialization errors."""
-    
+
     def __init__(self, component: str, error_details: str, **kwargs):
         super().__init__(
             f"Failed to initialize {component}: {error_details}",
@@ -424,14 +435,16 @@ class InitializationError(SystemError):
                 f"Check {component} configuration",
                 f"Verify {component} dependencies are installed",
                 f"Check {component} logs for initialization errors",
-                "Ensure all required services are running"
+                "Ensure all required services are running",
             ],
-            **kwargs
+            **kwargs,
         )
 
 
 # Utility functions
-def create_exception_from_dict(exception_data: Dict[str, Any]) -> BaseResearcherException:
+def create_exception_from_dict(
+    exception_data: Dict[str, Any],
+) -> BaseResearcherException:
     """Create exception from dictionary data."""
     exception_type = exception_data.get("type", "BaseResearcherException")
     message = exception_data.get("message", "Unknown error")
@@ -440,7 +453,7 @@ def create_exception_from_dict(exception_data: Dict[str, Any]) -> BaseResearcher
     details = exception_data.get("details", {})
     suggestions = exception_data.get("suggestions", [])
     context = exception_data.get("context", {})
-    
+
     # Map exception types to classes
     exception_classes = {
         "ConfigurationError": ConfigurationError,
@@ -464,14 +477,14 @@ def create_exception_from_dict(exception_data: Dict[str, Any]) -> BaseResearcher
         "SystemError": SystemError,
         "InitializationError": InitializationError,
     }
-    
+
     exception_class = exception_classes.get(exception_type, BaseResearcherException)
-    
+
     return exception_class(
         message=message,
         category=category,
         severity=severity,
         details=details,
         suggestions=suggestions,
-        context=context
+        context=context,
     )

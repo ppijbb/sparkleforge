@@ -21,51 +21,53 @@ def analyze_result_structure():
     print("🔍 결과 구조 분석")
     print("=" * 80)
     print()
-    
+
     runner = BenchmarkRunner(
         str(project_root),
         str(project_root / "tests" / "benchmark" / "benchmark_config.yaml"),
-        str(project_root / "tests" / "benchmark" / "benchmark_thresholds.yaml")
+        str(project_root / "tests" / "benchmark" / "benchmark_thresholds.yaml"),
     )
-    
+
     # 첫 번째 태스크 실행
-    agent_tasks = runner.config.get('agent_tasks', [])
+    agent_tasks = runner.config.get("agent_tasks", [])
     if not agent_tasks:
         print("❌ No agent tasks found")
         return
-    
+
     test_task = agent_tasks[0]
     print(f"📊 테스트: {test_task.get('id')} - {test_task.get('query')}")
     print()
-    
+
     # CLI 실행
     print("⏳ CLI 실행 중...")
-    cli_result = runner.cli_executor.execute_research(test_task['query'])
-    
+    cli_result = runner.cli_executor.execute_research(test_task["query"])
+
     print(f"✅ 실행 완료: {cli_result.success}")
     print(f"   Execution Time: {cli_result.execution_time:.2f}s")
     print()
-    
+
     if cli_result.parsed_output:
         print("📋 결과 구조:")
         print(json.dumps(cli_result.parsed_output, indent=2, default=str)[:1000])
         print("...")
         print()
-        
+
         # 메트릭 추출 테스트
         print("🔍 메트릭 추출 테스트:")
         extracted = runner._extract_agent_metrics_from_output(cli_result.parsed_output)
         print(json.dumps(extracted, indent=2, default=str))
         print()
-        
+
         # 메트릭 수집 테스트
         print("📊 메트릭 수집 테스트:")
         metrics = runner._collect_agent_metrics_for_task(test_task, extracted, 0.0)
         print(f"   Collected {len(metrics)} metrics")
         for metric in metrics[:5]:
-            print(f"   - {metric.name}: {metric.value:.2%} (category: {metric.category})")
+            print(
+                f"   - {metric.name}: {metric.value:.2%} (category: {metric.category})"
+            )
         print()
-        
+
         # 점수 계산 테스트
         if metrics:
             score = runner._calculate_test_score(metrics)
@@ -103,4 +105,3 @@ def fix_metric_extraction():
 if __name__ == "__main__":
     analyze_result_structure()
     fix_metric_extraction()
-

@@ -1,20 +1,19 @@
-"""
-Context Compaction Module
+"""Context Compaction Module
 
 컨텍스트 압축 시스템 (AgentPG 패턴 참고).
 85% 임계값에서 자동 압축, Hybrid Strategy (Prune + Summarize).
 """
 
 from src.core.context_compaction.manager import (
-    CompactionManager,
     CompactionConfig,
+    CompactionManager,
     get_compaction_manager,
 )
 from src.core.context_compaction.strategies import (
     CompactionStrategy,
+    HybridStrategy,
     PruneStrategy,
     SummarizeStrategy,
-    HybridStrategy,
 )
 
 __all__ = [
@@ -26,4 +25,3 @@ __all__ = [
     "SummarizeStrategy",
     "HybridStrategy",
 ]
-

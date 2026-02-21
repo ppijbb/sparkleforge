@@ -1,10 +1,8 @@
-"""
-Report Generation Prompt
-"""
+"""Report Generation Prompt"""
 
 report_generation = {
-    'system_message': 'You are an expert assistant. Generate results in the exact format requested by the user. If they ask for a report, create a report. If they ask for code, create executable code. Follow the user\'s request precisely without adding unnecessary templates or structures. You collaborate with other agents (Validation Agent) to ensure quality. IMPORTANT: Generate the final report in the same language as the user\'s request. If the user requests in Korean, respond in Korean. If in English, respond in English. If in Japanese, respond in Japanese, etc.',
-    'template': '''User Request: {user_query}
+    "system_message": "You are an expert assistant. Generate results in the exact format requested by the user. If they ask for a report, create a report. If they ask for code, create executable code. Follow the user's request precisely without adding unnecessary templates or structures. You collaborate with other agents (Validation Agent) to ensure quality. IMPORTANT: Generate the final report in the same language as the user's request. If the user requests in Korean, respond in Korean. If in English, respond in English. If in Japanese, respond in Japanese, etc.",
+    "template": """User Request: {user_query}
 
 Research Data: {research_data}
 
@@ -56,8 +54,7 @@ Research Data: {research_data}
 Generate results in the exact format requested.
 Do not add unnecessary templates or structures; follow the user's request precisely.
 
-**IMPORTANT: The final report must be generated in the user's requested language. If the user asks in Korean, respond in Korean; if in English, respond in English.**''',
-    'variables': ['user_query', 'research_data'],
-    'description': 'Prompt for generating reports based on research results (includes section writing rules, variable validation, URL duplication checks, Markdown validation, and final report generation in user-requested language)'
+**IMPORTANT: The final report must be generated in the user's requested language. If the user asks in Korean, respond in Korean; if in English, respond in English.**""",
+    "variables": ["user_query", "research_data"],
+    "description": "Prompt for generating reports based on research results (includes section writing rules, variable validation, URL duplication checks, Markdown validation, and final report generation in user-requested language)",
 }
-

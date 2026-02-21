@@ -13,9 +13,9 @@ Security:
 from __future__ import annotations
 
 import os
-from typing import Any, List, Optional
+from typing import Any, List
 
-_LANGFUSE_ENABLED: Optional[bool] = None
+_LANGFUSE_ENABLED: bool | None = None
 
 
 def _langfuse_enabled() -> bool:
@@ -23,15 +23,16 @@ def _langfuse_enabled() -> bool:
     global _LANGFUSE_ENABLED
     if _LANGFUSE_ENABLED is None:
         _LANGFUSE_ENABLED = bool(
-            os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY")
+            os.environ.get("LANGFUSE_PUBLIC_KEY")
+            and os.environ.get("LANGFUSE_SECRET_KEY")
         )
     return _LANGFUSE_ENABLED
 
 
 def get_langfuse_callbacks(
-    session_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    session_id: str | None = None,
+    user_id: str | None = None,
+    tags: List[str] | None = None,
 ) -> List[Any]:
     """Return Langfuse callback handlers for LangChain, or empty list if disabled.
 
@@ -42,15 +43,16 @@ def get_langfuse_callbacks(
         return []
     try:
         from langfuse.langchain import CallbackHandler
+
         return [CallbackHandler()]
     except ImportError:
         return []
 
 
 def get_langfuse_run_config(
-    session_id: Optional[str] = None,
-    user_id: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    session_id: str | None = None,
+    user_id: str | None = None,
+    tags: List[str] | None = None,
 ) -> dict:
     """Return run config with callbacks and trace metadata for ainvoke/astream.
 
@@ -67,15 +69,18 @@ def get_langfuse_run_config(
         meta["langfuse_user_id"] = user_id
     if tags is not None:
         meta["langfuse_tags"] = tags
-    return {"callbacks": callbacks, "metadata": meta} if meta else {"callbacks": callbacks}
+    return (
+        {"callbacks": callbacks, "metadata": meta} if meta else {"callbacks": callbacks}
+    )
 
 
-def get_langfuse_client() -> Optional[Any]:
+def get_langfuse_client() -> Any | None:
     """Return Langfuse client when enabled, for flush() in short-lived processes. Otherwise None."""
     if not _langfuse_enabled():
         return None
     try:
         from langfuse import get_client
+
         return get_client()
     except ImportError:
         return None

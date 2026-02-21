@@ -24,17 +24,19 @@ logger = logging.getLogger(__name__)
 
 class FailureType(Enum):
     """실패 유형."""
-    DETERMINISTIC = "deterministic"    # 결정적 실패
-    PROBABILISTIC = "probabilistic"   # 확률적 실패
-    INTERMITTENT = "intermittent"     # 간헐적 실패
-    TIMEOUT = "timeout"              # 타임아웃
-    RESOURCE = "resource"            # 리소스 부족
-    NETWORK = "network"              # 네트워크 문제
-    UNKNOWN = "unknown"              # 알 수 없는 실패
+
+    DETERMINISTIC = "deterministic"  # 결정적 실패
+    PROBABILISTIC = "probabilistic"  # 확률적 실패
+    INTERMITTENT = "intermittent"  # 간헐적 실패
+    TIMEOUT = "timeout"  # 타임아웃
+    RESOURCE = "resource"  # 리소스 부족
+    NETWORK = "network"  # 네트워크 문제
+    UNKNOWN = "unknown"  # 알 수 없는 실패
 
 
 class TestScenario(Enum):
     """테스트 시나리오."""
+
     UNIT_TEST = "unit_test"
     INTEGRATION_TEST = "integration_test"
     STRESS_TEST = "stress_test"
@@ -46,6 +48,7 @@ class TestScenario(Enum):
 @dataclass
 class FailurePattern:
     """실패 패턴."""
+
     pattern_id: str
     failure_type: FailureType
     error_message: str
@@ -79,6 +82,7 @@ class FailurePattern:
 @dataclass
 class TestCase:
     """테스트 케이스."""
+
     case_id: str
     name: str
     scenario: TestScenario
@@ -102,6 +106,7 @@ class TestCase:
 @dataclass
 class TestResult:
     """테스트 결과."""
+
     test_case: TestCase
     success: bool
     execution_time: float
@@ -109,12 +114,15 @@ class TestResult:
     error_message: Optional[str] = None
     stack_trace: Optional[str] = None
     timestamp: float = field(default_factory=time.time)
-    run_id: str = field(default_factory=lambda: f"run_{int(time.time())}_{random.randint(1000, 9999)}")
+    run_id: str = field(
+        default_factory=lambda: f"run_{int(time.time())}_{random.randint(1000, 9999)}"
+    )
 
 
 @dataclass
 class ValidationReport:
     """검증 리포트."""
+
     report_id: str
     scenario: TestScenario
     start_time: float
@@ -150,17 +158,21 @@ class ValidationReport:
         execution_times = [r.execution_time for r in self.results]
 
         return {
-            'report_id': self.report_id,
-            'scenario': self.scenario.value,
-            'duration': self.duration,
-            'success_rate': self.success_rate,
-            'total_tests': self.total_tests,
-            'passed': self.passed_tests,
-            'failed': self.failed_tests,
-            'avg_execution_time': statistics.mean(execution_times) if execution_times else 0,
-            'median_execution_time': statistics.median(execution_times) if execution_times else 0,
-            'failure_patterns_count': len(self.failure_patterns),
-            'recommendations_count': len(self.recommendations)
+            "report_id": self.report_id,
+            "scenario": self.scenario.value,
+            "duration": self.duration,
+            "success_rate": self.success_rate,
+            "total_tests": self.total_tests,
+            "passed": self.passed_tests,
+            "failed": self.failed_tests,
+            "avg_execution_time": statistics.mean(execution_times)
+            if execution_times
+            else 0,
+            "median_execution_time": statistics.median(execution_times)
+            if execution_times
+            else 0,
+            "failure_patterns_count": len(self.failure_patterns),
+            "recommendations_count": len(self.recommendations),
         }
 
 
@@ -183,7 +195,7 @@ class ProbabilisticFailureSimulator:
             "Database connection lost",
             "API rate limit exceeded",
             "Invalid response format",
-            "Authentication failed"
+            "Authentication failed",
         ]
 
     def should_fail(self) -> bool:
@@ -199,9 +211,9 @@ class ProbabilisticFailureSimulator:
     def _generate_stack_trace(self, error_msg: str) -> str:
         """스택 트레이스 생성."""
         frames = [
-            f"File \"src/core/{random.choice(['agent', 'tool', 'network', 'database'])}.py\", line {random.randint(10, 500)}, in {random.choice(['execute', 'process', 'handle', 'connect'])}",
-            f"File \"src/utils/{random.choice(['helpers', 'validators', 'formatters'])}.py\", line {random.randint(10, 200)}, in {random.choice(['validate', 'format', 'parse'])}",
-            f"File \"main.py\", line {random.randint(50, 200)}, in main"
+            f'File "src/core/{random.choice(["agent", "tool", "network", "database"])}.py", line {random.randint(10, 500)}, in {random.choice(["execute", "process", "handle", "connect"])}',
+            f'File "src/utils/{random.choice(["helpers", "validators", "formatters"])}.py", line {random.randint(10, 200)}, in {random.choice(["validate", "format", "parse"])}',
+            f'File "main.py", line {random.randint(50, 200)}, in main',
         ]
 
         stack = f"Traceback (most recent call last):\n"
@@ -229,7 +241,7 @@ class ParallelTestExecutor:
         self,
         test_case: TestCase,
         test_function: Callable,
-        failure_simulator: Optional[ProbabilisticFailureSimulator] = None
+        failure_simulator: Optional[ProbabilisticFailureSimulator] = None,
     ) -> TestResult:
         """
         테스트 실행.
@@ -251,25 +263,29 @@ class ParallelTestExecutor:
                     try:
                         # 실패 시뮬레이션 (디버깅용)
                         if failure_simulator and failure_simulator.should_fail():
-                            error_msg, stack_trace = failure_simulator.generate_failure()
+                            error_msg, stack_trace = (
+                                failure_simulator.generate_failure()
+                            )
                             raise Exception(error_msg)
 
                         # 테스트 함수 실행
                         result = await asyncio.wait_for(
                             test_function(test_case.input_data),
-                            timeout=test_case.timeout
+                            timeout=test_case.timeout,
                         )
 
                         execution_time = time.time() - start_time
 
                         # 결과 검증
-                        success = self._validate_result(result, test_case.expected_output)
+                        success = self._validate_result(
+                            result, test_case.expected_output
+                        )
 
                         return TestResult(
                             test_case=test_case,
                             success=success,
                             execution_time=execution_time,
-                            output_data=result
+                            output_data=result,
                         )
 
                     except asyncio.TimeoutError:
@@ -279,7 +295,7 @@ class ParallelTestExecutor:
                                 test_case=test_case,
                                 success=False,
                                 execution_time=execution_time,
-                                error_message=f"Test timed out after {test_case.timeout}s"
+                                error_message=f"Test timed out after {test_case.timeout}s",
                             )
                         continue
 
@@ -291,7 +307,7 @@ class ParallelTestExecutor:
                                 success=False,
                                 execution_time=execution_time,
                                 error_message=str(e),
-                                stack_trace=self._get_stack_trace(e)
+                                stack_trace=self._get_stack_trace(e),
                             )
                         continue
 
@@ -320,7 +336,12 @@ class ParallelTestExecutor:
     def _get_stack_trace(self, exception: Exception) -> str:
         """스택 트레이스 가져오기."""
         import traceback
-        return "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+
+        return "".join(
+            traceback.format_exception(
+                type(exception), exception, exception.__traceback__
+            )
+        )
 
 
 class HistoricalScenarioReplayer:
@@ -331,7 +352,9 @@ class HistoricalScenarioReplayer:
         self.scenarios: Dict[str, Dict[str, Any]] = {}
         self.execution_history: Dict[str, List[TestResult]] = defaultdict(list)
 
-    def save_scenario(self, scenario_id: str, input_data: Dict[str, Any], context: Dict[str, Any]):
+    def save_scenario(
+        self, scenario_id: str, input_data: Dict[str, Any], context: Dict[str, Any]
+    ):
         """
         시나리오 저장.
 
@@ -341,17 +364,14 @@ class HistoricalScenarioReplayer:
             context: 실행 컨텍스트
         """
         self.scenarios[scenario_id] = {
-            'input_data': input_data,
-            'context': context,
-            'created_at': time.time(),
-            'execution_count': 0
+            "input_data": input_data,
+            "context": context,
+            "created_at": time.time(),
+            "execution_count": 0,
         }
 
     async def replay_scenario(
-        self,
-        scenario_id: str,
-        test_function: Callable,
-        iterations: int = 10
+        self, scenario_id: str, test_function: Callable, iterations: int = 10
     ) -> List[TestResult]:
         """
         시나리오 재실행.
@@ -374,7 +394,7 @@ class HistoricalScenarioReplayer:
             start_time = time.time()
 
             try:
-                result = await test_function(scenario['input_data'])
+                result = await test_function(scenario["input_data"])
                 execution_time = time.time() - start_time
 
                 test_result = TestResult(
@@ -382,11 +402,11 @@ class HistoricalScenarioReplayer:
                         case_id=f"replay_{scenario_id}_{i}",
                         name=f"Replay {scenario_id} #{i}",
                         scenario=TestScenario.REGRESSION_TEST,
-                        input_data=scenario['input_data']
+                        input_data=scenario["input_data"],
                     ),
                     success=True,
                     execution_time=execution_time,
-                    output_data=result
+                    output_data=result,
                 )
 
             except Exception as e:
@@ -396,16 +416,16 @@ class HistoricalScenarioReplayer:
                         case_id=f"replay_{scenario_id}_{i}",
                         name=f"Replay {scenario_id} #{i}",
                         scenario=TestScenario.REGRESSION_TEST,
-                        input_data=scenario['input_data']
+                        input_data=scenario["input_data"],
                     ),
                     success=False,
                     execution_time=execution_time,
                     error_message=str(e),
-                    stack_trace=self._get_stack_trace(e)
+                    stack_trace=self._get_stack_trace(e),
                 )
 
             results.append(test_result)
-            scenario['execution_count'] += 1
+            scenario["execution_count"] += 1
 
         self.execution_history[scenario_id].extend(results)
         return results
@@ -413,7 +433,12 @@ class HistoricalScenarioReplayer:
     def _get_stack_trace(self, exception: Exception) -> str:
         """스택 트레이스 가져오기."""
         import traceback
-        return "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+
+        return "".join(
+            traceback.format_exception(
+                type(exception), exception, exception.__traceback__
+            )
+        )
 
 
 class DebugValidator:
@@ -434,10 +459,10 @@ class DebugValidator:
 
         # 통계
         self.stats = {
-            'total_tests_run': 0,
-            'total_failures': 0,
-            'patterns_discovered': 0,
-            'scenarios_recorded': 0
+            "total_tests_run": 0,
+            "total_failures": 0,
+            "patterns_discovered": 0,
+            "scenarios_recorded": 0,
         }
 
         logger.info("DebugValidator initialized")
@@ -447,7 +472,7 @@ class DebugValidator:
         test_function: Callable,
         input_data: Dict[str, Any],
         iterations: int = 100,
-        failure_rate: float = 0.1
+        failure_rate: float = 0.1,
     ) -> ValidationReport:
         """
         실패 재현 테스트 실행.
@@ -472,7 +497,7 @@ class DebugValidator:
             name="Failure Reproduction Test",
             scenario=TestScenario.FAILURE_REPRODUCTION,
             input_data=input_data,
-            tags=["failure_reproduction", "probabilistic"]
+            tags=["failure_reproduction", "probabilistic"],
         )
 
         start_time = time.time()
@@ -483,7 +508,7 @@ class DebugValidator:
             end_time=0,
             total_tests=iterations,
             passed_tests=0,
-            failed_tests=0
+            failed_tests=0,
         )
 
         # 병렬 실행
@@ -494,10 +519,10 @@ class DebugValidator:
                     case_id=f"{test_case.case_id}_{i}",
                     name=f"{test_case.name} #{i}",
                     scenario=test_case.scenario,
-                    input_data=input_data
+                    input_data=input_data,
                 ),
                 test_function,
-                simulator
+                simulator,
             )
             tasks.append(task)
 
@@ -511,7 +536,7 @@ class DebugValidator:
                     test_case=test_case,
                     success=False,
                     execution_time=0.0,
-                    error_message=str(result)
+                    error_message=str(result),
                 )
                 report.add_result(error_result)
             else:
@@ -526,13 +551,13 @@ class DebugValidator:
         # 리포트 생성
         self._generate_failure_report(report)
 
-        logger.info(f"Failure reproduction test completed: {report.passed_tests}/{report.total_tests} passed")
+        logger.info(
+            f"Failure reproduction test completed: {report.passed_tests}/{report.total_tests} passed"
+        )
         return report
 
     async def run_regression_test(
-        self,
-        test_cases: List[TestCase],
-        test_function: Callable
+        self, test_cases: List[TestCase], test_function: Callable
     ) -> ValidationReport:
         """
         회귀 테스트 실행.
@@ -554,11 +579,13 @@ class DebugValidator:
             end_time=0,
             total_tests=len(test_cases),
             passed_tests=0,
-            failed_tests=0
+            failed_tests=0,
         )
 
         # 테스트 실행
-        tasks = [self.test_executor.execute_test(tc, test_function) for tc in test_cases]
+        tasks = [
+            self.test_executor.execute_test(tc, test_function) for tc in test_cases
+        ]
         results = await asyncio.gather(*tasks)
 
         # 결과 처리
@@ -571,7 +598,9 @@ class DebugValidator:
 
         report.end_time = time.time()
 
-        logger.info(f"Regression test completed: {report.passed_tests}/{report.total_tests} passed")
+        logger.info(
+            f"Regression test completed: {report.passed_tests}/{report.total_tests} passed"
+        )
         return report
 
     async def run_stress_test(
@@ -579,7 +608,7 @@ class DebugValidator:
         test_function: Callable,
         input_variations: List[Dict[str, Any]],
         concurrent_users: int = 10,
-        duration: float = 60.0
+        duration: float = 60.0,
     ) -> ValidationReport:
         """
         스트레스 테스트 실행.
@@ -593,7 +622,9 @@ class DebugValidator:
         Returns:
             검증 리포트
         """
-        logger.info(f"Starting stress test: {concurrent_users} concurrent users for {duration}s")
+        logger.info(
+            f"Starting stress test: {concurrent_users} concurrent users for {duration}s"
+        )
 
         start_time = time.time()
         report = ValidationReport(
@@ -603,7 +634,7 @@ class DebugValidator:
             end_time=start_time + duration,
             total_tests=0,  # 동적으로 계산
             passed_tests=0,
-            failed_tests=0
+            failed_tests=0,
         )
 
         # 스트레스 테스트용 실행기
@@ -619,7 +650,7 @@ class DebugValidator:
                     case_id=f"stress_{test_count}",
                     name=f"Stress Test #{test_count}",
                     scenario=TestScenario.STRESS_TEST,
-                    input_data=input_data
+                    input_data=input_data,
                 )
 
                 result = await stress_executor.execute_test(test_case, test_function)
@@ -636,16 +667,24 @@ class DebugValidator:
         # 성능 메트릭 계산
         execution_times = [r.execution_time for r in report.results]
         report.performance_metrics = {
-            'avg_response_time': statistics.mean(execution_times) if execution_times else 0,
-            'median_response_time': statistics.median(execution_times) if execution_times else 0,
-            'min_response_time': min(execution_times) if execution_times else 0,
-            'max_response_time': max(execution_times) if execution_times else 0,
-            'requests_per_second': len(report.results) / duration,
-            'error_rate': report.failed_tests / report.total_tests if report.total_tests > 0 else 0
+            "avg_response_time": statistics.mean(execution_times)
+            if execution_times
+            else 0,
+            "median_response_time": statistics.median(execution_times)
+            if execution_times
+            else 0,
+            "min_response_time": min(execution_times) if execution_times else 0,
+            "max_response_time": max(execution_times) if execution_times else 0,
+            "requests_per_second": len(report.results) / duration,
+            "error_rate": report.failed_tests / report.total_tests
+            if report.total_tests > 0
+            else 0,
         }
 
-        logger.info(f"Stress test completed: {report.total_tests} requests, "
-                   f"{report.performance_metrics['requests_per_second']:.2f} req/s")
+        logger.info(
+            f"Stress test completed: {report.total_tests} requests, "
+            f"{report.performance_metrics['requests_per_second']:.2f} req/s"
+        )
         return report
 
     def _analyze_failure(self, result: TestResult):
@@ -666,12 +705,12 @@ class DebugValidator:
                 failure_type=self._classify_failure(result),
                 error_message=result.error_message,
                 stack_trace=result.stack_trace,
-                conditions=result.test_case.input_data
+                conditions=result.test_case.input_data,
             )
             self.failure_patterns[pattern_key] = pattern
-            self.stats['patterns_discovered'] += 1
+            self.stats["patterns_discovered"] += 1
 
-        self.stats['total_failures'] += 1
+        self.stats["total_failures"] += 1
 
     def _generate_pattern_key(self, error_message: str) -> str:
         """패턴 키 생성."""
@@ -715,7 +754,9 @@ class DebugValidator:
             failure_rate = report.failed_tests / report.total_tests
 
             if failure_rate > 0.5:
-                report.recommendations.append("높은 실패율 감지: 시스템 안정성 검토 필요")
+                report.recommendations.append(
+                    "높은 실패율 감지: 시스템 안정성 검토 필요"
+                )
             elif failure_rate > 0.2:
                 report.recommendations.append("중간 수준 실패율: 에러 처리 개선 고려")
             else:
@@ -724,21 +765,25 @@ class DebugValidator:
             # 패턴 기반 추천
             for pattern in report.failure_patterns:
                 if pattern.failure_type == FailureType.TIMEOUT:
-                    report.recommendations.append("타임아웃 문제 감지: 타임아웃 값 조정 또는 성능 최적화 고려")
+                    report.recommendations.append(
+                        "타임아웃 문제 감지: 타임아웃 값 조정 또는 성능 최적화 고려"
+                    )
                 elif pattern.failure_type == FailureType.NETWORK:
-                    report.recommendations.append("네트워크 문제 감지: 연결 안정성 및 재시도 로직 검토")
+                    report.recommendations.append(
+                        "네트워크 문제 감지: 연결 안정성 및 재시도 로직 검토"
+                    )
 
     def get_failure_patterns(self) -> List[Dict[str, Any]]:
         """실패 패턴 목록 반환."""
         return [
             {
-                'pattern_id': p.pattern_id,
-                'failure_type': p.failure_type.value,
-                'error_message': p.error_message,
-                'frequency': p.frequency,
-                'first_seen': datetime.fromtimestamp(p.first_seen).isoformat(),
-                'last_seen': datetime.fromtimestamp(p.last_seen).isoformat(),
-                'affected_components': p.affected_components
+                "pattern_id": p.pattern_id,
+                "failure_type": p.failure_type.value,
+                "error_message": p.error_message,
+                "frequency": p.frequency,
+                "first_seen": datetime.fromtimestamp(p.first_seen).isoformat(),
+                "last_seen": datetime.fromtimestamp(p.last_seen).isoformat(),
+                "affected_components": p.affected_components,
             }
             for p in self.failure_patterns.values()
         ]
@@ -747,15 +792,13 @@ class DebugValidator:
         """통계 정보 반환."""
         return {
             **self.stats,
-            'active_patterns': len(self.failure_patterns),
-            'test_cases': len(self.test_cases),
-            'recorded_scenarios': len(self.scenario_replayer.scenarios)
+            "active_patterns": len(self.failure_patterns),
+            "test_cases": len(self.test_cases),
+            "recorded_scenarios": len(self.scenario_replayer.scenarios),
         }
 
     def create_reproducible_test_case(
-        self,
-        failure_pattern: FailurePattern,
-        test_function: Callable
+        self, failure_pattern: FailurePattern, test_function: Callable
     ) -> TestCase:
         """
         재현 가능한 테스트 케이스 생성.
@@ -776,7 +819,7 @@ class DebugValidator:
             input_data=failure_pattern.conditions.copy(),
             timeout=60.0,  # 실패 재현을 위해 더 긴 타임아웃
             retries=5,
-            tags=["reproducible", failure_pattern.failure_type.value]
+            tags=["reproducible", failure_pattern.failure_type.value],
         )
 
         self.test_cases[case_id] = test_case
@@ -786,12 +829,14 @@ class DebugValidator:
 # 전역 디버그 검증기 인스턴스
 _debug_validator = None
 
+
 def get_debug_validator() -> DebugValidator:
     """전역 디버그 검증기 인스턴스 반환."""
     global _debug_validator
     if _debug_validator is None:
         _debug_validator = DebugValidator()
     return _debug_validator
+
 
 def set_debug_validator(validator: DebugValidator):
     """전역 디버그 검증기 설정."""

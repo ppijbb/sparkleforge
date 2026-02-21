@@ -1,39 +1,35 @@
-"""
-Unix 철학 적용 - 제한된 목적 도구 모음
+"""Unix 철학 적용 - 제한된 목적 도구 모음
 
 한 가지 일을 잘하는 도구 설계, 제한된 목적의 도구 모음 구성,
 도구별 명확한 책임 분리, 도구 조합을 통한 복잡한 작업 수행,
 맥락 이해력 향상을 위한 도구 메타데이터, Unix 스타일 도구 체인 구성
 """
 
-import asyncio
 import json
 import logging
 import time
-import subprocess
-import shlex
-from typing import Dict, Any, List, Optional, Callable, Union, Protocol
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from abc import ABC, abstractmethod
-from pathlib import Path
-import aiofiles
+from typing import Any, Dict, List, Protocol
 
 logger = logging.getLogger(__name__)
 
 
 class ToolCategory(Enum):
     """도구 카테고리."""
-    TEXT_PROCESSING = "text_processing"    # 텍스트 처리
-    DATA_EXTRACTION = "data_extraction"    # 데이터 추출
+
+    TEXT_PROCESSING = "text_processing"  # 텍스트 처리
+    DATA_EXTRACTION = "data_extraction"  # 데이터 추출
     SEARCH_FILTERING = "search_filtering"  # 검색 및 필터링
-    FORMAT_CONVERSION = "format_conversion" # 형식 변환
-    VALIDATION_CHECKING = "validation_checking" # 검증 및 확인
+    FORMAT_CONVERSION = "format_conversion"  # 형식 변환
+    VALIDATION_CHECKING = "validation_checking"  # 검증 및 확인
     AGGREGATION_SUMMARY = "aggregation_summary"  # 집계 및 요약
 
 
 class DataFormat(Enum):
     """데이터 형식."""
+
     TEXT = "text"
     JSON = "json"
     CSV = "csv"
@@ -45,6 +41,7 @@ class DataFormat(Enum):
 
 class PipeProtocol(Protocol):
     """파이프 프로토콜."""
+
     async def process(self, input_data: Any) -> Any:
         """데이터 처리."""
         ...
@@ -53,6 +50,7 @@ class PipeProtocol(Protocol):
 @dataclass
 class ToolMetadata:
     """도구 메타데이터."""
+
     name: str
     description: str
     category: ToolCategory
@@ -60,7 +58,7 @@ class ToolMetadata:
     output_formats: List[DataFormat]
     tags: List[str] = field(default_factory=list)
     version: str = "1.0.0"
-    author: Optional[str] = None
+    author: str | None = None
     dependencies: List[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
 
@@ -68,13 +66,14 @@ class ToolMetadata:
 @dataclass
 class ProcessingResult:
     """처리 결과."""
+
     success: bool
     output_data: Any
     processing_time: float
     metadata: Dict[str, Any] = field(default_factory=dict)
-    error_message: Optional[str] = None
-    input_format: Optional[DataFormat] = None
-    output_format: Optional[DataFormat] = None
+    error_message: str | None = None
+    input_format: DataFormat | None = None
+    output_format: DataFormat | None = None
 
 
 class UnixTool(ABC):
@@ -100,7 +99,11 @@ class UnixTool(ABC):
     @property
     def avg_processing_time(self) -> float:
         """평균 처리 시간."""
-        return self.total_processing_time / self.usage_count if self.usage_count > 0 else 0.0
+        return (
+            self.total_processing_time / self.usage_count
+            if self.usage_count > 0
+            else 0.0
+        )
 
     def _record_execution(self, success: bool, processing_time: float):
         """실행 기록."""
@@ -120,11 +123,13 @@ class TextExtractor(UnixTool):
             category=ToolCategory.DATA_EXTRACTION,
             input_formats=[DataFormat.TEXT, DataFormat.HTML, DataFormat.MARKDOWN],
             output_formats=[DataFormat.JSON],
-            tags=["extraction", "pattern", "text"]
+            tags=["extraction", "pattern", "text"],
         )
         super().__init__(metadata)
 
-    async def process(self, input_data: Any, pattern: str = r"(.*)", **kwargs) -> ProcessingResult:
+    async def process(
+        self, input_data: Any, pattern: str = r"(.*)", **kwargs
+    ) -> ProcessingResult:
         """텍스트에서 패턴 추출."""
         start_time = time.time()
 
@@ -136,7 +141,7 @@ class TextExtractor(UnixTool):
                 result = {
                     "extracted_items": matches,
                     "count": len(matches),
-                    "pattern": pattern
+                    "pattern": pattern,
                 }
 
                 processing_time = time.time() - start_time
@@ -148,7 +153,7 @@ class TextExtractor(UnixTool):
                     processing_time=processing_time,
                     input_format=DataFormat.TEXT,
                     output_format=DataFormat.JSON,
-                    metadata={"extraction_method": "regex", "pattern": pattern}
+                    metadata={"extraction_method": "regex", "pattern": pattern},
                 )
             else:
                 raise ValueError("Input must be string")
@@ -161,7 +166,7 @@ class TextExtractor(UnixTool):
                 success=False,
                 output_data=None,
                 processing_time=processing_time,
-                error_message=str(e)
+                error_message=str(e),
             )
 
 
@@ -175,7 +180,7 @@ class JSONFormatter(UnixTool):
             category=ToolCategory.FORMAT_CONVERSION,
             input_formats=[DataFormat.TEXT, DataFormat.CSV, DataFormat.YAML],
             output_formats=[DataFormat.JSON],
-            tags=["format", "json", "conversion"]
+            tags=["format", "json", "conversion"],
         )
         super().__init__(metadata)
 
@@ -216,7 +221,7 @@ class JSONFormatter(UnixTool):
                 processing_time=processing_time,
                 input_format=input_format,
                 output_format=DataFormat.JSON,
-                metadata={"conversion_type": "to_json"}
+                metadata={"conversion_type": "to_json"},
             )
 
         except Exception as e:
@@ -227,7 +232,7 @@ class JSONFormatter(UnixTool):
                 success=False,
                 output_data=None,
                 processing_time=processing_time,
-                error_message=str(e)
+                error_message=str(e),
             )
 
 
@@ -241,11 +246,13 @@ class ContentFilter(UnixTool):
             category=ToolCategory.SEARCH_FILTERING,
             input_formats=[DataFormat.JSON, DataFormat.TEXT],
             output_formats=[DataFormat.JSON],
-            tags=["filter", "search", "condition"]
+            tags=["filter", "search", "condition"],
         )
         super().__init__(metadata)
 
-    async def process(self, input_data: Any, condition: str = "", **kwargs) -> ProcessingResult:
+    async def process(
+        self, input_data: Any, condition: str = "", **kwargs
+    ) -> ProcessingResult:
         """컨텐츠 필터링."""
         start_time = time.time()
 
@@ -254,7 +261,9 @@ class ContentFilter(UnixTool):
                 # 리스트 필터링
                 if condition.startswith("len>") and condition[4:].isdigit():
                     min_length = int(condition[4:])
-                    filtered = [item for item in input_data if len(str(item)) > min_length]
+                    filtered = [
+                        item for item in input_data if len(str(item)) > min_length
+                    ]
                 elif condition.startswith("contains:"):
                     substring = condition[9:]
                     filtered = [item for item in input_data if substring in str(item)]
@@ -266,7 +275,7 @@ class ContentFilter(UnixTool):
                     "filtered_items": filtered,
                     "original_count": len(input_data),
                     "filtered_count": len(filtered),
-                    "condition": condition
+                    "condition": condition,
                 }
 
             elif isinstance(input_data, dict):
@@ -277,10 +286,7 @@ class ContentFilter(UnixTool):
                 else:
                     filtered = input_data
 
-                result = {
-                    "filtered_data": filtered,
-                    "condition": condition
-                }
+                result = {"filtered_data": filtered, "condition": condition}
 
             else:
                 result = {"original_data": input_data, "condition": condition}
@@ -294,7 +300,7 @@ class ContentFilter(UnixTool):
                 processing_time=processing_time,
                 input_format=DataFormat.JSON,
                 output_format=DataFormat.JSON,
-                metadata={"filter_condition": condition}
+                metadata={"filter_condition": condition},
             )
 
         except Exception as e:
@@ -305,7 +311,7 @@ class ContentFilter(UnixTool):
                 success=False,
                 output_data=None,
                 processing_time=processing_time,
-                error_message=str(e)
+                error_message=str(e),
             )
 
 
@@ -319,7 +325,7 @@ class DataAggregator(UnixTool):
             category=ToolCategory.AGGREGATION_SUMMARY,
             input_formats=[DataFormat.JSON, DataFormat.CSV],
             output_formats=[DataFormat.JSON],
-            tags=["aggregate", "summary", "statistics"]
+            tags=["aggregate", "summary", "statistics"],
         )
         super().__init__(metadata)
 
@@ -338,7 +344,7 @@ class DataAggregator(UnixTool):
                     summary = {
                         "count": len(input_data),
                         "unique_count": len(set(str(x) for x in input_data)),
-                        "type_distribution": self._get_type_distribution(input_data)
+                        "type_distribution": self._get_type_distribution(input_data),
                     }
 
             elif isinstance(input_data, dict):
@@ -346,7 +352,9 @@ class DataAggregator(UnixTool):
                 summary = {
                     "key_count": len(input_data),
                     "value_types": {k: type(v).__name__ for k, v in input_data.items()},
-                    "nested_structures": sum(1 for v in input_data.values() if isinstance(v, (dict, list)))
+                    "nested_structures": sum(
+                        1 for v in input_data.values() if isinstance(v, (dict, list))
+                    ),
                 }
 
             else:
@@ -357,11 +365,14 @@ class DataAggregator(UnixTool):
 
             return ProcessingResult(
                 success=True,
-                output_data={"summary": summary, "original_type": type(input_data).__name__},
+                output_data={
+                    "summary": summary,
+                    "original_type": type(input_data).__name__,
+                },
                 processing_time=processing_time,
                 input_format=DataFormat.JSON,
                 output_format=DataFormat.JSON,
-                metadata={"aggregation_type": "summary"}
+                metadata={"aggregation_type": "summary"},
             )
 
         except Exception as e:
@@ -372,7 +383,7 @@ class DataAggregator(UnixTool):
                 success=False,
                 output_data=None,
                 processing_time=processing_time,
-                error_message=str(e)
+                error_message=str(e),
             )
 
     def _aggregate_dict_list(self, data: List[Dict]) -> Dict[str, Any]:
@@ -396,19 +407,19 @@ class DataAggregator(UnixTool):
                         "sum": sum(values),
                         "avg": sum(values) / len(values),
                         "min": min(values),
-                        "max": max(values)
+                        "max": max(values),
                     }
                 else:
                     stats[key] = {
                         "count": len(values),
                         "unique_count": len(set(str(v) for v in values)),
-                        "type": type(values[0]).__name__
+                        "type": type(values[0]).__name__,
                     }
 
         return {
             "total_items": len(data),
             "common_keys": list(all_keys),
-            "statistics": stats
+            "statistics": stats,
         }
 
     def _get_type_distribution(self, data: List) -> Dict[str, int]:
@@ -430,7 +441,7 @@ class ValidatorTool(UnixTool):
             category=ToolCategory.VALIDATION_CHECKING,
             input_formats=[DataFormat.JSON, DataFormat.TEXT],
             output_formats=[DataFormat.JSON],
-            tags=["validation", "check", "verify"]
+            tags=["validation", "check", "verify"],
         )
         super().__init__(metadata)
 
@@ -439,11 +450,7 @@ class ValidatorTool(UnixTool):
         start_time = time.time()
 
         try:
-            validation_result = {
-                "is_valid": True,
-                "checks": [],
-                "errors": []
-            }
+            validation_result = {"is_valid": True, "checks": [], "errors": []}
 
             # JSON 유효성 검증
             if isinstance(input_data, str):
@@ -465,7 +472,9 @@ class ValidatorTool(UnixTool):
                 for key in required_keys:
                     if key not in input_data:
                         validation_result["is_valid"] = False
-                        validation_result["errors"].append(f"Missing required key: {key}")
+                        validation_result["errors"].append(
+                            f"Missing required key: {key}"
+                        )
 
             processing_time = time.time() - start_time
             self._record_execution(validation_result["is_valid"], processing_time)
@@ -476,7 +485,7 @@ class ValidatorTool(UnixTool):
                 processing_time=processing_time,
                 input_format=DataFormat.JSON,
                 output_format=DataFormat.JSON,
-                metadata={"validation_checks": validation_result["checks"]}
+                metadata={"validation_checks": validation_result["checks"]},
             )
 
         except Exception as e:
@@ -487,7 +496,7 @@ class ValidatorTool(UnixTool):
                 success=False,
                 output_data=None,
                 processing_time=processing_time,
-                error_message=str(e)
+                error_message=str(e),
             )
 
 
@@ -512,10 +521,14 @@ class ToolPipeline:
         current_data = input_data
         execution_results = []
 
-        logger.info(f"Starting pipeline execution: {self.name} with {len(self.tools)} tools")
+        logger.info(
+            f"Starting pipeline execution: {self.name} with {len(self.tools)} tools"
+        )
 
         for i, tool in enumerate(self.tools):
-            logger.debug(f"Executing tool {i+1}/{len(self.tools)}: {tool.metadata.name}")
+            logger.debug(
+                f"Executing tool {i + 1}/{len(self.tools)}: {tool.metadata.name}"
+            )
 
             # 도구별 파라미터 추출
             tool_params = kwargs.get(tool.metadata.name, {})
@@ -523,16 +536,20 @@ class ToolPipeline:
             # 도구 실행
             result = await tool.process(current_data, **tool_params)
 
-            execution_results.append({
-                "tool_index": i,
-                "tool_name": tool.metadata.name,
-                "success": result.success,
-                "processing_time": result.processing_time,
-                "error": result.error_message
-            })
+            execution_results.append(
+                {
+                    "tool_index": i,
+                    "tool_name": tool.metadata.name,
+                    "success": result.success,
+                    "processing_time": result.processing_time,
+                    "error": result.error_message,
+                }
+            )
 
             if not result.success:
-                logger.error(f"Pipeline failed at tool {tool.metadata.name}: {result.error_message}")
+                logger.error(
+                    f"Pipeline failed at tool {tool.metadata.name}: {result.error_message}"
+                )
                 break
 
             # 다음 도구의 입력으로 결과 사용
@@ -547,12 +564,14 @@ class ToolPipeline:
             "tool_count": len(self.tools),
             "executed_tools": len(execution_results),
             "final_output": current_data,
-            "execution_details": execution_results
+            "execution_details": execution_results,
         }
 
         self.execution_history.append(pipeline_result)
 
-        logger.info(f"Pipeline {self.name} completed in {total_time:.2f}s, success: {pipeline_result['success']}")
+        logger.info(
+            f"Pipeline {self.name} completed in {total_time:.2f}s, success: {pipeline_result['success']}"
+        )
         return pipeline_result
 
     def get_pipeline_stats(self) -> Dict[str, Any]:
@@ -568,13 +587,12 @@ class ToolPipeline:
             "success_rate": successes / len(self.execution_history),
             "avg_execution_time": total_time / len(self.execution_history),
             "tools_in_pipeline": len(self.tools),
-            "tool_names": [t.metadata.name for t in self.tools]
+            "tool_names": [t.metadata.name for t in self.tools],
         }
 
 
 class UnixPhilosophyToolbox:
-    """
-    Unix 철학 도구 모음.
+    """Unix 철학 도구 모음.
 
     각 도구가 한 가지 일을 잘 수행하도록 설계.
     도구들을 조합하여 복잡한 작업을 수행.
@@ -601,9 +619,11 @@ class UnixPhilosophyToolbox:
     def register_tool(self, tool: UnixTool):
         """도구 등록."""
         self.tools[tool.metadata.name] = tool
-        logger.info(f"Registered Unix tool: {tool.metadata.name} ({tool.metadata.category.value})")
+        logger.info(
+            f"Registered Unix tool: {tool.metadata.name} ({tool.metadata.category.value})"
+        )
 
-    def get_tool(self, name: str) -> Optional[UnixTool]:
+    def get_tool(self, name: str) -> UnixTool | None:
         """도구 가져오기."""
         return self.tools.get(name)
 
@@ -627,17 +647,25 @@ class UnixPhilosophyToolbox:
         """연구용 파이프라인 생성."""
         return self.create_pipeline(
             "research_pipeline",
-            ["text_extractor", "json_formatter", "content_filter", "data_aggregator", "validator"]
+            [
+                "text_extractor",
+                "json_formatter",
+                "content_filter",
+                "data_aggregator",
+                "validator",
+            ],
         )
 
     def create_data_processing_pipeline(self) -> ToolPipeline:
         """데이터 처리용 파이프라인 생성."""
         return self.create_pipeline(
             "data_processing",
-            ["json_formatter", "content_filter", "data_aggregator", "validator"]
+            ["json_formatter", "content_filter", "data_aggregator", "validator"],
         )
 
-    async def execute_tool(self, tool_name: str, input_data: Any, **kwargs) -> ProcessingResult:
+    async def execute_tool(
+        self, tool_name: str, input_data: Any, **kwargs
+    ) -> ProcessingResult:
         """단일 도구 실행."""
         tool = self.get_tool(tool_name)
         if not tool:
@@ -645,19 +673,21 @@ class UnixPhilosophyToolbox:
                 success=False,
                 output_data=None,
                 processing_time=0.0,
-                error_message=f"Tool not found: {tool_name}"
+                error_message=f"Tool not found: {tool_name}",
             )
 
         return await tool.process(input_data, **kwargs)
 
-    async def execute_pipeline(self, pipeline_name: str, input_data: Any, **kwargs) -> Dict[str, Any]:
+    async def execute_pipeline(
+        self, pipeline_name: str, input_data: Any, **kwargs
+    ) -> Dict[str, Any]:
         """파이프라인 실행."""
         pipeline = self.pipelines.get(pipeline_name)
         if not pipeline:
             return {
                 "success": False,
                 "error": f"Pipeline not found: {pipeline_name}",
-                "total_time": 0.0
+                "total_time": 0.0,
             }
 
         return await pipeline.execute(input_data, **kwargs)
@@ -673,7 +703,7 @@ class UnixPhilosophyToolbox:
                 "output_formats": [f.value for f in tool.metadata.output_formats],
                 "success_rate": tool.success_rate,
                 "usage_count": tool.usage_count,
-                "avg_processing_time": tool.avg_processing_time
+                "avg_processing_time": tool.avg_processing_time,
             }
             for tool in self.tools.values()
         ]
@@ -694,14 +724,17 @@ class UnixPhilosophyToolbox:
         return {
             "total_tools": len(self.tools),
             "total_usage": total_usage,
-            "overall_success_rate": total_success / total_usage if total_usage > 0 else 0,
+            "overall_success_rate": total_success / total_usage
+            if total_usage > 0
+            else 0,
             "categories": category_stats,
-            "pipelines": list(self.pipelines.keys())
+            "pipelines": list(self.pipelines.keys()),
         }
 
 
 # 전역 Unix 철학 도구 모음 인스턴스
 _unix_toolbox = None
+
 
 def get_unix_toolbox() -> UnixPhilosophyToolbox:
     """전역 Unix 철학 도구 모음 인스턴스 반환."""
@@ -709,6 +742,7 @@ def get_unix_toolbox() -> UnixPhilosophyToolbox:
     if _unix_toolbox is None:
         _unix_toolbox = UnixPhilosophyToolbox()
     return _unix_toolbox
+
 
 def set_unix_toolbox(toolbox: UnixPhilosophyToolbox):
     """전역 Unix 철학 도구 모음 설정."""
@@ -722,25 +756,30 @@ async def quick_extract_text(text: str, pattern: str = r"(.*)") -> ProcessingRes
     toolbox = get_unix_toolbox()
     return await toolbox.execute_tool("text_extractor", text, pattern=pattern)
 
+
 async def quick_format_json(data: Any) -> ProcessingResult:
     """빠른 JSON 포맷팅."""
     toolbox = get_unix_toolbox()
     return await toolbox.execute_tool("json_formatter", data)
+
 
 async def quick_filter_content(data: Any, condition: str) -> ProcessingResult:
     """빠른 컨텐츠 필터링."""
     toolbox = get_unix_toolbox()
     return await toolbox.execute_tool("content_filter", data, condition=condition)
 
+
 async def quick_aggregate_data(data: Any) -> ProcessingResult:
     """빠른 데이터 집계."""
     toolbox = get_unix_toolbox()
     return await toolbox.execute_tool("data_aggregator", data)
 
+
 async def quick_validate_data(data: Any, **kwargs) -> ProcessingResult:
     """빠른 데이터 검증."""
     toolbox = get_unix_toolbox()
     return await toolbox.execute_tool("validator", data, **kwargs)
+
 
 async def run_research_pipeline(input_data: Any) -> Dict[str, Any]:
     """연구 파이프라인 실행."""

@@ -1,13 +1,12 @@
-"""
-Task Analyzer Prompt Module
+"""Task Analyzer Prompt Module
 
 Contains all prompts used by Task Analyzer.
 """
 
 # 작업 분석
 task_analysis = {
-    'system_message': 'You are an expert task analyzer with comprehensive decomposition capabilities. You validate variables and determine collaboration needs with other agents. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user\'s requested language.',
-    'template': '''Analyze the following task and decompose it into detailed components:
+    "system_message": "You are an expert task analyzer with comprehensive decomposition capabilities. You validate variables and determine collaboration needs with other agents. IMPORTANT: All internal communication between agents must be in English. Only the final report to the user should be in the user's requested language.",
+    "template": """Analyze the following task and decompose it into detailed components:
 
 Task: {task}
 Context: {context}
@@ -30,13 +29,10 @@ Task Analysis:
 
 **IMPORTANT: All internal agent communication must be in English.**
 
-Return task analysis results.''',
-    'variables': ['task', 'context'],
-    'description': 'Task analysis and decomposition prompt (includes variable validation and collaboration need assessment)'
+Return task analysis results.""",
+    "variables": ["task", "context"],
+    "description": "Task analysis and decomposition prompt (includes variable validation and collaboration need assessment)",
 }
 
 # 프롬프트들을 딕셔너리로 묶어서 export
-task_analyzer_prompts = {
-    'task_analysis': task_analysis
-}
-
+task_analyzer_prompts = {"task_analysis": task_analysis}

@@ -1,10 +1,8 @@
-"""
-Task Decomposition Prompt
-"""
+"""Task Decomposition Prompt"""
 
 task_decomposition = {
-    'system_message': 'You are a task decomposition agent. Split research plans into independent parallel tasks.',
-    'template': '''Research Plan:
+    "system_message": "You are a task decomposition agent. Split research plans into independent parallel tasks.",
+    "template": """Research Plan:
 {plan}
 
 Original Query: {query}
@@ -50,8 +48,7 @@ Each task must:
 - Include priority and estimated time
 - Have no dependencies (for parallel execution)
 
-Recommended number of tasks: 3-5''',
-    'variables': ['plan', 'query'],
-    'description': 'Prompt for decomposing research plan into independent tasks'
+Recommended number of tasks: 3-5""",
+    "variables": ["plan", "query"],
+    "description": "Prompt for decomposing research plan into independent tasks",
 }
-

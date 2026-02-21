@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""
-진단 결과를 바탕으로 리포트 생성
-"""
+"""진단 결과를 바탕으로 리포트 생성"""
 
 import json
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # 실행 결과를 JSON으로 받아서 리포트 생성
 if len(sys.argv) > 1:
     results_file = sys.argv[1]
-    with open(results_file, 'r') as f:
+    with open(results_file) as f:
         results = json.load(f)
 else:
     # 기본 결과 (실제 실행 결과 기반)
@@ -26,8 +24,13 @@ else:
                 "params_creation": {"success": True},
                 "stdio_client": {"success": True, "time": 0.01},
                 "session_init": {"success": True, "time": 2.42},
-                "list_tools": {"success": True, "time": 1.03, "tools_count": 3, "tools": ["fetch_url", "extract_elements", "get_page_metadata"]}
-            }
+                "list_tools": {
+                    "success": True,
+                    "time": 1.03,
+                    "tools_count": 3,
+                    "tools": ["fetch_url", "extract_elements", "get_page_metadata"],
+                },
+            },
         },
         "docfork": {
             "server_name": "docfork",
@@ -39,8 +42,13 @@ else:
                 "params_creation": {"success": True},
                 "stdio_client": {"success": True, "time": 0.00},
                 "session_init": {"success": True, "time": 2.51},
-                "list_tools": {"success": True, "time": 0.92, "tools_count": 2, "tools": ["docfork_search_docs", "docfork_read_url"]}
-            }
+                "list_tools": {
+                    "success": True,
+                    "time": 0.92,
+                    "tools_count": 2,
+                    "tools": ["docfork_search_docs", "docfork_read_url"],
+                },
+            },
         },
         "context7-mcp": {
             "server_name": "context7-mcp",
@@ -53,8 +61,8 @@ else:
                 "params_creation": {"success": True},
                 "stdio_client": {"success": True, "time": 0.00},
                 "session_init": {"success": True, "time": 3.52},
-                "list_tools": {"success": False, "error": "timeout"}
-            }
+                "list_tools": {"success": False, "error": "timeout"},
+            },
         },
         "parallel-search": {
             "server_name": "parallel-search",
@@ -66,8 +74,8 @@ else:
                 "api_key_check": {"success": True, "key_length": 36},
                 "params_creation": {"success": True},
                 "stdio_client": {"success": True, "time": 0.00},
-                "session_init": {"success": False, "error": "HTTP 401: invalid_token"}
-            }
+                "session_init": {"success": False, "error": "HTTP 401: invalid_token"},
+            },
         },
         "tavily-mcp": {
             "server_name": "tavily-mcp",
@@ -79,8 +87,11 @@ else:
                 "api_key_check": {"success": True, "key_length": 36},
                 "params_creation": {"success": True},
                 "stdio_client": {"success": True, "time": 0.01},
-                "session_init": {"success": False, "error": "Failed to get user config: Config get request failed with status 500"}
-            }
+                "session_init": {
+                    "success": False,
+                    "error": "Failed to get user config: Config get request failed with status 500",
+                },
+            },
         },
         "WebSearch-MCP": {
             "server_name": "WebSearch-MCP",
@@ -92,8 +103,11 @@ else:
                 "api_key_check": {"success": True, "key_length": 36},
                 "params_creation": {"success": True},
                 "stdio_client": {"success": True, "time": 0.01},
-                "session_init": {"success": False, "error": "Failed to get user config: Config get request failed with status 500"}
-            }
+                "session_init": {
+                    "success": False,
+                    "error": "Failed to get user config: Config get request failed with status 500",
+                },
+            },
         },
         "semantic_scholar": {
             "server_name": "semantic_scholar",
@@ -103,9 +117,12 @@ else:
             "stages": {
                 "url_check": {"success": True},
                 "params": {"success": True},
-                "http_client": {"success": False, "error": "unhandled errors in a TaskGroup"}
-            }
-        }
+                "http_client": {
+                    "success": False,
+                    "error": "unhandled errors in a TaskGroup",
+                },
+            },
+        },
     }
 
 project_root = Path(__file__).parent.parent
@@ -123,13 +140,13 @@ for server_name, result in results.items():
 
 report = f"""# Smithery MCP 서버 진단 리포트
 
-**생성 일시**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**생성 일시**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## 📊 요약
 
 - **전체 서버 수**: {len(results)}
-- **✅ 성공**: {len(successful)} ({len(successful)/len(results)*100:.1f}%)
-- **❌ 실패**: {len(failed)} ({len(failed)/len(results)*100:.1f}%)
+- **✅ 성공**: {len(successful)} ({len(successful) / len(results) * 100:.1f}%)
+- **❌ 실패**: {len(failed)} ({len(failed) / len(results) * 100:.1f}%)
 
 ## ✅ 성공한 서버
 
@@ -140,21 +157,25 @@ for server_name, result in successful:
     tools_info = stages.get("list_tools", {})
     tools_count = tools_info.get("tools_count", 0)
     tools = tools_info.get("tools", [])
-    
+
     report += f"""### {server_name}
 
-- **타입**: {result.get('type', 'unknown')}
+- **타입**: {result.get("type", "unknown")}
 - **도구 수**: {tools_count}개
-- **도구 목록**: {', '.join(tools) if tools else 'N/A'}
+- **도구 목록**: {", ".join(tools) if tools else "N/A"}
 
 **단계별 성공 여부**:
 """
     for stage_name, stage_result in stages.items():
         if isinstance(stage_result, dict):
             status = "✅ 성공" if stage_result.get("success") else "❌ 실패"
-            time_info = f" ({stage_result.get('time', 0):.2f}s)" if stage_result.get("time") else ""
+            time_info = (
+                f" ({stage_result.get('time', 0):.2f}s)"
+                if stage_result.get("time")
+                else ""
+            )
             report += f"- {stage_name}: {status}{time_info}\n"
-    
+
     report += "\n"
 
 if failed:
@@ -164,8 +185,8 @@ if failed:
     for server_name, result in failed:
         report += f"""### {server_name}
 
-- **타입**: {result.get('type', 'unknown')}
-- **최종 에러**: `{result.get('error', 'Unknown')}`
+- **타입**: {result.get("type", "unknown")}
+- **최종 에러**: `{result.get("error", "Unknown")}`
 
 **단계별 분석**:
 """
@@ -173,10 +194,18 @@ if failed:
         for stage_name, stage_result in stages.items():
             if isinstance(stage_result, dict):
                 status = "✅ 성공" if stage_result.get("success") else "❌ 실패"
-                error_info = f" - {stage_result.get('error', '')}" if not stage_result.get("success") and stage_result.get("error") else ""
-                time_info = f" ({stage_result.get('time', 0):.2f}s)" if stage_result.get("time") else ""
+                error_info = (
+                    f" - {stage_result.get('error', '')}"
+                    if not stage_result.get("success") and stage_result.get("error")
+                    else ""
+                )
+                time_info = (
+                    f" ({stage_result.get('time', 0):.2f}s)"
+                    if stage_result.get("time")
+                    else ""
+                )
                 report += f"- {stage_name}: {status}{time_info}{error_info}\n"
-        
+
         report += "\n"
 
 # 문제점 분석
@@ -185,11 +214,16 @@ report += """## 🔍 문제점 분석
 """
 
 # 500 에러
-error_500_servers = [name for name, r in failed if "500" in str(r.get("error", "")) or "Failed to get user config" in str(r.get("error", ""))]
+error_500_servers = [
+    name
+    for name, r in failed
+    if "500" in str(r.get("error", ""))
+    or "Failed to get user config" in str(r.get("error", ""))
+]
 if error_500_servers:
     report += f"""### 1. Smithery 서버 500 에러 (Bundle 설정 조회 실패)
 
-**영향 서버**: {', '.join(error_500_servers)}
+**영향 서버**: {", ".join(error_500_servers)}
 
 **증상**: Bundle 다운로드는 성공했지만, 사용자 설정 조회 단계에서 Smithery 서버가 500 에러를 반환합니다.
 
@@ -203,11 +237,15 @@ if error_500_servers:
 """
 
 # 401 에러
-error_401_servers = [name for name, r in failed if "401" in str(r.get("error", "")) or "invalid_token" in str(r.get("error", ""))]
+error_401_servers = [
+    name
+    for name, r in failed
+    if "401" in str(r.get("error", "")) or "invalid_token" in str(r.get("error", ""))
+]
 if error_401_servers:
     report += f"""### 2. HTTP 401 인증 실패
 
-**영향 서버**: {', '.join(error_401_servers)}
+**영향 서버**: {", ".join(error_401_servers)}
 
 **증상**: 연결은 성공했으나 세션 초기화 또는 heartbeat 단계에서 401 에러 발생
 
@@ -223,11 +261,13 @@ if error_401_servers:
 """
 
 # 타임아웃
-timeout_servers = [name for name, r in failed if "timeout" in str(r.get("error", "")).lower()]
+timeout_servers = [
+    name for name, r in failed if "timeout" in str(r.get("error", "")).lower()
+]
 if timeout_servers:
     report += f"""### 3. 타임아웃 에러
 
-**영향 서버**: {', '.join(timeout_servers)}
+**영향 서버**: {", ".join(timeout_servers)}
 
 **증상**: 도구 목록 조회 시 타임아웃 발생
 
@@ -240,7 +280,8 @@ if timeout_servers:
 """
 
 # 권장 사항
-report += """## 💡 권장 사항
+report += (
+    """## 💡 권장 사항
 
 1. **즉시 조치**
    - Smithery 서버 상태 확인
@@ -263,7 +304,9 @@ report += """## 💡 권장 사항
 <summary>전체 진단 결과 JSON 보기</summary>
 
 ```json
-""" + json.dumps(results, indent=2, ensure_ascii=False, default=str) + """
+"""
+    + json.dumps(results, indent=2, ensure_ascii=False, default=str)
+    + """
 ```
 
 </details>
@@ -271,11 +314,14 @@ report += """## 💡 권장 사항
 ---
 *이 리포트는 자동으로 생성되었습니다.*
 """
+)
 
-report_file = reports_dir / f"smithery_mcp_diagnosis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-with open(report_file, 'w', encoding='utf-8') as f:
+report_file = (
+    reports_dir
+    / f"smithery_mcp_diagnosis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+)
+with open(report_file, "w", encoding="utf-8") as f:
     f.write(report)
 
 print(f"📄 리포트 생성 완료: {report_file}")
 print(f"   성공: {len(successful)}/{len(results)}, 실패: {len(failed)}/{len(results)}")
-

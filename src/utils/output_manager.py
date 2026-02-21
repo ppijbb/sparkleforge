@@ -1,23 +1,22 @@
-"""
-통합 출력 시스템 - 사용자 중심 출력 관리
+"""통합 출력 시스템 - 사용자 중심 출력 관리
 
 gemini-cli 수준의 실시간 스트리밍 출력, 도구 실행 결과 포맷팅,
 진행 상황 표시, 색상 지원을 제공하는 통합 출력 시스템
 """
 
-import asyncio
 import logging
 import sys
 import time
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, Optional, List, Union, TextIO
-from dataclasses import dataclass
-from contextlib import asynccontextmanager
+from typing import Any, Dict, List
 
 
 class OutputLevel(Enum):
     """출력 레벨 정의."""
+
     DEBUG = "debug"
     SERVICE = "service"
     USER = "user"
@@ -25,6 +24,7 @@ class OutputLevel(Enum):
 
 class OutputFormat(Enum):
     """출력 형식 정의."""
+
     TEXT = "text"
     JSON = "json"
     STRUCTURED = "structured"
@@ -33,28 +33,31 @@ class OutputFormat(Enum):
 @dataclass
 class ProgressInfo:
     """진행 상황 정보."""
+
     stage: str
     current: int
     total: int
     message: str = ""
-    estimated_time_remaining: Optional[float] = None
-    start_time: Optional[float] = None
+    estimated_time_remaining: float | None = None
+    start_time: float | None = None
 
 
 @dataclass
 class ToolExecutionResult:
     """도구 실행 결과."""
+
     tool_name: str
     success: bool
     execution_time: float
     result_summary: str
-    error_message: Optional[str] = None
+    error_message: str | None = None
     confidence: float = 0.0
 
 
 @dataclass
 class AgentCommunicationInfo:
     """에이전트 통신 정보."""
+
     agent_id: str
     action: str
     shared_results_count: int = 0
@@ -66,8 +69,7 @@ class AgentCommunicationInfo:
 
 
 class UserCenteredOutputManager:
-    """
-    사용자 중심 출력 매니저.
+    """사용자 중심 출력 매니저.
 
     사용자가 봐야 할 정보만 표시하고, 불필요한 디버그 정보는 로그 파일로만 기록.
     실시간 스트리밍 출력, 도구 실행 결과 포맷팅, 진행 상황 표시 제공.
@@ -80,7 +82,7 @@ class UserCenteredOutputManager:
         enable_colors: bool = True,
         stream_output: bool = True,
         show_progress: bool = True,
-        log_file: Optional[str] = None
+        log_file: str | None = None,
     ):
         """초기화."""
         self.output_level = output_level
@@ -91,55 +93,55 @@ class UserCenteredOutputManager:
 
         # 색상 코드 정의 (기존 ColoredFormatter 확장)
         self.colors = {
-            'reset': '\033[0m',
-            'red': '\033[31m',
-            'green': '\033[32m',
-            'yellow': '\033[33m',
-            'blue': '\033[34m',
-            'magenta': '\033[35m',
-            'cyan': '\033[36m',
-            'white': '\033[37m',
-            'bright_red': '\033[91m',
-            'bright_green': '\033[92m',
-            'bright_yellow': '\033[93m',
-            'bright_blue': '\033[94m',
-            'bright_magenta': '\033[95m',
-            'bright_cyan': '\033[96m',
-            'bright_white': '\033[97m',
+            "reset": "\033[0m",
+            "red": "\033[31m",
+            "green": "\033[32m",
+            "yellow": "\033[33m",
+            "blue": "\033[34m",
+            "magenta": "\033[35m",
+            "cyan": "\033[36m",
+            "white": "\033[37m",
+            "bright_red": "\033[91m",
+            "bright_green": "\033[92m",
+            "bright_yellow": "\033[93m",
+            "bright_blue": "\033[94m",
+            "bright_magenta": "\033[95m",
+            "bright_cyan": "\033[96m",
+            "bright_white": "\033[97m",
         }
 
         # 에이전트별 색상 (기존 AGENT_COLORS 확장)
         self.agent_colors = {
-            'planner': 'bright_blue',
-            'executor': 'bright_green',
-            'verifier': 'bright_yellow',
-            'generator': 'bright_magenta',
-            'orchestrator': 'bright_cyan',
-            'parallel_executor': 'green',
-            'parallel_verifier': 'yellow',
+            "planner": "bright_blue",
+            "executor": "bright_green",
+            "verifier": "bright_yellow",
+            "generator": "bright_magenta",
+            "orchestrator": "bright_cyan",
+            "parallel_executor": "green",
+            "parallel_verifier": "yellow",
         }
 
         # 상태별 색상
         self.status_colors = {
-            'success': 'bright_green',
-            'error': 'bright_red',
-            'warning': 'bright_yellow',
-            'info': 'bright_blue',
-            'progress': 'bright_cyan',
-            'tool_success': 'green',
-            'tool_error': 'red',
+            "success": "bright_green",
+            "error": "bright_red",
+            "warning": "bright_yellow",
+            "info": "bright_blue",
+            "progress": "bright_cyan",
+            "tool_success": "green",
+            "tool_error": "red",
         }
 
         # 진행 상황 추적
-        self.current_progress: Optional[ProgressInfo] = None
-        self.progress_start_time: Optional[float] = None
+        self.current_progress: ProgressInfo | None = None
+        self.progress_start_time: float | None = None
 
         # 통계
         self.stats = {
-            'tools_executed': 0,
-            'tools_successful': 0,
-            'agents_communicated': 0,
-            'results_shared': 0,
+            "tools_executed": 0,
+            "tools_successful": 0,
+            "agents_communicated": 0,
+            "results_shared": 0,
         }
 
         # 스트림 출력 설정
@@ -158,14 +160,15 @@ class UserCenteredOutputManager:
 
         # 파일 핸들러
         from pathlib import Path
+
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        handler = logging.FileHandler(log_file, encoding='utf-8')
+        handler = logging.FileHandler(log_file, encoding="utf-8")
         handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -180,12 +183,12 @@ class UserCenteredOutputManager:
 
     def _format_agent_name(self, agent_name: str) -> str:
         """에이전트 이름 포맷팅."""
-        color = self.agent_colors.get(agent_name.lower(), 'bright_white')
+        color = self.agent_colors.get(agent_name.lower(), "bright_white")
         return self._colorize(f"[{agent_name.upper()}]", color)
 
-    def _format_status(self, status: str, status_type: str = 'info') -> str:
+    def _format_status(self, status: str, status_type: str = "info") -> str:
         """상태 텍스트 포맷팅."""
-        color = self.status_colors.get(status_type, 'bright_white')
+        color = self.status_colors.get(status_type, "bright_white")
         return self._colorize(status, color)
 
     def _should_output(self, level: OutputLevel) -> bool:
@@ -201,9 +204,9 @@ class UserCenteredOutputManager:
         self,
         message: str,
         level: OutputLevel = OutputLevel.USER,
-        agent_name: Optional[str] = None,
-        status_type: Optional[str] = None,
-        **kwargs
+        agent_name: str | None = None,
+        status_type: str | None = None,
+        **kwargs,
     ):
         """메시지 출력."""
         if not self._should_output(level):
@@ -216,13 +219,15 @@ class UserCenteredOutputManager:
         formatted_message = message
 
         if agent_name:
-            formatted_message = f"{self._format_agent_name(agent_name)} {formatted_message}"
+            formatted_message = (
+                f"{self._format_agent_name(agent_name)} {formatted_message}"
+            )
 
         if status_type:
             formatted_message = self._format_status(formatted_message, status_type)
 
         # 타임스탬프 추가 (서비스 레벨 이상)
-        if level.value in ['service', 'user']:
+        if level.value in ["service", "user"]:
             timestamp = datetime.now().strftime("%H:%M:%S")
             formatted_message = f"[{timestamp}] {formatted_message}"
 
@@ -252,7 +257,9 @@ class UserCenteredOutputManager:
             result_preview += "..."
 
         # 메시지 구성
-        message = f"{icon} 도구 '{tool_result.tool_name}' 실행 완료 ({exec_time}){confidence}"
+        message = (
+            f"{icon} 도구 '{tool_result.tool_name}' 실행 완료 ({exec_time}){confidence}"
+        )
         if result_preview:
             message += f"\n    결과: {result_preview}"
 
@@ -262,13 +269,13 @@ class UserCenteredOutputManager:
         await self.output(
             message,
             level=OutputLevel.USER,
-            status_type='tool_success' if tool_result.success else 'tool_error'
+            status_type="tool_success" if tool_result.success else "tool_error",
         )
 
         # 통계 업데이트
-        self.stats['tools_executed'] += 1
+        self.stats["tools_executed"] += 1
         if tool_result.success:
-            self.stats['tools_successful'] += 1
+            self.stats["tools_successful"] += 1
 
     async def output_agent_communication(self, comm_info: AgentCommunicationInfo):
         """에이전트 통신 정보 출력."""
@@ -284,18 +291,20 @@ class UserCenteredOutputManager:
             topics = ", ".join(comm_info.discussion_topics)
             message += f" - 토론 주제: {topics}"
 
-        await self.output(message, level=OutputLevel.SERVICE, agent_name=comm_info.agent_id)
+        await self.output(
+            message, level=OutputLevel.SERVICE, agent_name=comm_info.agent_id
+        )
 
         # 통계 업데이트
-        self.stats['agents_communicated'] += 1
-        self.stats['results_shared'] += comm_info.shared_results_count
+        self.stats["agents_communicated"] += 1
+        self.stats["results_shared"] += comm_info.shared_results_count
 
     async def start_progress(
         self,
         stage: str,
         total: int,
         message: str = "",
-        estimated_time: Optional[float] = None
+        estimated_time: float | None = None,
     ):
         """진행 상황 시작."""
         if not self.show_progress or not self._should_output(OutputLevel.USER):
@@ -307,7 +316,7 @@ class UserCenteredOutputManager:
             total=total,
             message=message,
             estimated_time_remaining=estimated_time,
-            start_time=time.time()
+            start_time=time.time(),
         )
         self.progress_start_time = time.time()
 
@@ -315,9 +324,9 @@ class UserCenteredOutputManager:
 
     async def update_progress(
         self,
-        current: Optional[int] = None,
-        message: Optional[str] = None,
-        increment: bool = False
+        current: int | None = None,
+        message: str | None = None,
+        increment: bool = False,
     ):
         """진행 상황 업데이트."""
         if not self.current_progress or not self.show_progress:
@@ -358,7 +367,11 @@ class UserCenteredOutputManager:
             total_time = time.time() - self.progress_start_time
             message += f" (총 {total_time:.1f}초)"
 
-        await self.output(message, level=OutputLevel.USER, status_type='success' if success else 'error')
+        await self.output(
+            message,
+            level=OutputLevel.USER,
+            status_type="success" if success else "error",
+        )
 
         self.current_progress = None
         self.progress_start_time = None
@@ -369,11 +382,17 @@ class UserCenteredOutputManager:
             return
 
         progress = self.current_progress
-        percentage = (progress.current / progress.total * 100) if progress.total > 0 else 0
+        percentage = (
+            (progress.current / progress.total * 100) if progress.total > 0 else 0
+        )
 
         # 진행률 바
         bar_width = 40
-        filled = int(bar_width * progress.current / progress.total) if progress.total > 0 else 0
+        filled = (
+            int(bar_width * progress.current / progress.total)
+            if progress.total > 0
+            else 0
+        )
         bar = "█" * filled + "░" * (bar_width - filled)
 
         # 예상 시간
@@ -390,9 +409,10 @@ class UserCenteredOutputManager:
         if self.stream_output:
             # ANSI escape code로 줄 끝까지 지우기
             import sys
+
             sys.stdout.write(f"\r\033[K{message}")
             sys.stdout.flush()
-            
+
             if progress.current >= progress.total:
                 sys.stdout.write("\n")  # 완료 시에만 줄바꿈
                 sys.stdout.flush()
@@ -406,15 +426,27 @@ class UserCenteredOutputManager:
         await self.output("📋 워크플로우 실행 요약", level=OutputLevel.USER)
 
         # 통계 출력
-        await self.output(f"🔧 실행된 도구: {self.stats['tools_executed']}개", level=OutputLevel.USER)
-        await self.output(f"✅ 성공한 도구: {self.stats['tools_successful']}개", level=OutputLevel.USER)
+        await self.output(
+            f"🔧 실행된 도구: {self.stats['tools_executed']}개", level=OutputLevel.USER
+        )
+        await self.output(
+            f"✅ 성공한 도구: {self.stats['tools_successful']}개",
+            level=OutputLevel.USER,
+        )
 
-        if self.stats['tools_executed'] > 0:
-            success_rate = self.stats['tools_successful'] / self.stats['tools_executed'] * 100
+        if self.stats["tools_executed"] > 0:
+            success_rate = (
+                self.stats["tools_successful"] / self.stats["tools_executed"] * 100
+            )
             await self.output(f"📈 성공률: {success_rate:.1f}%", level=OutputLevel.USER)
 
-        await self.output(f"🤝 에이전트 통신: {self.stats['agents_communicated']}회", level=OutputLevel.USER)
-        await self.output(f"📤 공유된 결과: {self.stats['results_shared']}개", level=OutputLevel.USER)
+        await self.output(
+            f"🤝 에이전트 통신: {self.stats['agents_communicated']}회",
+            level=OutputLevel.USER,
+        )
+        await self.output(
+            f"📤 공유된 결과: {self.stats['results_shared']}개", level=OutputLevel.USER
+        )
 
         await self.output("=" * 80, level=OutputLevel.USER)
 
@@ -422,8 +454,8 @@ class UserCenteredOutputManager:
         self,
         error: Exception,
         context: str = "",
-        agent_name: Optional[str] = None,
-        show_traceback: bool = False
+        agent_name: str | None = None,
+        show_traceback: bool = False,
     ):
         """에러 출력."""
         error_message = str(error)
@@ -435,12 +467,13 @@ class UserCenteredOutputManager:
             f"❌ 오류 발생: {error_message}",
             level=OutputLevel.USER,
             agent_name=agent_name,
-            status_type='error'
+            status_type="error",
         )
 
         # 트레이스백 출력 (디버그 모드에서)
         if show_traceback and self._should_output(OutputLevel.DEBUG):
             import traceback
+
             tb = traceback.format_exc()
             if self.debug_logger:
                 self.debug_logger.error(f"Traceback for error: {error_message}\n{tb}")
@@ -448,8 +481,8 @@ class UserCenteredOutputManager:
     async def output_success(
         self,
         message: str,
-        agent_name: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        agent_name: str | None = None,
+        details: Dict[str, Any] | None = None,
     ):
         """성공 메시지 출력."""
         full_message = message
@@ -457,11 +490,11 @@ class UserCenteredOutputManager:
         if details:
             # 중요한 세부 정보만 표시
             important_details = []
-            if 'count' in details:
+            if "count" in details:
                 important_details.append(f"개수: {details['count']}")
-            if 'time' in details:
+            if "time" in details:
                 important_details.append(f"시간: {details['time']:.2f}초")
-            if 'quality' in details and details['quality'] > 0:
+            if "quality" in details and details["quality"] > 0:
                 important_details.append(f"품질: {details['quality']:.1%}")
 
             if important_details:
@@ -471,7 +504,7 @@ class UserCenteredOutputManager:
             full_message,
             level=OutputLevel.USER,
             agent_name=agent_name,
-            status_type='success'
+            status_type="success",
         )
 
     def set_output_level(self, level: OutputLevel):
@@ -496,12 +529,14 @@ class UserCenteredOutputManager:
 # 전역 인스턴스
 _output_manager = None
 
+
 def get_output_manager() -> UserCenteredOutputManager:
     """전역 출력 매니저 인스턴스 반환."""
     global _output_manager
     if _output_manager is None:
         _output_manager = UserCenteredOutputManager()
     return _output_manager
+
 
 def set_output_manager(manager: UserCenteredOutputManager):
     """전역 출력 매니저 설정."""

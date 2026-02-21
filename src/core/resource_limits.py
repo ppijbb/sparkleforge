@@ -1,5 +1,4 @@
-"""
-Input size limits for OOM protection
+"""Input size limits for OOM protection
 
 Prevents memory exhaustion when users pipe large files or import massive content.
 A 10MB limit provides reasonable headroom for most use cases while preventing
@@ -7,7 +6,6 @@ catastrophic memory usage.
 
 Inspired by mdflow's limits.ts pattern.
 """
-
 
 # Maximum sizes in bytes
 MAX_INPUT_SIZE = 10 * 1024 * 1024  # 10MB
@@ -22,7 +20,7 @@ MAX_CODE_SIZE_HUMAN = "1MB"
 
 class StdinSizeLimitError(Exception):
     """Error thrown when stdin input exceeds the size limit"""
-    
+
     def __init__(self, bytes_read: int):
         self.bytes_read = bytes_read
         message = (
@@ -36,7 +34,7 @@ class StdinSizeLimitError(Exception):
 
 class FileSizeLimitError(Exception):
     """Error thrown when a file import exceeds the size limit"""
-    
+
     def __init__(self, file_path: str, file_size: int):
         self.file_path = file_path
         self.file_size = file_size
@@ -52,7 +50,7 @@ class FileSizeLimitError(Exception):
 
 class CodeSizeLimitError(Exception):
     """Error thrown when code size exceeds the limit"""
-    
+
     def __init__(self, code_size: int):
         self.code_size = code_size
         message = (
@@ -65,12 +63,11 @@ class CodeSizeLimitError(Exception):
 
 
 def format_bytes(bytes_count: int) -> str:
-    """
-    Format bytes as human-readable string
-    
+    """Format bytes as human-readable string
+
     Args:
         bytes_count: Number of bytes
-        
+
     Returns:
         Human-readable string (e.g., "1.5MB", "512KB", "1024 bytes")
     """
@@ -82,12 +79,11 @@ def format_bytes(bytes_count: int) -> str:
 
 
 def exceeds_input_limit(bytes_count: int) -> bool:
-    """
-    Check if a size exceeds the input limit
-    
+    """Check if a size exceeds the input limit
+
     Args:
         bytes_count: Number of bytes to check
-        
+
     Returns:
         True if exceeds limit
     """
@@ -95,12 +91,11 @@ def exceeds_input_limit(bytes_count: int) -> bool:
 
 
 def exceeds_output_limit(bytes_count: int) -> bool:
-    """
-    Check if a size exceeds the output limit
-    
+    """Check if a size exceeds the output limit
+
     Args:
         bytes_count: Number of bytes to check
-        
+
     Returns:
         True if exceeds limit
     """
@@ -108,12 +103,11 @@ def exceeds_output_limit(bytes_count: int) -> bool:
 
 
 def exceeds_code_limit(bytes_count: int) -> bool:
-    """
-    Check if a code size exceeds the limit
-    
+    """Check if a code size exceeds the limit
+
     Args:
         bytes_count: Number of bytes to check
-        
+
     Returns:
         True if exceeds limit
     """
@@ -121,76 +115,72 @@ def exceeds_code_limit(bytes_count: int) -> bool:
 
 
 class ResourceLimits:
-    """
-    Resource limits checker and formatter
-    
+    """Resource limits checker and formatter
+
     Usage:
         if ResourceLimits.exceeds_code_limit(len(code.encode())):
             raise CodeSizeLimitError(len(code.encode()))
     """
-    
+
     MAX_INPUT_SIZE = MAX_INPUT_SIZE
     MAX_OUTPUT_SIZE = MAX_OUTPUT_SIZE
     MAX_CODE_SIZE = MAX_CODE_SIZE
-    
+
     MAX_INPUT_SIZE_HUMAN = MAX_INPUT_SIZE_HUMAN
     MAX_OUTPUT_SIZE_HUMAN = MAX_OUTPUT_SIZE_HUMAN
     MAX_CODE_SIZE_HUMAN = MAX_CODE_SIZE_HUMAN
-    
+
     @staticmethod
     def format_bytes(bytes_count: int) -> str:
         """Format bytes as human-readable string"""
         return format_bytes(bytes_count)
-    
+
     @staticmethod
     def exceeds_input_limit(bytes_count: int) -> bool:
         """Check if input size exceeds limit"""
         return exceeds_input_limit(bytes_count)
-    
+
     @staticmethod
     def exceeds_output_limit(bytes_count: int) -> bool:
         """Check if output size exceeds limit"""
         return exceeds_output_limit(bytes_count)
-    
+
     @staticmethod
     def exceeds_code_limit(bytes_count: int) -> bool:
         """Check if code size exceeds limit"""
         return exceeds_code_limit(bytes_count)
-    
+
     @staticmethod
     def check_input_size(data: bytes) -> bool:
-        """
-        Check input size and raise exception if exceeds limit
-        
+        """Check input size and raise exception if exceeds limit
+
         Args:
             data: Input data as bytes
-            
+
         Returns:
             True if within limit
-            
+
         Raises:
             StdinSizeLimitError: If exceeds limit
         """
         if exceeds_input_limit(len(data)):
             raise StdinSizeLimitError(len(data))
         return True
-    
+
     @staticmethod
     def check_code_size(code: str) -> bool:
-        """
-        Check code size and raise exception if exceeds limit
-        
+        """Check code size and raise exception if exceeds limit
+
         Args:
             code: Code as string
-            
+
         Returns:
             True if within limit
-            
+
         Raises:
             CodeSizeLimitError: If exceeds limit
         """
-        code_bytes = code.encode('utf-8')
+        code_bytes = code.encode("utf-8")
         if exceeds_code_limit(len(code_bytes)):
             raise CodeSizeLimitError(len(code_bytes))
         return True
-

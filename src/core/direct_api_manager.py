@@ -1,5 +1,4 @@
-"""
-MCP 의존성 감소 및 직접 API 활용
+"""MCP 의존성 감소 및 직접 API 활용
 
 MCP 없이 직접 API 호출하는 시스템, 도구 직접 등록 및 실행 메커니즘,
 MCP와 직접 API 병행 지원 (선택 가능), 직접 API를 통한 도구 호출 최적화,
@@ -7,14 +6,13 @@ MCP 의존성 제거 옵션 제공, 유연한 아키텍처로 전환
 """
 
 import asyncio
-import json
 import logging
 import time
-import hashlib
-from typing import Dict, Any, List, Optional, Callable, Union, Type
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from abc import ABC, abstractmethod
+from typing import Any, Dict, List
+
 import aiohttp
 
 logger = logging.getLogger(__name__)
@@ -22,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class APIProvider(Enum):
     """API 제공자."""
+
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
@@ -34,6 +33,7 @@ class APIProvider(Enum):
 
 class AuthenticationType(Enum):
     """인증 유형."""
+
     API_KEY = "api_key"
     OAUTH = "oauth"
     BEARER_TOKEN = "bearer_token"
@@ -44,25 +44,27 @@ class AuthenticationType(Enum):
 @dataclass
 class APIEndpoint:
     """API 엔드포인트."""
+
     url: str
     method: str = "POST"
     headers: Dict[str, str] = field(default_factory=dict)
     timeout: float = 30.0
     retries: int = 3
-    rate_limit: Optional[int] = None  # requests per minute
+    rate_limit: int | None = None  # requests per minute
 
 
 @dataclass
 class APICredentials:
     """API 인증 정보."""
+
     provider: APIProvider
     auth_type: AuthenticationType
-    api_key: Optional[str] = None
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
-    access_token: Optional[str] = None
-    refresh_token: Optional[str] = None
-    token_expiry: Optional[float] = None
+    api_key: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
+    token_expiry: float | None = None
 
     def is_expired(self) -> bool:
         """토큰 만료 여부 확인."""
@@ -74,6 +76,7 @@ class APICredentials:
 @dataclass
 class DirectTool:
     """직접 API 도구."""
+
     tool_id: str
     name: str
     description: str
@@ -84,7 +87,7 @@ class DirectTool:
     credentials: APICredentials
     enabled: bool = True
     created_at: float = field(default_factory=time.time)
-    last_used: Optional[float] = None
+    last_used: float | None = None
     usage_count: int = 0
     success_count: int = 0
 
@@ -98,17 +101,23 @@ class APIAdapter(ABC):
     """API 어댑터 추상 클래스."""
 
     @abstractmethod
-    async def execute_tool(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_tool(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """도구 실행."""
         pass
 
     @abstractmethod
-    def format_request(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def format_request(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """요청 포맷팅."""
         pass
 
     @abstractmethod
-    def parse_response(self, response: Dict[str, Any], tool: DirectTool) -> Dict[str, Any]:
+    def parse_response(
+        self, response: Dict[str, Any], tool: DirectTool
+    ) -> Dict[str, Any]:
         """응답 파싱."""
         pass
 
@@ -116,7 +125,9 @@ class APIAdapter(ABC):
 class OpenAIAdapter(APIAdapter):
     """OpenAI API 어댑터."""
 
-    async def execute_tool(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_tool(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """도구 실행."""
         request_data = self.format_request(tool, parameters)
 
@@ -125,7 +136,7 @@ class OpenAIAdapter(APIAdapter):
                 tool.endpoint.url,
                 json=request_data,
                 headers=tool.endpoint.headers,
-                timeout=aiohttp.ClientTimeout(total=tool.endpoint.timeout)
+                timeout=aiohttp.ClientTimeout(total=tool.endpoint.timeout),
             ) as response:
                 if response.status == 200:
                     result = await response.json()
@@ -134,29 +145,37 @@ class OpenAIAdapter(APIAdapter):
                     error_text = await response.text()
                     raise Exception(f"OpenAI API error {response.status}: {error_text}")
 
-    def format_request(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def format_request(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """요청 포맷팅."""
         return {
             "model": parameters.get("model", "gpt-3.5-turbo"),
             "messages": parameters.get("messages", []),
             "temperature": parameters.get("temperature", 0.7),
-            "max_tokens": parameters.get("max_tokens", 1000)
+            "max_tokens": parameters.get("max_tokens", 1000),
         }
 
-    def parse_response(self, response: Dict[str, Any], tool: DirectTool) -> Dict[str, Any]:
+    def parse_response(
+        self, response: Dict[str, Any], tool: DirectTool
+    ) -> Dict[str, Any]:
         """응답 파싱."""
         return {
             "success": True,
-            "response": response.get("choices", [{}])[0].get("message", {}).get("content", ""),
+            "response": response.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", ""),
             "usage": response.get("usage", {}),
-            "model": response.get("model", "")
+            "model": response.get("model", ""),
         }
 
 
 class AnthropicAdapter(APIAdapter):
     """Anthropic API 어댑터."""
 
-    async def execute_tool(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_tool(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """도구 실행."""
         request_data = self.format_request(tool, parameters)
 
@@ -165,57 +184,69 @@ class AnthropicAdapter(APIAdapter):
                 tool.endpoint.url,
                 json=request_data,
                 headers=tool.endpoint.headers,
-                timeout=aiohttp.ClientTimeout(total=tool.endpoint.timeout)
+                timeout=aiohttp.ClientTimeout(total=tool.endpoint.timeout),
             ) as response:
                 if response.status == 200:
                     result = await response.json()
                     return self.parse_response(result, tool)
                 else:
                     error_text = await response.text()
-                    raise Exception(f"Anthropic API error {response.status}: {error_text}")
+                    raise Exception(
+                        f"Anthropic API error {response.status}: {error_text}"
+                    )
 
-    def format_request(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def format_request(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """요청 포맷팅."""
         return {
             "model": parameters.get("model", "claude-3-sonnet-20240229"),
             "max_tokens": parameters.get("max_tokens", 1000),
-            "messages": parameters.get("messages", [])
+            "messages": parameters.get("messages", []),
         }
 
-    def parse_response(self, response: Dict[str, Any], tool: DirectTool) -> Dict[str, Any]:
+    def parse_response(
+        self, response: Dict[str, Any], tool: DirectTool
+    ) -> Dict[str, Any]:
         """응답 파싱."""
         return {
             "success": True,
             "response": response.get("content", [{}])[0].get("text", ""),
             "usage": response.get("usage", {}),
-            "model": response.get("model", "")
+            "model": response.get("model", ""),
         }
 
 
 class SearchAPIAdapter(APIAdapter):
     """검색 API 어댑터."""
 
-    async def execute_tool(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_tool(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """도구 실행."""
         if tool.provider == APIProvider.GOOGLE:
             return await self._execute_google_search(tool, parameters)
         elif tool.provider == APIProvider.TOGETHER:
             return await self._execute_together_search(tool, parameters)
         else:
-            raise NotImplementedError(f"Search provider {tool.provider} not implemented")
+            raise NotImplementedError(
+                f"Search provider {tool.provider} not implemented"
+            )
 
-    async def _execute_google_search(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_google_search(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Google 검색 실행."""
         query = parameters.get("query", "")
         num_results = parameters.get("num_results", 10)
 
         # Google Custom Search API 사용 (실제 구현에서는 API 키 필요)
-        search_url = f"https://www.googleapis.com/customsearch/v1"
+        search_url = "https://www.googleapis.com/customsearch/v1"
         params = {
             "key": tool.credentials.api_key,
             "cx": parameters.get("search_engine_id", ""),
             "q": query,
-            "num": min(num_results, 10)
+            "num": min(num_results, 10),
         }
 
         async with aiohttp.ClientSession() as session:
@@ -225,7 +256,9 @@ class SearchAPIAdapter(APIAdapter):
                     return self._parse_google_results(data)
                 else:
                     error_text = await response.text()
-                    raise Exception(f"Google Search API error {response.status}: {error_text}")
+                    raise Exception(
+                        f"Google Search API error {response.status}: {error_text}"
+                    )
 
     def _parse_google_results(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Google 검색 결과 파싱."""
@@ -233,34 +266,38 @@ class SearchAPIAdapter(APIAdapter):
         results = []
 
         for item in items:
-            results.append({
-                "title": item.get("title", ""),
-                "url": item.get("link", ""),
-                "snippet": item.get("snippet", ""),
-                "display_link": item.get("displayLink", "")
-            })
+            results.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("link", ""),
+                    "snippet": item.get("snippet", ""),
+                    "display_link": item.get("displayLink", ""),
+                }
+            )
 
-        return {
-            "success": True,
-            "results": results,
-            "total_results": len(results)
-        }
+        return {"success": True, "results": results, "total_results": len(results)}
 
-    async def _execute_together_search(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_together_search(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Together AI 검색 실행."""
         # 실제 구현에서는 Together AI의 검색 API 사용
         # 여기서는 플레이스홀더
         return {
             "success": True,
             "results": [],
-            "note": "Together AI search not fully implemented"
+            "note": "Together AI search not fully implemented",
         }
 
-    def format_request(self, tool: DirectTool, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def format_request(
+        self, tool: DirectTool, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """요청 포맷팅."""
         return parameters
 
-    def parse_response(self, response: Dict[str, Any], tool: DirectTool) -> Dict[str, Any]:
+    def parse_response(
+        self, response: Dict[str, Any], tool: DirectTool
+    ) -> Dict[str, Any]:
         """응답 파싱."""
         return response
 
@@ -292,8 +329,7 @@ class RateLimiter:
 
 
 class DirectAPIManager:
-    """
-    직접 API 관리자.
+    """직접 API 관리자.
 
     MCP 없이 직접 API를 호출하고 도구를 관리하는 시스템.
     """
@@ -318,8 +354,7 @@ class DirectAPIManager:
         self.adapters[APIProvider.TOGETHER] = SearchAPIAdapter()
 
     def register_credentials(self, credentials: APICredentials):
-        """
-        인증 정보 등록.
+        """인증 정보 등록.
 
         Args:
             credentials: API 인증 정보
@@ -328,8 +363,7 @@ class DirectAPIManager:
         logger.info(f"Registered credentials for {credentials.provider.value}")
 
     def register_tool(self, tool: DirectTool):
-        """
-        도구 등록.
+        """도구 등록.
 
         Args:
             tool: 직접 API 도구
@@ -342,9 +376,10 @@ class DirectAPIManager:
 
         logger.info(f"Registered direct tool: {tool.name} ({tool.provider.value})")
 
-    async def execute_tool(self, tool_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        도구 실행.
+    async def execute_tool(
+        self, tool_id: str, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """도구 실행.
 
         Args:
             tool_id: 도구 ID
@@ -372,7 +407,9 @@ class DirectAPIManager:
 
             # 어댑터 확인
             if tool.provider not in self.adapters:
-                raise ValueError(f"No adapter available for provider {tool.provider.value}")
+                raise ValueError(
+                    f"No adapter available for provider {tool.provider.value}"
+                )
 
             adapter = self.adapters[tool.provider]
 
@@ -390,14 +427,18 @@ class DirectAPIManager:
             tool.success_count += 1
 
             # 결과에 메타데이터 추가
-            result.update({
-                "tool_id": tool_id,
-                "execution_time": execution_time,
-                "provider": tool.provider.value,
-                "direct_api": True
-            })
+            result.update(
+                {
+                    "tool_id": tool_id,
+                    "execution_time": execution_time,
+                    "provider": tool.provider.value,
+                    "direct_api": True,
+                }
+            )
 
-            logger.info(f"Direct tool executed successfully: {tool.name} ({execution_time:.2f}s)")
+            logger.info(
+                f"Direct tool executed successfully: {tool.name} ({execution_time:.2f}s)"
+            )
             return result
 
         except Exception as e:
@@ -407,7 +448,7 @@ class DirectAPIManager:
                 "error": str(e),
                 "tool_id": tool_id,
                 "provider": tool.provider.value,
-                "direct_api": True
+                "direct_api": True,
             }
 
     def _get_auth_headers(self, credentials: APICredentials) -> Dict[str, str]:
@@ -428,9 +469,10 @@ class DirectAPIManager:
 
         return headers
 
-    def create_openai_tool(self, api_key: str, model: str = "gpt-3.5-turbo") -> DirectTool:
-        """
-        OpenAI 도구 생성.
+    def create_openai_tool(
+        self, api_key: str, model: str = "gpt-3.5-turbo"
+    ) -> DirectTool:
+        """OpenAI 도구 생성.
 
         Args:
             api_key: API 키
@@ -442,13 +484,13 @@ class DirectAPIManager:
         credentials = APICredentials(
             provider=APIProvider.OPENAI,
             auth_type=AuthenticationType.API_KEY,
-            api_key=api_key
+            api_key=api_key,
         )
 
         endpoint = APIEndpoint(
             url="https://api.openai.com/v1/chat/completions",
             headers={"Content-Type": "application/json"},
-            rate_limit=60  # requests per minute
+            rate_limit=60,  # requests per minute
         )
 
         return DirectTool(
@@ -462,22 +504,23 @@ class DirectAPIManager:
                 "properties": {
                     "messages": {"type": "array"},
                     "temperature": {"type": "number"},
-                    "max_tokens": {"type": "number"}
-                }
+                    "max_tokens": {"type": "number"},
+                },
             },
             output_schema={
                 "type": "object",
                 "properties": {
                     "response": {"type": "string"},
-                    "usage": {"type": "object"}
-                }
+                    "usage": {"type": "object"},
+                },
             },
-            credentials=credentials
+            credentials=credentials,
         )
 
-    def create_anthropic_tool(self, api_key: str, model: str = "claude-3-sonnet-20240229") -> DirectTool:
-        """
-        Anthropic 도구 생성.
+    def create_anthropic_tool(
+        self, api_key: str, model: str = "claude-3-sonnet-20240229"
+    ) -> DirectTool:
+        """Anthropic 도구 생성.
 
         Args:
             api_key: API 키
@@ -489,13 +532,13 @@ class DirectAPIManager:
         credentials = APICredentials(
             provider=APIProvider.ANTHROPIC,
             auth_type=AuthenticationType.API_KEY,
-            api_key=api_key
+            api_key=api_key,
         )
 
         endpoint = APIEndpoint(
             url="https://api.anthropic.com/v1/messages",
             headers={"Content-Type": "application/json"},
-            rate_limit=50
+            rate_limit=50,
         )
 
         return DirectTool(
@@ -508,22 +551,23 @@ class DirectAPIManager:
                 "type": "object",
                 "properties": {
                     "messages": {"type": "array"},
-                    "max_tokens": {"type": "number"}
-                }
+                    "max_tokens": {"type": "number"},
+                },
             },
             output_schema={
                 "type": "object",
                 "properties": {
                     "response": {"type": "string"},
-                    "usage": {"type": "object"}
-                }
+                    "usage": {"type": "object"},
+                },
             },
-            credentials=credentials
+            credentials=credentials,
         )
 
-    def create_google_search_tool(self, api_key: str, search_engine_id: str) -> DirectTool:
-        """
-        Google 검색 도구 생성.
+    def create_google_search_tool(
+        self, api_key: str, search_engine_id: str
+    ) -> DirectTool:
+        """Google 검색 도구 생성.
 
         Args:
             api_key: Google API 키
@@ -535,13 +579,13 @@ class DirectAPIManager:
         credentials = APICredentials(
             provider=APIProvider.GOOGLE,
             auth_type=AuthenticationType.API_KEY,
-            api_key=api_key
+            api_key=api_key,
         )
 
         endpoint = APIEndpoint(
             url="https://www.googleapis.com/customsearch/v1",
             method="GET",
-            rate_limit=100
+            rate_limit=100,
         )
 
         return DirectTool(
@@ -555,17 +599,17 @@ class DirectAPIManager:
                 "properties": {
                     "query": {"type": "string"},
                     "num_results": {"type": "integer"},
-                    "search_engine_id": {"type": "string"}
-                }
+                    "search_engine_id": {"type": "string"},
+                },
             },
             output_schema={
                 "type": "object",
                 "properties": {
                     "results": {"type": "array"},
-                    "total_results": {"type": "integer"}
-                }
+                    "total_results": {"type": "integer"},
+                },
             },
-            credentials=credentials
+            credentials=credentials,
         )
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
@@ -578,7 +622,7 @@ class DirectAPIManager:
                 "provider": tool.provider.value,
                 "enabled": tool.enabled,
                 "success_rate": tool.success_rate,
-                "usage_count": tool.usage_count
+                "usage_count": tool.usage_count,
             }
             for tool in self.tools.values()
         ]
@@ -588,7 +632,11 @@ class DirectAPIManager:
         total_tools = len(self.tools)
         enabled_tools = sum(1 for t in self.tools.values() if t.enabled)
         total_usage = sum(t.usage_count for t in self.tools.values())
-        avg_success_rate = sum(t.success_rate for t in self.tools.values()) / total_tools if total_tools > 0 else 0
+        avg_success_rate = (
+            sum(t.success_rate for t in self.tools.values()) / total_tools
+            if total_tools > 0
+            else 0
+        )
 
         provider_stats = {}
         for tool in self.tools.values():
@@ -603,12 +651,13 @@ class DirectAPIManager:
             "enabled_tools": enabled_tools,
             "total_usage": total_usage,
             "avg_success_rate": avg_success_rate,
-            "provider_stats": provider_stats
+            "provider_stats": provider_stats,
         }
 
 
 # 전역 직접 API 관리자 인스턴스
 _direct_api_manager = None
+
 
 def get_direct_api_manager() -> DirectAPIManager:
     """전역 직접 API 관리자 인스턴스 반환."""
@@ -616,6 +665,7 @@ def get_direct_api_manager() -> DirectAPIManager:
     if _direct_api_manager is None:
         _direct_api_manager = DirectAPIManager()
     return _direct_api_manager
+
 
 def set_direct_api_manager(manager: DirectAPIManager):
     """전역 직접 API 관리자 설정."""
@@ -625,8 +675,7 @@ def set_direct_api_manager(manager: DirectAPIManager):
 
 # 편의 함수들
 def quick_setup_openai(api_key: str, model: str = "gpt-3.5-turbo") -> str:
-    """
-    OpenAI 도구 빠른 설정.
+    """OpenAI 도구 빠른 설정.
 
     Args:
         api_key: API 키
@@ -640,9 +689,9 @@ def quick_setup_openai(api_key: str, model: str = "gpt-3.5-turbo") -> str:
     manager.register_tool(tool)
     return tool.tool_id
 
+
 def quick_setup_anthropic(api_key: str, model: str = "claude-3-sonnet-20240229") -> str:
-    """
-    Anthropic 도구 빠른 설정.
+    """Anthropic 도구 빠른 설정.
 
     Args:
         api_key: API 키
@@ -656,9 +705,9 @@ def quick_setup_anthropic(api_key: str, model: str = "claude-3-sonnet-20240229")
     manager.register_tool(tool)
     return tool.tool_id
 
+
 def quick_setup_google_search(api_key: str, search_engine_id: str) -> str:
-    """
-    Google 검색 도구 빠른 설정.
+    """Google 검색 도구 빠른 설정.
 
     Args:
         api_key: Google API 키

@@ -19,7 +19,7 @@ readme_scores = {
     "Tool Usage": 59.0,
     "Multi-Agent": 59.5,
     "Reasoning": 56.8,
-    "Overall": 58.3
+    "Overall": 58.3,
 }
 
 print("📋 Current README Values:")
@@ -31,20 +31,21 @@ print()
 results_file = project_root / "results" / "agentbench_scores.json"
 if results_file.exists():
     import json
-    with open(results_file, 'r') as f:
+
+    with open(results_file, "r") as f:
         actual_scores = json.load(f)
-    
+
     print("📊 Actual Measurement Results:")
     for category, score in actual_scores.items():
         print(f"  {category}: {score}%")
     print()
-    
+
     # 비교
     print("📈 Comparison:")
     for category in readme_scores.keys():
         readme_val = readme_scores.get(category, 0)
         actual_val = actual_scores.get(category, 0)
-        
+
         if actual_val > 0:
             diff = actual_val - readme_val
             if diff > 0:
@@ -73,4 +74,3 @@ print("   실제 벤치마크 실행 결과가 아니라면")
 print("   실제 측정을 통해 업데이트해야 합니다.")
 print()
 print("=" * 80)
-

@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
-
-from langchain_core.runnables import Runnable
-from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field, PrivateAttr
+from typing import Any
 
 import anyio
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
+from pydantic import PrivateAttr
 
 from src.core.observability import get_langfuse_run_config
-
 
 # -----------------------------
 # Public API surface
@@ -28,6 +27,7 @@ class CrossAgent:
         agent: 에이전트 그래프 (LangGraph Runnable)
         description: 호출 에이전트가 언제 위임을 결정할지 도와주는 설명
     """
+
     agent: Runnable[Any, Any]
     description: str = ""
 
@@ -56,19 +56,23 @@ def make_cross_agent_tools(
     # 각 피어에 대한 개별 ask 도구 생성
     for name, peer in peers.items():
         tool_name = f"{tool_name_prefix}{name}"
-        out.append(_AskAgentTool(
-            name=tool_name,
-            description=f"질문을 '{name}' 피어 에이전트에게 전달하고 최종 답변을 반환합니다. {peer.description}",
-            agent=peer.agent,
-            peer_name=name,
-        ))
+        out.append(
+            _AskAgentTool(
+                name=tool_name,
+                description=f"질문을 '{name}' 피어 에이전트에게 전달하고 최종 답변을 반환합니다. {peer.description}",
+                agent=peer.agent,
+                peer_name=name,
+            )
+        )
 
     # Broadcast 도구 추가 (선택적)
     if include_broadcast:
-        out.append(_BroadcastTool(
-            peers=peers,
-            timeout_s=30.0,  # 기본 타임아웃
-        ))
+        out.append(
+            _BroadcastTool(
+                peers=peers,
+                timeout_s=30.0,  # 기본 타임아웃
+            )
+        )
 
     return out
 
@@ -99,7 +103,9 @@ class _AskAgentTool(BaseTool):
         self._agent = agent
         self._peer_name = peer_name
 
-    async def _arun(self, message: str, context: str | None = None, timeout_s: float | None = None) -> str:
+    async def _arun(
+        self, message: str, context: str | None = None, timeout_s: float | None = None
+    ) -> str:
         """피어 에이전트를 호출하고 결과를 추출."""
         # 메시지 포맷팅
         full_message = message
@@ -122,9 +128,13 @@ class _AskAgentTool(BaseTool):
         # 결과에서 최종 답변 추출
         return _extract_final_answer(result)
 
-    def _run(self, message: str, context: str | None = None, timeout_s: float | None = None) -> str:
+    def _run(
+        self, message: str, context: str | None = None, timeout_s: float | None = None
+    ) -> str:
         """동기 실행 (anyio 사용)."""
-        return anyio.run(lambda: self._arun(message=message, context=context, timeout_s=timeout_s))
+        return anyio.run(
+            lambda: self._arun(message=message, context=context, timeout_s=timeout_s)
+        )
 
 
 class _BroadcastTool(BaseTool):
@@ -136,19 +146,28 @@ class _BroadcastTool(BaseTool):
     _peers: Mapping[str, CrossAgent] = PrivateAttr()
     _timeout_s: float = PrivateAttr()
 
-    def __init__(self, *, peers: Mapping[str, CrossAgent], timeout_s: float = 30.0) -> None:
+    def __init__(
+        self, *, peers: Mapping[str, CrossAgent], timeout_s: float = 30.0
+    ) -> None:
         super().__init__()
         self._peers = peers
         self._timeout_s = timeout_s
 
-    async def _arun(self, message: str, peers: list[str] | None = None, timeout_s: float | None = None) -> dict[str, str]:
+    async def _arun(
+        self,
+        message: str,
+        peers: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> dict[str, str]:
         """여러 피어 에이전트를 병렬 호출."""
         # 사용할 피어 선택 (지정되지 않은 경우 모든 피어)
         target_peers = peers or list(self._peers.keys())
         timeout = timeout_s or self._timeout_s
 
         # 존재하는 피어만 필터링
-        valid_peers = {name: self._peers[name] for name in target_peers if name in self._peers}
+        valid_peers = {
+            name: self._peers[name] for name in target_peers if name in self._peers
+        }
 
         if not valid_peers:
             return {"error": f"유효한 피어 에이전트를 찾을 수 없습니다: {target_peers}"}
@@ -161,7 +180,7 @@ class _BroadcastTool(BaseTool):
                     name=f"ask_{peer_name}",
                     description="",
                     agent=peer.agent,
-                    peer_name=peer_name
+                    peer_name=peer_name,
                 )
                 result = await ask_tool._arun(message, timeout_s=timeout)
                 return peer_name, result
@@ -183,9 +202,16 @@ class _BroadcastTool(BaseTool):
 
         return responses
 
-    def _run(self, message: str, peers: list[str] | None = None, timeout_s: float | None = None) -> dict[str, str]:
+    def _run(
+        self,
+        message: str,
+        peers: list[str] | None = None,
+        timeout_s: float | None = None,
+    ) -> dict[str, str]:
         """동기 실행 (anyio 사용)."""
-        return anyio.run(lambda: self._arun(message=message, peers=peers, timeout_s=timeout_s))
+        return anyio.run(
+            lambda: self._arun(message=message, peers=peers, timeout_s=timeout_s)
+        )
 
 
 # -----------------------------
@@ -234,8 +260,7 @@ def _extract_final_answer(result: Any) -> str:
 
 
 def integrate_cross_agent_tools(
-    orchestrator: Any,
-    peer_agents: Mapping[str, CrossAgent] | None = None
+    orchestrator: Any, peer_agents: Mapping[str, CrossAgent] | None = None
 ) -> list[BaseTool]:
     """AgentOrchestrator에 Cross-Agent 도구를 통합.
 
@@ -249,25 +274,21 @@ def integrate_cross_agent_tools(
     if peer_agents is None:
         # 기본적으로 orchestrator의 에이전트들을 피어로 사용
         peer_agents = {}
-        if hasattr(orchestrator, 'planner') and orchestrator.planner:
-            peer_agents['planner'] = CrossAgent(
-                agent=orchestrator.planner,
-                description="연구 계획 수립 전문가"
+        if hasattr(orchestrator, "planner") and orchestrator.planner:
+            peer_agents["planner"] = CrossAgent(
+                agent=orchestrator.planner, description="연구 계획 수립 전문가"
             )
-        if hasattr(orchestrator, 'executor') and orchestrator.executor:
-            peer_agents['executor'] = CrossAgent(
-                agent=orchestrator.executor,
-                description="연구 실행 전문가"
+        if hasattr(orchestrator, "executor") and orchestrator.executor:
+            peer_agents["executor"] = CrossAgent(
+                agent=orchestrator.executor, description="연구 실행 전문가"
             )
-        if hasattr(orchestrator, 'verifier') and orchestrator.verifier:
-            peer_agents['verifier'] = CrossAgent(
-                agent=orchestrator.verifier,
-                description="결과 검증 전문가"
+        if hasattr(orchestrator, "verifier") and orchestrator.verifier:
+            peer_agents["verifier"] = CrossAgent(
+                agent=orchestrator.verifier, description="결과 검증 전문가"
             )
-        if hasattr(orchestrator, 'generator') and orchestrator.generator:
-            peer_agents['generator'] = CrossAgent(
-                agent=orchestrator.generator,
-                description="보고서 생성 전문가"
+        if hasattr(orchestrator, "generator") and orchestrator.generator:
+            peer_agents["generator"] = CrossAgent(
+                agent=orchestrator.generator, description="보고서 생성 전문가"
             )
 
     return make_cross_agent_tools(peer_agents)

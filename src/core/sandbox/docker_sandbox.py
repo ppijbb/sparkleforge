@@ -1,20 +1,18 @@
-"""
-Docker 기반 코드 실행 샌드박스
+"""Docker 기반 코드 실행 샌드박스
 
 안전한 코드 실행을 위한 Docker 컨테이너 기반 샌드박스 환경.
 실제 SparkleForge 도구에서 사용되는 코드 실행을 담당.
 """
 
-import asyncio
 import logging
-import tempfile
 import os
-from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+import tempfile
 from dataclasses import dataclass
+from typing import Tuple
 
 try:
     import docker
+
     DOCKER_AVAILABLE = True
 except ImportError:
     DOCKER_AVAILABLE = False
@@ -26,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SandboxConfig:
     """샌드박스 설정"""
+
     image: str = "python:3.11-slim"
     timeout: int = 30
     memory_limit: str = "512m"
@@ -38,20 +37,23 @@ class SandboxConfig:
 @dataclass
 class ExecutionResult:
     """실행 결과"""
+
     success: bool
     output: str
     error: str
     exit_code: int
     execution_time: float
-    container_id: Optional[str] = None
+    container_id: str | None = None
 
 
 class DockerSandbox:
     """Docker 기반 코드 실행 샌드박스"""
 
-    def __init__(self, config: Optional[SandboxConfig] = None):
+    def __init__(self, config: SandboxConfig | None = None):
         if not DOCKER_AVAILABLE:
-            raise RuntimeError("Docker is not available. Please install docker package.")
+            raise RuntimeError(
+                "Docker is not available. Please install docker package."
+            )
 
         self.config = config or SandboxConfig()
         self.docker_client = docker.from_env()
@@ -61,13 +63,9 @@ class DockerSandbox:
         self.max_pool_size = 3
 
     async def execute_code(
-        self,
-        code: str,
-        language: str = "python",
-        input_data: Optional[str] = None
+        self, code: str, language: str = "python", input_data: str | None = None
     ) -> ExecutionResult:
-        """
-        코드를 안전하게 실행
+        """코드를 안전하게 실행
 
         Args:
             code: 실행할 코드
@@ -78,6 +76,7 @@ class DockerSandbox:
             ExecutionResult: 실행 결과
         """
         import time
+
         start_time = time.time()
 
         try:
@@ -89,23 +88,23 @@ class DockerSandbox:
 
             # 파일을 컨테이너에 복사
             if file_path:
-                with open(file_path, 'rb') as f:
-                    container.put_archive('/tmp', f.read())
+                with open(file_path, "rb") as f:
+                    container.put_archive("/tmp", f.read())
 
             # 실행
             exec_result = container.exec_run(
                 cmd=cmd,
                 stdin=input_data.encode() if input_data else None,
                 timeout=self.config.timeout,
-                demux=True
+                demux=True,
             )
 
             stdout, stderr = exec_result.output
             exit_code = exec_result.exit_code
 
             # 결과 정리
-            output = stdout.decode('utf-8') if stdout else ""
-            error = stderr.decode('utf-8') if stderr else ""
+            output = stdout.decode("utf-8") if stdout else ""
+            error = stderr.decode("utf-8") if stderr else ""
 
             # 임시 파일 정리
             if file_path and os.path.exists(file_path):
@@ -119,7 +118,7 @@ class DockerSandbox:
                 error=error,
                 exit_code=exit_code,
                 execution_time=execution_time,
-                container_id=container.id
+                container_id=container.id,
             )
 
         except Exception as e:
@@ -130,21 +129,17 @@ class DockerSandbox:
                 output="",
                 error=str(e),
                 exit_code=-1,
-                execution_time=execution_time
+                execution_time=execution_time,
             )
         finally:
             # 컨테이너 풀로 반환
-            if 'container' in locals():
+            if "container" in locals():
                 await self._return_container(container)
 
     async def execute_file(
-        self,
-        file_path: str,
-        language: str = "python",
-        input_data: Optional[str] = None
+        self, file_path: str, language: str = "python", input_data: str | None = None
     ) -> ExecutionResult:
-        """
-        파일을 안전하게 실행
+        """파일을 안전하게 실행
 
         Args:
             file_path: 실행할 파일 경로
@@ -155,7 +150,7 @@ class DockerSandbox:
             ExecutionResult: 실행 결과
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding="utf-8") as f:
                 code = f.read()
             return await self.execute_code(code, language, input_data)
         except Exception as e:
@@ -164,19 +159,18 @@ class DockerSandbox:
                 output="",
                 error=f"Failed to read file: {e}",
                 exit_code=-1,
-                execution_time=0.0
+                execution_time=0.0,
             )
 
-    def _prepare_execution(self, code: str, language: str) -> Tuple[str, Optional[str]]:
-        """
-        언어별 실행 준비
+    def _prepare_execution(self, code: str, language: str) -> Tuple[str, str | None]:
+        """언어별 실행 준비
 
         Returns:
             Tuple[str, Optional[str]]: (실행 명령, 임시 파일 경로)
         """
         if language.lower() in ["python", "py"]:
             # 긴 코드는 임시 파일로 실행
-            if len(code) > 1000 or code.count('\n') > 10:
+            if len(code) > 1000 or code.count("\n") > 10:
                 file_path = self._create_temp_file(code, ".py")
                 cmd = f"python {file_path}"
                 return cmd, file_path
@@ -185,7 +179,7 @@ class DockerSandbox:
                 return ["python", "-c", code], None
 
         elif language.lower() in ["javascript", "js", "node", "nodejs"]:
-            if len(code) > 1000 or code.count('\n') > 10:
+            if len(code) > 1000 or code.count("\n") > 10:
                 file_path = self._create_temp_file(code, ".js")
                 cmd = f"node {file_path}"
                 return cmd, file_path
@@ -203,7 +197,7 @@ class DockerSandbox:
 
     def _create_temp_file(self, content: str, extension: str) -> str:
         """임시 파일 생성"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix=extension, delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=extension, delete=False) as f:
             f.write(content)
             return f.name
 
@@ -211,7 +205,7 @@ class DockerSandbox:
         """컨테이너 풀에서 컨테이너 가져오기"""
         # 풀에서 사용 가능한 컨테이너 찾기
         for container in self.container_pool:
-            if container.status == 'running':
+            if container.status == "running":
                 return container
 
         # 새 컨테이너 생성
@@ -222,9 +216,11 @@ class DockerSandbox:
                 detach=True,
                 mem_limit=self.config.memory_limit,
                 cpu_quota=int(self.config.cpu_limit * 100000),
-                network_mode='none' if self.config.network_disabled else 'bridge',
+                network_mode="none" if self.config.network_disabled else "bridge",
                 read_only=self.config.read_only,
-                tmpfs={'/tmp': f'size={self.config.tmpfs_size}'} if not self.config.read_only else None
+                tmpfs={"/tmp": f"size={self.config.tmpfs_size}"}
+                if not self.config.read_only
+                else None,
             )
             self.container_pool.append(container)
             return container
@@ -241,8 +237,8 @@ class DockerSandbox:
                 detach=True,
                 mem_limit=self.config.memory_limit,
                 cpu_quota=int(self.config.cpu_limit * 100000),
-                network_mode='none' if self.config.network_disabled else 'bridge',
-                read_only=self.config.read_only
+                network_mode="none" if self.config.network_disabled else "bridge",
+                read_only=self.config.read_only,
             )
         self.container_pool.append(container)
         return container
@@ -281,6 +277,7 @@ class DockerSandbox:
 
 # 전역 샌드박스 인스턴스
 _sandbox_instance = None
+
 
 def get_sandbox() -> DockerSandbox:
     """전역 샌드박스 인스턴스 가져오기"""

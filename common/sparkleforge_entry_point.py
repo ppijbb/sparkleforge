@@ -1,5 +1,4 @@
-"""
-SparkleForge Entry Point for A2A Integration
+"""SparkleForge Entry Point for A2A Integration
 
 StandardAgentRunner가 SparkleForge를 호출할 수 있도록 하는 entry point
 """
@@ -7,8 +6,8 @@ StandardAgentRunner가 SparkleForge를 호출할 수 있도록 하는 entry poin
 import asyncio
 import logging
 import sys
-from typing import Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict
 
 # 프로젝트 루트 경로 추가
 project_root = Path(__file__).parent
@@ -18,8 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 async def run_sparkleforge_agent(input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    SparkleForge Agent 실행 함수
+    """SparkleForge Agent 실행 함수
 
     StandardAgentRunner에서 호출되는 entry point
 
@@ -48,13 +46,10 @@ async def run_sparkleforge_agent(input_data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"SparkleForge Agent 실행 실패: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
 
-        return {
-            'success': False,
-            'error': str(e),
-            'agent': 'sparkleforge'
-        }
+        return {"success": False, "error": str(e), "agent": "sparkleforge"}
 
 
 # 모듈 형태로도 사용할 수 있게 클래스 형태 제공
@@ -67,6 +62,7 @@ class SparkleForgeAgent:
     async def initialize(self):
         """초기화"""
         from sparkleforge.common.sparkleforge_a2a_wrapper import SparkleForgeA2AWrapper
+
         self.wrapper = SparkleForgeA2AWrapper()
         logger.info("SparkleForge Agent 초기화 완료")
 
@@ -87,6 +83,7 @@ class SparkleForgeAgent:
 # 전역 인스턴스 (필요한 경우)
 _sparkleforge_agent_instance = None
 
+
 async def get_sparkleforge_agent() -> SparkleForgeAgent:
     """SparkleForge Agent 싱글톤 인스턴스 가져오기"""
     global _sparkleforge_agent_instance
@@ -103,10 +100,7 @@ if __name__ == "__main__":
     async def test():
         print("🔍 SparkleForge Entry Point 테스트...")
 
-        test_input = {
-            'request': '블록체인 기술의 최신 동향 분석',
-            'streaming': False
-        }
+        test_input = {"request": "블록체인 기술의 최신 동향 분석", "streaming": False}
 
         try:
             result = await run_sparkleforge_agent(test_input)
@@ -118,6 +112,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ Entry Point 테스트 실패: {e}")
             import traceback
+
             traceback.print_exc()
 
     asyncio.run(test())
