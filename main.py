@@ -1871,11 +1871,14 @@ EXAMPLES:
                 orch = NewAgentOrchestrator()
                 scheduler.set_execution_callback(make_cron_execution_callback(orch))
             else:
-                async def execute_scheduled_query(user_query: str, session_id: str):
-                    from src.core.autonomous_orchestrator import AutonomousOrchestrator
+                from src.core.autonomous_orchestrator import AutonomousOrchestrator
 
-                    orchestrator = AutonomousOrchestrator()
-                    return await orchestrator.execute_full_research_workflow(user_query)
+                autonomous_orchestrator = AutonomousOrchestrator()
+
+                async def execute_scheduled_query(user_query: str, session_id: str):
+                    return await autonomous_orchestrator.execute_full_research_workflow(
+                        user_query
+                    )
 
                 scheduler.set_execution_callback(execute_scheduled_query)
             await scheduler.start()

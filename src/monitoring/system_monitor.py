@@ -186,9 +186,23 @@ class HealthMonitor:
             # Process count
             active_processes = len(psutil.pids())
 
-            # Research-specific metrics
+            # Research-specific metrics (and update task processing level from monitoring)
             research_tasks = self._get_research_task_count()
             agent_status = self._get_agent_status()
+            try:
+                from src.core.task_monitoring import (
+                    get_task_metrics_collector,
+                    get_task_processing_level_controller,
+                )
+
+                task_metrics = get_task_metrics_collector().get_global_metrics()
+                get_task_processing_level_controller().update(
+                    task_metrics=task_metrics,
+                    cpu_percent=cpu_usage,
+                    memory_percent=memory_usage,
+                )
+            except Exception:
+                pass
             error_count, warning_count = self._get_log_counts()
 
             # 8 innovations metrics
@@ -255,21 +269,25 @@ class HealthMonitor:
             )
 
     def _get_research_task_count(self) -> int:
-        """Get current research task count."""
-        # This would be implemented to get actual task count from orchestrator
-        return 0
+        """Get current research task count from task metrics (queue + running)."""
+        try:
+            from src.core.task_monitoring import get_task_metrics_collector
+
+            return get_task_metrics_collector().get_research_task_count()
+        except Exception:
+            return 0
 
     def _get_agent_status(self) -> Dict[str, str]:
-        """Get current agent status."""
-        # This would be implemented to get actual agent status
-        return {
-            "analyzer": "running",
-            "decomposer": "running",
-            "researcher": "running",
-            "evaluator": "running",
-            "validator": "running",
-            "synthesizer": "running",
-        }
+        """Get current agent status from task metrics (busy/idle, queue depth)."""
+        try:
+            from src.core.task_monitoring import get_task_metrics_collector
+
+            return get_task_metrics_collector().get_agent_status_summary()
+        except Exception:
+            return {
+                "orchestrator": "unknown",
+                "session_lane": "unknown",
+            }
 
     def _get_log_counts(self) -> Tuple[int, int]:
         """Get error and warning counts from logs."""
@@ -438,8 +456,8 @@ class HealthMonitor:
         }
 
     def _get_production_reliability_metrics(self) -> Dict[str, Any]:
-        """Get Production-Grade Reliability (Innovation 8) metrics."""
-        return {
+        """Get Production-Grade Reliability (Innovation 8) metrics and task processing level."""
+        out = {
             "circuit_breaker_enabled": getattr(
                 self.config.reliability, "circuit_breaker_enabled", True
             ),
@@ -468,6 +486,16 @@ class HealthMonitor:
             if hasattr(self, "circuit_breaker")
             else "closed",
         }
+        try:
+            from src.core.task_monitoring import get_task_processing_level_controller
+
+            ctrl = get_task_processing_level_controller()
+            out["task_processing_level"] = ctrl.get_level().value
+            out["suggested_max_concurrent_tasks"] = ctrl.get_suggested_max_concurrent()
+        except Exception:
+            out["task_processing_level"] = "normal"
+            out["suggested_max_concurrent_tasks"] = 5
+        return out
 
     def _check_alerts(self, metrics: SystemMetrics):
         """Check metrics against thresholds and generate alerts."""
