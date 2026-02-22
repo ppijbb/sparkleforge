@@ -1,13 +1,16 @@
 """Session lane: per-session queue and run serialization (OpenClaw-style).
 
 One run per session at a time; other sessions run in parallel.
+Integrates with task_monitoring for queue depth, latency, and success/failure.
 """
 
 import asyncio
 import logging
+import time
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
 from src.core.input_router import InputEnvelope
+from src.core.task_monitoring import get_task_metrics_collector
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +46,48 @@ class SessionLane:
         if not run_fn:
             logger.warning("SessionLane worker started with no run_fn")
             return
+        collector = get_task_metrics_collector()
         while True:
             try:
                 item: _Item = await queue.get()
-                envelope, future = item
                 try:
-                    result = await run_fn(session_id, envelope)
-                    if not future.done():
-                        future.set_result(result)
-                except asyncio.CancelledError:
-                    if not future.done():
-                        future.cancel()
-                    raise
-                except Exception as e:
-                    logger.exception("SessionLane run failed: %s", e)
-                    if not future.done():
-                        future.set_exception(e)
+                    envelope, future = item
+                    try:
+                        collector.record_dequeued(session_id)
+                        collector.record_start(session_id, task_id=None)
+                    except Exception:
+                        pass
+                    start = time.monotonic()
+                    try:
+                        result = await run_fn(session_id, envelope)
+                        if not future.done():
+                            future.set_result(result)
+                        try:
+                            collector.record_end(
+                                session_id, success=True, latency_sec=time.monotonic() - start
+                            )
+                        except Exception:
+                            pass
+                    except asyncio.CancelledError:
+                        try:
+                            collector.record_end(
+                                session_id, success=False, latency_sec=time.monotonic() - start
+                            )
+                        except Exception:
+                            pass
+                        if not future.done():
+                            future.cancel()
+                        raise
+                    except Exception as e:
+                        logger.exception("SessionLane run failed: %s", e)
+                        try:
+                            collector.record_end(
+                                session_id, success=False, latency_sec=time.monotonic() - start
+                            )
+                        except Exception:
+                            pass
+                        if not future.done():
+                            future.set_exception(e)
                 finally:
                     queue.task_done()
             except asyncio.CancelledError:
@@ -84,6 +113,12 @@ class SessionLane:
             raise RuntimeError("SessionLane: run_fn not set and not passed to enqueue_and_wait")
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         queue = await self._get_queue(session_id)
+        try:
+            get_task_metrics_collector().record_enqueued(
+                session_id, getattr(envelope, "type", "message")
+            )
+        except Exception:
+            pass
         await queue.put((envelope, future))
         await self._ensure_worker(session_id)
         return await future
@@ -104,6 +139,12 @@ class SessionLane:
         envelope: InputEnvelope,
         future: asyncio.Future[Any],
     ) -> None:
+        try:
+            get_task_metrics_collector().record_enqueued(
+                session_id, getattr(envelope, "type", "message")
+            )
+        except Exception:
+            pass
         queue = await self._get_queue(session_id)
         await queue.put((envelope, future))
         await self._ensure_worker(session_id)

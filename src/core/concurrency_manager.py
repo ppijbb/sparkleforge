@@ -126,6 +126,15 @@ class ConcurrencyManager:
             async with self.lock:
                 active_tasks = self.active_tasks_count
 
+            # Feed task metrics: use queue+running from task_monitoring when available
+            try:
+                from src.core.task_monitoring import get_task_metrics_collector
+
+                m = get_task_metrics_collector().get_global_metrics()
+                active_tasks = m.total_running + m.total_queue_depth
+            except Exception:
+                pass
+
             metrics = SystemMetrics(
                 cpu_percent=cpu_percent,
                 memory_percent=memory_percent,
@@ -215,6 +224,23 @@ class ConcurrencyManager:
         optimal = max(
             self.config.min_concurrency, min(self.config.max_concurrency, optimal)
         )
+
+        # Apply monitoring-based task processing level (cap or nudge)
+        try:
+            from src.core.task_monitoring import (
+                TaskProcessingLevel,
+                get_task_processing_level_controller,
+            )
+
+            ctrl = get_task_processing_level_controller()
+            suggested = ctrl.get_suggested_max_concurrent()
+            level = ctrl.get_level()
+            if level == TaskProcessingLevel.REDUCED:
+                optimal = min(optimal, suggested)
+            elif level == TaskProcessingLevel.ELEVATED:
+                optimal = max(optimal, min(suggested, self.config.max_concurrency))
+        except Exception:
+            pass
 
         return optimal
 
