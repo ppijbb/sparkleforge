@@ -21,6 +21,7 @@ from src.core.compression import compress_data
 from src.core.llm_manager import TaskType, execute_llm_task
 from src.core.mcp_integration import ToolCategory, execute_tool
 from src.core.observability import get_langfuse_run_config
+from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
 from src.core.researcher_config import (
     get_agent_config,
     get_llm_config,
@@ -331,6 +332,27 @@ class AutonomousOrchestrator:
 
         logger.info("🔍 Thinking: Analyzing research objectives and requirements")
         logger.info(f"📝 Research Request: {state['user_request']}")
+
+        # Sparkle 시드 아이디어: user_request만으로 초기 아이디어 생성 (워크플로우 앞단)
+        try:
+            seed_insights = await self.creativity_agent.generate_seed_ideas(
+                (state.get("user_request") or "").strip()
+            )
+            state["seed_ideas"] = [
+                {
+                    "insight_id": getattr(i, "insight_id", ""),
+                    "type": getattr(getattr(i, "type", None), "value", "unknown"),
+                    "title": getattr(i, "title", ""),
+                    "description": getattr(i, "description", ""),
+                    "reasoning": getattr(i, "reasoning", ""),
+                    "related_concepts": getattr(i, "related_concepts", []),
+                }
+                for i in seed_insights
+            ]
+            logger.info(f"✨ Seed ideas (sparkle) generated: {len(seed_insights)}")
+        except Exception as e:
+            logger.warning(f"Sparkle seed ideas failed: {e}")
+            state["seed_ideas"] = []
 
         # 초기 컨텍스트 생성 (재귀적 컨텍스트 사용)
         initial_context_data = {
@@ -3662,6 +3684,22 @@ class AutonomousOrchestrator:
         self, user_request: str, context: Dict[str, Any] | None = None
     ) -> Dict[str, Any]:
         """연구 실행 (Production-Grade Reliability + ExecutionContext)."""
+        input_result = validate_user_input(user_request or "")
+        if not input_result.is_safe:
+            logger.warning(
+                "Prompt security: rejecting user request (reason=%s)",
+                input_result.rejection_reason,
+            )
+            return {
+                "content": REJECTION_MESSAGE,
+                "metadata": {"error": True},
+                "synthesis_results": {"content": REJECTION_MESSAGE},
+                "innovation_stats": {},
+                "system_health": {"overall_status": "degraded"},
+                "detailed_results": {},
+            }
+        user_request = input_result.sanitized_text
+
         logger.info(f"🚀 Starting research with 8 core innovations: {user_request}")
 
         # ExecutionContext 설정 (ROMA 스타일)

@@ -1863,14 +1863,21 @@ EXAMPLES:
             # 스케줄러 초기화 및 시작
             scheduler = get_scheduler()
 
-            # 실행 콜백 설정
-            async def execute_scheduled_query(user_query: str, session_id: str):
-                from src.core.autonomous_orchestrator import AutonomousOrchestrator
+            # 실행 콜백 설정 (USE_SESSION_LANE이면 cron envelope + session lane 사용)
+            use_session_lane = os.getenv("USE_SESSION_LANE", "false").lower() == "true"
+            if use_session_lane:
+                from src.core.session_lane import make_cron_execution_callback
 
-                orchestrator = AutonomousOrchestrator()
-                return await orchestrator.execute_full_research_workflow(user_query)
+                orch = NewAgentOrchestrator()
+                scheduler.set_execution_callback(make_cron_execution_callback(orch))
+            else:
+                async def execute_scheduled_query(user_query: str, session_id: str):
+                    from src.core.autonomous_orchestrator import AutonomousOrchestrator
 
-            scheduler.set_execution_callback(execute_scheduled_query)
+                    orchestrator = AutonomousOrchestrator()
+                    return await orchestrator.execute_full_research_workflow(user_query)
+
+                scheduler.set_execution_callback(execute_scheduled_query)
             await scheduler.start()
 
             cli = InteractiveCLI()

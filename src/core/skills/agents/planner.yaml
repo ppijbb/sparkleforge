@@ -58,6 +58,9 @@ prompts:
       
       **PREVIOUS CONTEXT (Reference Only - DO NOT Reuse):**
       {previous_plans}
+
+      **SPARKLE IDEAS (use to enrich the plan; consider these seed ideas when drafting objectives and key areas):**
+      {sparkle_ideas}
       
       ⚠️ **IMPORTANT RULES:**
       1. You MUST create a NEW plan specifically for the CURRENT task: "{user_query}"
@@ -132,6 +135,7 @@ prompts:
       - user_query
       - previous_plans
       - current_time
+      - sparkle_ideas
 
   task_decomposition:
     system_message: "You are a task decomposition agent. Split research plans into independent parallel tasks with detailed verification strategies."

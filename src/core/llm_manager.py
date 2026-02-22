@@ -31,6 +31,7 @@ except ImportError:
 
 from src.core.observability import get_langfuse_run_config
 from src.core.prompt_refiner_wrapper import refine_llm_call
+from src.core.prompt_security import validate_llm_output
 from src.core.researcher_config import (
     get_agent_config,
     get_cascade_config,
@@ -2372,19 +2373,60 @@ async def execute_llm_task(
     try:
         # CLI 에이전트 체크
         if model_name and _is_cli_agent(model_name):
-            return await _execute_cli_agent_task(
+            result = await _execute_cli_agent_task(
                 prompt, task_type, model_name, system_message, **kwargs
             )
+            ok, final_content = validate_llm_output(result.content or "")
+            if not ok:
+                return ModelResult(
+                    content=final_content,
+                    model_used=result.model_used,
+                    execution_time=result.execution_time,
+                    confidence=0.0,
+                    cost=result.cost,
+                    metadata={**result.metadata, "output_validated_rejected": True},
+                )
+            if final_content != (result.content or ""):
+                result = ModelResult(
+                    content=final_content,
+                    model_used=result.model_used,
+                    execution_time=result.execution_time,
+                    confidence=result.confidence,
+                    cost=result.cost,
+                    metadata=result.metadata,
+                )
+            return result
 
         # 기존 API 모델 처리
         if use_ensemble:
-            return await get_llm_orchestrator().weighted_ensemble(
+            result = await get_llm_orchestrator().weighted_ensemble(
                 prompt, task_type, model_name, system_message, **kwargs
             )
         else:
-            return await get_llm_orchestrator().execute_with_model(
+            result = await get_llm_orchestrator().execute_with_model(
                 prompt, task_type, model_name, system_message, **kwargs
             )
+        # Output validation (prompt leakage / sensitive pattern filter)
+        ok, final_content = validate_llm_output(result.content or "")
+        if not ok:
+            return ModelResult(
+                content=final_content,
+                model_used=result.model_used,
+                execution_time=result.execution_time,
+                confidence=0.0,
+                cost=result.cost,
+                metadata={**result.metadata, "output_validated_rejected": True},
+            )
+        if final_content != (result.content or ""):
+            result = ModelResult(
+                content=final_content,
+                model_used=result.model_used,
+                execution_time=result.execution_time,
+                confidence=result.confidence,
+                cost=result.cost,
+                metadata=result.metadata,
+            )
+        return result
     except Exception as e:
         logger.error(f"LLM task execution failed: {e}")
         raise
