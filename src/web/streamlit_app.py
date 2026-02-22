@@ -26,6 +26,7 @@ sys.path.insert(0, str(project_root))
 
 from src.core.a2ui_handler import get_a2ui_handler
 from src.core.agent_orchestrator import AgentOrchestrator
+from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
 from src.core.researcher_config import config
 
 logger = logging.getLogger(__name__)
@@ -488,6 +489,18 @@ def add_activity_log(agent: str, message: str, activity_type: str = "info"):
 
 def handle_user_message(prompt: str):
     """사용자 메시지 처리."""
+    input_result = validate_user_input(prompt or "")
+    if not input_result.is_safe:
+        st.session_state.chat_history.append(
+            {
+                "role": "system",
+                "content": REJECTION_MESSAGE,
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+            }
+        )
+        st.rerun()
+        return
+    prompt = input_result.sanitized_text
     # 사용자 메시지 추가
     st.session_state.chat_history.append(
         {
@@ -511,6 +524,13 @@ def handle_user_message(prompt: str):
 def start_research(query: str):
     """연구 시작."""
     try:
+        input_result = validate_user_input(query or "")
+        if not input_result.is_safe:
+            st.error(REJECTION_MESSAGE)
+            add_activity_log("system", REJECTION_MESSAGE, "error")
+            return
+        query = input_result.sanitized_text
+
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         st.session_state.current_research = {

@@ -26,12 +26,17 @@ from src.core.mcp_auto_discovery import FastMCPMulti
 from src.core.mcp_tool_loader import MCPToolLoader
 from src.core.memory_service import get_background_memory_service
 from src.core.observability import get_langfuse_run_config
+from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
 from src.core.researcher_config import get_agent_config
 from src.core.session_manager import get_session_manager
 from src.core.shared_memory import MemoryScope, get_shared_memory
 from src.core.skills_loader import Skill
 from src.core.skills_manager import get_skill_manager
 from src.core.skills_selector import get_skill_selector
+
+from src.agents.creativity_agent import CreativityAgent
+from src.core.input_router import InputEnvelope, envelope_to_user_query
+from src.core.session_lane import get_session_lane
 
 # prompt refiner는 execute_llm_task의 decorator에서 자동 적용됨
 
@@ -156,6 +161,9 @@ class AgentState(TypedDict):
         list, override_reducer
     ]  # Changed: supports both dict and str
     final_report: str | None
+
+    # Sparkle-first: 초기 아이디어 (CreativityAgent 시드)
+    sparkle_ideas: List[Dict[str, Any]] | None  # 워크플로우 앞단 생성 아이디어
 
     # Human-in-the-loop 관련 필드
     pending_questions: List[Dict[str, Any]] | None  # 대기 중인 질문들
@@ -740,6 +748,16 @@ Financial Agent Analysis Results (경제 지표 분석):
         # Current time calculation for prompt
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S (%A)")
 
+        # Sparkle ideas (seed ideas from workflow front) for plan enrichment
+        sparkle_ideas_raw = state.get("sparkle_ideas") or []
+        if sparkle_ideas_raw:
+            sparkle_ideas_text = "\n".join(
+                f"• {item.get('title', '')}: {item.get('description', '')} (reasoning: {item.get('reasoning', '')})"
+                for item in sparkle_ideas_raw
+            )
+        else:
+            sparkle_ideas_text = "None (no seed ideas from sparkle stage)."
+
         prompt = get_prompt(
             "planner",
             "planning",
@@ -747,6 +765,7 @@ Financial Agent Analysis Results (경제 지표 분석):
             user_query=state["user_query"],
             previous_plans=previous_plans_text,
             current_time=current_time,
+            sparkle_ideas=sparkle_ideas_text,
         )
 
         # 도메인 분석 결과와 Financial Agent 결과를 프롬프트에 추가
@@ -5939,6 +5958,7 @@ class AgentOrchestrator:
         self.executor = ExecutorAgent(context, selected_skills.get("research_executor"))
         self.verifier = VerifierAgent(context, selected_skills.get("evaluator"))
         self.generator = GeneratorAgent(context, selected_skills.get("synthesizer"))
+        self.creativity_agent = CreativityAgent()
 
         # 각 에이전트에 MCP 도구 자동 할당 (비동기)
         if session_id:
@@ -5947,7 +5967,8 @@ class AgentOrchestrator:
         # Build graph
         workflow = StateGraph(AgentState)
 
-        # Add nodes
+        # Add nodes (Sparkle-first: entry is sparkle, then planner)
+        workflow.add_node("sparkle", self._sparkle_node)
         workflow.add_node("planner", self._planner_node)
         workflow.add_node("executor", self._executor_node)  # Legacy
         workflow.add_node(
@@ -5960,8 +5981,9 @@ class AgentOrchestrator:
         workflow.add_node("generator", self._generator_node)
         workflow.add_node("end", self._end_node)
 
-        # Define edges - 병렬 실행 노드 사용
-        workflow.set_entry_point("planner")
+        # Define edges - Sparkle-first then planner, 병렬 실행 노드 사용
+        workflow.set_entry_point("sparkle")
+        workflow.add_edge("sparkle", "planner")
         workflow.add_edge("planner", "parallel_executor")  # 병렬 실행 사용
         workflow.add_edge("parallel_executor", "parallel_verifier")  # 병렬 검증 사용
         workflow.add_edge("parallel_verifier", "generator")
@@ -5971,6 +5993,43 @@ class AgentOrchestrator:
         self.graph = workflow.compile()
 
         logger.info("LangGraph workflow built")
+
+    async def _sparkle_node(self, state: AgentState) -> AgentState:
+        """Sparkle node: generate seed ideas from user_query (CreativityAgent) for workflow front."""
+        logger.info("=" * 80)
+        logger.info("✨ [WORKFLOW] → Sparkle Node (seed ideas)")
+        logger.info("=" * 80)
+        try:
+            from src.core.progress_tracker import WorkflowStage, get_progress_tracker
+
+            progress_tracker = get_progress_tracker()
+            if progress_tracker:
+                progress_tracker.set_workflow_stage(
+                    WorkflowStage.PLANNING, {"message": "아이디어 생성 중..."}
+                )
+        except Exception as e:
+            logger.debug(f"Failed to update progress tracker: {e}")
+
+        user_query = (state.get("user_query") or "").strip()
+        sparkle_ideas: List[Dict[str, Any]] = []
+        if user_query:
+            try:
+                insights = await self.creativity_agent.generate_seed_ideas(user_query)
+                for i in insights:
+                    sparkle_ideas.append({
+                        "insight_id": getattr(i, "insight_id", ""),
+                        "type": getattr(getattr(i, "type", None), "value", "unknown"),
+                        "title": getattr(i, "title", ""),
+                        "description": getattr(i, "description", ""),
+                        "reasoning": getattr(i, "reasoning", ""),
+                        "related_concepts": getattr(i, "related_concepts", []),
+                    })
+            except Exception as e:
+                logger.warning(f"Sparkle (seed ideas) failed: {e}")
+        result = dict(state)
+        result["sparkle_ideas"] = sparkle_ideas if sparkle_ideas else None
+        logger.info(f"✨ [WORKFLOW] ✓ Sparkle completed: {len(sparkle_ideas or [])} ideas")
+        return result
 
     async def _planner_node(self, state: AgentState) -> AgentState:
         """Planner node execution with tracking."""
@@ -6578,6 +6637,18 @@ class AgentOrchestrator:
         Returns:
             Final result from the workflow
         """
+        input_result = validate_user_input(user_query or "")
+        if not input_result.is_safe:
+            logger.warning("Prompt security: rejecting user query (reason=%s)", input_result.rejection_reason)
+            return {
+                "error": REJECTION_MESSAGE,
+                "final_report": None,
+                "messages": [],
+                "user_query": "",
+                "session_id": session_id or "",
+            }
+        user_query = input_result.sanitized_text
+
         if session_id is None:
             session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -6598,6 +6669,7 @@ class AgentOrchestrator:
             restored_state = await self.restore_session(session_id)
             if restored_state:
                 logger.info(f"✅ Session restored: {session_id}")
+                restored_state.setdefault("sparkle_ideas", None)
                 initial_state = AgentState(**restored_state)
                 # 복원된 세션의 쿼리와 새 쿼리가 다를 수 있으므로 업데이트
                 if user_query:
@@ -6645,6 +6717,7 @@ class AgentOrchestrator:
                 research_results=[],
                 verified_results=[],
                 final_report=None,
+                sparkle_ideas=None,
                 current_agent=None,
                 iteration=0,
                 session_id=session_id,
@@ -6652,6 +6725,10 @@ class AgentOrchestrator:
                 verification_failed=False,
                 report_failed=False,
                 error=None,
+                pending_questions=None,
+                user_responses=None,
+                clarification_context=None,
+                waiting_for_user=None,
             )
 
         # Execute workflow
@@ -6675,7 +6752,9 @@ class AgentOrchestrator:
                         agent_state=dict(initial_state), session_id=session_id
                     )
 
-                    # 결과를 AgentState로 변환
+                    # 결과를 AgentState로 변환 (필수 키 보장)
+                    if isinstance(result, dict):
+                        result.setdefault("sparkle_ideas", None)
                     result = AgentState(**result)
                 except Exception as e:
                     logger.warning(
@@ -6705,6 +6784,27 @@ class AgentOrchestrator:
         except Exception as e:
             logger.error(f"Workflow execution failed: {e}")
             raise
+
+    async def execute_via_lane(
+        self,
+        session_id: str,
+        envelope: InputEnvelope,
+    ) -> Dict[str, Any]:
+        """Execute workflow via session lane (one run per session, serialized)."""
+        lane = get_session_lane()
+
+        async def run_fn(sid: str, env: InputEnvelope) -> Dict[str, Any]:
+            # Heartbeat: suppress unless app sets custom run_fn that checks pending work
+            if env.type == "heartbeat":
+                return {}
+            user_query = envelope_to_user_query(env)
+            return await self.execute(
+                user_query=user_query,
+                session_id=sid,
+                restore_session=False,
+            )
+
+        return await lane.enqueue_and_wait(session_id, envelope, run_fn=run_fn)
 
     async def restore_session(self, session_id: str) -> Dict[str, Any] | None:
         """세션 복원.
@@ -6829,6 +6929,12 @@ class AgentOrchestrator:
         initial_state: Dict[str, Any] | None = None,
     ):
         """Stream workflow execution."""
+        input_result = validate_user_input(user_query or "")
+        if not input_result.is_safe:
+            logger.warning("Prompt security: rejecting user query (reason=%s)", input_result.rejection_reason)
+            raise ValueError(REJECTION_MESSAGE)
+        user_query = input_result.sanitized_text
+
         if session_id is None:
             session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -6844,6 +6950,7 @@ class AgentOrchestrator:
             research_results=[],
             verified_results=[],
             final_report=None,
+            sparkle_ideas=initial_state.get("sparkle_ideas"),
             current_agent=None,
             iteration=0,
             session_id=session_id,

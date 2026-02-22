@@ -207,6 +207,20 @@ class CreativityAgent:
             "artistic": ["composition", "harmony", "rhythm", "balance", "expression"],
         }
 
+    async def generate_seed_ideas(self, user_query: str) -> List[CreativeInsight]:
+        """user_query만으로 초기(sparkle) 아이디어를 생성합니다. 워크플로우 앞단 시드용."""
+        if not (user_query or "").strip():
+            return []
+        return await self.generate_creative_insights(
+            context=user_query.strip(),
+            current_ideas=[user_query.strip()],
+            creativity_types=[
+                CreativityType.DIVERGENT,
+                CreativityType.LATERAL,
+                CreativityType.CROSS_DOMAIN,
+            ],
+        )
+
     async def generate_creative_insights(
         self,
         context: str,
