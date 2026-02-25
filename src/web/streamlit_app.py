@@ -15,7 +15,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -215,6 +215,51 @@ def main():
                 if st.button("📊 Service Status"):
                     status = get_docker_status()
                     st.code(status, language="bash")
+
+        # 에이전트별 보안 정책 상태
+        with st.expander("🛡️ Agent Security"):
+            try:
+                from src.core.agent_security import get_agent_security_manager
+                sec_mgr = get_agent_security_manager()
+                summary = sec_mgr.get_security_summary()
+
+                if summary["total_violations"] == 0:
+                    st.success("✅ No security violations")
+                else:
+                    st.warning(f"⚠️ {summary['total_violations']} violation(s)")
+
+                    by_sev = summary.get("by_severity", {})
+                    cols_sev = st.columns(3)
+                    cols_sev[0].metric("Critical", by_sev.get("critical", 0))
+                    cols_sev[1].metric("Warning", by_sev.get("warning", 0))
+                    cols_sev[2].metric("Info", by_sev.get("info", 0))
+
+                    by_agent = summary.get("by_agent", {})
+                    if by_agent:
+                        st.markdown("**Per-Agent:**")
+                        for agent_name, count in sorted(by_agent.items()):
+                            st.text(f"  {agent_name}: {count}")
+
+                try:
+                    from src.core.researcher_config import get_agent_security_config
+                    sec_cfg = get_agent_security_config()
+                    st.caption(
+                        f"Enabled: {'✅' if sec_cfg.enabled else '❌'}  |  "
+                        f"Audit: {'✅' if sec_cfg.audit_logging else '❌'}"
+                    )
+                except RuntimeError:
+                    st.caption("Config not loaded yet")
+
+                if st.button("📋 View Audit Log"):
+                    log_entries = sec_mgr.get_audit_log(limit=20)
+                    if log_entries:
+                        for entry in reversed(log_entries):
+                            icon = "🔴" if entry.severity == "critical" else "🟡" if entry.severity == "warning" else "🔵"
+                            st.text(f"{icon} [{entry.agent_name}] {entry.violation_type}: {entry.detail}")
+                    else:
+                        st.info("No audit entries")
+            except Exception as e:
+                st.info(f"Security module not available: {e}")
 
         # 샌드박스 테스트
         with st.expander("🧪 Code Sandbox"):
@@ -848,10 +893,70 @@ def display_pending_questions():
                     for question in questions:
                         with st.container():
                             question_id = question.get("id", "")
-                            question_text = question.get("text", "")
+                            question_text = question.get(
+                                "message", question.get("text", "")
+                            )
+                            question_type = question.get("type", "")
                             question_format = question.get("format", "natural_language")
 
                             st.markdown(f"**{question_text}**")
+                            # Approval gate: 도구 승인 요청
+                            if question_type == "tool_approval":
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if st.button(
+                                        "승인 (Approve)",
+                                        key=f"approve_{question_id}",
+                                        type="primary",
+                                    ):
+                                        if "user_responses" not in st.session_state:
+                                            st.session_state["user_responses"] = {}
+                                        st.session_state["user_responses"][
+                                            question_id
+                                        ] = {"response": "approved"}
+                                        if "pending_questions" in st.session_state:
+                                            st.session_state["pending_questions"] = [
+                                                q
+                                                for q in st.session_state[
+                                                    "pending_questions"
+                                                ]
+                                                if q.get("id") != question_id
+                                            ]
+                                        if not st.session_state.get(
+                                            "pending_questions"
+                                        ):
+                                            st.session_state[
+                                                "waiting_for_user"
+                                            ] = False
+                                        st.session_state["workflow_resume"] = True
+                                        st.rerun()
+                                with col2:
+                                    if st.button(
+                                        "거부 (Reject)",
+                                        key=f"reject_{question_id}",
+                                    ):
+                                        if "user_responses" not in st.session_state:
+                                            st.session_state["user_responses"] = {}
+                                        st.session_state["user_responses"][
+                                            question_id
+                                        ] = {"response": "rejected"}
+                                        if "pending_questions" in st.session_state:
+                                            st.session_state["pending_questions"] = [
+                                                q
+                                                for q in st.session_state[
+                                                    "pending_questions"
+                                                ]
+                                                if q.get("id") != question_id
+                                            ]
+                                        if not st.session_state.get(
+                                            "pending_questions"
+                                        ):
+                                            st.session_state[
+                                                "waiting_for_user"
+                                            ] = False
+                                        st.session_state["workflow_resume"] = True
+                                        st.rerun()
+                                continue
 
                             # 응답 수집
                             response_key = f"question_response_{question_id}"
@@ -977,11 +1082,11 @@ def save_research_result(query: str, report: str, session_id: str):
         logger.error(f"Failed to save research result: {e}")
 
 
-def render_a2ui(a2ui_json: Dict[str, Any], height: int = 600):
-    """A2UI JSON을 Streamlit에서 렌더링
+def render_a2ui(a2ui_json: Dict[str, Any] | List[Dict[str, Any]], height: int = 600):
+    """A2UI JSON을 Streamlit에서 렌더링 (단일 메시지 또는 증분 메시지 리스트).
 
     Args:
-        a2ui_json: A2UI JSON 객체
+        a2ui_json: A2UI JSON 객체 또는 [createSurface, updateComponents, updateDataModel] 리스트
         height: 렌더링 높이 (픽셀)
     """
     try:
@@ -1016,8 +1121,12 @@ def render_a2ui(a2ui_json: Dict[str, Any], height: int = 600):
         const renderer = new A2UIRenderer('{container_id}');
         const a2uiData = {json.dumps(a2ui_json, ensure_ascii=False)};
         
-        // Render A2UI
-        renderer.render(a2uiData);
+        // Render A2UI (incremental: apply createSurface then updateComponents then updateDataModel)
+        if (Array.isArray(a2uiData)) {{
+            a2uiData.forEach(function(msg) {{ renderer.render(msg); }});
+        }} else {{
+            renderer.render(a2uiData);
+        }}
         
         // Listen for actions and forward to Streamlit
         window.addEventListener('message', function(event) {{

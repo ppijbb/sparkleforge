@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Dict, List
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
@@ -26,6 +27,7 @@ from src.core.mcp_auto_discovery import FastMCPMulti
 from src.core.mcp_tool_loader import MCPToolLoader
 from src.core.memory_service import get_background_memory_service
 from src.core.observability import get_langfuse_run_config
+from src.core.agent_security import agent_security_context, get_agent_security_manager
 from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
 from src.core.researcher_config import get_agent_config
 from src.core.session_manager import get_session_manager
@@ -130,6 +132,80 @@ def setup_runner_logger_filter():
 
 # 초기 설정
 setup_runner_logger_filter()
+
+
+def _normalize_task_id(raw: str, all_task_ids: List[str]) -> str:
+    """Normalize dependency reference to canonical task_id (e.g. '1' -> 'task_1')."""
+    if not raw or not isinstance(raw, str):
+        return ""
+    s = str(raw).strip()
+    if not s:
+        return ""
+    if s in all_task_ids:
+        return s
+    num_match = re.search(r"^task[_\-]?(\d+)$", s, re.IGNORECASE)
+    if num_match:
+        canonical = f"task_{num_match.group(1)}"
+        if canonical in all_task_ids:
+            return canonical
+    if re.match(r"^\d+$", s):
+        canonical = f"task_{s}"
+        if canonical in all_task_ids:
+            return canonical
+    return s
+
+
+def _resolve_and_validate_dependencies(tasks: List[Dict[str, Any]]) -> None:
+    """Resolve dependency task_ids and break cycles in-place."""
+    task_ids = [t.get("task_id") for t in tasks if t.get("task_id")]
+    task_id_set = set(task_ids)
+    for task in tasks:
+        deps = task.get("dependencies")
+        if not deps or not isinstance(deps, list):
+            task["dependencies"] = []
+            continue
+        normalized = []
+        for d in deps:
+            n = _normalize_task_id(d, task_ids)
+            if n and n in task_id_set and n != task.get("task_id"):
+                normalized.append(n)
+        task["dependencies"] = list(dict.fromkeys(normalized))
+    # Kahn: break cycles by clearing dependencies of nodes in a cycle
+    out_edges: Dict[str, List[str]] = {tid: [] for tid in task_ids}
+    in_degree = {tid: 0 for tid in task_ids}
+    for task in tasks:
+        tid = task.get("task_id")
+        for d in task.get("dependencies", []):
+            out_edges.get(d, []).append(tid)
+            in_degree[tid] = in_degree.get(tid, 0) + 1
+    queue = [tid for tid in task_ids if in_degree.get(tid, 0) == 0]
+    done = 0
+    while queue:
+        u = queue.pop()
+        done += 1
+        for v in out_edges.get(u, []):
+            in_degree[v] = in_degree.get(v, 0) - 1
+            if in_degree[v] == 0:
+                queue.append(v)
+    if done < len(task_ids):
+        for task in tasks:
+            if in_degree.get(task.get("task_id"), 0) > 0:
+                task["dependencies"] = []
+
+
+def _get_ready_tasks(
+    tasks: List[Dict[str, Any]], completed_ids: set
+) -> List[tuple]:
+    """Return [(index, task), ...] for tasks whose dependencies are all in completed_ids."""
+    result = []
+    for i, task in enumerate(tasks):
+        tid = task.get("task_id")
+        if tid in completed_ids:
+            continue
+        deps = task.get("dependencies") or []
+        if all(d in completed_ids for d in deps):
+            result.append((i, task))
+    return result
 
 
 ###################
@@ -1073,6 +1149,7 @@ Provide an improved version of the plan that addresses any gaps or issues you id
                 if "dependencies" not in task:
                     task["dependencies"] = []
 
+            _resolve_and_validate_dependencies(tasks)
             state["research_tasks"] = tasks
             logger.info(
                 f"[{self.name}] ✅ Split research plan into {len(tasks)} parallel tasks"
@@ -1306,11 +1383,61 @@ class ExecutorAgent:
         logger.info(f"Session: {state['session_id']}")
         logger.info("=" * 80)
 
-        # 사용자 응답 대기 중이면 응답 처리
+        # 사용자 응답 대기 중이면 응답 처리 (명확화 + Approval gate 도구 승인)
         if state.get("waiting_for_user", False):
-            user_responses = state.get("user_responses", {})
+            user_responses = state.get("user_responses", {}) or {}
             if user_responses:
-                # 응답이 있으면 명확화 정보 적용
+                # Approval gate: tool_approval 타입 질문에 대한 승인 시 도구 실행
+                approved_tool_results = state.get("approved_tool_results") or {}
+                pending_questions = list(state.get("pending_questions") or [])
+                remaining_questions = []
+                for q in pending_questions:
+                    if q.get("type") == "tool_approval":
+                        qid = q.get("id", "")
+                        resp = user_responses.get(qid)
+                        response_val = (
+                            resp.get("response") if isinstance(resp, dict) else resp
+                        )
+                        if str(response_val).lower() in (
+                            "approved",
+                            "approve",
+                            "yes",
+                            "allow",
+                        ):
+                            from src.core.mcp_integration import execute_tool
+
+                            try:
+                                tool_result = await execute_tool(
+                                    q.get("tool_name", ""),
+                                    q.get("parameters", {}),
+                                )
+                                key = (q.get("parameters") or {}).get("url", qid)
+                                approved_tool_results[str(key)] = tool_result
+                            except Exception as e:
+                                logger.warning(
+                                    f"[{self.name}] Approved tool execution failed: {e}"
+                                )
+                            continue
+                        if str(response_val).lower() in (
+                            "rejected",
+                            "reject",
+                            "no",
+                            "deny",
+                        ):
+                            key = (q.get("parameters") or {}).get("url", qid)
+                            rejected = list(
+                                state.get("rejected_tool_approvals") or []
+                            )
+                            if str(key) not in rejected:
+                                rejected.append(str(key))
+                            state["rejected_tool_approvals"] = rejected
+                            continue
+                    remaining_questions.append(q)
+                state["approved_tool_results"] = approved_tool_results
+                state["pending_questions"] = remaining_questions
+                if not remaining_questions:
+                    state["waiting_for_user"] = False
+                # 명확화 정보 적용
                 from src.core.human_clarification_handler import (
                     get_clarification_handler,
                 )
@@ -1318,31 +1445,26 @@ class ExecutorAgent:
                 clarification_handler = get_clarification_handler()
 
                 for question_id, response_data in user_responses.items():
+                    if not isinstance(response_data, dict):
+                        continue
                     clarification = response_data.get("clarification", {})
-                    # 명확화 정보를 state에 저장
                     state["clarification_context"] = state.get(
                         "clarification_context", {}
                     )
                     state["clarification_context"][question_id] = clarification
 
-                    # 응답에 따라 작업 방향 조정
                     response = response_data.get("response", "")
                     if response == "top_5":
-                        # 상위 5개 결과만 사용하도록 설정
                         state["max_results"] = 5
                     elif response == "top_10":
-                        # 상위 10개 결과만 사용하도록 설정
                         state["max_results"] = 10
                     elif response == "expand":
-                        # 검색 범위 확대
                         state["expand_search"] = True
                     elif response == "modify":
-                        # 검색어 수정 필요
                         state["modify_query"] = True
 
-                # 대기 상태 해제
-                state["waiting_for_user"] = False
-                state["pending_questions"] = []
+                if not state.get("pending_questions"):
+                    state["waiting_for_user"] = False
                 logger.info("✅ User responses processed, continuing execution")
 
         # 작업 할당: assigned_task가 있으면 사용, 없으면 state에서 찾기
@@ -2624,11 +2746,49 @@ Return only the queries, one per line, without numbering or bullets."""
                                 continue
 
                             try:
-                                # 실제 웹 페이지 내용 가져오기
-                                logger.info(
-                                    f"[{self.name}] 📥 Fetching full content from: {url[:80]}..."
-                                )
-                                fetch_result = await execute_tool("fetch", {"url": url})
+                                # Approval gate: 위험 도구 실행 전 승인 요청
+                                from src.core.approval_gate import requires_approval
+
+                                approved_tool_results = state.get(
+                                    "approved_tool_results"
+                                ) or {}
+                                rejected_urls = state.get(
+                                    "rejected_tool_approvals"
+                                ) or set()
+                                if url in approved_tool_results:
+                                    fetch_result = approved_tool_results[url]
+                                elif url in rejected_urls:
+                                    enriched_results.append(result)
+                                    continue
+                                elif requires_approval("fetch", {"url": url}):
+                                    import hashlib
+
+                                    qid = "tool_approval_fetch_" + hashlib.md5(
+                                        url.encode()
+                                    ).hexdigest()[:8]
+                                    state["pending_questions"] = state.get(
+                                        "pending_questions", []
+                                    ) + [
+                                        {
+                                            "id": qid,
+                                            "type": "tool_approval",
+                                            "tool_name": "fetch",
+                                            "parameters": {"url": url},
+                                            "message": f"Allow fetch URL: {url[:80]}...?",
+                                        }
+                                    ]
+                                    state["waiting_for_user"] = True
+                                    logger.info(
+                                        f"[{self.name}] Approval required for fetch: {url[:60]}..."
+                                    )
+                                    return state
+                                else:
+                                    logger.info(
+                                        f"[{self.name}] 📥 Fetching full content from: {url[:80]}..."
+                                    )
+                                    fetch_result = await execute_tool(
+                                        "fetch", {"url": url}
+                                    )
 
                                 if fetch_result.get("success") and fetch_result.get(
                                     "data"
@@ -5989,10 +6149,11 @@ class AgentOrchestrator:
         workflow.add_edge("parallel_verifier", "generator")
         workflow.add_edge("generator", "end")
 
-        # Compile graph
-        self.graph = workflow.compile()
+        # Compile graph with checkpointer for run checkpoint/resume (agentpg/beads 스타일)
+        checkpointer = MemorySaver()
+        self.graph = workflow.compile(checkpointer=checkpointer)
 
-        logger.info("LangGraph workflow built")
+        logger.info("LangGraph workflow built (with checkpointer for resume)")
 
     async def _sparkle_node(self, state: AgentState) -> AgentState:
         """Sparkle node: generate seed ideas from user_query (CreativityAgent) for workflow front."""
@@ -6037,6 +6198,16 @@ class AgentOrchestrator:
         logger.info("🔵 [WORKFLOW] → Planner Node")
         logger.info("=" * 80)
 
+        sec = get_agent_security_manager()
+        sec.reset_rate_limit("planner")
+        scoped_state = sec.filter_state_mvi("planner", state)
+
+        input_check = sec.enforce_input("planner", scoped_state.get("user_query", ""))
+        if not input_check.is_allowed:
+            logger.warning("[SECURITY] Planner input rejected")
+            state["research_failed"] = True
+            return state
+
         # Progress tracker 업데이트
         try:
             from src.core.progress_tracker import WorkflowStage, get_progress_tracker
@@ -6049,9 +6220,16 @@ class AgentOrchestrator:
         except Exception as e:
             logger.debug(f"Failed to update progress tracker: {e}")
 
-        result = await self.planner.execute(state)
+        with agent_security_context("planner"):
+            result = await self.planner.execute(scoped_state)
+
+        output_check = sec.enforce_output("planner", str(result.get("research_plan", "")))
+        if not output_check.is_allowed:
+            logger.warning("[SECURITY] Planner output blocked — sanitised")
+
+        state.update(result)
         logger.info(f"🔵 [WORKFLOW] ✓ Planner completed: {result.get('current_agent')}")
-        return result
+        return state
 
     async def _executor_node(self, state: AgentState) -> AgentState:
         """Executor node execution with tracking (legacy - for backward compatibility)."""
@@ -6069,6 +6247,10 @@ class AgentOrchestrator:
         logger.info("=" * 80)
         logger.info("🟢 [WORKFLOW] → Parallel Executor Node")
         logger.info("=" * 80)
+
+        sec = get_agent_security_manager()
+        sec.reset_rate_limit("executor")
+        state = sec.filter_state_mvi("executor", state)
 
         # Progress tracker 업데이트
         try:
@@ -6151,7 +6333,8 @@ class AgentOrchestrator:
                 logger.info(
                     f"[WORKFLOW] ExecutorAgent {agent_id} starting task {task.get('task_id', 'unknown')}"
                 )
-                result_state = await executor_agent.execute(state, assigned_task=task)
+                with agent_security_context("executor"):
+                    result_state = await executor_agent.execute(state, assigned_task=task)
                 logger.info(
                     f"[WORKFLOW] ExecutorAgent {agent_id} completed: {len(result_state.get('research_results', []))} results"
                 )
@@ -6168,30 +6351,8 @@ class AgentOrchestrator:
                 failed_state["current_agent"] = agent_id
                 return failed_state
 
-        # 모든 작업을 병렬로 실행 (동적 동시성 제한 적용)
-        if max_concurrent < len(tasks):
-            # Semaphore를 사용하여 동시 실행 수 제한
-            semaphore = asyncio.Semaphore(max_concurrent)
-
-            async def execute_with_limit(
-                task: Dict[str, Any], task_index: int
-            ) -> AgentState:
-                async with semaphore:
-                    return await execute_single_task(task, task_index)
-
-            executor_tasks = [
-                execute_with_limit(task, i) for i, task in enumerate(tasks)
-            ]
-        else:
-            # 동시성 제한이 작업 수보다 크면 모든 작업을 동시에 실행
-            executor_tasks = [
-                execute_single_task(task, i) for i, task in enumerate(tasks)
-            ]
-
-        # 병렬 실행
-        executor_results = await asyncio.gather(*executor_tasks, return_exceptions=True)
-
-        # 결과 통합 및 통신 상태 확인
+        # 의존성 기반 웨이브 실행: 선행 작업 완료 후에만 다음 작업 실행
+        completed_ids = set()
         all_results = []
         all_failed = False
         errors = []
@@ -6200,45 +6361,79 @@ class AgentOrchestrator:
             "results_shared": 0,
             "communication_errors": 0,
         }
+        semaphore = (
+            asyncio.Semaphore(max_concurrent)
+            if max_concurrent < len(tasks)
+            else None
+        )
 
-        for i, result in enumerate(executor_results):
-            if isinstance(result, Exception):
-                logger.error(f"[WORKFLOW] ExecutorAgent {i} raised exception: {result}")
-                all_failed = True
-                errors.append(
-                    f"Task {tasks[i].get('task_id', 'unknown')}: {str(result)}"
+        async def run_with_limit(
+            task: Dict[str, Any], task_index: int
+        ) -> AgentState:
+            if semaphore:
+                async with semaphore:
+                    return await execute_single_task(task, task_index)
+            return await execute_single_task(task, task_index)
+
+        wave_num = 0
+        while len(completed_ids) < len(tasks):
+            ready = _get_ready_tasks(tasks, completed_ids)
+            if not ready:
+                logger.warning(
+                    "[WORKFLOW] No ready tasks (dependency cycle?); running remaining in parallel"
                 )
-                communication_stats["communication_errors"] += 1
-            elif isinstance(result, dict):
-                # 결과 수집
-                task_results = result.get("research_results", [])
-                if task_results:
-                    all_results.extend(task_results)
-                    communication_stats["agents_contributed"] += 1
-                    logger.info(
-                        f"[WORKFLOW] ExecutorAgent {i} contributed {len(task_results)} results"
+                ready = [
+                    (i, t)
+                    for i, t in enumerate(tasks)
+                    if t.get("task_id") not in completed_ids
+                ]
+            if not ready:
+                break
+            wave_num += 1
+            logger.info(
+                f"[WORKFLOW] Dependency wave {wave_num}: {len(ready)} tasks ready"
+            )
+            wave_tasks = [
+                run_with_limit(task, idx) for idx, task in ready
+            ]
+            executor_results = await asyncio.gather(
+                *wave_tasks, return_exceptions=True
+            )
+            for (idx, task), result in zip(ready, executor_results):
+                tid = task.get("task_id", "unknown")
+                if isinstance(result, Exception):
+                    logger.error(
+                        f"[WORKFLOW] ExecutorAgent {idx} raised exception: {result}"
                     )
-
-                # SharedResultsManager 통신 상태 확인
-                if self.shared_results_manager:
-                    agent_id = f"executor_{i}"
-                    agent_results = (
-                        await self.shared_results_manager.get_shared_results(
-                            agent_id=agent_id
-                        )
-                    )
-                    if agent_results:
-                        communication_stats["results_shared"] += len(agent_results)
-                        logger.info(
-                            f"[WORKFLOW] 🤝 ExecutorAgent {agent_id} shared {len(agent_results)} results via SharedResultsManager"
-                        )
-
-                # 실패 상태 확인
-                if result.get("research_failed"):
                     all_failed = True
-                    if result.get("error"):
-                        errors.append(result["error"])
-                        communication_stats["communication_errors"] += 1
+                    errors.append(f"Task {tid}: {str(result)}")
+                    communication_stats["communication_errors"] += 1
+                    completed_ids.add(tid)
+                elif isinstance(result, dict):
+                    task_results = result.get("research_results", [])
+                    if task_results:
+                        all_results.extend(task_results)
+                        communication_stats["agents_contributed"] += 1
+                        logger.info(
+                            f"[WORKFLOW] ExecutorAgent {idx} contributed {len(task_results)} results"
+                        )
+                    if self.shared_results_manager:
+                        agent_id = f"executor_{idx}"
+                        agent_results = (
+                            await self.shared_results_manager.get_shared_results(
+                                agent_id=agent_id
+                            )
+                        )
+                        if agent_results:
+                            communication_stats["results_shared"] += len(
+                                agent_results
+                            )
+                    if result.get("research_failed"):
+                        all_failed = True
+                        if result.get("error"):
+                            errors.append(result["error"])
+                            communication_stats["communication_errors"] += 1
+                    completed_ids.add(tid)
 
         # 통합된 상태 생성
         final_state = state.copy()
@@ -6279,6 +6474,10 @@ class AgentOrchestrator:
         logger.info("=" * 80)
         logger.info("🟡 [WORKFLOW] → Parallel Verifier Node")
         logger.info("=" * 80)
+
+        sec = get_agent_security_manager()
+        sec.reset_rate_limit("verifier")
+        state = sec.filter_state_mvi("verifier", state)
 
         # Progress tracker 업데이트
         try:
@@ -6380,11 +6579,31 @@ class AgentOrchestrator:
             chunk_state = state.copy()
             chunk_state["research_results"] = chunk
 
+            # Blind 검증 (zeroshot 스타일): 계획/태스크 제한, 요약+결과만 전달
+            try:
+                from src.core.researcher_config import get_verification_config
+
+                vc = get_verification_config()
+                if getattr(vc, "blind_verification", False):
+                    query = (state.get("user_query") or "").strip()
+                    chunk_state["research_plan"] = (
+                        f"Query only (blind verification): {query[:300]}"
+                        if query
+                        else None
+                    )
+                    chunk_state["research_tasks"] = []
+                    logger.info(
+                        f"[WORKFLOW] Blind verification: verifier sees only query and results"
+                    )
+            except Exception as e:
+                logger.debug(f"Blind verification config check: {e}")
+
             try:
                 logger.info(
                     f"[WORKFLOW] VerifierAgent {agent_id} starting verification of {len(chunk)} results"
                 )
-                result_state = await verifier_agent.execute(chunk_state)
+                with agent_security_context("verifier"):
+                    result_state = await verifier_agent.execute(chunk_state)
                 verified_chunk = result_state.get("verified_results", [])
                 logger.info(
                     f"[WORKFLOW] VerifierAgent {agent_id} completed: {len(verified_chunk)} verified"
@@ -6540,6 +6759,10 @@ class AgentOrchestrator:
         logger.info("🟣 [WORKFLOW] → Generator Node")
         logger.info("=" * 80)
 
+        sec = get_agent_security_manager()
+        sec.reset_rate_limit("generator")
+        scoped_state = sec.filter_state_mvi("generator", state)
+
         # Progress tracker 업데이트
         try:
             from src.core.progress_tracker import WorkflowStage, get_progress_tracker
@@ -6552,13 +6775,21 @@ class AgentOrchestrator:
         except Exception as e:
             logger.debug(f"Failed to update progress tracker: {e}")
 
-        result = await self.generator.execute(state)
+        with agent_security_context("generator"):
+            result = await self.generator.execute(scoped_state)
+
         final_report = result.get("final_report") or ""
-        report_length = len(final_report) if final_report else 0
+        output_check = sec.enforce_output("generator", final_report)
+        if not output_check.is_allowed:
+            logger.warning("[SECURITY] Generator output contained blocked patterns — sanitised")
+            result["final_report"] = output_check.filtered_text
+
+        report_length = len(result.get("final_report") or "")
         logger.info(
             f"🟣 [WORKFLOW] ✓ Generator completed: report_length={report_length}"
         )
-        return result
+        state.update(result)
+        return state
 
     async def _end_node(self, state: AgentState) -> AgentState:
         """End node - final state with summary."""
@@ -6761,14 +6992,22 @@ class AgentOrchestrator:
                         f"Pipeline execution failed, falling back to traditional workflow: {e}"
                     )
                     # Fallback to traditional workflow
-                    result = await self.graph.ainvoke(
+                    run_config = get_langfuse_run_config(session_id=session_id)
+                run_config.setdefault("configurable", {})["thread_id"] = (
+                    session_id or "default"
+                )
+                result = await self.graph.ainvoke(
                         initial_state,
-                        config=get_langfuse_run_config(session_id=session_id),
+                        config=run_config,
                     )
             else:
-                # Traditional workflow execution
+                # Traditional workflow execution (with checkpointer thread_id for resume)
+                run_config = get_langfuse_run_config(session_id=session_id)
+                run_config.setdefault("configurable", {})["thread_id"] = (
+                    session_id or "default"
+                )
                 result = await self.graph.ainvoke(
-                    initial_state, config=get_langfuse_run_config(session_id=session_id)
+                    initial_state, config=run_config
                 )
 
             # 세션 자동 저장 (워크플로우 완료 후)
@@ -6966,6 +7205,9 @@ class AgentOrchestrator:
 
         # Stream execution
         run_config = get_langfuse_run_config(session_id=session_id)
+        run_config.setdefault("configurable", {})["thread_id"] = (
+            session_id or "default"
+        )
         async for event in self.graph.astream(agent_initial_state, config=run_config):
             yield event
 

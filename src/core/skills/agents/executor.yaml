@@ -3,6 +3,26 @@ agent:
   display_name: "Research Executor"
   description: "Executes research tasks using tools and collects information from multiple sources"
 
+security:
+  policy: "executor"
+  guardrails:
+    - "input_injection_scan"
+    - "output_leak_filter"
+    - "pii_redaction"
+    - "tool_approval_gate"
+  max_context_keys:
+    - "user_query"
+    - "messages"
+    - "session_id"
+    - "metadata"
+    - "research_plan"
+    - "research_tasks"
+    - "research_results"
+    - "pending_questions"
+    - "waiting_for_user"
+    - "approved_tool_results"
+    - "rejected_tool_approvals"
+
 capabilities:
   - "research_execution"
   - "tool_coordination"

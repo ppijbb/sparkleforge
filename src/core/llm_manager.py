@@ -1681,6 +1681,45 @@ class MultiModelOrchestrator:
 
         return drafter_models, verifier_models
 
+    def _domain_validate_content(
+        self, task_type: TaskType, content: str, min_length: int = 20
+    ) -> bool:
+        """도메인별 콘텐츠 휴리스틱 검증 (cascadeflow 스타일).
+
+        - PLANNING: 단계/목록 구조 존재
+        - RESEARCH: 최소 길이 및 정보성
+        - GENERATION: 문단/문장 구조
+        - VERIFICATION: 판정/결론 키워드
+        """
+        if not content or len(content.strip()) < min_length:
+            return False
+        text = content.strip().lower()
+        if task_type == TaskType.PLANNING:
+            has_structure = (
+                any(c in content for c in ["1.", "2.", "①", "1)", "- ", "* "])
+                or "step" in text
+                or "단계" in text
+                or "phase" in text
+            )
+            return has_structure or len(content) > 200
+        if task_type == TaskType.RESEARCH:
+            return len(content) >= 100
+        if task_type == TaskType.GENERATION:
+            return len(content) >= 80 and (
+                "\n\n" in content or ". " in content or "。" in content
+            )
+        if task_type == TaskType.VERIFICATION:
+            verdict_like = (
+                "verified" in text
+                or "valid" in text
+                or "confirm" in text
+                or "검증" in text
+                or "확인" in text
+                or "결론" in text
+            )
+            return verdict_like or len(content) >= 50
+        return True
+
     def _validate_draft_quality(
         self,
         draft_result: Dict[str, Any],
@@ -1690,13 +1729,7 @@ class MultiModelOrchestrator:
     ) -> bool:
         """Draft 품질 검증.
 
-        Cascadeflow의 validation 방식을 참고:
-        - Confidence score 체크
-        - Complexity 기반 threshold 조정
-        - 기본 threshold: 0.75
-
-        Returns:
-            True if draft should be accepted, False if needs verifier
+        Cascadeflow 스타일: confidence, 도메인별 콘텐츠 검증, (옵션) semantic agreement.
         """
         try:
             cascade_config = get_cascade_config()
@@ -1707,11 +1740,16 @@ class MultiModelOrchestrator:
         enable_adaptive = (
             cascade_config.enable_adaptive_threshold if cascade_config else True
         )
+        domain_validation = (
+            getattr(cascade_config, "domain_validation_enabled", True)
+            if cascade_config
+            else True
+        )
 
         # Complexity 기반 threshold 조정
         if enable_adaptive:
             if complexity > 7.0:
-                threshold = 0.85  # 높은 복잡도는 더 높은 threshold
+                threshold = 0.85
             elif complexity > 5.0:
                 threshold = 0.80
             else:
@@ -1722,14 +1760,24 @@ class MultiModelOrchestrator:
         # Confidence 체크
         confidence = draft_result.get("confidence", 0.0)
         if confidence >= threshold:
-            return True
+            pass
+        else:
+            quality_score = draft_result.get("quality_score", None)
+            if quality_score is not None and quality_score >= threshold:
+                pass
+            else:
+                return False
 
-        # Quality score 체크 (있는 경우)
-        quality_score = draft_result.get("quality_score", None)
-        if quality_score is not None and quality_score >= threshold:
-            return True
+        # 도메인별 콘텐츠 검증
+        if domain_validation:
+            content = draft_result.get("content") or ""
+            if not self._domain_validate_content(task_type, content):
+                logger.debug(
+                    f"Draft rejected by domain validation (task_type={task_type})"
+                )
+                return False
 
-        return False
+        return True
 
     async def _execute_single_model_by_provider(
         self,
@@ -1804,14 +1852,64 @@ class MultiModelOrchestrator:
             drafter, prompt, system_message, task_type, **kwargs
         )
 
-        # 3. Quality validation
+        # 3. Quality validation (confidence + domain heuristics)
         should_accept = self._validate_draft_quality(
             draft_result, prompt, task_type, complexity
         )
 
+        # 3b. Optional semantic agreement: second drafter run and similarity check
+        try:
+            cascade_cfg = get_cascade_config()
+            if (
+                should_accept
+                and getattr(cascade_cfg, "semantic_agreement_enabled", False)
+            ):
+                draft_2 = await self._execute_single_model_by_provider(
+                    drafter, prompt, system_message, task_type, **kwargs
+                )
+                c1 = (draft_result.get("content") or "").strip()
+                c2 = (draft_2.get("content") or "").strip()
+                if c1 and c2:
+                    w1 = set(c1.lower().split())
+                    w2 = set(c2.lower().split())
+                    if w1 or w2:
+                        jaccard = len(w1 & w2) / len(w1 | w2)
+                        th = getattr(
+                            cascade_cfg,
+                            "semantic_agreement_threshold",
+                            0.7,
+                        )
+                        if jaccard < th:
+                            should_accept = False
+                            logger.info(
+                                f"Semantic agreement failed (jaccard={jaccard:.2f} < {th})"
+                            )
+        except Exception as e:
+            logger.debug(f"Semantic agreement check skipped: {e}")
+
         if should_accept:
             logger.info(f"✓ Draft accepted: {drafter}")
             return draft_result, drafter
+
+        # 3c. 비용 상한(C3PO 스타일): escalation 비용이 cap 초과 시 draft 수용
+        try:
+            cascade_cfg_cost = get_cascade_config()
+            cap = getattr(cascade_cfg_cost, "cost_cap_per_run", None)
+        except RuntimeError:
+            cap = None
+        if cap is not None and cap > 0:
+            try:
+                verifier_config = self.models.get(verifier)
+                if verifier_config:
+                    est_tokens = int(len(prompt.split()) * 1.3) + 500
+                    est_cost = est_tokens * verifier_config.cost_per_token
+                    if est_cost > cap:
+                        logger.info(
+                            f"Cost cap exceeded (est={est_cost:.4f} > {cap}), accepting draft"
+                        )
+                        return draft_result, drafter
+            except Exception as e:
+                logger.debug(f"Cost cap check skipped: {e}")
 
         # 4. Verifier로 승격
         logger.info(f"✗ Draft rejected, escalating to verifier: {verifier}")
@@ -2367,10 +2465,28 @@ async def execute_llm_task(
     model_name: str = None,
     system_message: str = None,
     use_ensemble: bool = False,
+    agent_name: str | None = None,
     **kwargs,
 ) -> ModelResult:
     """LLM 작업 실행 (API 모델 + CLI 에이전트 지원)."""
     try:
+        if not agent_name:
+            from src.core.agent_security import get_current_agent_name
+            agent_name = get_current_agent_name()
+
+        if agent_name:
+            from src.core.agent_security import get_agent_security_manager
+            _sec = get_agent_security_manager()
+            if not _sec.check_rate_limit(agent_name):
+                return ModelResult(
+                    content="[RATE_LIMIT] LLM call limit exceeded for this agent execution.",
+                    model_used="none",
+                    execution_time=0.0,
+                    confidence=0.0,
+                    cost=0.0,
+                    metadata={"rate_limited": True, "agent": agent_name},
+                )
+
         # CLI 에이전트 체크
         if model_name and _is_cli_agent(model_name):
             result = await _execute_cli_agent_task(
@@ -2426,6 +2542,21 @@ async def execute_llm_task(
                 cost=result.cost,
                 metadata=result.metadata,
             )
+
+        if agent_name:
+            from src.core.agent_security import get_agent_security_manager
+            _sec_out = get_agent_security_manager()
+            out_check = _sec_out.enforce_output(agent_name, result.content or "")
+            if out_check.filtered_text != (result.content or ""):
+                result = ModelResult(
+                    content=out_check.filtered_text,
+                    model_used=result.model_used,
+                    execution_time=result.execution_time,
+                    confidence=result.confidence if out_check.is_allowed else 0.0,
+                    cost=result.cost,
+                    metadata={**result.metadata, "agent_security_filtered": True},
+                )
+
         return result
     except Exception as e:
         logger.error(f"LLM task execution failed: {e}")

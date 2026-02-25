@@ -3,6 +3,21 @@ agent:
   display_name: "Research Planner"
   description: "Creates detailed research plans and decomposes them into executable tasks"
 
+security:
+  policy: "planner"
+  guardrails:
+    - "no_code_execution"
+    - "no_data_manipulation"
+    - "input_injection_scan"
+    - "pii_redaction"
+  max_context_keys:
+    - "user_query"
+    - "messages"
+    - "session_id"
+    - "metadata"
+    - "research_plan"
+    - "pending_questions"
+
 capabilities:
   - "research_planning"
   - "task_decomposition"
