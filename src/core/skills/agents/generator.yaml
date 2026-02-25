@@ -3,6 +3,24 @@ agent:
   display_name: "Content Generator"
   description: "Generates comprehensive research reports and summaries from collected data"
 
+security:
+  policy: "generator"
+  guardrails:
+    - "output_leak_filter"
+    - "no_system_prompt_leak"
+    - "no_credential_leak"
+    - "pii_redaction"
+  max_context_keys:
+    - "user_query"
+    - "messages"
+    - "session_id"
+    - "metadata"
+    - "research_plan"
+    - "research_tasks"
+    - "verified_results"
+    - "final_report"
+    - "a2ui_json"
+
 capabilities:
   - "content_generation"
   - "report_writing"

@@ -61,9 +61,9 @@ class A2UIGenerator:
             }
         }
 
-        # 첫 번째 메시지로 createSurface 반환 (클라이언트는 순차적으로 처리)
-        # 실제로는 여러 메시지를 배열로 반환하거나, 단일 메시지로 통합
-        return create_surface
+        # 증분 업데이트: createSurface 후 updateComponents, updateDataModel 순차 전달 (A2UI v0.8)
+        # 클라이언트가 순서대로 적용하면 대시보드 갱신 지연 감소
+        return [create_surface, update_components, update_data_model]
 
     def _build_report_components(
         self,

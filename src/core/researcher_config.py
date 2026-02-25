@@ -301,6 +301,7 @@ class VerificationConfig:
     enable_early_warning: bool
     enable_fact_check: bool
     enable_uncertainty_marking: bool
+    blind_verification: bool = False  # zeroshot 스타일: 검증 시 계획/태스크 제한, 요약+결과만 전달
 
 
 @dataclass
@@ -470,6 +471,171 @@ class CascadeConfig(BaseModel):
         le=10.0,
         description="Speed threshold for drafter classification",
     )
+    domain_validation_enabled: bool = Field(
+        default=True,
+        description="Enable task-type-specific content validation for cascade acceptance",
+    )
+    semantic_agreement_enabled: bool = Field(
+        default=False,
+        description="Require semantic agreement (second drafter run) before accepting draft",
+    )
+    semantic_agreement_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity for semantic agreement (when enabled)",
+    )
+    cost_cap_per_run: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Max allowed cost for escalation (one verifier call); skip verifier if estimated cost exceeds this",
+    )
+
+
+class ApprovalGateConfig(BaseModel):
+    """선택적 승인 게이트: 위험 도구 실행 전 사용자 승인 (OAC/Cline 스타일)."""
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable approval gate for risky tools",
+    )
+    risky_tool_patterns: List[str] = Field(
+        default_factory=lambda: [
+            "write",
+            "file",
+            "bash",
+            "run",
+            "execute",
+            "fetch",
+            "curl",
+            "request",
+            "eval",
+            "shell",
+        ],
+        description="Tool name substrings that require approval",
+    )
+
+
+class AgentSecurityPolicyEntry(BaseModel):
+    """단일 에이전트에 대한 보안 정책."""
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
+
+    input_max_length: int = Field(
+        default=20_000, ge=500, le=500_000,
+        description="이 에이전트에 전달할 입력 최대 길이",
+    )
+    output_max_length: int = Field(
+        default=50_000, ge=500, le=1_000_000,
+        description="이 에이전트 출력 최대 길이",
+    )
+    allowed_topics: List[str] = Field(
+        default_factory=list,
+        description="허용 토픽 키워드 (빈 리스트 = 제한 없음)",
+    )
+    blocked_output_patterns: List[str] = Field(
+        default_factory=list,
+        description="출력에서 차단할 정규식 패턴 (도메인별 rails)",
+    )
+    allowed_tool_categories: List[str] = Field(
+        default_factory=list,
+        description="이 에이전트가 호출 가능한 도구 카테고리 (빈 리스트 = 전체 허용)",
+    )
+    context_scope: List[str] = Field(
+        default_factory=list,
+        description="MVI: 이 에이전트가 접근 가능한 state 키 (빈 리스트 = 전체 접근)",
+    )
+    max_llm_calls_per_execution: int = Field(
+        default=50, ge=1, le=500,
+        description="단일 실행에서 허용되는 최대 LLM 호출 수",
+    )
+    enable_pii_redaction: bool = Field(
+        default=True,
+        description="PII(개인식별정보) 자동 마스킹 활성화",
+    )
+    enable_injection_scan: bool = Field(
+        default=True,
+        description="이 에이전트 입출력에 인젝션 스캔 적용",
+    )
+
+
+class AgentSecurityConfig(BaseModel):
+    """전체 에이전트 보안 정책 설정 (per-agent guardrails)."""
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="에이전트별 보안 정책 활성화",
+    )
+    audit_logging: bool = Field(
+        default=True,
+        description="보안 감사 로그 활성화",
+    )
+    planner: AgentSecurityPolicyEntry = Field(
+        default_factory=lambda: AgentSecurityPolicyEntry(
+            allowed_topics=["research", "planning", "analysis", "strategy"],
+            blocked_output_patterns=[
+                r"(?i)(import\s+os|subprocess|exec\(|eval\()",
+                r"(?i)(rm\s+-rf|DROP\s+TABLE|DELETE\s+FROM)",
+            ],
+            allowed_tool_categories=["planning", "search", "utility"],
+            context_scope=["user_query", "messages", "session_id", "metadata",
+                           "research_plan", "pending_questions"],
+            max_llm_calls_per_execution=20,
+        ),
+        description="PlannerAgent 보안 정책",
+    )
+    executor: AgentSecurityPolicyEntry = Field(
+        default_factory=lambda: AgentSecurityPolicyEntry(
+            input_max_length=30_000,
+            output_max_length=100_000,
+            blocked_output_patterns=[
+                r"(?i)(SYSTEM\s*:\s*You\s+are)",
+                r"(?i)(API[_\s]?KEY\s*[:=]\s*\S+)",
+            ],
+            allowed_tool_categories=["search", "data", "academic", "business", "code", "browser", "file"],
+            context_scope=["user_query", "messages", "session_id", "metadata",
+                           "research_plan", "research_tasks", "research_results",
+                           "pending_questions", "waiting_for_user",
+                           "approved_tool_results", "rejected_tool_approvals"],
+            max_llm_calls_per_execution=50,
+        ),
+        description="ExecutorAgent 보안 정책",
+    )
+    verifier: AgentSecurityPolicyEntry = Field(
+        default_factory=lambda: AgentSecurityPolicyEntry(
+            input_max_length=40_000,
+            blocked_output_patterns=[
+                r"(?i)(exec\(|eval\(|__import__)",
+            ],
+            allowed_tool_categories=["verification", "search", "data", "academic"],
+            context_scope=["user_query", "messages", "session_id", "metadata",
+                           "research_plan", "research_tasks", "research_results",
+                           "verified_results"],
+            max_llm_calls_per_execution=30,
+        ),
+        description="VerifierAgent 보안 정책",
+    )
+    generator: AgentSecurityPolicyEntry = Field(
+        default_factory=lambda: AgentSecurityPolicyEntry(
+            output_max_length=200_000,
+            blocked_output_patterns=[
+                r"(?i)(SYSTEM\s*:\s*You\s+are)",
+                r"(?i)(secret[_\s]?key\s*[:=]\s*\S+)",
+                r"(?i)(API[_\s]?KEY\s*[:=]\s*\S+)",
+                r"(?i)(password\s*[:=]\s*\S+)",
+            ],
+            allowed_tool_categories=["generation", "utility", "search", "document", "file"],
+            context_scope=["user_query", "messages", "session_id", "metadata",
+                           "research_plan", "research_tasks", "verified_results",
+                           "final_report", "a2ui_json"],
+            max_llm_calls_per_execution=15,
+        ),
+        description="GeneratorAgent 보안 정책",
+    )
 
 
 class AgentToolConfig(BaseModel):
@@ -608,6 +774,14 @@ class ResearcherSystemConfig(BaseModel):
     council: CouncilConfig = Field(description="Council configuration")
     cascade: CascadeConfig = Field(
         default_factory=CascadeConfig, description="Cascade configuration"
+    )
+    approval_gate: ApprovalGateConfig = Field(
+        default_factory=ApprovalGateConfig,
+        description="Approval gate for risky tools",
+    )
+    agent_security: AgentSecurityConfig = Field(
+        default_factory=AgentSecurityConfig,
+        description="Per-agent security policies",
     )
     agent_tools: AgentToolConfig = Field(description="Agent tools configuration")
     prompt_refiner: PromptRefinerConfig = Field(
@@ -784,6 +958,27 @@ def get_verification_config() -> VerificationConfig:
             "Configuration not loaded. Call load_config_from_env() first."
         )
     return config.verification
+
+
+def get_agent_security_config() -> AgentSecurityConfig:
+    """Get per-agent security configuration."""
+    if config is None:
+        raise RuntimeError(
+            "Configuration not loaded. Call load_config_from_env() first."
+        )
+    return config.agent_security
+
+
+def get_agent_security_policy(agent_name: str) -> AgentSecurityPolicyEntry:
+    """Get security policy for a specific agent by name."""
+    sec = get_agent_security_config()
+    policy_map = {
+        "planner": sec.planner,
+        "executor": sec.executor,
+        "verifier": sec.verifier,
+        "generator": sec.generator,
+    }
+    return policy_map.get(agent_name, AgentSecurityPolicyEntry())
 
 
 def get_context_window_config() -> ContextWindowConfig:
@@ -1017,6 +1212,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enable_early_warning=get_required_env("ENABLE_EARLY_WARNING", bool),
         enable_fact_check=get_required_env("ENABLE_FACT_CHECK", bool),
         enable_uncertainty_marking=get_required_env("ENABLE_UNCERTAINTY_MARKING", bool),
+        blind_verification=get_optional_env("BLIND_VERIFICATION", False, bool),
     )
 
     # Load Context Window configuration
@@ -1164,6 +1360,18 @@ def load_config_from_env() -> ResearcherSystemConfig:
         drafter_speed_threshold=get_optional_env(
             "CASCADE_DRAFTER_SPEED_THRESHOLD", 7.0, float
         ),
+        domain_validation_enabled=get_optional_env(
+            "CASCADE_DOMAIN_VALIDATION_ENABLED", True, bool
+        ),
+        semantic_agreement_enabled=get_optional_env(
+            "CASCADE_SEMANTIC_AGREEMENT_ENABLED", False, bool
+        ),
+        semantic_agreement_threshold=get_optional_env(
+            "CASCADE_SEMANTIC_AGREEMENT_THRESHOLD", 0.7, float
+        ),
+        cost_cap_per_run=get_optional_env(
+            "CASCADE_COST_CAP_PER_RUN", None, float
+        ),
     )
 
     # Load PromptRefiner configuration (Optional with defaults)
@@ -1192,6 +1400,34 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enable_human_loop=get_optional_env("OVERSEER_ENABLE_HUMAN_LOOP", True, bool),
     )
 
+    approval_gate_config = ApprovalGateConfig(
+        enabled=get_optional_env("APPROVAL_GATE_ENABLED", False, bool),
+        risky_tool_patterns=(
+            [
+                p.strip()
+                for p in os.getenv("APPROVAL_GATE_RISKY_PATTERNS", "").split(",")
+                if p.strip()
+            ]
+            or [
+                "write",
+                "file",
+                "bash",
+                "run",
+                "execute",
+                "fetch",
+                "curl",
+                "request",
+                "eval",
+                "shell",
+            ]
+        ),
+    )
+
+    agent_security_config = AgentSecurityConfig(
+        enabled=get_optional_env("AGENT_SECURITY_ENABLED", True, bool),
+        audit_logging=get_optional_env("AGENT_SECURITY_AUDIT_LOG", True, bool),
+    )
+
     # Create and store global config instance
     global config
     config = ResearcherSystemConfig(
@@ -1206,6 +1442,8 @@ def load_config_from_env() -> ResearcherSystemConfig:
         reliability=reliability_config,
         council=council_config,
         cascade=cascade_config,
+        approval_gate=approval_gate_config,
+        agent_security=agent_security_config,
         agent_tools=agent_tool_config,
         prompt_refiner=prompt_refiner_config,
         overseer=overseer_config,

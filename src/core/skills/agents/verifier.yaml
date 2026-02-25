@@ -3,6 +3,22 @@ agent:
   display_name: "Research Verifier"
   description: "Verifies research results for accuracy, relevance, and completeness"
 
+security:
+  policy: "verifier"
+  guardrails:
+    - "no_code_execution"
+    - "input_injection_scan"
+    - "pii_redaction"
+  max_context_keys:
+    - "user_query"
+    - "messages"
+    - "session_id"
+    - "metadata"
+    - "research_plan"
+    - "research_tasks"
+    - "research_results"
+    - "verified_results"
+
 capabilities:
   - "result_verification"
   - "quality_assessment"

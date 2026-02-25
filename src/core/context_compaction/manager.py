@@ -11,6 +11,8 @@ from typing import Any, Dict, List
 
 from src.core.context_compaction.strategies import (
     CompactionStrategy,
+    CondensationStrategy,
+    ForgettingStrategy,
     HybridStrategy,
     PruneStrategy,
     SummarizeStrategy,
@@ -29,9 +31,11 @@ class CompactionConfig:
     target_tokens: int = 0  # 목표 토큰 수 (0이면 자동 계산)
     preserve_last_n: int = 20  # 마지막 N개 메시지 보호
     preserve_last_tokens: int = 40000  # 마지막 40K 토큰 보호 (AgentPG 패턴)
-    strategy: str = "hybrid"  # "prune" | "summarize" | "hybrid"
+    strategy: str = "hybrid"  # "prune" | "summarize" | "hybrid" | "forgetting" | "condensation"
     auto_compact: bool = True  # 자동 압축 활성화
     max_context_tokens: int = 200000  # 최대 컨텍스트 토큰 수
+    forget_ttl_seconds: int | None = None  # Forgetting: 이 초보다 오래된 메시지 제거
+    importance_threshold: float = 0.0  # Forgetting: 이 값 미만 importance 메시지 제거
 
 
 @dataclass
@@ -88,7 +92,9 @@ class CompactionManager:
         if self.llm_client:
             self.strategies["hybrid"] = HybridStrategy(self.llm_client)
             self.strategies["summarize"] = SummarizeStrategy(self.llm_client)
+            self.strategies["condensation"] = CondensationStrategy(self.llm_client)
         self.strategies["prune"] = PruneStrategy()
+        self.strategies["forgetting"] = ForgettingStrategy()
 
     def register_strategy(self, name: str, strategy: CompactionStrategy):
         """전략 등록."""

@@ -2,9 +2,11 @@
 
 컨텍스트 압축 전략 구현.
 AgentPG 패턴을 참고하여 Prune, Summarize, Hybrid 전략을 제공합니다.
+2025 트렌드: Forgetting(TTL·중요도 기반 삭제), Condensation(핵심만 축약).
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, List
@@ -270,4 +272,103 @@ class HybridStrategy(CompactionStrategy):
             f"(pruned + summarized)"
         )
 
+        return result
+
+
+class ForgettingStrategy(CompactionStrategy):
+    """Forgetting 전략: TTL·중요도 기반 삭제 (2025 메모리 트렌드).
+
+    - 메시지 메타데이터의 timestamp가 forget_ttl_seconds 초과 시 제거
+    - importance가 importance_threshold 미만이면 제거
+    - 마지막 preserve_last_n 개는 항상 유지
+    """
+
+    def name(self) -> str:
+        return "forgetting"
+
+    async def compact(
+        self, messages: List[Dict[str, Any]], config: CompactionConfig
+    ) -> List[Dict[str, Any]]:
+        if len(messages) <= getattr(config, "preserve_last_n", 20):
+            return messages
+        preserve_last_n = getattr(config, "preserve_last_n", 20)
+        forget_ttl = getattr(config, "forget_ttl_seconds", None)
+        importance_threshold = getattr(config, "importance_threshold", 0.0)
+        protected = messages[-preserve_last_n:]
+        to_filter = messages[:-preserve_last_n]
+        now = time.time()
+        kept = []
+        for msg in to_filter:
+            meta = msg.get("metadata") or {}
+            ts = meta.get("timestamp") or meta.get("created_at")
+            if isinstance(ts, (int, float)):
+                if forget_ttl is not None and (now - ts) > forget_ttl:
+                    continue
+            imp = meta.get("importance", 1.0)
+            if isinstance(imp, (int, float)) and imp < importance_threshold:
+                continue
+            kept.append(msg)
+        result = kept + protected
+        logger.info(
+            f"Forgetting strategy: {len(messages)} -> {len(result)} messages "
+            f"(ttl={forget_ttl}, importance>={importance_threshold})"
+        )
+        return result
+
+
+class CondensationStrategy(CompactionStrategy):
+    """Condensation 전략: 핵심만 추출하여 추가 축약 (2025 메모리 트렌드).
+
+    요약/긴 메시지를 핵심 사실 위주로 한 번 더 압축합니다.
+    LLM 클라이언트가 있으면 사용하고, 없으면 prune만 적용.
+    """
+
+    def name(self) -> str:
+        return "condensation"
+
+    def __init__(self, llm_client: Any | None = None):
+        super().__init__(llm_client)
+        self.prune = PruneStrategy()
+
+    async def compact(
+        self, messages: List[Dict[str, Any]], config: CompactionConfig
+    ) -> List[Dict[str, Any]]:
+        preserve_last_n = getattr(config, "preserve_last_n", 20)
+        if len(messages) <= preserve_last_n or not self.llm_client:
+            if not self.llm_client and len(messages) > preserve_last_n:
+                return await self.prune.compact(messages, config)
+            return messages
+        protected = messages[-preserve_last_n:]
+        to_condense = messages[:-preserve_last_n]
+        condensed = []
+        for msg in to_condense:
+            content = msg.get("content", "")
+            if isinstance(content, str) and len(content) > 800:
+                try:
+                    if hasattr(self.llm_client, "generate"):
+                        short = await self.llm_client.generate(
+                            f"Extract only key facts (bullet points, max 200 chars):\n{content[:2000]}"
+                        )
+                    else:
+                        short = content[:400] + "..."
+                    condensed.append(
+                        {
+                            **msg,
+                            "content": short,
+                            "metadata": {
+                                **(msg.get("metadata") or {}),
+                                "condensed": True,
+                            },
+                        }
+                    )
+                except Exception as e:
+                    logger.debug(f"Condensation skip: {e}")
+                    condensed.append(msg)
+            else:
+                condensed.append(msg)
+        result = condensed + protected
+        logger.info(
+            f"Condensation strategy: {len(messages)} -> {len(result)} messages "
+            f"(long messages condensed)"
+        )
         return result
