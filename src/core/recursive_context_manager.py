@@ -437,11 +437,14 @@ class RecursiveContextManager:
             "depths": [ctx.depth for ctx in self.context_cache.values()],
         }
 
-    def evaluate_context_completeness(self, context_id: str | None = None) -> float:
+    def evaluate_context_completeness(
+        self, context_id: str | None = None, probe_overall_score: float | None = None
+    ) -> float:
         """컨텍스트 완전성 평가.
 
         Args:
             context_id: 평가할 컨텍스트 ID (None이면 현재 컨텍스트)
+            probe_overall_score: Probe-Based Evaluation 전체 점수 (0~1). 제공 시 완전성과 결합.
 
         Returns:
             완전성 점수 (0.0 ~ 1.0)
@@ -474,6 +477,9 @@ class RecursiveContextManager:
                 data_quality *= 0.9  # 빈 값이 있으면 약간 감점
 
         final_score = completeness * 0.7 + data_quality * 0.3
+
+        if probe_overall_score is not None and 0 <= probe_overall_score <= 1:
+            final_score = 0.6 * final_score + 0.4 * probe_overall_score
 
         return min(1.0, max(0.0, final_score))
 

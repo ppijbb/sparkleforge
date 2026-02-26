@@ -254,6 +254,10 @@ class AgentState(TypedDict):
     report_failed: bool
     error: str | None
 
+    # Multi-Agent: forward_message (직접 전달) - 서브 에이전트가 합성 없이 사용자에게 전달
+    direct_forward_message: str | None
+    direct_forward_from_agent: str | None
+
 
 ###################
 # Agent Definitions
@@ -6778,6 +6782,16 @@ class AgentOrchestrator:
         with agent_security_context("generator"):
             result = await self.generator.execute(scoped_state)
 
+        # Multi-Agent: forward_message 패턴 - 서브 에이전트가 설정한 직접 전달 메시지가 있으면 사용
+        use_direct_forward = os.getenv("USE_DIRECT_FORWARD", "true").lower() == "true"
+        if use_direct_forward and state.get("direct_forward_message"):
+            result["final_report"] = state["direct_forward_message"]
+            result["direct_forward_from_agent"] = state.get("direct_forward_from_agent")
+            logger.info(
+                "🟣 [WORKFLOW] Using direct_forward_message from %s (no synthesis)",
+                state.get("direct_forward_from_agent", "unknown"),
+            )
+
         final_report = result.get("final_report") or ""
         output_check = sec.enforce_output("generator", final_report)
         if not output_check.is_allowed:
@@ -6901,6 +6915,8 @@ class AgentOrchestrator:
             if restored_state:
                 logger.info(f"✅ Session restored: {session_id}")
                 restored_state.setdefault("sparkle_ideas", None)
+                restored_state.setdefault("direct_forward_message", None)
+                restored_state.setdefault("direct_forward_from_agent", None)
                 initial_state = AgentState(**restored_state)
                 # 복원된 세션의 쿼리와 새 쿼리가 다를 수 있으므로 업데이트
                 if user_query:
@@ -6960,6 +6976,8 @@ class AgentOrchestrator:
                 user_responses=None,
                 clarification_context=None,
                 waiting_for_user=None,
+                direct_forward_message=None,
+                direct_forward_from_agent=None,
             )
 
         # Execute workflow
@@ -6986,6 +7004,8 @@ class AgentOrchestrator:
                     # 결과를 AgentState로 변환 (필수 키 보장)
                     if isinstance(result, dict):
                         result.setdefault("sparkle_ideas", None)
+                        result.setdefault("direct_forward_message", None)
+                        result.setdefault("direct_forward_from_agent", None)
                     result = AgentState(**result)
                 except Exception as e:
                     logger.warning(
@@ -7201,6 +7221,8 @@ class AgentOrchestrator:
             user_responses=initial_state.get("user_responses"),
             clarification_context=initial_state.get("clarification_context"),
             waiting_for_user=initial_state.get("waiting_for_user", False),
+            direct_forward_message=None,
+            direct_forward_from_agent=None,
         )
 
         # Stream execution

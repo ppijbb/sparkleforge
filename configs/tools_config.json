@@ -1,9 +1,14 @@
 {
   "version": "1.0.0",
+  "_architectural_reduction_note": "Prefer primitive tools to reduce agent confusion: use 'shell' or 'execute_command' for CLI work; use 'filesystem' or file_* for file ops; use 'g-search' for web search. Avoid redundant narrow tools where a single broader tool suffices.",
   "local_tools": {
     "g-search": {
       "category": "search",
-      "description": "Google 검색 (DuckDuckGo fallback)",
+      "description": "Web search. Returns titles, snippets, and URLs.",
+      "description_what": "Run a web search and return ranked results (titles, snippets, links).",
+      "description_when": "User asks for current information, facts, or URLs; or when research needs external sources.",
+      "description_inputs": "query (required), max_results/num_results (optional, default 10), format: concise|detailed (optional).",
+      "description_returns": "List of results with title, snippet, url. Use format=concise for key fields only.",
       "parameters": {
         "query": {
           "type": "string",
@@ -21,6 +26,13 @@
           "description": "결과 수 (max_results의 별칭)",
           "default": 10,
           "required": false
+        },
+        "format": {
+          "type": "string",
+          "enum": ["concise", "detailed"],
+          "default": "detailed",
+          "description": "concise: first 5 results, key fields; detailed: full content",
+          "required": false
         }
       },
       "implementation": "local",
@@ -29,7 +41,11 @@
     },
     "fetch": {
       "category": "data",
-      "description": "웹페이지 가져오기 (MCP embedded server)",
+      "description": "Fetch full content of a URL.",
+      "description_what": "Retrieve the raw text/HTML content of a given URL.",
+      "description_when": "Need page content, article text, or document from a known URL.",
+      "description_inputs": "url (required), max_length, timeout (optional), format: concise|detailed (optional).",
+      "description_returns": "Page content as text. Use format=concise for truncated content.",
       "parameters": {
         "url": {
           "type": "string",
@@ -46,6 +62,13 @@
           "type": "integer",
           "description": "타임아웃(초)",
           "default": 30,
+          "required": false
+        },
+        "format": {
+          "type": "string",
+          "enum": ["concise", "detailed"],
+          "default": "detailed",
+          "description": "concise: truncated; detailed: full content",
           "required": false
         }
       },

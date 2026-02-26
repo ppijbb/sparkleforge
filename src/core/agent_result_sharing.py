@@ -2,20 +2,36 @@
 """Agent Result Sharing System
 
 병렬 실행 중 agent들이 결과를 공유하고, 결과에 대해 토론할 수 있는 시스템.
+Filesystem Context: 대규모 결과는 파일 시스템에 저장하고 참조만 공유 (옵션).
 """
 
 import asyncio
 import json
 import logging
+import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 
 from src.core.llm_manager import TaskType, execute_llm_task
 from src.core.researcher_config import get_agent_config, get_llm_config
 
 logger = logging.getLogger(__name__)
+
+# workspace/agents 디렉터리 (Sub-Agent Communication via Filesystem)
+def _get_shared_results_workspace_root() -> Path:
+    root = Path(__file__).resolve().parent.parent.parent
+    return root / "workspace" / "shared_results"
+
+
+def _serialize_result_size(result: Any) -> int:
+    """결과 직렬화 시 대략적인 바이트 크기."""
+    try:
+        return len(json.dumps(result, ensure_ascii=False))
+    except (TypeError, ValueError):
+        return len(str(result))
 
 
 @dataclass
@@ -42,21 +58,61 @@ class DiscussionMessage:
 
 
 class SharedResultsManager:
-    """Agent 간 결과 공유 관리자."""
+    """Agent 간 결과 공유 관리자.
 
-    def __init__(self, objective_id: str):
-        """초기화."""
+    use_filesystem_for_large_results=True 이면 대규모 result를 파일에 저장하고
+    메모리에는 참조(_fs_ref)와 요약만 보관 (Sub-Agent Communication via Filesystem).
+    """
+
+    def __init__(
+        self,
+        objective_id: str,
+        use_filesystem_for_large_results: bool | None = None,
+        large_result_threshold_chars: int = 10000,
+    ):
+        """초기화.
+
+        Args:
+            objective_id: 목표 ID
+            use_filesystem_for_large_results: None이면 env ENABLE_SHARED_RESULTS_FS 사용
+            large_result_threshold_chars: 이 크기 초과 시 파일로 저장
+        """
         self.objective_id = objective_id
-        self.shared_results: Dict[str, SharedResult] = {}  # result_id -> SharedResult
-        self.task_results: Dict[str, List[str]] = defaultdict(
-            list
-        )  # task_id -> [result_id, ...]
-        self.agent_results: Dict[str, List[str]] = defaultdict(
-            list
-        )  # agent_id -> [result_id, ...]
+        self.shared_results: Dict[str, SharedResult] = {}
+        self.task_results: Dict[str, List[str]] = defaultdict(list)
+        self.agent_results: Dict[str, List[str]] = defaultdict(list)
         self._lock = asyncio.Lock()
 
-        logger.info(f"SharedResultsManager initialized for objective: {objective_id}")
+        if use_filesystem_for_large_results is None:
+            use_filesystem_for_large_results = (
+                os.getenv("ENABLE_SHARED_RESULTS_FS", "false").lower() == "true"
+            )
+        self.use_filesystem_for_large_results = use_filesystem_for_large_results
+        self.large_result_threshold_chars = large_result_threshold_chars
+
+        logger.info(
+            f"SharedResultsManager initialized for objective: {objective_id} "
+            f"(fs_large_results={use_filesystem_for_large_results})"
+        )
+
+    def _write_result_to_fs(self, result_id: str, agent_id: str, result: Any) -> Dict[str, Any]:
+        """대규모 결과를 workspace/shared_results에 쓰고 참조 dict 반환."""
+        try:
+            root = _get_shared_results_workspace_root()
+            root.mkdir(parents=True, exist_ok=True)
+            safe_id = "".join(c if c.isalnum() or c in "._-" else "_" for c in result_id)
+            path = root / f"{self.objective_id}_{safe_id}.json"
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            summary = json.dumps(result, ensure_ascii=False)[:500] + ("..." if _serialize_result_size(result) > 500 else "")
+            return {
+                "_fs_ref": str(path),
+                "summary": summary,
+                "instruction": "Full result stored in file. Use read_file to load when needed.",
+            }
+        except Exception as e:
+            logger.warning("SharedResultsManager: failed to write result to fs: %s", e)
+            return result
 
     async def share_result(
         self,
@@ -66,14 +122,18 @@ class SharedResultsManager:
         metadata: Dict[str, Any] | None = None,
         confidence: float = 0.0,
     ) -> str:
-        """결과 공유."""
+        """결과 공유. 대규모 결과는 옵션에 따라 파일 시스템에 저장."""
         async with self._lock:
             result_id = f"{task_id}_{agent_id}_{datetime.now().timestamp()}"
+
+            payload = result
+            if self.use_filesystem_for_large_results and _serialize_result_size(result) > self.large_result_threshold_chars:
+                payload = self._write_result_to_fs(result_id, agent_id, result)
 
             shared_result = SharedResult(
                 task_id=task_id,
                 agent_id=agent_id,
-                result=result,
+                result=payload,
                 metadata=metadata or {},
                 confidence=confidence,
             )
@@ -87,6 +147,18 @@ class SharedResultsManager:
             )
 
             return result_id
+
+    @staticmethod
+    def load_result_from_fs(shared_result: "SharedResult") -> Any:
+        """SharedResult.result가 _fs_ref이면 파일에서 전체 로드하여 반환."""
+        r = shared_result.result
+        if isinstance(r, dict) and r.get("_fs_ref"):
+            try:
+                with open(r["_fs_ref"], encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning("Failed to load result from fs: %s", e)
+        return r
 
     async def get_shared_results(
         self,
@@ -211,6 +283,35 @@ class AgentDiscussionManager:
         """토론 내용 조회."""
         async with self._lock:
             return self.discussions.get(topic, []).copy()
+
+    @staticmethod
+    def _weighted_consensus(
+        shared_result: SharedResult,
+        other_agent_results: List[SharedResult],
+    ) -> Dict[str, Any]:
+        """Confidence 기반 Weighted Voting으로 명시적 합의 도출 (Multi-Agent Patterns)."""
+        all_results = [shared_result] + list(other_agent_results)
+        if not all_results:
+            return {"consensus_score": 0.0, "weighted_summary": "", "participant_weights": []}
+
+        total_weight = sum(max(0.0, r.confidence) for r in all_results) or 1.0
+        participant_weights = [
+            {"agent_id": r.agent_id, "confidence": r.confidence, "weight": max(0.0, r.confidence) / total_weight}
+            for r in all_results
+        ]
+        consensus_score = sum(r.confidence for r in all_results) / len(all_results) if all_results else 0.0
+        best = max(all_results, key=lambda r: r.confidence)
+        try:
+            weighted_summary = json.dumps(best.result, ensure_ascii=False)[:500]
+        except (TypeError, ValueError):
+            weighted_summary = str(best.result)[:500]
+        return {
+            "consensus_score": round(consensus_score, 4),
+            "weighted_summary": weighted_summary,
+            "participant_weights": participant_weights,
+            "leading_agent_id": best.agent_id,
+            "leading_confidence": best.confidence,
+        }
 
     async def agent_discuss_result(
         self,
@@ -370,6 +471,9 @@ Provide a structured response with comparison, consistency analysis, logical val
                 else str(llm_result)
             )
 
+            # Weighted Voting / 명시적 합의 도출
+            weighted = self._weighted_consensus(shared_result, other_agent_results)
+
             # 논박 결과 파싱 (구조화된 응답 추출 시도)
             discussion_result = {
                 "message": discussion_message,
@@ -377,6 +481,8 @@ Provide a structured response with comparison, consistency analysis, logical val
                 "result_id": result_id,
                 "discussion_type": discussion_type,
                 "timestamp": datetime.now().isoformat(),
+                "weighted_consensus": weighted,
+                "consensus_score": weighted.get("consensus_score", 0.0),
             }
 
             # 일관성 및 논리적 올바름 추출 시도

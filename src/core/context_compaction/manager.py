@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List
 
+from src.core.context_compaction.probe_evaluation import (
+    ProbeEvaluationResult,
+    run_probe_evaluation,
+)
 from src.core.context_compaction.strategies import (
     CompactionStrategy,
     CondensationStrategy,
@@ -144,6 +148,7 @@ class CompactionManager:
         messages: List[Dict[str, Any]],
         strategy_name: str | None = None,
         tx: Transaction | None = None,
+        run_probe_eval: bool = False,
     ) -> CompactionResult:
         """컨텍스트 압축 실행.
 
@@ -152,6 +157,7 @@ class CompactionManager:
             messages: 메시지 리스트
             strategy_name: 사용할 전략 이름 (None이면 설정값 사용)
             tx: 트랜잭션 (None이면 자동 생성)
+            run_probe_eval: True면 압축 후 Probe-Based Evaluation 실행 후 metadata에 반영
 
         Returns:
             압축 결과
@@ -167,11 +173,11 @@ class CompactionManager:
         if tx is None:
             async with self.tx_manager.transaction() as new_tx:
                 return await self._compact_in_transaction(
-                    session_id, messages, strategy, new_tx
+                    session_id, messages, strategy, new_tx, run_probe_eval
                 )
         else:
             return await self._compact_in_transaction(
-                session_id, messages, strategy, tx
+                session_id, messages, strategy, tx, run_probe_eval
             )
 
     async def _compact_in_transaction(
@@ -180,6 +186,7 @@ class CompactionManager:
         messages: List[Dict[str, Any]],
         strategy: CompactionStrategy,
         tx: Transaction,
+        run_probe_eval: bool = False,
     ) -> CompactionResult:
         """트랜잭션 내에서 압축 실행."""
         original_count = len(messages)
@@ -195,6 +202,39 @@ class CompactionManager:
         # 원본 메시지 아카이브 (롤백 지원)
         archived_count = original_count - compressed_count
 
+        metadata: Dict[str, Any] = {
+            "compression_ratio": compressed_tokens / original_tokens
+            if original_tokens > 0
+            else 0.0,
+            "token_reduction_percent": (tokens_saved / original_tokens * 100)
+            if original_tokens > 0
+            else 0.0,
+        }
+
+        # Probe-Based Evaluation (옵션)
+        if run_probe_eval and self.llm_client:
+            try:
+                probe_result: ProbeEvaluationResult = await run_probe_evaluation(
+                    compressed_messages=compressed_messages,
+                    original_messages=messages,
+                    llm_client=self.llm_client,
+                )
+                metadata["probe_evaluation"] = {
+                    "recall_score": probe_result.recall_score,
+                    "artifact_score": probe_result.artifact_score,
+                    "continuation_score": probe_result.continuation_score,
+                    "decision_score": probe_result.decision_score,
+                    "overall_score": probe_result.overall_score,
+                }
+                metadata["probe_overall_score"] = probe_result.overall_score
+                logger.info(
+                    f"Probe evaluation: overall={probe_result.overall_score:.2f} "
+                    f"(recall={probe_result.recall_score:.2f}, artifact={probe_result.artifact_score:.2f})"
+                )
+            except Exception as e:
+                logger.warning("Probe evaluation failed: %s", e)
+                metadata["probe_evaluation"] = {"error": str(e)}
+
         result = CompactionResult(
             session_id=session_id,
             original_message_count=original_count,
@@ -206,14 +246,7 @@ class CompactionManager:
             preserved_messages=self.config.preserve_last_n,
             archived_messages=archived_count,
             created_at=datetime.now(),
-            metadata={
-                "compression_ratio": compressed_tokens / original_tokens
-                if original_tokens > 0
-                else 0.0,
-                "token_reduction_percent": (tokens_saved / original_tokens * 100)
-                if original_tokens > 0
-                else 0.0,
-            },
+            metadata=metadata,
         )
 
         logger.info(
