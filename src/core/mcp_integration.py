@@ -288,6 +288,42 @@ class ToolCategory(Enum):
     GIT = "git"  # Git 워크플로우
 
 
+def _actionable_error_message(tool_name: str, error: str | Exception) -> str:
+    """Agent-recoverable error message (Tool Design: Error Message Design)."""
+    msg = str(error).strip() if error else "Unknown error"
+    lower = msg.lower()
+    if "timeout" in lower or "timed out" in lower:
+        return f"What happened: Tool '{tool_name}' timed out. How to fix: Retry with a simpler query or increase timeout."
+    if "rate limit" in lower or "429" in msg:
+        return f"What happened: Rate limit hit for '{tool_name}'. How to fix: Wait and retry, or use a different tool."
+    if "not found" in lower or "404" in msg:
+        return f"What happened: Resource not found for '{tool_name}'. How to fix: Check URL/path/query and try a valid input."
+    if "invalid" in lower or "400" in msg:
+        return f"What happened: Invalid input for '{tool_name}'. How to fix: Check parameter format (e.g. query string, URL)."
+    if "connection" in lower or "network" in lower:
+        return f"What happened: Network/connection error for '{tool_name}'. How to fix: Check connectivity and retry."
+    return f"What happened: {msg[:300]}. How to fix: Retry or try a different tool/parameter."
+
+
+def _structured_tool_description(tool_config: Dict[str, Any], tool_name: str) -> str:
+    """Tool Description Engineering: What, When, Inputs, Returns (Agent-Skills tool-design)."""
+    base = tool_config.get("description", f"{tool_name} tool")
+    what = tool_config.get("description_what")
+    when = tool_config.get("description_when")
+    inputs = tool_config.get("description_inputs")
+    returns = tool_config.get("description_returns")
+    if not any([what, when, inputs, returns]):
+        return base
+    parts = [f"What: {what or base}"]
+    if when:
+        parts.append(f"When: {when}")
+    if inputs:
+        parts.append(f"Inputs: {inputs}")
+    if returns:
+        parts.append(f"Returns: {returns}")
+    return " ".join(parts)
+
+
 @dataclass
 class ToolInfo:
     """도구 정보."""
@@ -623,7 +659,7 @@ class UniversalMCPHub:
 
             category_str = tool_config.get("category", "utility")
             category = category_map.get(category_str, ToolCategory.UTILITY)
-            description = tool_config.get("description", f"{tool_name} tool")
+            description = _structured_tool_description(tool_config, tool_name)
             params_config = tool_config.get("parameters", {})
 
             # Pydantic 스키마 생성 - 최신 방식으로 단순화 (args_schema 없이도 동작)
@@ -637,9 +673,12 @@ class UniversalMCPHub:
                 if func_type == "search":
 
                     def search_wrapper(
-                        query: str, max_results: int = 10, num_results: int = 10
+                        query: str,
+                        max_results: int = 10,
+                        num_results: int = 10,
+                        format: str = "detailed",
                     ) -> str:
-                        params = {"query": query}
+                        params = {"query": query, "format": format}
                         if max_results:
                             params["max_results"] = max_results
                         elif num_results:
@@ -663,8 +702,10 @@ class UniversalMCPHub:
                 elif func_type == "data":
                     if tool_name_str == "fetch":
 
-                        def fetch_wrapper(url: str) -> str:
-                            return _execute_data_tool_sync("fetch", {"url": url})
+                        def fetch_wrapper(url: str, format: str = "detailed") -> str:
+                            return _execute_data_tool_sync(
+                                "fetch", {"url": url, "format": format}
+                            )
 
                         return fetch_wrapper
                     elif tool_name_str == "filesystem":
@@ -3218,10 +3259,11 @@ class UniversalMCPHub:
                     result = await _execute_data_tool(tool_name, parameters)
 
                 execution_time = time.time() - start_time
+                err = _actionable_error_message(tool_name, result.error) if result.error else None
                 return {
                     "success": result.success,
                     "data": result.data,
-                    "error": result.error,
+                    "error": err,
                     "execution_time": result.execution_time,
                     "confidence": result.confidence,
                     "source": "local_tool",
@@ -3232,7 +3274,7 @@ class UniversalMCPHub:
                 execution_time = time.time() - start_time
                 return {
                     "success": False,
-                    "error": f"Local tool execution failed: {str(e)}",
+                    "error": _actionable_error_message(tool_name, e),
                     "execution_time": execution_time,
                     "confidence": 0.0,
                     "source": "local_tool",
@@ -3988,10 +4030,11 @@ class UniversalMCPHub:
             )
             await output_manager.output_tool_execution(tool_exec_result)
 
+            err = f"Unknown tool: {tool_name}. How to fix: Use one of: {', '.join(available_tools[:10])}."
             return {
                 "success": False,
                 "data": None,
-                "error": f"Unknown tool: {tool_name}. Available tools: {', '.join(available_tools[:10])}",
+                "error": _actionable_error_message(tool_name, err),
                 "execution_time": execution_time,
                 "confidence": 0.0,
             }
@@ -4152,7 +4195,7 @@ class UniversalMCPHub:
                                 return {
                                     "success": False,
                                     "data": None,
-                                    "error": f"MCP tool returned error: {error_msg}",
+                                    "error": _actionable_error_message(tool_name, error_msg),
                                     "execution_time": execution_time,
                                     "confidence": 0.0,
                                     "source": "mcp",
@@ -4276,11 +4319,11 @@ class UniversalMCPHub:
                         )
                         await output_manager.output_tool_execution(tool_exec_result)
 
-                        # MCP 실패 시 에러 반환 (fallback 제거)
+                        # MCP 실패 시 에러 반환 (Actionable error message)
                         return {
                             "success": False,
                             "data": None,
-                            "error": f"MCP tool execution failed: {str(mcp_error)}",
+                            "error": _actionable_error_message(tool_name, mcp_error),
                             "execution_time": execution_time,
                             "confidence": 0.0,
                             "source": "mcp",
@@ -4842,6 +4885,51 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         await mcp_hub.initialize_mcp()
 
     result = await mcp_hub.execute_tool(tool_name, parameters)
+
+    # Tool Design: format=concise 이면 응답 크기 제한 (Response Format Optimization)
+    if (
+        result.get("success")
+        and parameters.get("format") == "concise"
+        and result.get("data") is not None
+    ):
+        data = result["data"]
+        max_concise_chars = 1500
+        if isinstance(data, str) and len(data) > max_concise_chars:
+            result = {**result, "data": data[:max_concise_chars] + "\n...[truncated (format=concise)]"}
+        elif isinstance(data, dict) and "results" in data and isinstance(data["results"], list):
+            result = {
+                **result,
+                "data": {
+                    **data,
+                    "results": data["results"][:5],
+                    "_truncated": "format=concise: first 5 results only",
+                },
+            }
+        elif isinstance(data, dict) and "content" in data:
+            c = data["content"]
+            if isinstance(c, str) and len(c) > max_concise_chars:
+                result = {
+                    **result,
+                    "data": {**data, "content": c[:max_concise_chars] + "\n...[truncated]"},
+                }
+
+    # Filesystem Context: 대용량 출력 시 Scratch Pad로 오프로드 (Agent-Skills-for-Context-Engineering)
+    if result.get("success", False) and os.getenv("ENABLE_SCRATCH_PAD", "true").lower() == "true":
+        try:
+            from src.core.scratch_pad import (
+                build_result_with_scratch_ref,
+                write_tool_output,
+            )
+            threshold = int(os.getenv("SCRATCH_PAD_THRESHOLD_CHARS", "8000"))
+            scratch_path, summary = write_tool_output(
+                tool_name, result, threshold_chars=threshold
+            )
+            if scratch_path:
+                result = build_result_with_scratch_ref(
+                    result, scratch_path, summary
+                )
+        except Exception as e:
+            logger.debug("Scratch pad offload skipped: %s", e)
 
     # 성공한 결과만 캐시에 저장
     if result.get("success", False):
