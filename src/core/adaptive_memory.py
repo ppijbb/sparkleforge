@@ -234,6 +234,38 @@ class AdaptiveMemory:
             logger.debug(f"Memory stored in transaction: {key}")
         return result
 
+    def retrieve_for_session(
+        self, session_id: str, limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Retrieve memory items relevant to a session (for prompt injection).
+
+        Returns items whose key contains session_id or whose tags include session:session_id.
+
+        Args:
+            session_id: 세션 ID
+            limit: 최대 반환 개수
+
+        Returns:
+            [{"key": str, "value": Any, "importance": float}, ...]
+        """
+        out: List[Dict[str, Any]] = []
+        session_tag = f"session:{session_id}"
+        for key, item in list(self.long_term_memory.items()) + list(
+            self.short_term_memory.items()
+        ):
+            if session_tag in item.tags or session_id in key:
+                out.append(
+                    {
+                        "key": key,
+                        "value": item.value,
+                        "importance": item.importance,
+                    }
+                )
+                if len(out) >= limit:
+                    break
+        out.sort(key=lambda x: -x["importance"])
+        return out
+
     def retrieve(self, key: str, memory_type: str | None = None) -> Any | None:
         """메모리 항목 조회.
 

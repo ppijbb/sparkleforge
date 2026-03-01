@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, List
 
-from src.core.context_compaction.manager import CompactionConfig
+from src.core.context_compaction.config import CompactionConfig
 
 logger = logging.getLogger(__name__)
 

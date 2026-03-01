@@ -4,8 +4,8 @@
 85% 임계값에서 자동 압축, Hybrid Strategy (Prune + Summarize).
 """
 
+from src.core.context_compaction.config import CompactionConfig
 from src.core.context_compaction.manager import (
-    CompactionConfig,
     CompactionManager,
     get_compaction_manager,
 )

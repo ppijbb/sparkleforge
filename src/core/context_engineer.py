@@ -14,14 +14,72 @@ Context Rot 방지: Recursive summarization, Selective pruning, Token-based trun
 
 import json
 import logging
+import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Set
 
 logger = logging.getLogger(__name__)
+
+# Bootstrap file name (CLAUDE.md equivalent)
+SPARKLE_FILENAME = "SPARKLE.md"
+BOOTSTRAP_DIR = ".sparkleforge"
+GLOBAL_BOOTSTRAP_DIR = "sparkleforge"
+
+
+def _get_project_root() -> Path:
+    """Project root (SparkleForge repo root)."""
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def load_bootstrap_content(max_chars: int = 8000) -> str:
+    """Load SPARKLE.md from global + project hierarchy, trimmed to max_chars.
+
+    Order: ~/.sparkleforge/SPARKLE.md, then project/.sparkleforge/SPARKLE.md,
+    then project/SPARKLE.md. Later files append (project overrides/extends global).
+    """
+    parts: List[str] = []
+    root = _get_project_root()
+
+    # Global: ~/.sparkleforge/SPARKLE.md
+    home = Path.home()
+    global_path = home / GLOBAL_BOOTSTRAP_DIR / SPARKLE_FILENAME
+    if global_path.is_file():
+        try:
+            text = global_path.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                parts.append(f"# Global SPARKLE.md\n{text}")
+        except Exception as e:
+            logger.debug("Could not read global SPARKLE.md: %s", e)
+
+    # Project: .sparkleforge/SPARKLE.md
+    project_bootstrap = root / BOOTSTRAP_DIR / SPARKLE_FILENAME
+    if project_bootstrap.is_file():
+        try:
+            text = project_bootstrap.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                parts.append(f"# Project .sparkleforge/SPARKLE.md\n{text}")
+        except Exception as e:
+            logger.debug("Could not read project .sparkleforge/SPARKLE.md: %s", e)
+
+    # Project root: SPARKLE.md
+    root_sparkle = root / SPARKLE_FILENAME
+    if root_sparkle.is_file():
+        try:
+            text = root_sparkle.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                parts.append(f"# Project SPARKLE.md\n{text}")
+        except Exception as e:
+            logger.debug("Could not read project SPARKLE.md: %s", e)
+
+    combined = "\n\n---\n\n".join(parts) if parts else ""
+    if len(combined) > max_chars:
+        combined = combined[: max_chars - 20] + "\n\n...[trimmed]"
+    return combined
 
 
 class ContextPriority(Enum):
@@ -38,6 +96,7 @@ class ContextType(Enum):
     """컨텍스트 유형."""
 
     SYSTEM_PROMPT = "system_prompt"
+    BOOTSTRAP_FILE = "bootstrap_file"  # SPARKLE.md (CLAUDE.md equivalent)
     USER_QUERY = "user_query"
     TOOL_RESULTS = "tool_results"
     AGENT_MEMORY = "agent_memory"
@@ -253,23 +312,54 @@ class ContextEngineer:
                 "rag_documents": [],
                 "session_history": [],
                 "metadata": {},
+                "bootstrap_content": "",
             }
 
-            # 1. 메모리 조회
-            if user_id:
-                try:
-                    # TODO: 실제 메모리 저장소에서 조회 (현재는 빈 리스트)
-                    # Issue: High priority - 실제 메모리 저장소에서 관련 메모리 조회 구현 필요
-                    # memories = await memory_storage.get_relevant_memories(user_id, user_query)
-                    fetched_context["memories"] = []
-                except Exception as e:
-                    logger.debug(f"Memory retrieval failed: {e}")
+            # 1. 메모리 조회 (AdaptiveMemory 연결)
+            try:
+                from src.core.adaptive_memory import get_adaptive_memory
 
-            # 2. RAG 문서 조회 (외부 지식)
-            # TODO: RAG 시스템 통합
-            # Issue: High priority - RAG 시스템 통합 필요 (벡터 DB, 임베딩 검색 등)
-            # 현재는 빈 리스트 반환
-            fetched_context["rag_documents"] = []
+                adaptive = get_adaptive_memory()
+                if session_id:
+                    raw = adaptive.retrieve_for_session(
+                        session_id, limit=20
+                    )
+                    out_memories = []
+                    for m in raw:
+                        v = m.get("value", "")
+                        content = (
+                            v.get("content", v) if isinstance(v, dict) else v
+                        )
+                        out_memories.append(
+                            {"content": str(content), "id": m.get("key")}
+                        )
+                    fetched_context["memories"] = out_memories
+            except Exception as e:
+                logger.debug(f"Memory retrieval failed: {e}")
+
+            # 2. RAG 문서 조회 (ChromaDB/SharedMemory 검색 when ENABLE_CHROMADB)
+            if os.getenv("ENABLE_CHROMADB", "false").lower() == "true":
+                try:
+                    from src.core.shared_memory import get_shared_memory
+
+                    shared = get_shared_memory()
+                    if getattr(shared, "enable_chromadb", False) and getattr(
+                        shared, "chroma_client", None
+                    ):
+                        rag_results = shared.search(
+                            query=user_query,
+                            limit=10,
+                            session_id=session_id,
+                        )
+                        fetched_context["rag_documents"] = [
+                            {
+                                "content": str(r.get("value", "")),
+                                "id": r.get("key"),
+                            }
+                            for r in rag_results
+                        ]
+                except Exception as e:
+                    logger.debug("RAG/ChromaDB search failed: %s", e)
 
             # 3. 세션 히스토리 조회
             if session_id:
@@ -281,6 +371,15 @@ class ContextEngineer:
                     fetched_context["session_history"] = list(session_memories.values())
                 except Exception as e:
                     logger.debug(f"Session history retrieval failed: {e}")
+
+            # 4. Bootstrap file (SPARKLE.md) - global + project hierarchy
+            try:
+                fetched_context["bootstrap_content"] = load_bootstrap_content(
+                    max_chars=8000
+                )
+            except Exception as e:
+                logger.debug("Bootstrap load failed: %s", e)
+                fetched_context["bootstrap_content"] = ""
 
             logger.debug(
                 f"Fetched context: {len(fetched_context['memories'])} memories, "
@@ -297,7 +396,28 @@ class ContextEngineer:
                 "rag_documents": [],
                 "session_history": [],
                 "metadata": {},
+                "bootstrap_content": "",
             }
+
+    @staticmethod
+    def get_assembled_context_string(prepared_result: Dict[str, Any]) -> str:
+        """Prepared context 결과에서 주입용 문자열 생성.
+
+        Args:
+            prepared_result: prepare_context() 반환값
+
+        Returns:
+            프롬프트에 주입할 컨텍스트 문자열
+        """
+        chunks = prepared_result.get("chunks") or []
+        if not chunks:
+            return ""
+        parts = []
+        for c in chunks:
+            content = c.content if hasattr(c, "content") else (c.get("content", "") if isinstance(c, dict) else str(c))
+            if content:
+                parts.append(content)
+        return "\n\n".join(parts) if parts else ""
 
     async def prepare_context(
         self, user_query: str, fetched_context: Dict[str, Any], available_tokens: int
@@ -315,6 +435,9 @@ class ContextEngineer:
             구성된 컨텍스트
         """
         try:
+            # 매 prepare 시 청크 초기화 (에이전트별 신규 사이클)
+            self.context_chunks.clear()
+
             # Fetch된 컨텍스트를 ContextChunk로 변환
             # 1. 메모리 추가
             for memory in fetched_context.get("memories", []):
@@ -344,14 +467,24 @@ class ContextEngineer:
                         metadata={"source": "session_history"},
                     )
 
-            # 4. 사용자 쿼리 추가
+            # 4. Bootstrap file (SPARKLE.md) 주입
+            bootstrap = fetched_context.get("bootstrap_content") or ""
+            if bootstrap:
+                await self.add_context(
+                    content=bootstrap,
+                    content_type=ContextType.BOOTSTRAP_FILE,
+                    priority=ContextPriority.HIGH,
+                    metadata={"source": "sparkle_md"},
+                )
+
+            # 5. 사용자 쿼리 추가
             await self.add_context(
                 content=user_query,
                 content_type=ContextType.USER_QUERY,
                 priority=ContextPriority.CRITICAL,
             )
 
-            # 5. 컨텍스트 최적화
+            # 6. 컨텍스트 최적화
             optimized = await self.optimize_context(available_tokens=available_tokens)
 
             logger.debug(
@@ -856,8 +989,25 @@ class ContextEngineer:
                 )
                 optimized_chunks.extend(selected_chunks)
 
-        # 우선순위별 정렬 (중요한 것 먼저)
-        optimized_chunks.sort(key=lambda c: (-c.priority.value, -c.timestamp))
+        # Context ordering for caching: static/cacheable first, dynamic last
+        _ORDER = (
+            "system_prompt",
+            "bootstrap_file",
+            "tool_descriptions",
+            "agent_memory",
+            "conversation_history",
+            "tool_results",
+            "user_query",
+            "metadata",
+        )
+        order_map = {t: i for i, t in enumerate(_ORDER)}
+
+        def _sort_key(c):
+            type_val = c.content_type.value
+            pos = order_map.get(type_val, len(_ORDER))
+            return (pos, -c.priority.value, -c.timestamp)
+
+        optimized_chunks.sort(key=_sort_key)
 
         return {"chunks": optimized_chunks, "allocation": allocation}
 
@@ -887,6 +1037,7 @@ class ContextEngineer:
             # 고정 할당
             return {
                 "system_prompt": self.config.system_prompt_tokens,
+                "bootstrap_file": int(max_tokens * 0.1),
                 "user_query": int(max_tokens * 0.05),
                 "tool_results": int(max_tokens * 0.4),
                 "agent_memory": int(max_tokens * 0.2),
@@ -946,6 +1097,7 @@ class ContextEngineer:
         default_weights = {
             "user_query": 1.0,
             "system_prompt": 1.0,
+            "bootstrap_file": 0.9,
             "tool_results": 0.8,
             "agent_memory": 0.6,
             "conversation_history": 0.7,
