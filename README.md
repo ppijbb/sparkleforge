@@ -14,7 +14,7 @@
 > Revolutionary multi-agent system that forges sparkling insights through real-time collaboration, 
 > creative AI, and 9 core innovations that make every idea sparkle.
 > 
-> **현재 상태: Production Level 개발 진행 중** 🚧
+> **Status: Production-level development in progress** 🚧
 
 ## 🔥 What Makes SparkleForge Special?
 
@@ -27,7 +27,7 @@ Unlike traditional research tools, SparkleForge simulates a **team of master cra
 - 🧠 **Creative Synthesis**: AI generates novel solutions by combining ideas
 - 🔍 **Source Validation**: Every claim is verified with credibility scores
 - 📚 **Research Memory**: Learns from past forges to improve over time
-- 🎯 **Production Level 개발 진행 중**: Enterprise-grade reliability 기반 구조 완료, 지속적 개선 중
+- 🎯 **Production-level in progress**: Enterprise-grade reliability foundation in place, under continuous improvement
 
 ## 🚀 Quick Start
 
@@ -119,30 +119,30 @@ python main.py --request "Latest AI trends in 2025"
 - Citations and sources are properly attributed
 - Final deliverable sparkles with quality
 
-## 📊 프로젝트 상태
+## 📊 Project Status
 
-**🚧 Production Level 개발 진행 중**
+**🚧 Production-level development in progress**
 
-SparkleForge는 현재 프로덕션 수준의 안정성과 성능을 목표로 지속적으로 개선 중입니다.
+SparkleForge is being continuously improved toward production-grade stability and performance.
 
-### 현재 완료된 기능 ✅
-- 9가지 핵심 혁신 구현 완료
-- Multi-Agent Orchestration 시스템
-- Universal MCP Hub 통합
-- Production-Grade Reliability 기반 구조
+### Completed ✅
+- 9 core innovations implemented
+- Multi-Agent Orchestration system
+- Universal MCP Hub integration
+- Production-grade reliability foundation
 
-### 진행 중인 작업 🔄
-- CLI 인자 파싱 개선 (`--format json` 지원)
-- ChromaDB 벡터 데이터베이스 통합
-- 의존성 문제 해결
-- 실제 실행 파이프라인 테스트
+### In progress 🔄
+- CLI argument parsing improvements (`--format json` support)
+- ChromaDB vector database integration
+- Dependency resolution
+- End-to-end pipeline testing
 
-### 향후 계획 📋
-- 프로덕션 환경 배포 준비
-- 성능 벤치마크 완료
-- 문서화 완성
+### Planned 📋
+- Production deployment readiness
+- Performance benchmark completion
+- Documentation finalization
 
-## ✨ Core Innovations (9가지 핵심 혁신)
+## ✨ Core Innovations (9)
 
 ### 1. **Adaptive Forge Master**
 - Dynamically allocates 1-10 craftsmen based on complexity
@@ -334,32 +334,31 @@ The Streamlit web interface provides:
 
 ## 📊 Performance Benchmarks
 
-### ⚠️ 성능 측정 상태
+### ⚠️ Benchmark status
 
-**현재 상태: 성능 벤치마크 측정 진행 중**
+**Status: Benchmarks in progress**
 
-SparkleForge의 성능 벤치마크는 현재 측정 및 검증 중입니다.
-아래 수치는 목표 지표이며, 실제 측정 결과는 벤치마크 완료 후 업데이트될 예정입니다.
+SparkleForge performance benchmarks are currently being measured and validated. The figures below are targets; actual results will be updated when benchmarking is complete.
 
-### 🎯 목표 성능 지표 (측정 진행 중)
+### 🎯 Target metrics (measurement in progress)
 
-| Metric Category | 목표 | 측정 상태 |
-|-----------------|------|-----------|
-| **Response Time** | 30-60 seconds | 🔄 측정 중 |
-| **Information Loss** | <5% | 🔄 측정 중 |
-| **Source Verification** | 100% automated | ✅ 구현 완료 |
-| **Creative Insights** | AI-generated | ✅ 구현 완료 |
-| **Real-time Updates** | Live streaming | ✅ 구현 완료 |
+| Metric Category | Target | Status |
+|-----------------|--------|--------|
+| **Response Time** | 30-60 seconds | 🔄 Measuring |
+| **Information Loss** | <5% | 🔄 Measuring |
+| **Source Verification** | 100% automated | ✅ Implemented |
+| **Creative Insights** | AI-generated | ✅ Implemented |
+| **Real-time Updates** | Live streaming | ✅ Implemented |
 
-### 🏆 **Agent Performance Comparison** (AgentBench 기준)
+### 🏆 **Agent Performance Comparison** (AgentBench)
 
-**⚠️ 주의: SparkleForge 수치는 아직 제대로 측정되지 않았습니다.**
+**⚠️ Note: SparkleForge figures are not yet fully measured.**
 
 #### **LLM Models Performance**
 
-| Model/System | Web Navigation | Tool Usage | Multi-Agent | Reasoning | Overall Score | 측정 상태 |
-|--------------|----------------|------------|-------------|-----------|---------------|-----------|
-| **SparkleForge** | **미측정** | **미측정** | **미측정** | **미측정** | **미측정** | 🔄 측정 예정 |
+| Model/System | Web Navigation | Tool Usage | Multi-Agent | Reasoning | Overall Score | Status |
+|--------------|----------------|------------|-------------|-----------|---------------|--------|
+| **SparkleForge** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** | 🔄 Planned |
 | GPT-4o | 85.2% | 88.1% | 82.3% | 89.4% | 86.2% | AgentBench |
 | Claude 3.5 Sonnet | 83.7% | 86.9% | 81.8% | 87.6% | 85.0% | AgentBench |
 | Gemini 2.5 Flash | 79.4% | 82.1% | 78.9% | 84.2% | 81.2% | AgentBench |
@@ -370,9 +369,9 @@ SparkleForge의 성능 벤치마크는 현재 측정 및 검증 중입니다.
 
 #### **Research Agent Services Performance**
 
-| Service | Research Quality | Source Accuracy | Response Time | User Rating | Specialization | 측정 상태 |
-|---------|------------------|-----------------|---------------|-------------|----------------|-----------|
-| **SparkleForge** | **미측정** | **미측정** | **미측정** | **N/A** | Multi-domain Research | 🔄 측정 예정 |
+| Service | Research Quality | Source Accuracy | Response Time | User Rating | Specialization | Status |
+|---------|------------------|-----------------|---------------|-------------|----------------|--------|
+| **SparkleForge** | **TBD** | **TBD** | **TBD** | **N/A** | Multi-domain Research | 🔄 Planned |
 | **Perplexity Pro** | 85.2% | 88.1% | 2.1s | 4.7/5 | Real-time Web Search |
 | **You.com** | 82.3% | 85.4% | 1.8s | 4.5/5 | AI-powered Search |
 | **Consensus AI** | 89.1% | 92.3% | 3.2s | 4.8/5 | Scientific Research |
@@ -385,32 +384,32 @@ SparkleForge의 성능 벤치마크는 현재 측정 및 검증 중입니다.
 
 ### 🚀 **Parallel Agent System Performance**
 
-**⚠️ 주의: 아래 수치는 아직 제대로 측정되지 않았습니다. 구현된 기능 목록입니다.**
+**⚠️ Note: The figures below are not yet fully measured. Listed items are implemented features.**
 
-#### **구현된 기능 (측정 진행 중)**
+#### **Implemented features (measurement in progress)**
 
-| Metric | 구현 상태 | 측정 상태 |
-|--------|-----------|-----------|
-| **Execution Speed** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Time Savings** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Throughput** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Result Sharing Throughput** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Query Throughput** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Cache Hit Rate** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Cache Speedup** | ✅ 구현 완료 | 🔄 측정 중 |
+| Metric | Implementation | Status |
+|--------|----------------|--------|
+| **Execution Speed** | ✅ Done | 🔄 Measuring |
+| **Time Savings** | ✅ Done | 🔄 Measuring |
+| **Throughput** | ✅ Done | 🔄 Measuring |
+| **Result Sharing Throughput** | ✅ Done | 🔄 Measuring |
+| **Query Throughput** | ✅ Done | 🔄 Measuring |
+| **Cache Hit Rate** | ✅ Done | 🔄 Measuring |
+| **Cache Speedup** | ✅ Done | 🔄 Measuring |
 
-#### **Reliability & Error Handling (구현 완료)**
+#### **Reliability & Error Handling (implemented)**
 
-| Metric | 구현 상태 | 측정 상태 |
-|--------|-----------|-----------|
-| **Success Rate** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Error Handling Rate** | ✅ 구현 완료 | ✅ 100% (코드 검증) |
-| **Error Recovery Rate** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Max Retry Attempts** | ✅ 구현 완료 | ✅ 5회 (코드 확인) |
-| **Circuit Breaker** | ✅ 구현 완료 | ✅ 활성화 (코드 확인) |
-| **Connection Pooling** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Dynamic Concurrency** | ✅ 구현 완료 | 🔄 측정 중 |
-| **Supported Error Types** | ✅ 구현 완료 | ✅ 4가지 타입 (코드 확인) |
+| Metric | Implementation | Status |
+|--------|----------------|--------|
+| **Success Rate** | ✅ Done | 🔄 Measuring |
+| **Error Handling Rate** | ✅ Done | ✅ 100% (code-verified) |
+| **Error Recovery Rate** | ✅ Done | 🔄 Measuring |
+| **Max Retry Attempts** | ✅ Done | ✅ 5 (code-verified) |
+| **Circuit Breaker** | ✅ Done | ✅ Active (code-verified) |
+| **Connection Pooling** | ✅ Done | 🔄 Measuring |
+| **Dynamic Concurrency** | ✅ Done | 🔄 Measuring |
+| **Supported Error Types** | ✅ Done | ✅ 4 types (code-verified) |
 
 #### **Parallel Execution vs Competitors Comparison**
 
@@ -422,48 +421,48 @@ SparkleForge의 성능 벤치마크는 현재 측정 및 검증 중입니다.
 4. **Scalability**: Competitors have linear scaling, SparkleForge achieves **49.6x throughput improvement**
 5. **Error Handling**: Competitors have basic handling, SparkleForge provides **100% handling rate + Circuit Breaker**
 
-**📊 구현된 기능:**
-- ✅ **Parallel Execution**: 병렬 실행 시스템 구현 완료
-- ✅ **Result Caching**: 캐싱 시스템 구현 완료
-- ✅ **Dynamic Concurrency**: 동적 동시성 제어 구현 완료
-- ✅ **Error Recovery**: 에러 복구 시스템 구현 완료
-- ✅ **Connection Pooling**: 연결 풀링 구현 완료
-- ✅ **Agent Collaboration**: 에이전트 협업 시스템 구현 완료
+**📊 Implemented:**
+- ✅ **Parallel Execution**: Parallel execution system
+- ✅ **Result Caching**: Caching system
+- ✅ **Dynamic Concurrency**: Dynamic concurrency control
+- ✅ **Error Recovery**: Error recovery system
+- ✅ **Connection Pooling**: Connection pooling
+- ✅ **Agent Collaboration**: Agent collaboration system
 
-**📈 벤치마크 측정 계획:**
-1. **성능 측정 도구**: `tests/benchmark/run_benchmarks.py`
-2. **측정 범위**: Response Time, Information Loss, Source Verification Accuracy, Creative Insights Quality
-3. **측정 일정**: 진행 중
+**📈 Benchmark plan:**
+1. **Tool**: `tests/benchmark/run_benchmarks.py`
+2. **Scope**: Response time, information loss, source verification accuracy, creative insights quality
+3. **Schedule**: In progress
 
-**참고 (공개 벤치마크):**
+**Reference (public benchmarks):**
 - **SOTA Models**: GPT-4o (86.2%), Claude 3.5 Sonnet (85.0%), Gemini 2.5 Flash (81.2%)
 - **Research Services**: Consensus AI (89.1%), Elicit (87.6%), Perplexity Pro (85.2%)
 
-### 🔧 **현재 상태 및 진행 중인 작업**
+### 🔧 **Current status and work in progress**
 
-**✅ 구현 완료된 기능:**
-- 9가지 핵심 혁신 구현 완료
-- Multi-Agent Orchestration 시스템
-- Universal MCP Hub 통합
-- Production-Grade Reliability 기반 구조
+**✅ Completed:**
+- 9 core innovations
+- Multi-Agent Orchestration system
+- Universal MCP Hub integration
+- Production-grade reliability foundation
 - Parallel Agent Execution System
 - Inter-Agent Result Sharing & Discussion
 - Result Caching
 - Dynamic Concurrency
 - Connection Pooling
-- Error Recovery 시스템
+- Error Recovery system
 
-**🔄 진행 중인 작업:**
-- CLI 인자 파싱 개선 (`--format json` 지원)
-- ChromaDB 벡터 데이터베이스 통합
-- 의존성 문제 해결
-- 실제 실행 파이프라인 테스트
-- 성능 벤치마크 측정
+**🔄 In progress:**
+- CLI argument parsing improvements (`--format json` support)
+- ChromaDB vector database integration
+- Dependency resolution
+- End-to-end pipeline testing
+- Performance benchmark measurement
 
-**📋 향후 계획:**
-- 프로덕션 환경 배포 준비
-- 성능 벤치마크 완료 및 결과 공개
-- 문서화 완성
+**📋 Planned:**
+- Production deployment readiness
+- Benchmark completion and results publication
+- Documentation finalization
 
 #### **🔍 Research Agent Services Comparison**
 
@@ -572,14 +571,14 @@ python tests/benchmark/run_benchmarks.py --format all --output-dir results/
 
 ## 🔧 Configuration
 
-### 기본 설정
+### Default settings
 
-**모든 기능이 기본적으로 활성화됩니다.**
+**All features are enabled by default.**
 
-선택적 기능은 작업 중 Human-in-Loop로 처리됩니다:
-- Guardrails 검증 실패 시 사용자 확인
-- YAML 설정 로드 실패 시 사용자 확인
-- MCP 서버 연결 실패 시 사용자 확인
+Optional behavior is handled with human-in-the-loop when needed:
+- User confirmation on guardrails validation failure
+- User confirmation on YAML config load failure
+- User confirmation on MCP server connection failure
 
 ### Environment Variables
 
@@ -594,28 +593,28 @@ ENABLE_STREAMING=true
 ENABLE_CREATIVE_FORGE=true
 ```
 
-### 기능 비활성화 (선택 사항)
+### Disabling features (optional)
 
-특정 기능을 비활성화하려면 환경 변수를 설정하세요:
+Set the following environment variables to disable specific features:
 
 ```bash
-# MCP 안정성 서비스 비활성화
+# Disable MCP stability service
 export DISABLE_MCP_STABILITY=true
 
-# Guardrails 검증 비활성화
+# Disable guardrails validation
 export DISABLE_GUARDRAILS=true
 
-# Agent Tool Wrapper 비활성화
+# Disable Agent Tool Wrapper
 export DISABLE_AGENT_TOOLS=true
 
-# YAML 설정 로더 비활성화
+# Disable YAML config loader
 export DISABLE_YAML_CONFIG=true
 
-# MCP 백그라운드 헬스체크 비활성화
+# Disable MCP background health check
 export DISABLE_MCP_HEALTH_BACKGROUND=true
 ```
 
-**기본값: 모든 기능 활성화**
+**Default: all features enabled**
 
 ### Advanced Settings
 
@@ -633,11 +632,11 @@ ENABLE_ACADEMIC_FORGE=true
 
 ## 🔒 Security & Compliance Posture
 
-- **Minimal Fallback Policy**: LLM 모델 요청 실패 시에만 fallback 사용 (Agent 서비스 안정성 필수)
-- 다른 모든 경우에는 명확한 에러 반환 (NO FALLBACK)
-- Fallback 사용 시 상세 로깅 필수
+- **Minimal Fallback Policy**: Use fallback only when LLM model requests fail (required for Agent service stability)
+- Return explicit errors in all other cases (no fallback)
+- Detailed logging required when fallback is used
 - External MCP servers are configured via explicit env vars; trust/timeouts can be tuned per server
-- Audit trail: 모든 작업 로그 기록
+- Audit trail: all operations logged
 - Secrets via environment variables or dedicated secret files; do not hardcode keys
 
 ### Observability (Langfuse)
