@@ -22,7 +22,10 @@ from typing_extensions import TypedDict
 
 from src.core.agent_result_sharing import AgentDiscussionManager, SharedResultsManager
 from src.core.agent_tool_selector import AgentToolSelector
-from src.core.context_engineer import get_context_engineer
+from src.core.context_engineer import ContextEngineer, get_context_engineer
+from src.core.context_compaction import CompactionManager, get_compaction_manager
+from src.core.context_compaction.manager import set_compaction_manager
+from src.core.adaptive_memory import get_adaptive_memory
 from src.core.mcp_auto_discovery import FastMCPMulti
 from src.core.mcp_tool_loader import MCPToolLoader
 from src.core.memory_service import get_background_memory_service
@@ -38,11 +41,108 @@ from src.core.skills_selector import get_skill_selector
 
 from src.agents.creativity_agent import CreativityAgent
 from src.core.input_router import InputEnvelope, envelope_to_user_query
+from src.core.progress_tracker import get_progress_tracker
 from src.core.session_lane import get_session_lane
 
 # prompt refiner는 execute_llm_task의 decorator에서 자동 적용됨
 
 logger = logging.getLogger(__name__)
+
+# Token budget monitoring (Phase 4): model context window for remaining-token checks
+CONTEXT_WINDOW_SIZE = int(os.getenv("CONTEXT_WINDOW_SIZE", "128000"))
+TOKEN_BUDGET_WARN_REMAINING = 50000
+TOKEN_BUDGET_FORCE_COMPACT_RATIO = 0.2
+
+
+def _check_token_budget(
+    ctx_eng: Any,
+    session_id: str,
+    agent_name: str,
+) -> tuple[bool, Dict[str, Any]]:
+    """Log context stats, update progress_tracker for UI, warn/force-compact flags.
+
+    Returns:
+        (should_force_compact, stats_dict)
+    """
+    try:
+        stats = ctx_eng.get_context_stats()
+    except Exception as e:
+        logger.debug("Token budget get_context_stats skipped: %s", e)
+        return False, {}
+
+    total_tokens = stats.get("total_tokens", 0)
+    budget = CONTEXT_WINDOW_SIZE
+    remaining = max(0, budget - total_tokens)
+    warn = remaining <= TOKEN_BUDGET_WARN_REMAINING
+    force_compact = remaining <= (TOKEN_BUDGET_FORCE_COMPACT_RATIO * budget)
+
+    logger.info(
+        "[%s] Context stats: total_tokens=%s remaining=%s budget=%s",
+        agent_name,
+        total_tokens,
+        remaining,
+        budget,
+    )
+    if warn:
+        logger.warning(
+            "[%s] Token budget warning: remaining=%s (<=%s)",
+            agent_name,
+            remaining,
+            TOKEN_BUDGET_WARN_REMAINING,
+        )
+    if force_compact:
+        logger.warning(
+            "[%s] Token budget critical: forcing auto-compaction (remaining <= %.0f%% of budget)",
+            agent_name,
+            TOKEN_BUDGET_FORCE_COMPACT_RATIO * 100,
+        )
+
+    token_budget_ui = {
+        "total_tokens": total_tokens,
+        "remaining": remaining,
+        "budget": budget,
+        "warn": warn,
+        "force_compact": force_compact,
+    }
+    try:
+        pt = get_progress_tracker(session_id)
+        pt.workflow_progress.metadata["token_budget"] = token_budget_ui
+    except Exception:
+        pass
+
+    return force_compact, stats
+
+
+class _CompactionLLMAdapter:
+    """LLM adapter for CompactionManager (Summarize/Hybrid strategies)."""
+
+    async def generate(self, prompt: str) -> str:
+        from src.core.llm_manager import TaskType, execute_llm_task
+
+        result = await execute_llm_task(
+            prompt=prompt,
+            task_type=TaskType.COMPRESSION,
+            model_name=None,
+            system_message=None,
+        )
+        return (result.content or "").strip()
+
+
+def _messages_to_dicts(messages: list) -> list:
+    """Convert state['messages'] to list of dicts for compaction."""
+    out = []
+    for msg in messages or []:
+        if isinstance(msg, dict):
+            out.append({
+                "role": msg.get("role", msg.get("type", "user")),
+                "content": msg.get("content", msg.get("text", "")),
+            })
+        else:
+            out.append({
+                "role": getattr(msg, "type", "user"),
+                "content": getattr(msg, "content", str(msg)),
+            })
+    return out
 
 
 # HTTP 에러 메시지 필터링 클래스
@@ -266,7 +366,7 @@ class AgentState(TypedDict):
 
 @dataclass
 class AgentContext:
-    """Agent execution context."""
+    """Agent execution context. Optional context_engineer for subagent firewall."""
 
     agent_id: str
     session_id: str
@@ -274,6 +374,7 @@ class AgentContext:
     config: Any = None
     shared_results_manager: SharedResultsManager | None = None
     discussion_manager: AgentDiscussionManager | None = None
+    context_engineer: Any = None  # Optional per-agent ContextEngineer (firewall)
 
 
 class PlannerAgent:
@@ -684,6 +785,37 @@ class PlannerAgent:
                 f"[{self.name}] No previous plans in current session - starting fresh task"
             )
 
+        # Context Engineering: fetch + prepare for this agent (per-agent CE when firewall)
+        injected_context_str = ""
+        try:
+            from src.core.researcher_config import get_context_window_config
+
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            available = getattr(get_context_window_config(), "max_tokens", 8000)
+            fetched = await ctx_eng.fetch_context(
+                state["user_query"],
+                session_id=current_session_id,
+                user_id=None,
+            )
+            prepared = await ctx_eng.prepare_context(
+                state["user_query"], fetched, available
+            )
+            injected_context_str = ContextEngineer.get_assembled_context_string(
+                prepared
+            )
+            if injected_context_str:
+                logger.debug(
+                    f"[{self.name}] Injected context: %s chars",
+                    len(injected_context_str),
+                )
+            _check_token_budget(
+                ctx_eng,
+                current_session_id or "default",
+                self.name,
+            )
+        except Exception as e:
+            logger.debug("Context Engineering fetch/prepare skipped: %s", e)
+
         # Skills-based instruction 사용
         instruction = (
             self.instruction if self.skill else "You are a research planning agent."
@@ -848,8 +980,31 @@ Financial Agent Analysis Results (경제 지표 분석):
             sparkle_ideas=sparkle_ideas_text,
         )
 
+        # AdaptiveMemory: 세션 메모리 주입
+        memory_context_str = ""
+        try:
+            adaptive_memory = get_adaptive_memory()
+            session_memories = adaptive_memory.retrieve_for_session(
+                current_session_id, limit=10
+            )
+            if session_memories:
+                parts = []
+                for m in session_memories:
+                    val = m.get("value")
+                    if isinstance(val, dict):
+                        parts.append(str(val.get("content", val))[:500])
+                    else:
+                        parts.append(str(val)[:500])
+                memory_context_str = "\n".join(parts)
+        except Exception as e:
+            logger.debug("AdaptiveMemory retrieve skipped: %s", e)
+
         # 도메인 분석 결과와 Financial Agent 결과를 프롬프트에 추가
         context_parts = []
+        if injected_context_str:
+            context_parts.append(f"## Context\n{injected_context_str}")
+        if memory_context_str:
+            context_parts.append(f"## Memory\n{memory_context_str}")
         if domain_context:
             context_parts.append(domain_context)
         if financial_context:
@@ -1204,6 +1359,33 @@ Provide an improved version of the plan that addresses any gaps or issues you id
         logger.info(f"[{self.name}] Plan and tasks saved to shared memory")
         logger.info("=" * 80)
 
+        # AdaptiveMemory: 계획 저장
+        try:
+            adaptive_memory = get_adaptive_memory()
+            sid = state.get("session_id") or "default"
+            adaptive_memory.store(
+                key=f"session:{sid}:planner:plan",
+                value={
+                    "content": (state.get("research_plan") or "")[:2000],
+                    "tasks_count": len(state.get("research_tasks") or []),
+                },
+                importance=0.8,
+                tags={f"session:{sid}"},
+            )
+        except Exception as e:
+            logger.debug("AdaptiveMemory store after planner skipped: %s", e)
+
+        # Context Engineering: upload after agent step (per-agent CE)
+        try:
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            await ctx_eng.upload_context(
+                session_id=state.get("session_id") or "default",
+                context_data=ctx_eng.current_cycle or {},
+                agent_state=dict(state),
+            )
+        except Exception as e:
+            logger.debug("Context upload after planner skipped: %s", e)
+
         return state
 
 
@@ -1471,6 +1653,82 @@ class ExecutorAgent:
                     state["waiting_for_user"] = False
                 logger.info("✅ User responses processed, continuing execution")
 
+        # Context Engineering: fetch + prepare; optional distilled context from planner (firewall)
+        injected_context_str = ""
+        force_compact_exec = False
+        try:
+            from src.core.researcher_config import get_context_window_config
+
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            available = getattr(get_context_window_config(), "max_tokens", 8000)
+            fetched = await ctx_eng.fetch_context(
+                state["user_query"],
+                session_id=state.get("session_id"),
+                user_id=None,
+            )
+            prepared = await ctx_eng.prepare_context(
+                state["user_query"], fetched, available
+            )
+            injected_context_str = ContextEngineer.get_assembled_context_string(
+                prepared
+            )
+            distilled = state.get("distilled_context_for_executor")
+            if distilled and isinstance(distilled, dict):
+                dist_str = ContextEngineer.get_assembled_context_string(distilled)
+                if dist_str:
+                    injected_context_str = (
+                        f"## Distilled from Planner\n{dist_str}\n\n{injected_context_str}"
+                    )
+            if injected_context_str:
+                logger.debug(
+                    f"[{self.name}] Injected context: %s chars",
+                    len(injected_context_str),
+                )
+            force_compact_exec, _ = _check_token_budget(
+                ctx_eng,
+                state.get("session_id") or "default",
+                self.name,
+            )
+        except Exception as e:
+            logger.debug("Context Engineering fetch/prepare skipped: %s", e)
+
+        # AdaptiveMemory: 세션 메모리 주입
+        memory_context_str_exec = ""
+        try:
+            adaptive_memory = get_adaptive_memory()
+            session_memories = adaptive_memory.retrieve_for_session(
+                state.get("session_id") or "default", limit=10
+            )
+            if session_memories:
+                parts = []
+                for m in session_memories:
+                    val = m.get("value")
+                    if isinstance(val, dict):
+                        parts.append(str(val.get("content", val))[:500])
+                    else:
+                        parts.append(str(val)[:500])
+                memory_context_str_exec = "\n".join(parts)
+        except Exception as e:
+            logger.debug("AdaptiveMemory retrieve skipped: %s", e)
+
+        # Compaction: 에이전트 실행 전 메시지 압축 체크 (또는 token budget 강제)
+        comp_mgr = get_compaction_manager()
+        if comp_mgr and state.get("messages"):
+            try:
+                msg_dicts = _messages_to_dicts(state["messages"])
+                if force_compact_exec or await comp_mgr.should_compact(
+                    state.get("session_id") or "default", msg_dicts
+                ):
+                    compressed = await comp_mgr.compact_and_get_messages(
+                        state.get("session_id") or "default", msg_dicts
+                    )
+                    state["messages"] = compressed
+                    logger.info(
+                        f"[{self.name}] Context compacted: {len(msg_dicts)} -> {len(compressed)} messages"
+                    )
+            except Exception as e:
+                logger.debug("Compaction check skipped: %s", e)
+
         # 작업 할당: assigned_task가 있으면 사용, 없으면 state에서 찾기
         if assigned_task is None:
             # state['research_tasks']에서 이 에이전트에게 할당된 작업 찾기
@@ -1659,6 +1917,16 @@ class ExecutorAgent:
                         query=query,
                         current_time=current_time,
                     )
+                    if injected_context_str:
+                        query_generation_prompt = (
+                            f"## Context\n{injected_context_str}\n\n"
+                            + query_generation_prompt
+                        )
+                    if memory_context_str_exec:
+                        query_generation_prompt = (
+                            f"## Memory\n{memory_context_str_exec}\n\n"
+                            + query_generation_prompt
+                        )
 
                     try:
                         system_message = self.config.prompts["query_generation"][
@@ -3337,6 +3605,34 @@ Provide a verification report with:
         logger.info(f"[{self.name}] Results saved to shared memory")
         logger.info("=" * 80)
 
+        # AdaptiveMemory: 실행 결과 요약 저장
+        try:
+            adaptive_memory = get_adaptive_memory()
+            sid = state.get("session_id") or "default"
+            results = state.get("research_results") or []
+            summary = (
+                f"research_results_count={len(results)}; "
+                + (str(results[0].get("title", results[0]))[:200] if results else "")
+            adaptive_memory.store(
+                key=f"session:{sid}:executor:summary",
+                value={"content": summary, "count": len(results)},
+                importance=0.7,
+                tags={f"session:{sid}"},
+            )
+        except Exception as e:
+            logger.debug("AdaptiveMemory store after executor skipped: %s", e)
+
+        # Context Engineering: upload after agent step (per-agent CE)
+        try:
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            await ctx_eng.upload_context(
+                session_id=state.get("session_id") or "default",
+                context_data=ctx_eng.current_cycle or {},
+                agent_state=dict(state),
+            )
+        except Exception as e:
+            logger.debug("Context upload after executor skipped: %s", e)
+
         return state
 
 
@@ -3376,6 +3672,82 @@ class VerifierAgent:
             state["verification_failed"] = True
             state["current_agent"] = self.name
             return state
+
+        # Context Engineering: fetch + prepare; optional distilled from executor (firewall)
+        injected_context_str = ""
+        force_compact_ver = False
+        try:
+            from src.core.researcher_config import get_context_window_config
+
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            available = getattr(get_context_window_config(), "max_tokens", 8000)
+            fetched = await ctx_eng.fetch_context(
+                state["user_query"],
+                session_id=state.get("session_id"),
+                user_id=None,
+            )
+            prepared = await ctx_eng.prepare_context(
+                state["user_query"], fetched, available
+            )
+            injected_context_str = ContextEngineer.get_assembled_context_string(
+                prepared
+            )
+            distilled = state.get("distilled_context_for_verifier")
+            if distilled and isinstance(distilled, dict):
+                dist_str = ContextEngineer.get_assembled_context_string(distilled)
+                if dist_str:
+                    injected_context_str = (
+                        f"## Distilled from Executor\n{dist_str}\n\n{injected_context_str}"
+                    )
+            if injected_context_str:
+                logger.debug(
+                    f"[{self.name}] Injected context: %s chars",
+                    len(injected_context_str),
+                )
+            force_compact_ver, _ = _check_token_budget(
+                ctx_eng,
+                state.get("session_id") or "default",
+                self.name,
+            )
+        except Exception as e:
+            logger.debug("Context Engineering fetch/prepare skipped: %s", e)
+
+        # AdaptiveMemory: 세션 메모리 주입
+        memory_context_str_ver = ""
+        try:
+            adaptive_memory = get_adaptive_memory()
+            session_memories = adaptive_memory.retrieve_for_session(
+                state.get("session_id") or "default", limit=10
+            )
+            if session_memories:
+                parts = []
+                for m in session_memories:
+                    val = m.get("value")
+                    if isinstance(val, dict):
+                        parts.append(str(val.get("content", val))[:500])
+                    else:
+                        parts.append(str(val)[:500])
+                memory_context_str_ver = "\n".join(parts)
+        except Exception as e:
+            logger.debug("AdaptiveMemory retrieve skipped: %s", e)
+
+        # Compaction: 에이전트 실행 전 메시지 압축 체크 (또는 token budget 강제)
+        comp_mgr = get_compaction_manager()
+        if comp_mgr and state.get("messages"):
+            try:
+                msg_dicts = _messages_to_dicts(state["messages"])
+                if force_compact_ver or await comp_mgr.should_compact(
+                    state.get("session_id") or "default", msg_dicts
+                ):
+                    compressed = await comp_mgr.compact_and_get_messages(
+                        state.get("session_id") or "default", msg_dicts
+                    )
+                    state["messages"] = compressed
+                    logger.info(
+                        f"[{self.name}] Context compacted: {len(msg_dicts)} -> {len(compressed)} messages"
+                    )
+            except Exception as e:
+                logger.debug("Compaction check skipped: %s", e)
 
         memory = self.context.shared_memory
 
@@ -3784,6 +4156,17 @@ REASON: 최종 판단 이유 (한 줄, 구체적으로)
                         enhanced_prompt += f"\n\n**Fact-checking 결과:**\n- 상태: {fact_check_result.fact_status.value}\n- 신뢰도: {fact_check_result.confidence_score:.2f}"
                     if cross_verification_score is not None:
                         enhanced_prompt += f"\n\n**Cross-verification:**\n- 유사 결과 발견: {cross_verification_score:.2f}"
+
+                    if injected_context_str:
+                        enhanced_prompt = (
+                            f"## Context\n{injected_context_str}\n\n"
+                            + enhanced_prompt
+                        )
+                    if memory_context_str_ver:
+                        enhanced_prompt = (
+                            f"## Memory\n{memory_context_str_ver}\n\n"
+                            + enhanced_prompt
+                        )
 
                     verification_result = await execute_llm_task(
                         prompt=enhanced_prompt,
@@ -4491,6 +4874,32 @@ Provide a review with:
         )
         logger.info("=" * 80)
 
+        # AdaptiveMemory: 검증 결과 요약 저장
+        try:
+            adaptive_memory = get_adaptive_memory()
+            sid = state.get("session_id") or "default"
+            verified = state.get("verified_results") or []
+            summary = f"verified_count={len(verified)}"
+            adaptive_memory.store(
+                key=f"session:{sid}:verifier:summary",
+                value={"content": summary, "count": len(verified)},
+                importance=0.75,
+                tags={f"session:{sid}"},
+            )
+        except Exception as e:
+            logger.debug("AdaptiveMemory store after verifier skipped: %s", e)
+
+        # Context Engineering: upload after agent step (per-agent CE)
+        try:
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            await ctx_eng.upload_context(
+                session_id=state.get("session_id") or "default",
+                context_data=ctx_eng.current_cycle or {},
+                agent_state=dict(state),
+            )
+        except Exception as e:
+            logger.debug("Context upload after verifier skipped: %s", e)
+
         return state
 
     async def _assess_result_quality(
@@ -4989,6 +5398,82 @@ class GeneratorAgent:
         """Generate final report."""
         logger.info(f"[{self.name}] Generating final report...")
 
+        # Context Engineering: fetch + prepare; optional distilled from verifier (firewall)
+        injected_context_str = ""
+        force_compact_gen = False
+        try:
+            from src.core.researcher_config import get_context_window_config
+
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            available = getattr(get_context_window_config(), "max_tokens", 8000)
+            fetched = await ctx_eng.fetch_context(
+                state["user_query"],
+                session_id=state.get("session_id"),
+                user_id=None,
+            )
+            prepared = await ctx_eng.prepare_context(
+                state["user_query"], fetched, available
+            )
+            injected_context_str = ContextEngineer.get_assembled_context_string(
+                prepared
+            )
+            distilled = state.get("distilled_context_for_generator")
+            if distilled and isinstance(distilled, dict):
+                dist_str = ContextEngineer.get_assembled_context_string(distilled)
+                if dist_str:
+                    injected_context_str = (
+                        f"## Distilled from Verifier\n{dist_str}\n\n{injected_context_str}"
+                    )
+            if injected_context_str:
+                logger.debug(
+                    f"[{self.name}] Injected context: %s chars",
+                    len(injected_context_str),
+                )
+            force_compact_gen, _ = _check_token_budget(
+                ctx_eng,
+                state.get("session_id") or "default",
+                self.name,
+            )
+        except Exception as e:
+            logger.debug("Context Engineering fetch/prepare skipped: %s", e)
+
+        # AdaptiveMemory: 세션 메모리 주입
+        memory_context_str_gen = ""
+        try:
+            adaptive_memory = get_adaptive_memory()
+            session_memories = adaptive_memory.retrieve_for_session(
+                state.get("session_id") or "default", limit=10
+            )
+            if session_memories:
+                parts = []
+                for m in session_memories:
+                    val = m.get("value")
+                    if isinstance(val, dict):
+                        parts.append(str(val.get("content", val))[:500])
+                    else:
+                        parts.append(str(val)[:500])
+                memory_context_str_gen = "\n".join(parts)
+        except Exception as e:
+            logger.debug("AdaptiveMemory retrieve skipped: %s", e)
+
+        # Compaction: 에이전트 실행 전 메시지 압축 체크 (또는 token budget 강제)
+        comp_mgr = get_compaction_manager()
+        if comp_mgr and state.get("messages"):
+            try:
+                msg_dicts = _messages_to_dicts(state["messages"])
+                if force_compact_gen or await comp_mgr.should_compact(
+                    state.get("session_id") or "default", msg_dicts
+                ):
+                    compressed = await comp_mgr.compact_and_get_messages(
+                        state.get("session_id") or "default", msg_dicts
+                    )
+                    state["messages"] = compressed
+                    logger.info(
+                        f"[{self.name}] Context compacted: {len(msg_dicts)} -> {len(compressed)} messages"
+                    )
+            except Exception as e:
+                logger.debug("Compaction check skipped: %s", e)
+
         # 연구 또는 검증 실패 확인 - Fallback 제거, 명확한 에러만 반환
         if state.get("research_failed") or state.get("verification_failed"):
             error_msg = state.get("error")
@@ -5459,6 +5944,15 @@ class GeneratorAgent:
 
 요청된 형식에 맞게 **깊이 있는 사고와 분석**을 포함한 완전하고 실행 가능한 결과를 생성하세요."""
 
+        if injected_context_str:
+            generation_prompt = (
+                f"## Context\n{injected_context_str}\n\n" + generation_prompt
+            )
+        if memory_context_str_gen:
+            generation_prompt = (
+                f"## Memory\n{memory_context_str_gen}\n\n" + generation_prompt
+            )
+
         try:
             report_result = await execute_llm_task(
                 prompt=generation_prompt,
@@ -5685,6 +6179,31 @@ Provide a review with:
             f"[{self.name}] ✅ Report saved to shared memory (completeness: {final_completeness['completeness_score']:.2f})"
         )
         logger.info("=" * 80)
+
+        # AdaptiveMemory: 보고서 요약 저장
+        try:
+            adaptive_memory = get_adaptive_memory()
+            sid = state.get("session_id") or "default"
+            report = state.get("final_report") or ""
+            adaptive_memory.store(
+                key=f"session:{sid}:generator:report",
+                value={"content": report[:1500], "length": len(report)},
+                importance=0.9,
+                tags={f"session:{sid}"},
+            )
+        except Exception as e:
+            logger.debug("AdaptiveMemory store after generator skipped: %s", e)
+
+        # Context Engineering: upload after agent step (per-agent CE)
+        try:
+            ctx_eng = self.context.context_engineer or get_context_engineer()
+            await ctx_eng.upload_context(
+                session_id=state.get("session_id") or "default",
+                context_data=ctx_eng.current_cycle or {},
+                agent_state=dict(state),
+            )
+        except Exception as e:
+            logger.debug("Context upload after generator skipped: %s", e)
 
         return state
 
@@ -5952,6 +6471,17 @@ class AgentOrchestrator:
         self.session_manager.set_shared_memory(self.shared_memory)
         self.session_manager.set_context_engineer(get_context_engineer())
 
+        # CompactionManager 초기화 (85% 임계값 자동 압축)
+        self._compaction_llm = _CompactionLLMAdapter()
+        compaction_manager = CompactionManager(llm_client=self._compaction_llm)
+        set_compaction_manager(compaction_manager)
+
+        # Subagent context firewall: 독립 ContextEngineer per agent role
+        self._planner_ce = ContextEngineer()
+        self._executor_ce = ContextEngineer()
+        self._verifier_ce = ContextEngineer()
+        self._generator_ce = ContextEngineer()
+
         # 백그라운드 메모리 서비스 초기화
         self.memory_service = get_background_memory_service()
         # 서비스 시작은 execute 메서드에서 비동기로 처리됨
@@ -6093,18 +6623,72 @@ class AgentOrchestrator:
             logger.warning(f"Failed to assign MCP tools to agents: {e}")
             # 도구 할당 실패 시에도 계속 진행 (기존 로직 유지)
 
+    def _distill_state_for_exchange(
+        self, state: Dict[str, Any], max_plan_chars: int = 2000
+    ) -> Dict[str, Any]:
+        """Build a compact state summary for subagent context exchange (firewall)."""
+        out = {
+            "session_id": state.get("session_id") or "default",
+            "user_query": (state.get("user_query") or "")[:1500],
+        }
+        plan = state.get("research_plan")
+        if plan:
+            out["research_plan"] = (
+                plan[:max_plan_chars] + "..." if len(plan) > max_plan_chars else plan
+            )
+        tasks = state.get("research_tasks")
+        if tasks:
+            out["research_tasks_summary"] = [
+                {"task_id": t.get("task_id"), "query": str(t.get("query", ""))[:200]}
+                for t in (tasks[:20] if isinstance(tasks, list) else [])
+            ]
+        if state.get("research_results"):
+            out["research_results_count"] = len(state["research_results"])
+        if state.get("verified_results") is not None:
+            out["verified_results_count"] = len(state.get("verified_results", []))
+        return out
+
     def _build_graph(
         self, user_query: str | None = None, session_id: str | None = None
     ) -> None:
         """Build LangGraph workflow with Skills auto-selection."""
-        # Create context for all agents
-        context = AgentContext(
-            agent_id="orchestrator",
-            session_id=session_id or "default",
+        sid = session_id or "default"
+        # Per-agent contexts with dedicated ContextEngineer (subagent firewall)
+        planner_ctx = AgentContext(
+            agent_id="planner",
+            session_id=sid,
             shared_memory=self.shared_memory,
             config=self.config,
             shared_results_manager=self.shared_results_manager,
             discussion_manager=self.discussion_manager,
+            context_engineer=self._planner_ce,
+        )
+        executor_ctx = AgentContext(
+            agent_id="executor",
+            session_id=sid,
+            shared_memory=self.shared_memory,
+            config=self.config,
+            shared_results_manager=self.shared_results_manager,
+            discussion_manager=self.discussion_manager,
+            context_engineer=self._executor_ce,
+        )
+        verifier_ctx = AgentContext(
+            agent_id="verifier",
+            session_id=sid,
+            shared_memory=self.shared_memory,
+            config=self.config,
+            shared_results_manager=self.shared_results_manager,
+            discussion_manager=self.discussion_manager,
+            context_engineer=self._verifier_ce,
+        )
+        generator_ctx = AgentContext(
+            agent_id="generator",
+            session_id=sid,
+            shared_memory=self.shared_memory,
+            config=self.config,
+            shared_results_manager=self.shared_results_manager,
+            discussion_manager=self.discussion_manager,
+            context_engineer=self._generator_ce,
         )
 
         # Skills 자동 선택 (쿼리가 있으면)
@@ -6117,11 +6701,15 @@ class AgentOrchestrator:
                 if skill:
                     selected_skills[match.skill_id] = skill
 
-        # Initialize agents with Skills
-        self.planner = PlannerAgent(context, selected_skills.get("research_planner"))
-        self.executor = ExecutorAgent(context, selected_skills.get("research_executor"))
-        self.verifier = VerifierAgent(context, selected_skills.get("evaluator"))
-        self.generator = GeneratorAgent(context, selected_skills.get("synthesizer"))
+        # Initialize agents with Skills (each with isolated context engineer)
+        self.planner = PlannerAgent(planner_ctx, selected_skills.get("research_planner"))
+        self.executor = ExecutorAgent(
+            executor_ctx, selected_skills.get("research_executor")
+        )
+        self.verifier = VerifierAgent(verifier_ctx, selected_skills.get("evaluator"))
+        self.generator = GeneratorAgent(
+            generator_ctx, selected_skills.get("synthesizer")
+        )
         self.creativity_agent = CreativityAgent()
 
         # 각 에이전트에 MCP 도구 자동 할당 (비동기)
@@ -6286,6 +6874,18 @@ class AgentOrchestrator:
             logger.warning("[WORKFLOW] No tasks found, falling back to single executor")
             return await self._executor_node(state)
 
+        # Subagent context firewall: planner -> executor distilled context
+        try:
+            summary = self._distill_state_for_exchange(state)
+            distilled = await self._planner_ce.exchange_context_with_sub_agent(
+                "executor", summary
+            )
+            state["distilled_context_for_executor"] = distilled
+        except Exception as e:
+            logger.debug(
+                "Subagent context exchange (planner->executor) skipped: %s", e
+            )
+
         logger.info(
             f"[WORKFLOW] Executing {len(tasks)} tasks in parallel with {len(tasks)} ExecutorAgent instances"
         )
@@ -6327,6 +6927,7 @@ class AgentOrchestrator:
                 config=self.config,
                 shared_results_manager=self.shared_results_manager,
                 discussion_manager=self.discussion_manager,
+                context_engineer=self._executor_ce,
             )
 
             executor_agent = ExecutorAgent(
@@ -6522,6 +7123,18 @@ class AgentOrchestrator:
             )
             return await self._verifier_node(state)
 
+        # Subagent context firewall: executor -> verifier distilled context
+        try:
+            summary = self._distill_state_for_exchange(state)
+            distilled = await self._executor_ce.exchange_context_with_sub_agent(
+                "verifier", summary
+            )
+            state["distilled_context_for_verifier"] = distilled
+        except Exception as e:
+            logger.debug(
+                "Subagent context exchange (executor->verifier) skipped: %s", e
+            )
+
         # 결과를 여러 청크로 분할하여 여러 VerifierAgent에 할당
         num_verifiers = min(
             len(results), self.agent_config.max_concurrent_research_units or 3
@@ -6575,6 +7188,7 @@ class AgentOrchestrator:
                 config=self.config,
                 shared_results_manager=self.shared_results_manager,
                 discussion_manager=self.discussion_manager,
+                context_engineer=self._verifier_ce,
             )
 
             verifier_agent = VerifierAgent(context, selected_skills.get("evaluator"))
@@ -6765,7 +7379,24 @@ class AgentOrchestrator:
 
         sec = get_agent_security_manager()
         sec.reset_rate_limit("generator")
+
+        # Subagent context firewall: verifier -> generator distilled context (before filter so state has it)
+        try:
+            summary = self._distill_state_for_exchange(state)
+            distilled = await self._verifier_ce.exchange_context_with_sub_agent(
+                "generator", summary
+            )
+            state["distilled_context_for_generator"] = distilled
+        except Exception as e:
+            logger.debug(
+                "Subagent context exchange (verifier->generator) skipped: %s", e
+            )
+
         scoped_state = sec.filter_state_mvi("generator", state)
+        if state.get("distilled_context_for_generator") is not None:
+            scoped_state["distilled_context_for_generator"] = state[
+                "distilled_context_for_generator"
+            ]
 
         # Progress tracker 업데이트
         try:
@@ -6864,6 +7495,31 @@ class AgentOrchestrator:
         except Exception as e:
             logger.warning(f"Failed to trigger background memory generation: {e}")
 
+        # AdaptiveMemory: 세션 종료 시 중요 정보 추출 및 저장
+        try:
+            adaptive_memory = get_adaptive_memory()
+            session_id = state.get("session_id") or "default"
+            important = adaptive_memory.extract_important_info(dict(state))
+            for i, info in enumerate(important[:15]):
+                key = f"session:{session_id}:important:{info.get('type', 'item')}_{i}"
+                content = info.get("content", "")[:1000]
+                importance = float(info.get("importance", 0.7))
+                tags = set(info.get("tags", [])) if isinstance(info.get("tags"), (list, set)) else set()
+                tags.add(f"session:{session_id}")
+                adaptive_memory.store(
+                    key=key,
+                    value={"content": content, "type": info.get("type", "item")},
+                    importance=importance,
+                    tags=tags,
+                )
+            if important:
+                logger.debug(
+                    "AdaptiveMemory: stored %s important items at session end",
+                    len(important),
+                )
+        except Exception as e:
+            logger.debug("AdaptiveMemory extract_important_info at end skipped: %s", e)
+
         return state
 
     async def execute(
@@ -6907,11 +7563,17 @@ class AgentOrchestrator:
 
         logger.info(f"Starting workflow for query: {user_query}, session: {session_id}")
 
-        # 세션 복원 시도
+        # 세션 복원 시도 (Session Intelligence: 5-factor score)
         initial_state = None
         if restore_session:
-            logger.info(f"Attempting to restore session: {session_id}")
-            restored_state = await self.restore_session(session_id)
+            if self.session_manager.should_resume_session(session_id, user_query):
+                logger.info(f"Attempting to restore session: {session_id}")
+                restored_state = await self.restore_session(session_id)
+            else:
+                restored_state = None
+                logger.info(
+                    "Session resume score below threshold; starting fresh session"
+                )
             if restored_state:
                 logger.info(f"✅ Session restored: {session_id}")
                 restored_state.setdefault("sparkle_ideas", None)
@@ -6978,6 +7640,31 @@ class AgentOrchestrator:
                 waiting_for_user=None,
                 direct_forward_message=None,
                 direct_forward_from_agent=None,
+            )
+
+        # Context Engineering: 워크플로우 시작 전 4단계 사이클 실행
+        try:
+            from src.core.researcher_config import get_context_window_config
+
+            available_tokens = getattr(
+                get_context_window_config(),
+                "max_tokens",
+                8000,
+            )
+            context_engineer = get_context_engineer()
+            await context_engineer.execute_context_cycle(
+                user_query=user_query,
+                session_id=session_id,
+                user_id=None,
+                available_tokens=available_tokens,
+            )
+            logger.debug(
+                "Context Engineering cycle completed before workflow start"
+            )
+        except Exception as ce:
+            logger.warning(
+                "Context Engineering cycle before workflow failed (continuing): %s",
+                ce,
             )
 
         # Execute workflow

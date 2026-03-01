@@ -435,6 +435,28 @@ def activity_panel():
     status_icon = status_colors.get(st.session_state.research_status, "⚪")
     st.markdown(f"**상태:** {status_icon} {st.session_state.research_status.upper()}")
 
+    # Token budget monitoring (Context Engineering Phase 4)
+    session_id = None
+    if st.session_state.get("current_research"):
+        session_id = st.session_state.current_research.get("session_id")
+    if session_id:
+        try:
+            from src.core.progress_tracker import get_progress_tracker
+
+            pt = get_progress_tracker(session_id)
+            tb = pt.workflow_progress.metadata.get("token_budget")
+            if tb:
+                used = tb.get("total_tokens", 0)
+                remaining = tb.get("remaining", 0)
+                budget = tb.get("budget", 0)
+                warn = tb.get("warn", False)
+                st.caption(
+                    f"**토큰:** 사용 {used:,} / 여유 {remaining:,} (예산 {budget:,})"
+                    + (" ⚠️ 경고" if warn else "")
+                )
+        except Exception:
+            pass
+
     st.markdown("---")
 
     # Agent 활동 로그

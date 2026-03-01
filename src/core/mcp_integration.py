@@ -335,6 +335,18 @@ class ToolInfo:
     mcp_server: str
 
 
+def _cap_tool_result_for_context(result: Dict[str, Any], tool_name: str) -> Dict[str, Any]:
+    """Apply 32K hard cap and oversized guard to tool result (OpenClaw pattern)."""
+    if not result.get("success") or result.get("data") is None:
+        return result
+    try:
+        from src.core.scratch_pad import cap_tool_result_for_context
+        return cap_tool_result_for_context(result, tool_name)
+    except Exception as e:
+        logger.debug("Tool result cap skipped: %s", e)
+        return result
+
+
 @dataclass
 class ToolResult:
     """도구 실행 결과."""
@@ -3260,7 +3272,7 @@ class UniversalMCPHub:
 
                 execution_time = time.time() - start_time
                 err = _actionable_error_message(tool_name, result.error) if result.error else None
-                return {
+                out = {
                     "success": result.success,
                     "data": result.data,
                     "error": err,
@@ -3268,6 +3280,7 @@ class UniversalMCPHub:
                     "confidence": result.confidence,
                     "source": "local_tool",
                 }
+                return _cap_tool_result_for_context(out, tool_name)
 
             except Exception as e:
                 logger.error(f"Local tool execution failed: {tool_name} - {e}")
@@ -3415,7 +3428,7 @@ class UniversalMCPHub:
                 )
                 await output_manager.output_tool_execution(tool_exec_result)
 
-                return {
+                out = {
                     "success": tool_result.success,
                     "data": tool_result.data,
                     "error": tool_result.error,
@@ -3423,6 +3436,7 @@ class UniversalMCPHub:
                     "confidence": tool_result.confidence,
                     "source": "mcp_academic" if mcp_result else "local_academic",
                 }
+                return _cap_tool_result_for_context(out, tool_name)
             except Exception as e:
                 execution_time = time.time() - start_time
                 logger.error(
@@ -3490,7 +3504,7 @@ class UniversalMCPHub:
                 )
                 await output_manager.output_tool_execution(tool_exec_result)
 
-                return {
+                out = {
                     "success": tool_result.success,
                     "data": tool_result.data,
                     "error": tool_result.error,
@@ -3498,6 +3512,7 @@ class UniversalMCPHub:
                     "confidence": tool_result.confidence,
                     "source": "mcp_search",
                 }
+                return _cap_tool_result_for_context(out, tool_name)
             except Exception as e:
                 execution_time = time.time() - start_time
                 logger.error(
@@ -4301,7 +4316,7 @@ class UniversalMCPHub:
                                 mcp_tool_name=mcp_tool_name,
                             )
 
-                            return result_dict
+                            return _cap_tool_result_for_context(result_dict, tool_name)
                     except Exception as mcp_error:
                         execution_time = time.time() - start_time
                         logger.error(

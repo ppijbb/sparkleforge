@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List
 
+from src.core.context_compaction.config import CompactionConfig
 from src.core.context_compaction.probe_evaluation import (
     ProbeEvaluationResult,
     run_probe_evaluation,
@@ -25,21 +26,6 @@ from src.core.db.database_driver import Transaction
 from src.core.db.transaction_manager import get_transaction_manager
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class CompactionConfig:
-    """압축 설정."""
-
-    trigger_threshold: float = 0.85  # 85% 임계값
-    target_tokens: int = 0  # 목표 토큰 수 (0이면 자동 계산)
-    preserve_last_n: int = 20  # 마지막 N개 메시지 보호
-    preserve_last_tokens: int = 40000  # 마지막 40K 토큰 보호 (AgentPG 패턴)
-    strategy: str = "hybrid"  # "prune" | "summarize" | "hybrid" | "forgetting" | "condensation"
-    auto_compact: bool = True  # 자동 압축 활성화
-    max_context_tokens: int = 200000  # 최대 컨텍스트 토큰 수
-    forget_ttl_seconds: int | None = None  # Forgetting: 이 초보다 오래된 메시지 제거
-    importance_threshold: float = 0.0  # Forgetting: 이 값 미만 importance 메시지 제거
 
 
 @dataclass
@@ -257,6 +243,29 @@ class CompactionManager:
         )
 
         return result
+
+    async def compact_and_get_messages(
+        self,
+        session_id: str,
+        messages: List[Dict[str, Any]],
+        strategy_name: str | None = None,
+    ) -> List[Dict[str, Any]]:
+        """Run compaction and return the compressed messages list (for state update).
+
+        Args:
+            session_id: 세션 ID
+            messages: 메시지 리스트
+            strategy_name: 사용할 전략 이름 (None이면 설정값 사용)
+
+        Returns:
+            압축된 메시지 리스트
+        """
+        strategy_name = strategy_name or self.config.strategy
+        if strategy_name not in self.strategies:
+            return messages
+        strategy = self.strategies[strategy_name]
+        compressed = await strategy.compact(messages, self.config)
+        return compressed
 
     def _estimate_tokens(self, messages: List[Dict[str, Any]]) -> int:
         """토큰 수 추정 (간단한 추정)."""

@@ -1240,17 +1240,81 @@ class MultiModelOrchestrator:
 
             raise
 
+    def _build_gemini_prompt_ordered(
+        self, system_message: str | None, prompt: str
+    ) -> str:
+        """Build prompt with context ordering for caching: static (system) first, then dynamic."""
+        if not system_message:
+            return prompt
+        return f"{system_message}\n\n{prompt}"
+
+    async def _execute_gemini_with_cached_content(
+        self,
+        model_name: str,
+        model_config: Any,
+        full_prompt: str,
+        system_message: str,
+        prompt: str,
+    ) -> Dict[str, Any]:
+        """Use Gemini explicit prompt caching when google-genai SDK is available."""
+        from google import genai as genai_v2
+        from google.genai import types
+
+        api_key = self.llm_config.api_key
+        model_id = getattr(model_config, "model_id", None) or model_name
+        if not model_id.startswith("models/"):
+            model_id = f"models/{model_id}" if not model_id.startswith("gemini") else f"models/{model_id}"
+
+        client = genai_v2.Client(api_key=api_key)
+        config = types.CreateCachedContentConfig(
+            display_name=f"sparkleforge_{model_name}",
+            system_instruction=system_message,
+            ttl="3600s",
+        )
+        cache = client.caches.create(model=model_id, config=config)
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: client.models.generate_content(
+                model=model_id,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    cached_content=cache.name,
+                    temperature=getattr(model_config, "temperature", 0.1),
+                    max_output_tokens=getattr(model_config, "max_tokens", 4000),
+                ),
+            ),
+        )
+        text = ""
+        if response and getattr(response, "candidates", None):
+            cand = response.candidates[0]
+            if getattr(cand, "content", None) and getattr(cand.content, "parts", None):
+                for part in cand.content.parts:
+                    if getattr(part, "text", None):
+                        text += part.text
+        return {
+            "content": text,
+            "confidence": 0.9,
+            "metadata": {"cached_content": True},
+        }
+
     async def _execute_gemini_model(
         self, model_name: str, prompt: str, system_message: str = None, **kwargs
     ) -> Dict[str, Any]:
-        """Gemini 모델 실행 (rate limit 재시도 포함)."""
+        """Gemini 모델 실행 (rate limit 재시도 포함). Prompt caching: static prefix first."""
         client = self.model_clients[model_name]
         model_config = self.models[model_name]
 
-        # 프롬프트 구성
-        full_prompt = prompt
-        if system_message:
-            full_prompt = f"{system_message}\n\n{prompt}"
+        # Context ordering for caching: static (system) first, then dynamic (prompt)
+        full_prompt = self._build_gemini_prompt_ordered(system_message, prompt)
+
+        # Optional: explicit prompt caching when google-genai and env are set
+        if os.getenv("ENABLE_GEMINI_PROMPT_CACHING", "").lower() in ("1", "true", "yes") and system_message and len(system_message) >= 1024:
+            try:
+                return await self._execute_gemini_with_cached_content(
+                    model_name, model_config, full_prompt, system_message, prompt
+                )
+            except Exception as cache_e:
+                logger.debug("Gemini prompt cache path skipped: %s", cache_e)
 
         # Rate limit 재시도 로직
         max_retries = 3

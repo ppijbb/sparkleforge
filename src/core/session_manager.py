@@ -2,10 +2,12 @@
 
 세션 상태 전체 저장/복원 및 메타데이터 관리.
 AgentState, ContextEngineer, SharedMemory 통합 관리.
+Session Intelligence: 5-factor scoring for resume vs fresh (OpenClaw pattern).
 """
 
 import logging
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -30,6 +32,27 @@ class SessionState:
     context_chunks: List[Dict[str, Any]]
     memory_data: Dict[str, Any]
     metadata: Dict[str, Any]
+
+
+@dataclass
+class SessionResumeScore:
+    """5-factor session resume score (OpenClaw-style)."""
+
+    recency: float = 0.0
+    task_relevance: float = 0.0
+    session_health: float = 0.0
+    context_capacity: float = 0.0
+    completion_status: float = 0.0
+    overall: float = 0.0
+    weights: Dict[str, float] = field(
+        default_factory=lambda: {
+            "recency": 0.25,
+            "task_relevance": 0.25,
+            "session_health": 0.20,
+            "context_capacity": 0.15,
+            "completion_status": 0.15,
+        }
+    )
 
 
 class SessionManager:
@@ -172,6 +195,80 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error loading session {session_id}: {e}", exc_info=True)
             return None
+
+    def compute_session_resume_score(
+        self, session_id: str, user_query: str
+    ) -> SessionResumeScore:
+        """5-factor score for session resume (OpenClaw-style Session Intelligence).
+
+        Factors: recency (0.25), task_relevance (0.25), session_health (0.20),
+        context_capacity (0.15), completion_status (0.15).
+        """
+        score = SessionResumeScore()
+        try:
+            session_state = self.load_session(session_id)
+            if not session_state:
+                return score
+
+            state = session_state.agent_state
+            meta = session_state.metadata
+
+            # Recency: newer last_accessed = higher (0-1)
+            last = meta.get("last_accessed") or meta.get("created_at") or ""
+            if last:
+                try:
+                    if isinstance(last, str) and "T" in last:
+                        dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                    else:
+                        dt = datetime.fromisoformat(str(last))
+                    now = datetime.now(dt.tzinfo) if getattr(dt, "tzinfo", None) else datetime.now()
+                    age_hours = (now - dt).total_seconds() / 3600.0
+                    score.recency = max(0.0, 1.0 - age_hours / 168.0)  # 1 week half-life
+                except Exception:
+                    score.recency = 0.5
+            else:
+                score.recency = 0.5
+
+            # Task relevance: overlap between user_query and session's user_query
+            session_query = (state.get("user_query") or "").lower()
+            query_lower = (user_query or "").lower()
+            if query_lower and session_query:
+                qw = set(query_lower.split())
+                sw = set(session_query.split())
+                score.task_relevance = len(qw & sw) / max(len(qw), 1) if qw else 0.5
+            else:
+                score.task_relevance = 0.5
+
+            # Session health: no error, not failed
+            failed = state.get("research_failed") or state.get("verification_failed") or state.get("report_failed") or state.get("error")
+            score.session_health = 0.0 if failed else 1.0
+
+            # Context capacity: smaller context = more room (0-1)
+            ctx_size = meta.get("context_size") or len(session_state.context_chunks) * 500
+            score.context_capacity = max(0.0, 1.0 - ctx_size / 100_000.0) if ctx_size else 0.5
+
+            # Completion status: has final report = higher
+            score.completion_status = 1.0 if state.get("final_report") else 0.5
+
+            w = score.weights
+            score.overall = (
+                score.recency * w["recency"]
+                + score.task_relevance * w["task_relevance"]
+                + score.session_health * w["session_health"]
+                + score.context_capacity * w["context_capacity"]
+                + score.completion_status * w["completion_status"]
+            )
+            score.overall = max(0.0, min(1.0, score.overall))
+        except Exception as e:
+            logger.debug("Session resume score failed: %s", e)
+        return score
+
+    def should_resume_session(
+        self, session_id: str, user_query: str, threshold: float = 0.4
+    ) -> bool:
+        """Recommend whether to resume this session (score >= threshold)."""
+        score = self.compute_session_resume_score(session_id, user_query)
+        return score.overall >= threshold
 
     def restore_session(
         self,
