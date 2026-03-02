@@ -105,6 +105,17 @@ def _check_token_budget(
         "force_compact": force_compact,
     }
     try:
+        from src.core.context_mode.stats import get_session_stats
+        cm_stats = get_session_stats()
+        token_budget_ui["context_mode"] = {
+            "bytes_returned": cm_stats.total_bytes_returned(),
+            "bytes_kept_out": cm_stats.kept_out(),
+            "savings_ratio": round(cm_stats.savings_ratio(), 1),
+            "reduction_percent": cm_stats.reduction_percent(),
+        }
+    except Exception:
+        pass
+    try:
         pt = get_progress_tracker(session_id)
         pt.workflow_progress.metadata["token_budget"] = token_budget_ui
     except Exception:
@@ -3613,6 +3624,7 @@ Provide a verification report with:
             summary = (
                 f"research_results_count={len(results)}; "
                 + (str(results[0].get("title", results[0]))[:200] if results else "")
+            )
             adaptive_memory.store(
                 key=f"session:{sid}:executor:summary",
                 value={"content": summary, "count": len(results)},
@@ -6514,6 +6526,8 @@ class AgentOrchestrator:
                     config_data = json.load(f)
                     raw_configs = config_data.get("mcpServers", {})
 
+                    # PROJECT_ROOT 주입 (경로 하드코딩 방지)
+                    os.environ["PROJECT_ROOT"] = str(project_root)
                     # 환경변수 치환
                     resolved_configs = self._resolve_env_vars_in_value(raw_configs)
 
@@ -6521,6 +6535,8 @@ class AgentOrchestrator:
                     # - stdio 서버: command, args, env, cwd만 유지
                     # - HTTP 서버: type 필드 제거, httpUrl 또는 url만 유지
                     for server_name, server_config in resolved_configs.items():
+                        if server_config.get("disabled"):
+                            continue
                         cleaned_config = {}
 
                         # stdio 서버인 경우

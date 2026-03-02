@@ -108,7 +108,7 @@ class BaseCLIAgent(ABC):
             env = {**self.config.env} if self.config.env else {}
             env.update(os.environ)
 
-            # 프로세스 실행
+            # 프로세스 실행 (timeout은 wait_for(communicate())에만 적용)
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdin=asyncio.subprocess.PIPE if input_text else None,
@@ -116,7 +116,6 @@ class BaseCLIAgent(ABC):
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
                 cwd=self.config.working_dir,
-                timeout=self.config.timeout,
             )
 
             # 입력 전송 및 출력 수신

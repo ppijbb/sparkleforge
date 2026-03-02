@@ -24,6 +24,21 @@ logger = logging.getLogger(__name__)
 project_root = Path(__file__).parent.parent.parent
 
 
+def _tool_name_to_python_identifiers(tool_name: str) -> Tuple[str, str]:
+    """Convert a tool name (e.g. 'semantic_scholar::papers-search-basic') to valid Python identifiers.
+
+    Returns:
+        (class_base, func_name): PascalCase base for class name, snake_case for function name.
+    """
+    s = tool_name.replace("::", "_").replace("-", "_").replace(" ", "_")
+    s = re.sub(r"[^a-zA-Z0-9_]", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_") or "tool"
+    parts = [p for p in s.split("_") if p]
+    class_base = "".join(p.capitalize() for p in parts)
+    func_name = s
+    return class_base, func_name
+
+
 class MCPServerBuilder:
     """MCP 서버 자동 빌더
 
@@ -325,13 +340,14 @@ Respond in JSON format:
         # 각 도구에 대한 Pydantic 모델 및 함수 생성
         for tool in tools:
             tool_name = tool.get("name", "tool")
+            class_base, func_name = _tool_name_to_python_identifiers(tool_name)
+            model_name = f"{class_base}Input"
             input_schema = tool.get("input_schema", {})
             method = tool.get("method", "GET")
             endpoint = tool.get("endpoint", "/api/v1/endpoint")
             output_format = tool.get("output_format", "json")
 
             # Pydantic 모델 생성
-            model_name = f"{tool_name.title().replace('_', '')}Input"
             code_parts.append(f"class {model_name}(BaseModel):")
             code_parts.append(f'    """Input schema for {tool_name}"""')
 
@@ -368,9 +384,9 @@ Respond in JSON format:
 
             code_parts.append("")
 
-            # 도구 함수 생성
-            code_parts.append("@mcp.tool()")
-            code_parts.append(f"async def {tool_name}(input: {model_name}) -> str:")
+            # 도구 함수 생성 (유효한 식별자로 정의, MCP에는 원래 tool_name 노출)
+            code_parts.append(f'@mcp.tool(name="{tool_name}")')
+            code_parts.append(f"async def {func_name}(input: {model_name}) -> str:")
             code_parts.append('    """')
             code_parts.append(f"    {tool_name} tool")
             code_parts.append('    """')

@@ -319,6 +319,48 @@
       "description": "GitHub 코드 검색",
       "server": "github",
       "tool": "search_code"
+    },
+    "context_mode_execute": {
+      "category": "context_mode",
+      "description": "Execute code in sandbox; only stdout enters context (95%+ token reduction)",
+      "server": "context-mode",
+      "tool": "execute"
+    },
+    "context_mode_execute_file": {
+      "category": "context_mode",
+      "description": "Process file in sandbox (FILE_CONTENT); only summary enters context",
+      "server": "context-mode",
+      "tool": "execute_file"
+    },
+    "context_mode_index": {
+      "category": "context_mode",
+      "description": "Index content into BM25 knowledge base; use search to retrieve",
+      "server": "context-mode",
+      "tool": "index"
+    },
+    "context_mode_search": {
+      "category": "context_mode",
+      "description": "Search indexed content; batch queries in one call",
+      "server": "context-mode",
+      "tool": "search"
+    },
+    "context_mode_fetch_and_index": {
+      "category": "context_mode",
+      "description": "Fetch URL, index as markdown; returns preview, use search for more",
+      "server": "context-mode",
+      "tool": "fetch_and_index"
+    },
+    "context_mode_batch_execute": {
+      "category": "context_mode",
+      "description": "Run multiple commands + search in one call (primary research tool)",
+      "server": "context-mode",
+      "tool": "batch_execute"
+    },
+    "context_mode_stats": {
+      "category": "context_mode",
+      "description": "Session context consumption and savings stats",
+      "server": "context-mode",
+      "tool": "stats"
     }
   },
   "tool_categories": {
@@ -328,7 +370,8 @@
     "academic": ["arxiv", "scholar"],
     "business": ["crunchbase", "linkedin"],
     "memory": ["memory_store", "memory_recall", "memory_list"],
-    "github": ["github_search", "github_issues", "github_pr", "github_code"]
+    "github": ["github_search", "github_issues", "github_pr", "github_code"],
+    "context_mode": ["context_mode_execute", "context_mode_execute_file", "context_mode_index", "context_mode_search", "context_mode_fetch_and_index", "context_mode_batch_execute", "context_mode_stats"]
   },
   "_metadata": {
     "version": "2.0.0",

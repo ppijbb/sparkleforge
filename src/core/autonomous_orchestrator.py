@@ -2701,66 +2701,35 @@ class AutonomousOrchestrator:
     # ==================== Helper Methods ====================
 
     def _parse_analysis_result(self, content: str) -> Dict[str, Any]:
-        """분석 결과 파싱 - 재시도 로직 포함."""
+        """분석 결과 파싱 — JSON이면 파싱, 아니면 텍스트 기반 fallback 구조 생성."""
         import json
         import re
 
-        # 최대 3회 재시도
-        for attempt in range(3):
+        cleaned = (content or "").strip()
+
+        # Markdown 코드 블록 제거
+        md_match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL)
+        if md_match:
+            cleaned = md_match.group(1).strip()
+
+        # JSON 파싱 시도
+        if cleaned.startswith("{"):
             try:
-                # Markdown 코드 블록 제거
-                cleaned_content = content.strip()
-                if "```json" in cleaned_content:
-                    # ```json ... ``` 패턴 추출
-                    match = re.search(
-                        r"```json\s*(.*?)\s*```", cleaned_content, re.DOTALL
-                    )
-                    if match:
-                        cleaned_content = match.group(1).strip()
-                elif "```" in cleaned_content:
-                    # ``` ... ``` 패턴 추출
-                    match = re.search(r"```\s*(.*?)\s*```", cleaned_content, re.DOTALL)
-                    if match:
-                        cleaned_content = match.group(1).strip()
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                logger.warning("JSON decode failed, using text fallback")
 
-                # JSON 파싱 시도
-                if cleaned_content.startswith("{"):
-                    return json.loads(cleaned_content)
-                else:
-                    # JSON이 아닌 경우 부분 파싱 시도
-                    if attempt < 2:  # 마지막 시도가 아니면
-                        logger.warning(
-                            f"⚠️ Attempt {attempt + 1}: Invalid JSON format, retrying..."
-                        )
-                        continue
-                    else:
-                        raise ValueError("Invalid JSON format in analysis result")
-
-            except json.JSONDecodeError as e:
-                if attempt < 2:  # 마지막 시도가 아니면
-                    logger.warning(
-                        f"⚠️ Attempt {attempt + 1}: JSON decode error: {e}, retrying..."
-                    )
-                    continue
-                else:
-                    logger.error(
-                        f"❌ Failed to parse analysis result after 3 attempts: {e}"
-                    )
-                    raise ValueError(f"Analysis parsing failed after 3 attempts: {e}")
-            except Exception as e:
-                if attempt < 2:  # 마지막 시도가 아니면
-                    logger.warning(
-                        f"⚠️ Attempt {attempt + 1}: Parse error: {e}, retrying..."
-                    )
-                    continue
-                else:
-                    logger.error(
-                        f"❌ Failed to parse analysis result after 3 attempts: {e}"
-                    )
-                    raise ValueError(f"Analysis parsing failed after 3 attempts: {e}")
-
-        # 이 지점에 도달하면 안 됨
-        raise ValueError("Unexpected error in analysis parsing")
+        # 텍스트 응답 → 기본 구조로 변환
+        logger.info("LLM returned non-JSON analysis; building fallback structure from text")
+        return {
+            "objectives": [
+                {"id": "obj_1", "description": cleaned[:500] or "General research", "priority": "high"}
+            ],
+            "intent": {"primary": "research", "secondary": "analysis"},
+            "domain": {"fields": ["general"], "expertise": "general"},
+            "scope": {"breadth": "comprehensive", "depth": "detailed"},
+            "complexity": 5.0,
+        }
 
     def _parse_tasks_result(self, content: str) -> List[Dict[str, Any]]:
         """Task 분해 결과 파싱 - 재시도 로직 포함."""

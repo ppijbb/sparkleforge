@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import time
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -15,10 +16,12 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import requests
 
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None  # type: ignore[assignment]
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=FutureWarning)
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        genai = None  # type: ignore[assignment]
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
 except ImportError:
@@ -2551,7 +2554,47 @@ async def execute_llm_task(
                     metadata={"rate_limited": True, "agent": agent_name},
                 )
 
-        # CLI 에이전트 체크
+        # Provider가 opencode면 무조건 OpenCode(Kimi K 2.5)로 라우팅
+        from src.core.researcher_config import get_llm_config
+        if get_llm_config().provider == "opencode":
+            result = await _execute_cli_agent_task(
+                prompt, task_type, "open_code", system_message, **kwargs
+            )
+            ok, final_content = validate_llm_output(result.content or "")
+            if not ok:
+                return ModelResult(
+                    content=final_content,
+                    model_used=result.model_used,
+                    execution_time=result.execution_time,
+                    confidence=0.0,
+                    cost=result.cost,
+                    metadata={**result.metadata, "output_validated_rejected": True},
+                )
+            if final_content != (result.content or ""):
+                result = ModelResult(
+                    content=final_content,
+                    model_used=result.model_used,
+                    execution_time=result.execution_time,
+                    confidence=result.confidence,
+                    cost=result.cost,
+                    metadata=result.metadata,
+                )
+            if agent_name:
+                from src.core.agent_security import get_agent_security_manager
+                _sec_out = get_agent_security_manager()
+                out_check = _sec_out.enforce_output(agent_name, result.content or "")
+                if out_check.filtered_text != (result.content or ""):
+                    result = ModelResult(
+                        content=out_check.filtered_text,
+                        model_used=result.model_used,
+                        execution_time=result.execution_time,
+                        confidence=result.confidence if out_check.is_allowed else 0.0,
+                        cost=result.cost,
+                        metadata={**result.metadata, "agent_security_filtered": True},
+                    )
+            return result
+
+        # CLI 에이전트 체크 (model_name이 CLI 에이전트인 경우)
         if model_name and _is_cli_agent(model_name):
             result = await _execute_cli_agent_task(
                 prompt, task_type, model_name, system_message, **kwargs
@@ -2687,29 +2730,31 @@ async def _execute_cli_agent_task(
             agent_name, full_query, **agent_kwargs
         )
 
-        # ModelResult 형식으로 변환
+        # ModelResult 형식으로 변환 (content, model_used, execution_time, cost)
+        meta = result.get("metadata", {})
+        exec_time = meta.get("execution_time", 0.0)
         return ModelResult(
-            success=result.get("success", False),
-            response=result.get("response", ""),
-            model_name=f"cli:{agent_name}",
+            content=result.get("response", ""),
+            model_used=f"cli:{agent_name}",
+            execution_time=exec_time,
             confidence=result.get("confidence", 0.0),
-            usage=result.get("usage", {}),
+            cost=0.0,
             metadata={
                 "agent_type": "cli",
                 "agent_name": agent_name,
                 "task_type": task_type.value,
-                "execution_time": result.get("metadata", {}).get("execution_time", 0),
-                **result.get("metadata", {}),
+                "execution_time": exec_time,
+                **meta,
             },
         )
 
     except Exception as e:
         logger.error(f"CLI agent execution failed: {agent_name} - {e}")
         return ModelResult(
-            success=False,
-            response="",
-            model_name=f"cli:{agent_name}",
+            content="",
+            model_used=f"cli:{agent_name}",
+            execution_time=0.0,
             confidence=0.0,
-            usage={},
+            cost=0.0,
             metadata={"agent_type": "cli", "agent_name": agent_name, "error": str(e)},
         )

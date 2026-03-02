@@ -1386,6 +1386,22 @@ EXAMPLES:
         "--streaming", action="store_true", help="Enable streaming output"
     )
 
+    # query 커맨드 (run과 동일 — sparkleforge query "..." 형태 지원)
+    query_parser = subparsers.add_parser(
+        "query", help="Send research query (alias for run)"
+    )
+    query_parser.add_argument("query", help="Research query")
+    query_parser.add_argument("--output", "-o", help="Output file path")
+    query_parser.add_argument(
+        "--format",
+        choices=["json", "markdown", "html"],
+        default="markdown",
+        help="Output format",
+    )
+    query_parser.add_argument(
+        "--streaming", action="store_true", help="Enable streaming output"
+    )
+
     # web 커맨드
     web_parser = subparsers.add_parser("web", help="Start web dashboard")
     web_parser.add_argument("--port", default="8501", help="Web server port")
@@ -1616,15 +1632,17 @@ EXAMPLES:
         args.command = "mcp"
         args.mcp_command = "status"
 
-    # 기본값 설정
+    # 기본값 설정: 인자 없으면 바로 REPL(sparkleforge>)로 진입 (Research query 루프 생략)
     if not args.command:
-        args.command = "run"  # 기본은 run 커맨드
-        if not hasattr(args, "query") or not args.query:
-            # 쿼리가 없으면 인터랙티브 모드로 전환
-            args.command = "interactive"
+        if hasattr(args, "query") and args.query:
+            args.command = "run"
+        else:
+            args.command = "repl"  # run 없이 바로 REPL로
 
     # 서브커맨드 처리
     if args.command == "run":
+        await handle_run_command(args)
+    elif args.command == "query":
         await handle_run_command(args)
     elif args.command == "web":
         await handle_web_command(args)
@@ -1642,10 +1660,13 @@ EXAMPLES:
         await handle_cli_command(args)
     elif args.command == "interactive":
         await handle_interactive_command(args)
+    elif args.command == "repl":
+        # REPL로 바로 진입 (아무것도 안 하고 아래 is_repl_mode 블록으로 진행)
+        pass
     else:
         parser.print_help()
 
-    is_repl_mode = getattr(args, "command", None) == "interactive" or (
+    is_repl_mode = getattr(args, "command", None) in ("interactive", "repl") or (
         getattr(args, "command", None) == "run" and not getattr(args, "prompt", None)
     )
 
@@ -1998,7 +2019,9 @@ EXAMPLES:
 
         error_context = ErrorContext(
             component="main",
-            operation="run_research" if args.request else "system_operation",
+            operation="run_research"
+            if (getattr(args, "request", None) or getattr(args, "query", None))
+            else "system_operation",
             session_id=session_id,
         )
 
@@ -2023,7 +2046,11 @@ EXAMPLES:
         try:
             await progress_tracker.stop_tracking()
 
-            if args.request:
+            # run/query는 args.query, 레거시는 args.request (Namespace에 없을 수 있음)
+            had_research_request = getattr(args, "request", None) or getattr(
+                args, "query", None
+            )
+            if had_research_request:
                 # 워크플로우 완료 요약
                 await output_manager.complete_progress(success=True)
                 await output_manager.output_workflow_summary()
@@ -2071,23 +2098,26 @@ async def handle_run_command(args):
         # Autonomous Orchestrator 초기화
         orchestrator = AutonomousOrchestrator()
 
-        # 연구 실행
-        result = await orchestrator.execute_research(
-            research_query=args.query,
-            output_format=args.format,
-            streaming=args.streaming,
+        # 연구 실행 (run_research 사용)
+        result = await orchestrator.run_research(
+            user_request=args.query,
+            context={},
         )
 
-        # 결과 출력
+        # 결과 출력 (result는 dict: content, metadata, synthesis_results 등)
         if args.output:
             with open(args.output, "w", encoding="utf-8") as f:
                 if args.format == "json":
                     json.dump(result, f, ensure_ascii=False, indent=2)
                 else:
-                    f.write(result)
+                    text = result.get("content", str(result)) if isinstance(result, dict) else str(result)
+                    f.write(text)
             logger.info(f"✅ Results saved to {args.output}")
         else:
-            print(result)
+            if isinstance(result, dict) and "content" in result:
+                print(result["content"])
+            else:
+                print(result)
 
     except Exception as e:
         logger.error(f"❌ Research failed: {e}")
@@ -2679,7 +2709,7 @@ async def handle_cli_command(args):
 
 
 def main_entry():
-    """Entry point for sparkle command."""
+    """Entry point for sparkleforge / sparkle CLI (called from src.cli.entry or __main__)."""
     try:
         asyncio.run(main())
     finally:

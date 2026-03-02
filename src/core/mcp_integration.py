@@ -1367,6 +1367,8 @@ class UniversalMCPHub:
                     config_data = json.load(f)
                     raw_configs = config_data.get("mcpServers", {})
 
+                    # PROJECT_ROOT 주입 (경로 하드코딩 방지)
+                    os.environ["PROJECT_ROOT"] = str(project_root)
                     # 환경변수 치환
                     resolved_configs = self._resolve_env_vars_in_value(raw_configs)
 
@@ -2851,6 +2853,17 @@ class UniversalMCPHub:
                                 content_parts.append(str(item))
 
                         content_str = " ".join(content_parts)
+                        # Context-mode interceptor: reduce large tool output before it enters LLM context (95%+ token savings)
+                        try:
+                            from src.core.context_mode.interceptor import process as context_mode_process
+                            synthetic = {"content": [{"type": "text", "text": content_str}]}
+                            processed = context_mode_process(tool_name, synthetic)
+                            if processed.get("content") and len(processed["content"]) > 0:
+                                block = processed["content"][0]
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    content_str = block.get("text", content_str)
+                        except Exception as interceptor_err:
+                            logger.debug("Context-mode interceptor skip: %s", interceptor_err)
                         logger.debug(
                             f"Tool {tool_name} returned content length: {len(content_str)}"
                         )
@@ -3186,7 +3199,12 @@ class UniversalMCPHub:
         )
 
     async def execute_tool(
-        self, tool_name: str, parameters: Dict[str, Any], citation_id: str | None = None
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        citation_id: str | None = None,
+        *,
+        _skip_builder_retry: bool = False,
     ) -> Dict[str, Any]:
         """Tool 실행 - MCP 프로토콜만 사용 (9대 혁신: ToolTrace 추적 통합).
 
@@ -3198,6 +3216,7 @@ class UniversalMCPHub:
             tool_name: 도구 이름
             parameters: 도구 파라미터
             citation_id: Citation ID (optional, ToolTrace 추적용)
+            _skip_builder_retry: 내부용. True면 builder 재시도 생략 (재귀 방지)
         """
         import uuid
 
@@ -3977,8 +3996,8 @@ class UniversalMCPHub:
             tool_info = self.tools.get(tool_name)
 
         if not tool_info:
-            # MCP Builder를 통한 자동 서버 생성 시도
-            if self.config.builder_enabled:
+            # MCP Builder를 통한 자동 서버 생성 시도 (재시도 시 스킵하여 재귀 방지)
+            if self.config.builder_enabled and not _skip_builder_retry:
                 logger.info(
                     f"[MCP][builder] Tool '{tool_name}' not found, attempting auto-build..."
                 )
@@ -4009,8 +4028,10 @@ class UniversalMCPHub:
                             logger.info(
                                 f"[MCP][builder] Server registered: {server_name}, retrying tool execution..."
                             )
-                            # 도구 실행 재시도
-                            return await self.execute_tool(tool_name, parameters)
+                            # 도구 실행 재시도 (한 번만, builder 스킵하여 재귀 방지)
+                            return await self.execute_tool(
+                                tool_name, parameters, citation_id, _skip_builder_retry=True
+                            )
                         else:
                             logger.warning(
                                 f"[MCP][builder] Failed to register server: {server_name}"
@@ -4021,7 +4042,9 @@ class UniversalMCPHub:
                         )
                 except Exception as builder_error:
                     logger.error(
-                        f"[MCP][builder] Builder error: {builder_error}", exc_info=True
+                        "[MCP][builder] Builder error: %s: %s",
+                        type(builder_error).__name__,
+                        builder_error,
                     )
 
             # 사용 가능한 모든 tool 목록 로깅
@@ -4464,8 +4487,8 @@ class UniversalMCPHub:
                         "source": "local",
                     }
 
-            # MCP 도구도 로컬 도구도 아닌 경우 MCP Builder 시도
-            if self.config.builder_enabled:
+            # MCP 도구도 로컬 도구도 아닌 경우 MCP Builder 시도 (재시도 시 한 번만 시도하므로 스킵)
+            if self.config.builder_enabled and not _skip_builder_retry:
                 logger.info(
                     f"[MCP][builder] Tool '{tool_name}' not available, attempting auto-build..."
                 )
@@ -4498,8 +4521,10 @@ class UniversalMCPHub:
                             logger.info(
                                 f"[MCP][builder] Server registered: {server_name}, retrying tool execution..."
                             )
-                            # 도구 실행 재시도
-                            return await self.execute_tool(tool_name, parameters)
+                            # 도구 실행 재시도 (한 번만, builder 재시도 스킵하여 재귀 방지)
+                            return await self.execute_tool(
+                                tool_name, parameters, citation_id, _skip_builder_retry=True
+                            )
                         else:
                             logger.warning(
                                 f"[MCP][builder] Failed to register server: {server_name}"
@@ -4509,8 +4534,11 @@ class UniversalMCPHub:
                             f"[MCP][builder] Server build failed: {build_result.get('error')}"
                         )
                 except Exception as builder_error:
+                    # exc_info=True 제거: 긴 체인 포맷 시 RecursionError 유발 방지
                     logger.error(
-                        f"[MCP][builder] Builder error: {builder_error}", exc_info=True
+                        "[MCP][builder] Builder error: %s: %s",
+                        type(builder_error).__name__,
+                        builder_error,
                     )
 
             # MCP 도구도 로컬 도구도 아닌 경우 에러 반환
