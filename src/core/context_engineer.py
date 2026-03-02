@@ -164,10 +164,26 @@ class ContextChunk:
             return self._extract_important_parts(max_tokens)
 
     def _compress_tool_results(self, max_tokens: int) -> str:
-        """도구 결과 압축."""
+        """도구 결과 압축. 대용량 시 context-mode store에 인덱싱 후 요약만 반환 (95%+ 토큰 절감)."""
+        content = self.content
+        threshold_bytes = 5_000
+        content_bytes = len(content.encode("utf-8", errors="replace"))
+        if content_bytes > threshold_bytes:
+            try:
+                from src.core.context_mode.store import get_store, FTS5_AVAILABLE
+                if FTS5_AVAILABLE:
+                    store = get_store()
+                    indexed = store.index_plain_text(content, "context_engineer:tool_results")
+                    size_kb = content_bytes / 1024
+                    return (
+                        f"Indexed {indexed.total_chunks} sections ({size_kb:.1f}KB) into context-mode knowledge base. "
+                        'Use context-mode search(queries: ["..."]) to retrieve sections.'
+                    )
+            except Exception:
+                pass
         try:
             # JSON 파싱 시도
-            data = json.loads(self.content)
+            data = json.loads(content)
             if isinstance(data, dict) and "results" in data:
                 results = data["results"]
                 if isinstance(results, list):
@@ -184,7 +200,7 @@ class ContextChunk:
                         },
                         ensure_ascii=False,
                     )
-        except:
+        except Exception:
             pass
 
         # 기본 압축

@@ -333,9 +333,7 @@ class CreativityAgent:
             result = await execute_llm_task(
                 prompt=analogical_prompt,
                 task_type=TaskType.CREATIVE,
-                system_message=self.config.prompts["analogical_reasoning"][
-                    "system_message"
-                ],
+                system_message="You are a creative thinking expert specializing in analogical reasoning. Generate novel insights by drawing parallels from diverse domains.",
             )
 
             analysis = json.loads(result.content)
@@ -501,9 +499,7 @@ class CreativityAgent:
             result = await execute_llm_task(
                 prompt=lateral_prompt,
                 task_type=TaskType.CREATIVE,
-                system_message=self.config.prompts["lateral_thinking"][
-                    "system_message"
-                ],
+                system_message="You are a creative thinking expert specializing in lateral thinking. Challenge assumptions and find unconventional approaches.",
             )
 
             analysis = json.loads(result.content)
@@ -581,9 +577,7 @@ class CreativityAgent:
             result = await execute_llm_task(
                 prompt=convergent_prompt,
                 task_type=TaskType.CREATIVE,
-                system_message=self.config.prompts["convergent_thinking"][
-                    "system_message"
-                ],
+                system_message="You are a creative thinking expert specializing in convergent thinking. Synthesize multiple perspectives into unified solutions.",
             )
 
             analysis = json.loads(result.content)
@@ -661,9 +655,7 @@ class CreativityAgent:
             result = await execute_llm_task(
                 prompt=divergent_prompt,
                 task_type=TaskType.CREATIVE,
-                system_message=self.config.prompts["divergent_thinking"][
-                    "system_message"
-                ],
+                system_message="You are a creative thinking expert specializing in divergent thinking. Explore all possible directions and generate maximum variety.",
             )
 
             analysis = json.loads(result.content)
@@ -792,9 +784,7 @@ class CreativityAgent:
             result = await execute_llm_task(
                 prompt=combination_prompt,
                 task_type=TaskType.CREATIVE,
-                system_message=self.config.prompts["idea_combination"][
-                    "system_message"
-                ],
+                system_message="You are a creative thinking expert specializing in idea combination. Merge concepts from different domains into innovative solutions.",
             )
 
             analysis = json.loads(result.content)

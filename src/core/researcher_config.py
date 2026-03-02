@@ -1032,7 +1032,7 @@ def get_prompt_refiner_config() -> PromptRefinerConfig:
 
 
 def load_config_from_env() -> ResearcherSystemConfig:
-    """Load configuration from environment variables - ALL REQUIRED, NO DEFAULTS."""
+    """Load configuration from environment variables. All have sensible defaults."""
     # Load .env file if it exists
     from pathlib import Path
 
@@ -1106,197 +1106,216 @@ def load_config_from_env() -> ResearcherSystemConfig:
             return default_value
         return [item.strip() for item in value.split(separator) if item.strip()]
 
-    # Load LLM configuration
-    llm_config = LLMConfig(
-        provider=get_required_env("LLM_PROVIDER"),
-        primary_model=get_required_env("LLM_MODEL"),
-        temperature=get_required_env("LLM_TEMPERATURE", float),
-        max_tokens=get_required_env("LLM_MAX_TOKENS", int),
-        api_key=get_required_env("GOOGLE_API_KEY"),
-        planning_model=get_required_env("PLANNING_MODEL"),
-        reasoning_model=get_required_env("REASONING_MODEL"),
-        verification_model=get_required_env("VERIFICATION_MODEL"),
-        generation_model=get_required_env("GENERATION_MODEL"),
-        compression_model=get_required_env("COMPRESSION_MODEL"),
-        openrouter_api_key=get_required_env("OPENROUTER_API_KEY"),
-        budget_limit=get_required_env("BUDGET_LIMIT", float),
-        enable_cost_optimization=get_required_env("ENABLE_COST_OPTIMIZATION", bool),
-    )
+    # Load LLM configuration (provider/model 미설정 => opencode + Kimi K 2.5)
+    _llm_provider = get_optional_env("LLM_PROVIDER", "opencode")
+    if not _llm_provider or (isinstance(_llm_provider, str) and not _llm_provider.strip()):
+        _llm_provider = "opencode"
+    if _llm_provider == "opencode":
+        llm_config = LLMConfig(
+            provider="opencode",
+            primary_model="open_code",
+            temperature=get_optional_env("LLM_TEMPERATURE", 0.2, float),
+            max_tokens=get_optional_env("LLM_MAX_TOKENS", 8192, int),
+            api_key=os.getenv("GOOGLE_API_KEY") or "",
+            planning_model="open_code",
+            reasoning_model="open_code",
+            verification_model="open_code",
+            generation_model="open_code",
+            compression_model="open_code",
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or "",
+            budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
+            enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
+            open_code_model_path=get_optional_env("OPEN_CODE_MODEL_PATH", "kimi-k2.5"),
+        )
+    else:
+        llm_config = LLMConfig(
+            provider=_llm_provider,
+            primary_model=get_required_env("LLM_MODEL"),
+            temperature=get_required_env("LLM_TEMPERATURE", float),
+            max_tokens=get_required_env("LLM_MAX_TOKENS", int),
+            api_key=get_required_env("GOOGLE_API_KEY"),
+            planning_model=get_required_env("PLANNING_MODEL"),
+            reasoning_model=get_required_env("REASONING_MODEL"),
+            verification_model=get_required_env("VERIFICATION_MODEL"),
+            generation_model=get_required_env("GENERATION_MODEL"),
+            compression_model=get_required_env("COMPRESSION_MODEL"),
+            openrouter_api_key=get_required_env("OPENROUTER_API_KEY"),
+            budget_limit=get_required_env("BUDGET_LIMIT", float),
+            enable_cost_optimization=get_required_env("ENABLE_COST_OPTIMIZATION", bool),
+        )
 
-    # Load Agent configuration
+    # Load Agent configuration (기본값 있음)
     agent_config = AgentConfig(
-        max_retries=get_required_env("AGENT_MAX_RETRIES", int),
-        timeout_seconds=get_required_env("AGENT_TIMEOUT", int),
-        enable_self_planning=get_required_env("ENABLE_SELF_PLANNING", bool),
-        enable_agent_communication=get_required_env("ENABLE_AGENT_COMMUNICATION", bool),
-        max_concurrent_research_units=get_required_env(
-            "MAX_CONCURRENT_RESEARCH_UNITS", int
+        max_retries=get_optional_env("AGENT_MAX_RETRIES", 3, int),
+        timeout_seconds=get_optional_env("AGENT_TIMEOUT", 300, int),
+        enable_self_planning=get_optional_env("ENABLE_SELF_PLANNING", True, bool),
+        enable_agent_communication=get_optional_env("ENABLE_AGENT_COMMUNICATION", True, bool),
+        max_concurrent_research_units=get_optional_env(
+            "MAX_CONCURRENT_RESEARCH_UNITS", 5, int
         ),
-        min_researchers=get_required_env("MIN_RESEARCHERS", int),
-        max_researchers=get_required_env("MAX_RESEARCHERS", int),
-        enable_fast_track=get_required_env("ENABLE_FAST_TRACK", bool),
-        enable_auto_retry=get_required_env("ENABLE_AUTO_RETRY", bool),
-        priority_queue_enabled=get_required_env("PRIORITY_QUEUE_ENABLED", bool),
-        enable_quality_monitoring=get_required_env("ENABLE_QUALITY_MONITORING", bool),
-        quality_threshold=get_required_env("QUALITY_THRESHOLD", float),
+        min_researchers=get_optional_env("MIN_RESEARCHERS", 1, int),
+        max_researchers=get_optional_env("MAX_RESEARCHERS", 10, int),
+        enable_fast_track=get_optional_env("ENABLE_FAST_TRACK", True, bool),
+        enable_auto_retry=get_optional_env("ENABLE_AUTO_RETRY", True, bool),
+        priority_queue_enabled=get_optional_env("PRIORITY_QUEUE_ENABLED", True, bool),
+        enable_quality_monitoring=get_optional_env("ENABLE_QUALITY_MONITORING", True, bool),
+        quality_threshold=get_optional_env("QUALITY_THRESHOLD", 0.7, float),
     )
 
-    # Load Research configuration
+    # Load Research configuration (기본값 있음)
     research_config = ResearchConfig(
-        max_sources=get_required_env("MAX_SOURCES", int),
-        search_timeout=get_required_env("SEARCH_TIMEOUT", int),
-        enable_academic_search=get_required_env("ENABLE_ACADEMIC_SEARCH", bool),
-        enable_web_search=get_required_env("ENABLE_WEB_SEARCH", bool),
-        enable_browser_automation=get_required_env("ENABLE_BROWSER_AUTOMATION", bool),
-        enable_streaming=get_required_env("ENABLE_STREAMING", bool),
-        stream_chunk_size=get_required_env("STREAM_CHUNK_SIZE", int),
-        enable_progressive_reporting=get_required_env(
-            "ENABLE_PROGRESSIVE_REPORTING", bool
+        max_sources=get_optional_env("MAX_SOURCES", 20, int),
+        search_timeout=get_optional_env("SEARCH_TIMEOUT", 30, int),
+        enable_academic_search=get_optional_env("ENABLE_ACADEMIC_SEARCH", True, bool),
+        enable_web_search=get_optional_env("ENABLE_WEB_SEARCH", True, bool),
+        enable_browser_automation=get_optional_env("ENABLE_BROWSER_AUTOMATION", True, bool),
+        enable_streaming=get_optional_env("ENABLE_STREAMING", True, bool),
+        stream_chunk_size=get_optional_env("STREAM_CHUNK_SIZE", 1024, int),
+        enable_progressive_reporting=get_optional_env(
+            "ENABLE_PROGRESSIVE_REPORTING", True, bool
         ),
-        enable_incremental_save=get_required_env("ENABLE_INCREMENTAL_SAVE", bool),
-        enable_parallel_compression=get_required_env(
-            "ENABLE_PARALLEL_COMPRESSION", bool
+        enable_incremental_save=get_optional_env("ENABLE_INCREMENTAL_SAVE", True, bool),
+        enable_parallel_compression=get_optional_env(
+            "ENABLE_PARALLEL_COMPRESSION", True, bool
         ),
-        enable_parallel_verification=get_required_env(
-            "ENABLE_PARALLEL_VERIFICATION", bool
+        enable_parallel_verification=get_optional_env(
+            "ENABLE_PARALLEL_VERIFICATION", True, bool
         ),
     )
 
-    # Load MCP configuration
+    # Load MCP configuration (기본값 있음)
     mcp_config = MCPConfig(
-        enabled=get_required_env("MCP_ENABLED", bool),
-        server_names=get_required_list_env("MCP_SERVER_NAMES"),
-        connection_timeout=get_required_env("MCP_TIMEOUT", int),
-        enable_plugin_architecture=get_required_env("ENABLE_PLUGIN_ARCHITECTURE", bool),
-        enable_smart_tool_selection=get_required_env(
-            "ENABLE_SMART_TOOL_SELECTION", bool
+        enabled=get_optional_env("MCP_ENABLED", True, bool),
+        server_names=get_optional_list_env(
+            "MCP_SERVER_NAMES",
+            ["g-search", "tavily", "exa", "fetch", "filesystem", "python_coder", "code_interpreter", "arxiv", "scholar", "crunchbase", "linkedin"],
         ),
-        enable_auto_fallback=get_required_env("ENABLE_AUTO_FALLBACK", bool),
-        search_tools=get_required_list_env("MCP_SEARCH_TOOLS"),
-        data_tools=get_required_list_env("MCP_DATA_TOOLS"),
-        code_tools=get_required_list_env("MCP_CODE_TOOLS"),
-        academic_tools=get_required_list_env("MCP_ACADEMIC_TOOLS"),
-        business_tools=get_required_list_env("MCP_BUSINESS_TOOLS"),
+        connection_timeout=get_optional_env("MCP_TIMEOUT", 30, int),
+        enable_plugin_architecture=get_optional_env("ENABLE_PLUGIN_ARCHITECTURE", True, bool),
+        enable_smart_tool_selection=get_optional_env(
+            "ENABLE_SMART_TOOL_SELECTION", True, bool
+        ),
+        enable_auto_fallback=get_optional_env("ENABLE_AUTO_FALLBACK", False, bool),
+        search_tools=get_optional_list_env(
+            "MCP_SEARCH_TOOLS", ["g-search", "tavily", "exa"]
+        ),
+        data_tools=get_optional_list_env(
+            "MCP_DATA_TOOLS", ["fetch", "filesystem"]
+        ),
+        code_tools=get_optional_list_env(
+            "MCP_CODE_TOOLS", ["python_coder", "code_interpreter"]
+        ),
+        academic_tools=get_optional_list_env(
+            "MCP_ACADEMIC_TOOLS", ["arxiv", "scholar"]
+        ),
+        business_tools=get_optional_list_env(
+            "MCP_BUSINESS_TOOLS", ["crunchbase", "linkedin"]
+        ),
         builder_enabled=get_optional_env("MCP_BUILDER_ENABLED", True, bool),
         builder_temp_dir=get_optional_env("MCP_BUILDER_TEMP_DIR", "temp/mcp_servers"),
         builder_auto_cleanup=get_optional_env("MCP_BUILDER_AUTO_CLEANUP", True, bool),
         builder_cache_enabled=get_optional_env("MCP_BUILDER_CACHE_ENABLED", True, bool),
     )
 
-    # Load Compression configuration
+    # Load Compression configuration (기본값 있음)
     compression_config = CompressionConfig(
-        enabled=get_required_env("ENABLE_HIERARCHICAL_COMPRESSION", bool),
-        enable_hierarchical_compression=get_required_env(
-            "ENABLE_HIERARCHICAL_COMPRESSION", bool
+        enabled=get_optional_env("ENABLE_HIERARCHICAL_COMPRESSION", True, bool),
+        enable_hierarchical_compression=get_optional_env(
+            "ENABLE_HIERARCHICAL_COMPRESSION", True, bool
         ),
-        compression_levels=get_required_env("COMPRESSION_LEVELS", int),
-        preserve_important_info=get_required_env("PRESERVE_IMPORTANT_INFO", bool),
-        enable_compression_validation=get_required_env(
-            "ENABLE_COMPRESSION_VALIDATION", bool
+        compression_levels=get_optional_env("COMPRESSION_LEVELS", 3, int),
+        preserve_important_info=get_optional_env("PRESERVE_IMPORTANT_INFO", True, bool),
+        enable_compression_validation=get_optional_env(
+            "ENABLE_COMPRESSION_VALIDATION", True, bool
         ),
-        compression_history_enabled=get_required_env(
-            "COMPRESSION_HISTORY_ENABLED", bool
+        compression_history_enabled=get_optional_env(
+            "COMPRESSION_HISTORY_ENABLED", True, bool
         ),
-        min_compression_ratio=get_required_env("MIN_COMPRESSION_RATIO", float),
-        target_compression_ratio=get_required_env("TARGET_COMPRESSION_RATIO", float),
+        min_compression_ratio=get_optional_env("MIN_COMPRESSION_RATIO", 0.05, float),
+        target_compression_ratio=get_optional_env("TARGET_COMPRESSION_RATIO", 0.2, float),
     )
 
-    # Load Verification configuration
+    # Load Verification configuration (기본값 있음)
     verification_config = VerificationConfig(
-        enabled=get_required_env("ENABLE_CONTINUOUS_VERIFICATION", bool),
-        enable_continuous_verification=get_required_env(
-            "ENABLE_CONTINUOUS_VERIFICATION", bool
+        enabled=get_optional_env("ENABLE_CONTINUOUS_VERIFICATION", True, bool),
+        enable_continuous_verification=get_optional_env(
+            "ENABLE_CONTINUOUS_VERIFICATION", True, bool
         ),
-        verification_stages=get_required_env("VERIFICATION_STAGES", int),
-        confidence_threshold=get_required_env("CONFIDENCE_THRESHOLD", float),
-        enable_early_warning=get_required_env("ENABLE_EARLY_WARNING", bool),
-        enable_fact_check=get_required_env("ENABLE_FACT_CHECK", bool),
-        enable_uncertainty_marking=get_required_env("ENABLE_UNCERTAINTY_MARKING", bool),
+        verification_stages=get_optional_env("VERIFICATION_STAGES", 3, int),
+        confidence_threshold=get_optional_env("CONFIDENCE_THRESHOLD", 0.6, float),
+        enable_early_warning=get_optional_env("ENABLE_EARLY_WARNING", True, bool),
+        enable_fact_check=get_optional_env("ENABLE_FACT_CHECK", True, bool),
+        enable_uncertainty_marking=get_optional_env("ENABLE_UNCERTAINTY_MARKING", True, bool),
         blind_verification=get_optional_env("BLIND_VERIFICATION", False, bool),
     )
 
-    # Load Context Window configuration
+    # Load Context Window configuration (기본값 있음)
     context_window_config = ContextWindowConfig(
-        enabled=get_required_env("ENABLE_ADAPTIVE_CONTEXT", bool),
-        enable_adaptive_context=get_required_env("ENABLE_ADAPTIVE_CONTEXT", bool),
-        min_tokens=get_required_env("MIN_TOKENS", int),
-        max_tokens=get_required_env("MAX_TOKENS", int),
-        importance_based_preservation=get_required_env(
-            "IMPORTANCE_BASED_PRESERVATION", bool
+        enabled=get_optional_env("ENABLE_ADAPTIVE_CONTEXT", True, bool),
+        enable_adaptive_context=get_optional_env("ENABLE_ADAPTIVE_CONTEXT", True, bool),
+        min_tokens=get_optional_env("MIN_TOKENS", 2000, int),
+        max_tokens=get_optional_env("MAX_TOKENS", 1000000, int),
+        importance_based_preservation=get_optional_env(
+            "IMPORTANCE_BASED_PRESERVATION", True, bool
         ),
-        enable_auto_compression=get_required_env("ENABLE_AUTO_COMPRESSION", bool),
-        # Force disable long term memory to prevent stale context issues
-        enable_long_term_memory=False,  # get_required_env("ENABLE_LONG_TERM_MEMORY", bool),
-        memory_refresh_interval=get_required_env("MEMORY_REFRESH_INTERVAL", int),
+        enable_auto_compression=get_optional_env("ENABLE_AUTO_COMPRESSION", True, bool),
+        enable_long_term_memory=False,
+        memory_refresh_interval=get_optional_env("MEMORY_REFRESH_INTERVAL", 3600, int),
     )
 
-    # Load Reliability configuration
+    # Load Reliability configuration (기본값 있음)
     reliability_config = ReliabilityConfig(
-        enabled=get_required_env("ENABLE_PRODUCTION_RELIABILITY", bool),
-        enable_circuit_breaker=get_required_env("ENABLE_CIRCUIT_BREAKER", bool),
-        enable_exponential_backoff=get_required_env("ENABLE_EXPONENTIAL_BACKOFF", bool),
-        # Force disable state persistence
-        enable_state_persistence=False,  # get_required_env("ENABLE_STATE_PERSISTENCE", bool),
-        enable_health_check=get_required_env("ENABLE_HEALTH_CHECK", bool),
-        enable_graceful_degradation=get_required_env(
-            "ENABLE_GRACEFUL_DEGRADATION", bool
+        enabled=get_optional_env("ENABLE_PRODUCTION_RELIABILITY", True, bool),
+        enable_circuit_breaker=get_optional_env("ENABLE_CIRCUIT_BREAKER", True, bool),
+        enable_exponential_backoff=get_optional_env("ENABLE_EXPONENTIAL_BACKOFF", True, bool),
+        enable_state_persistence=False,
+        enable_health_check=get_optional_env("ENABLE_HEALTH_CHECK", True, bool),
+        enable_graceful_degradation=get_optional_env(
+            "ENABLE_GRACEFUL_DEGRADATION", False, bool
         ),
-        enable_detailed_logging=get_required_env("ENABLE_DETAILED_LOGGING", bool),
-        failure_threshold=get_required_env("FAILURE_THRESHOLD", int),
-        recovery_timeout=get_required_env("RECOVERY_TIMEOUT", int),
-        state_backend=get_required_env("STATE_BACKEND"),
-        state_ttl=get_required_env("STATE_TTL", int),
+        enable_detailed_logging=get_optional_env("ENABLE_DETAILED_LOGGING", True, bool),
+        failure_threshold=get_optional_env("FAILURE_THRESHOLD", 5, int),
+        recovery_timeout=get_optional_env("RECOVERY_TIMEOUT", 60, int),
+        state_backend=get_optional_env("STATE_BACKEND", "memory"),
+        state_ttl=get_optional_env("STATE_TTL", 3600, int),
     )
 
-    # Load Agent Tool configuration
+    # Load Agent Tool configuration (기본값 있음)
     agent_tool_config = AgentToolConfig(
-        planner_servers=get_required_list_env("AGENT_TOOL_PLANNER_SERVERS")
-        if os.getenv("AGENT_TOOL_PLANNER_SERVERS")
-        else [],
-        executor_servers=get_required_list_env("AGENT_TOOL_EXECUTOR_SERVERS")
-        if os.getenv("AGENT_TOOL_EXECUTOR_SERVERS")
-        else [],
-        verifier_servers=get_required_list_env("AGENT_TOOL_VERIFIER_SERVERS")
-        if os.getenv("AGENT_TOOL_VERIFIER_SERVERS")
-        else [],
-        generator_servers=get_required_list_env("AGENT_TOOL_GENERATOR_SERVERS")
-        if os.getenv("AGENT_TOOL_GENERATOR_SERVERS")
-        else [],
-        planner_categories=get_required_list_env("AGENT_TOOL_PLANNER_CATEGORIES")
-        if os.getenv("AGENT_TOOL_PLANNER_CATEGORIES")
-        else ["planning", "search", "utility"],
-        executor_categories=get_required_list_env("AGENT_TOOL_EXECUTOR_CATEGORIES")
-        if os.getenv("AGENT_TOOL_EXECUTOR_CATEGORIES")
-        else ["search", "data", "academic", "business", "code"],
-        verifier_categories=get_required_list_env("AGENT_TOOL_VERIFIER_CATEGORIES")
-        if os.getenv("AGENT_TOOL_VERIFIER_CATEGORIES")
-        else ["verification", "search", "data", "academic"],
-        generator_categories=get_required_list_env("AGENT_TOOL_GENERATOR_CATEGORIES")
-        if os.getenv("AGENT_TOOL_GENERATOR_CATEGORIES")
-        else ["generation", "utility", "search"],
-        max_tools_per_agent=get_required_env("AGENT_TOOL_MAX_PER_AGENT", int)
-        if os.getenv("AGENT_TOOL_MAX_PER_AGENT")
-        else 5,
-        enable_auto_discovery=get_required_env("AGENT_TOOL_ENABLE_AUTO_DISCOVERY", bool)
-        if os.getenv("AGENT_TOOL_ENABLE_AUTO_DISCOVERY")
-        else True,
-        enable_cross_agent_tools=get_required_env("AGENT_TOOL_ENABLE_CROSS_AGENT", bool)
-        if os.getenv("AGENT_TOOL_ENABLE_CROSS_AGENT")
-        else True,
-        cross_agent_timeout=get_required_env("AGENT_TOOL_CROSS_AGENT_TIMEOUT", float)
-        if os.getenv("AGENT_TOOL_CROSS_AGENT_TIMEOUT")
-        else 30.0,
+        planner_servers=get_optional_list_env("AGENT_TOOL_PLANNER_SERVERS", []),
+        executor_servers=get_optional_list_env("AGENT_TOOL_EXECUTOR_SERVERS", []),
+        verifier_servers=get_optional_list_env("AGENT_TOOL_VERIFIER_SERVERS", []),
+        generator_servers=get_optional_list_env("AGENT_TOOL_GENERATOR_SERVERS", []),
+        planner_categories=get_optional_list_env(
+            "AGENT_TOOL_PLANNER_CATEGORIES", ["planning", "search", "utility"]
+        ),
+        executor_categories=get_optional_list_env(
+            "AGENT_TOOL_EXECUTOR_CATEGORIES",
+            ["search", "data", "academic", "business", "code"],
+        ),
+        verifier_categories=get_optional_list_env(
+            "AGENT_TOOL_VERIFIER_CATEGORIES",
+            ["verification", "search", "data", "academic"],
+        ),
+        generator_categories=get_optional_list_env(
+            "AGENT_TOOL_GENERATOR_CATEGORIES",
+            ["generation", "utility", "search"],
+        ),
+        max_tools_per_agent=get_optional_env("AGENT_TOOL_MAX_PER_AGENT", 5, int),
+        enable_auto_discovery=get_optional_env("AGENT_TOOL_ENABLE_AUTO_DISCOVERY", True, bool),
+        enable_cross_agent_tools=get_optional_env("AGENT_TOOL_ENABLE_CROSS_AGENT", True, bool),
+        cross_agent_timeout=get_optional_env("AGENT_TOOL_CROSS_AGENT_TIMEOUT", 30.0, float),
     )
 
-    # Load Output configuration
+    # Load Output configuration (기본값 있음)
     output_config = OutputConfig(
-        output_dir=get_required_env("OUTPUT_DIR"),
-        enable_pdf_generation=get_required_env("ENABLE_PDF", bool),
-        enable_markdown_generation=get_required_env("ENABLE_MARKDOWN", bool),
-        enable_json_export=get_required_env("ENABLE_JSON", bool),
-        enable_docx_export=get_required_env("ENABLE_DOCX", bool),
-        enable_html_export=get_required_env("ENABLE_HTML", bool),
-        enable_latex_export=get_required_env("ENABLE_LATEX", bool),
+        output_dir=get_optional_env("OUTPUT_DIR", "output"),
+        enable_pdf_generation=get_optional_env("ENABLE_PDF", True, bool),
+        enable_markdown_generation=get_optional_env("ENABLE_MARKDOWN", True, bool),
+        enable_json_export=get_optional_env("ENABLE_JSON", True, bool),
+        enable_docx_export=get_optional_env("ENABLE_DOCX", True, bool),
+        enable_html_export=get_optional_env("ENABLE_HTML", True, bool),
+        enable_latex_export=get_optional_env("ENABLE_LATEX", False, bool),
     )
 
     # Load Council configuration (Optional with defaults)

@@ -2,89 +2,157 @@
   "mcpServers": {
     "local-search": {
       "command": "python",
-      "args": ["-m", "local_mcp_servers.search_server"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.search_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent"
+        "PYTHONPATH": "${PROJECT_ROOT}"
       },
       "disabled": false
     },
     "code-executor": {
       "command": "python",
-      "args": ["-m", "local_mcp_servers.code_executor"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.context_mode_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent"
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "SPARKLEFORGE_PROJECT_DIR": "${PROJECT_ROOT}"
       },
-      "disabled": false
+      "disabled": true
     },
     "data-analyzer": {
       "command": "python",
-      "args": ["-m", "local_mcp_servers.data_analyzer"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.context_mode_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent"
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "SPARKLEFORGE_PROJECT_DIR": "${PROJECT_ROOT}"
       },
-      "disabled": false
+      "disabled": true
     },
     "web-fetch": {
       "command": "python",
-      "args": ["-m", "src.core.mcp_servers.web_fetch_server"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.web_fetch_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
-        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge"
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}"
       },
       "disabled": false
     },
     "search": {
       "command": "python",
-      "args": ["-m", "src.core.mcp_servers.search_server"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.search_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
-        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge"
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}"
       },
       "disabled": false
     },
     "arxiv": {
       "command": "python",
-      "args": ["-m", "src.core.mcp_servers.arxiv_server"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.arxiv_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
-        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge"
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}"
       },
       "disabled": false
     },
     "memory": {
       "command": "python",
-      "args": ["-m", "src.core.mcp_servers.memory_server"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.memory_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
-        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge",
-        "MEMORY_STORAGE_DIR": "data/memory"
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}",
+        "MEMORY_STORAGE_DIR": "${PROJECT_ROOT}/data/memory"
       },
       "disabled": false
     },
     "filesystem": {
       "command": "python",
-      "args": ["-m", "src.core.mcp_servers.filesystem_server"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.filesystem_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
-        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge",
-        "MCP_FILESYSTEM_ALLOWED_PATHS": "/home/user/workspace/mcp_agent/sparkleforge,/tmp"
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}",
+        "MCP_FILESYSTEM_ALLOWED_PATHS": "${PROJECT_ROOT},/tmp"
       },
       "disabled": false
     },
     "github": {
       "command": "python",
-      "args": ["-m", "src.core.mcp_servers.github_server"],
+      "args": [
+        "-m",
+        "src.core.mcp_servers.github_server"
+      ],
       "env": {
-        "PYTHONPATH": "/home/user/workspace/mcp_agent/sparkleforge",
-        "PYTHONPATH_ADD": "/home/user/workspace/mcp_agent/sparkleforge",
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}",
         "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       },
       "disabled": false
+    },
+    "context-mode": {
+      "command": "python",
+      "args": [
+        "-m",
+        "src.core.mcp_servers.context_mode_server"
+      ],
+      "env": {
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}",
+        "SPARKLEFORGE_PROJECT_DIR": "${PROJECT_ROOT}"
+      },
+      "disabled": false
+    },
+    "semanticscholar": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/semanticscholar/server.py"
+      ]
+    },
+    "semantic_scholar": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/semantic_scholar/server.py"
+      ]
     }
   },
   "_metadata": {
-    "description": "MCP servers - 3 local + 5 embedded (src/core/mcp_servers/)",
-    "embedded_servers": ["web-fetch", "search", "arxiv", "memory", "filesystem", "github"],
-    "local_servers": ["local-search", "code-executor", "data-analyzer"]
+    "description": "MCP servers - 3 local + 6 embedded (context-mode for 95% token reduction)",
+    "embedded_servers": [
+      "web-fetch",
+      "search",
+      "arxiv",
+      "memory",
+      "filesystem",
+      "github",
+      "context-mode"
+    ],
+    "local_servers": [
+      "local-search",
+      "code-executor",
+      "data-analyzer"
+    ]
   }
 }

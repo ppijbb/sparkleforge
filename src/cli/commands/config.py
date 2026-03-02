@@ -1,11 +1,34 @@
 """설정 관리 명령어"""
 
 import logging
-from typing import List
+from typing import Any, List
 
 from rich.panel import Panel
 
 logger = logging.getLogger(__name__)
+
+# Keys that must not be printed (API keys, tokens, passwords)
+_SECRET_CONFIG_KEYS = frozenset(
+    {
+        "api_key",
+        "openrouter_api_key",
+        "claude_code_api_key",
+        "gemini_cli_api_key",
+        "password",
+        "secret",
+        "token",
+    }
+)
+
+
+def _redact_secret(key: str, value: Any) -> Any:
+    """Return redacted value for known secret keys."""
+    key_lower = key.lower().replace(".", "_")
+    if any(secret in key_lower for secret in _SECRET_CONFIG_KEYS):
+        return "***" if value else value
+    if isinstance(value, dict):
+        return {k: _redact_secret(k, v) for k, v in value.items()}
+    return value
 
 
 async def config_show_command(cli, args: List[str]):
@@ -59,6 +82,7 @@ async def config_get_command(cli, args: List[str]):
         value = getattr(config, key, None)
 
         if value is not None:
+            value = _redact_secret(key, value)
             cli.console.print(f"[green]{key}: {value}[/green]")
         else:
             cli.console.print(f"[yellow]Config key not found: {key}[/yellow]")

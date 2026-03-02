@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Type
 
 from .base_cli_agent import BaseCLIAgent
@@ -92,6 +93,18 @@ class CLIAgentManager:
             # 설정과 kwargs 병합
             config = self.agent_configs.get(name, {}).copy()
             config.update(kwargs)
+            # open_code: model_path 미설정 시 config/env 기본값 (Kimi K 2.5)
+            if name == "open_code" and not config.get("model_path"):
+                try:
+                    from src.core.researcher_config import get_llm_config
+                    config["model_path"] = (
+                        get_llm_config().open_code_model_path
+                        or os.getenv("OPEN_CODE_MODEL_PATH", "kimi-k2.5")
+                    )
+                except Exception:
+                    config["model_path"] = os.getenv(
+                        "OPEN_CODE_MODEL_PATH", "kimi-k2.5"
+                    )
 
             # 인스턴스 생성
             agent = agent_class(**config)
