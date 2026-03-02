@@ -1,4 +1,0 @@
-configs
-docs
-scripts
-src

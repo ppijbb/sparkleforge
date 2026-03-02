@@ -19,3 +19,5 @@ storage
 reports
 .mypy_cache
 temp
+.ruff_cache
+*.egg-info
