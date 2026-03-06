@@ -573,7 +573,7 @@ async def get_memory_stats() -> str:
 
 def run():
     """Run the memory MCP server."""
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

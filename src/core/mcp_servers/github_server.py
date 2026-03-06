@@ -682,7 +682,7 @@ async def list_user_repos(
 
 def run():
     """Run the GitHub MCP server."""
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

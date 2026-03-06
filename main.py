@@ -274,6 +274,16 @@ class AutonomousResearchSystem:
         # Initialize components with 8 innovations
         logger.info("🔧 Initializing system components...")
         try:
+            from src.core.db.database_driver import get_database_driver, set_database_driver
+            from src.core.db.sqlite_driver import SQLiteDriver
+
+            if get_database_driver() is None:
+                sqlite_db_path = (
+                    Path(__file__).resolve().parent / "data" / "sparkleforge.db"
+                )
+                set_database_driver(SQLiteDriver(str(sqlite_db_path)))
+                logger.info(f"✅ SQLite database driver initialized: {sqlite_db_path}")
+
             # Use new multi-agent orchestrator (no fallback - fail clearly)
             self.orchestrator = NewAgentOrchestrator()
             logger.info("✅ Multi-Agent Orchestrator initialized (no fallback mode)")
@@ -1666,8 +1676,17 @@ EXAMPLES:
     else:
         parser.print_help()
 
+    # --query로 run/query 실행한 경우 여기서 종료 (이중 초기화·빈 워크플로우 요약 방지)
+    if (getattr(args, "command", None) in ("run", "query")) and getattr(
+        args, "query", None
+    ):
+        return
+
+    # --query가 있으면 쿼리만 실행하고 종료. query 없을 때만 TLI(REPL) 진입
     is_repl_mode = getattr(args, "command", None) in ("interactive", "repl") or (
-        getattr(args, "command", None) == "run" and not getattr(args, "prompt", None)
+        getattr(args, "command", None) == "run"
+        and not getattr(args, "prompt", None)
+        and not getattr(args, "query", None)
     )
 
     # REPL 모드에서는 모든 로그를 완전히 억제 (ERROR만 표시)
@@ -1911,7 +1930,8 @@ EXAMPLES:
                 await scheduler.stop()
             return
 
-        if args.request:
+        request_arg = getattr(args, "request", None)
+        if request_arg:
             # CLI Research Mode with 8 innovations
             logger.info("🚀 Starting Local Researcher with enhanced systems...")
 
@@ -1927,7 +1947,7 @@ EXAMPLES:
 
             # 워크플로우 시작 알림
             await output_manager.output(
-                f"🔬 연구 주제: {args.request}", level=OutputLevel.USER
+                f"🔬 연구 주제: {request_arg}", level=OutputLevel.USER
             )
             await output_manager.output(
                 "실시간 진행 상황 추적 및 향상된 에러 처리가 활성화되었습니다.",
@@ -1936,17 +1956,17 @@ EXAMPLES:
 
             # 연구 실행
             await system.run_research(
-                args.request,
+                request_arg,
                 args.output,
                 streaming=args.streaming,
                 output_format=args.format,
             )
 
-        elif args.web:
+        elif getattr(args, "web", False):
             # Web Application Mode with Streaming Pipeline
             system.run_web_app()
 
-        elif args.mcp_server:
+        elif getattr(args, "mcp_server", False):
             # MCP Server Mode with Universal MCP Hub - 실제 연결 수행
             logger.info("Initializing MCP servers...")
             try:
@@ -1978,17 +1998,17 @@ EXAMPLES:
                 logger.error(f"Failed to initialize MCP servers: {e}")
                 sys.exit(1)
 
-        elif args.mcp_client:
+        elif getattr(args, "mcp_client", False):
             # MCP Client Mode with Smart Tool Selection
             success = await system.run_mcp_client()
             if not success:
                 sys.exit(1)
 
-        elif args.health_check:
+        elif getattr(args, "health_check", False):
             # Health Check Mode
             await system.run_health_check()
 
-        elif args.check_mcp_servers:
+        elif getattr(args, "check_mcp_servers", False):
             # MCP 서버 확인 모드
             await system.check_mcp_servers()
 
