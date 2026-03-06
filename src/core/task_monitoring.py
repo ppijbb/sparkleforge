@@ -51,6 +51,7 @@ class TaskMetrics:
     throughput_per_min: float  # completed per minute, rolling
     error_rate: float  # failed / (completed + failed)
     by_session: Dict[str, TaskSnapshot] = field(default_factory=dict)
+    by_agent: Dict[str, Dict[str, int]] = field(default_factory=dict)  # agent_id -> {completed, failed}
 
 
 class TaskMetricsCollector:
@@ -71,6 +72,9 @@ class TaskMetricsCollector:
         # Global latency samples (recent)
         self._latency_samples: List[float] = []
         self._completed_timestamps: List[float] = []  # for throughput
+        # Optional breakdown by agent (for ops dashboards)
+        self._completed_by_agent: Dict[str, int] = defaultdict(int)
+        self._failed_by_agent: Dict[str, int] = defaultdict(int)
 
     def record_enqueued(self, session_id: str, envelope_type: str = "message") -> None:
         """Call when an item is enqueued (e.g. SessionLane.enqueue)."""
@@ -95,15 +99,22 @@ class TaskMetricsCollector:
         success: bool,
         task_id: str | None = None,
         latency_sec: float | None = None,
+        agent_id: str | None = None,
     ) -> None:
-        """Record task end; latency_sec can be provided or computed from record_start."""
+        """Record task end; latency_sec can be provided or computed from record_start.
+        Optional agent_id for by_agent aggregation (ops dashboards).
+        """
         key = task_id or f"{session_id}_{id(self)}"
         with self._lock:
             self._running[session_id] = max(0, self._running[session_id] - 1)
             if success:
                 self._completed[session_id] += 1
+                if agent_id:
+                    self._completed_by_agent[agent_id] += 1
             else:
                 self._failed[session_id] += 1
+                if agent_id:
+                    self._failed_by_agent[agent_id] += 1
             if key in self._running_since and latency_sec is None:
                 latency_sec = time.monotonic() - self._running_since.pop(key, 0)
             elif key in self._running_since:
@@ -168,6 +179,12 @@ class TaskMetricsCollector:
                     latency_sec=p50,
                     envelope_types={},
                 )
+            by_agent = {}
+            for aid in set(self._completed_by_agent) | set(self._failed_by_agent):
+                by_agent[aid] = {
+                    "completed": self._completed_by_agent.get(aid, 0),
+                    "failed": self._failed_by_agent.get(aid, 0),
+                }
 
         return TaskMetrics(
             timestamp=datetime.now(),
@@ -181,6 +198,7 @@ class TaskMetricsCollector:
             throughput_per_min=float(throughput),
             error_rate=error_rate,
             by_session=by_session,
+            by_agent=by_agent,
         )
 
     def get_research_task_count(self) -> int:

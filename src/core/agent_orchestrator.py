@@ -20,29 +20,37 @@ from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
+from src.agents.creativity_agent import CreativityAgent
+from src.core.adaptive_memory import get_adaptive_memory
 from src.core.agent_result_sharing import AgentDiscussionManager, SharedResultsManager
+from src.core.agent_security import agent_security_context, get_agent_security_manager
 from src.core.agent_tool_selector import AgentToolSelector
-from src.core.context_engineer import ContextEngineer, get_context_engineer
 from src.core.context_compaction import CompactionManager, get_compaction_manager
 from src.core.context_compaction.manager import set_compaction_manager
-from src.core.adaptive_memory import get_adaptive_memory
+from src.core.context_engineer import ContextEngineer, get_context_engineer
+from src.core.input_router import (
+    InputEnvelope,
+    ensure_trace_context,
+    envelope_to_user_query,
+    set_trace_context,
+)
 from src.core.mcp_auto_discovery import FastMCPMulti
 from src.core.mcp_tool_loader import MCPToolLoader
 from src.core.memory_service import get_background_memory_service
-from src.core.observability import get_langfuse_run_config
-from src.core.agent_security import agent_security_context, get_agent_security_manager
+from src.core.observability import (
+    get_langfuse_run_config,
+    start_agent_span,
+    start_turn_trace,
+)
+from src.core.progress_tracker import get_progress_tracker
 from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
 from src.core.researcher_config import get_agent_config
+from src.core.session_lane import get_session_lane
 from src.core.session_manager import get_session_manager
 from src.core.shared_memory import MemoryScope, get_shared_memory
 from src.core.skills_loader import Skill
 from src.core.skills_manager import get_skill_manager
 from src.core.skills_selector import get_skill_selector
-
-from src.agents.creativity_agent import CreativityAgent
-from src.core.input_router import InputEnvelope, envelope_to_user_query
-from src.core.progress_tracker import get_progress_tracker
-from src.core.session_lane import get_session_lane
 
 # prompt refiner는 execute_llm_task의 decorator에서 자동 적용됨
 
@@ -6806,36 +6814,43 @@ class AgentOrchestrator:
         logger.info("🔵 [WORKFLOW] → Planner Node")
         logger.info("=" * 80)
 
-        sec = get_agent_security_manager()
-        sec.reset_rate_limit("planner")
-        scoped_state = sec.filter_state_mvi("planner", state)
+        with start_agent_span(
+            "planner",
+            "planner",
+            input={"session_id": state.get("session_id"), "user_query": (state.get("user_query") or "")[:200]},
+        ):
+            sec = get_agent_security_manager()
+            sec.reset_rate_limit("planner")
+            scoped_state = sec.filter_state_mvi("planner", state)
 
-        input_check = sec.enforce_input("planner", scoped_state.get("user_query", ""))
-        if not input_check.is_allowed:
-            logger.warning("[SECURITY] Planner input rejected")
-            state["research_failed"] = True
-            return state
+            input_check = sec.enforce_input("planner", scoped_state.get("user_query", ""))
+            if not input_check.is_allowed:
+                logger.warning("[SECURITY] Planner input rejected")
+                state["research_failed"] = True
+                return state
 
-        # Progress tracker 업데이트
-        try:
-            from src.core.progress_tracker import WorkflowStage, get_progress_tracker
-
-            progress_tracker = get_progress_tracker()
-            if progress_tracker:
-                progress_tracker.set_workflow_stage(
-                    WorkflowStage.PLANNING, {"message": "연구 계획 수립 중..."}
+            try:
+                from src.core.progress_tracker import (
+                    WorkflowStage,
+                    get_progress_tracker,
                 )
-        except Exception as e:
-            logger.debug(f"Failed to update progress tracker: {e}")
 
-        with agent_security_context("planner"):
-            result = await self.planner.execute(scoped_state)
+                progress_tracker = get_progress_tracker()
+                if progress_tracker:
+                    progress_tracker.set_workflow_stage(
+                        WorkflowStage.PLANNING, {"message": "연구 계획 수립 중..."}
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to update progress tracker: {e}")
 
-        output_check = sec.enforce_output("planner", str(result.get("research_plan", "")))
-        if not output_check.is_allowed:
-            logger.warning("[SECURITY] Planner output blocked — sanitised")
+            with agent_security_context("planner"):
+                result = await self.planner.execute(scoped_state)
 
-        state.update(result)
+            output_check = sec.enforce_output("planner", str(result.get("research_plan", "")))
+            if not output_check.is_allowed:
+                logger.warning("[SECURITY] Planner output blocked — sanitised")
+
+            state.update(result)
         logger.info(f"🔵 [WORKFLOW] ✓ Planner completed: {result.get('current_agent')}")
         return state
 
@@ -6856,6 +6871,15 @@ class AgentOrchestrator:
         logger.info("🟢 [WORKFLOW] → Parallel Executor Node")
         logger.info("=" * 80)
 
+        with start_agent_span(
+            "parallel_executor",
+            "executor",
+            input={"session_id": state.get("session_id"), "tasks": len(state.get("research_tasks", []))},
+        ):
+            return await self._parallel_executor_node_impl(state)
+
+    async def _parallel_executor_node_impl(self, state: AgentState) -> AgentState:
+        """Inner implementation of parallel executor (for agent span wrapping)."""
         sec = get_agent_security_manager()
         sec.reset_rate_limit("executor")
         state = sec.filter_state_mvi("executor", state)
@@ -7084,7 +7108,12 @@ class AgentOrchestrator:
         logger.info("=" * 80)
         logger.info("🟡 [WORKFLOW] → Verifier Node (legacy)")
         logger.info("=" * 80)
-        result = await self.verifier.execute(state)
+        with start_agent_span(
+            "verifier",
+            "verifier",
+            input={"session_id": state.get("session_id")},
+        ):
+            result = await self.verifier.execute(state)
         logger.info(
             f"🟡 [WORKFLOW] ✓ Verifier completed: {len(result.get('verified_results', []))} verified"
         )
@@ -7096,6 +7125,15 @@ class AgentOrchestrator:
         logger.info("🟡 [WORKFLOW] → Parallel Verifier Node")
         logger.info("=" * 80)
 
+        with start_agent_span(
+            "parallel_verifier",
+            "verifier",
+            input={"session_id": state.get("session_id"), "results": len(state.get("research_results", []))},
+        ):
+            return await self._parallel_verifier_node_impl(state)
+
+    async def _parallel_verifier_node_impl(self, state: AgentState) -> AgentState:
+        """Inner implementation of parallel verifier (for agent span wrapping)."""
         sec = get_agent_security_manager()
         sec.reset_rate_limit("verifier")
         state = sec.filter_state_mvi("verifier", state)
@@ -7227,7 +7265,7 @@ class AgentOrchestrator:
                     )
                     chunk_state["research_tasks"] = []
                     logger.info(
-                        f"[WORKFLOW] Blind verification: verifier sees only query and results"
+                        "[WORKFLOW] Blind verification: verifier sees only query and results"
                     )
             except Exception as e:
                 logger.debug(f"Blind verification config check: {e}")
@@ -7393,6 +7431,15 @@ class AgentOrchestrator:
         logger.info("🟣 [WORKFLOW] → Generator Node")
         logger.info("=" * 80)
 
+        with start_agent_span(
+            "generator",
+            "generator",
+            input={"session_id": state.get("session_id")},
+        ):
+            return await self._generator_node_impl(state)
+
+    async def _generator_node_impl(self, state: AgentState) -> AgentState:
+        """Inner implementation of generator node (for agent span wrapping)."""
         sec = get_agent_security_manager()
         sec.reset_rate_limit("generator")
 
@@ -7466,6 +7513,103 @@ class AgentOrchestrator:
             f"Failed: {state.get('research_failed') or state.get('verification_failed') or state.get('report_failed')}"
         )
         logger.info("=" * 80)
+
+        # Token savings report (post-task)
+        try:
+            from src.core.context_compaction.manager import (
+                clear_current_turn_compaction_savings,
+                get_current_turn_compaction_savings,
+            )
+            from src.core.context_mode.stats import (
+                clear_current_turn_tool_savings,
+                get_current_turn_tool_savings,
+                get_session_stats,
+            )
+            from src.core.input_router import get_trace_context
+
+            report: Dict[str, Any] = {
+                "turn_id": (get_trace_context() or {}).get("turn_id"),
+                "session_id": state.get("session_id"),
+                "success": not (
+                    state.get("research_failed")
+                    or state.get("verification_failed")
+                    or state.get("report_failed")
+                ),
+            }
+            snapshot = state.get("_token_savings_snapshot")
+            if snapshot is not None:
+                try:
+                    delta = get_session_stats().delta(snapshot)
+                    report["context_mode"] = {
+                        "bytes_returned_delta": delta.bytes_returned_delta,
+                        "kept_out_delta": delta.kept_out_delta,
+                        "calls_delta": delta.calls_delta,
+                        "savings_ratio": round(delta.savings_ratio, 2),
+                        "reduction_percent": round(delta.reduction_percent, 1),
+                    }
+                except Exception:
+                    report["context_mode"] = None
+            else:
+                report["context_mode"] = None
+
+            compaction_list = get_current_turn_compaction_savings()
+            report["compaction"] = {
+                "events": compaction_list,
+                "tokens_saved_total": sum(c.get("tokens_saved", 0) for c in compaction_list),
+            }
+            tool_list = get_current_turn_tool_savings()
+            report["tool_savings"] = {
+                "events": tool_list,
+                "kept_out_bytes_total": sum(t.get("kept_out_bytes", 0) for t in tool_list),
+            }
+            state["token_savings_report"] = report
+            clear_current_turn_compaction_savings()
+            clear_current_turn_tool_savings()
+
+            try:
+                pt = get_progress_tracker(state.get("session_id"))
+                pt.workflow_progress.metadata["token_savings_report"] = report
+            except Exception:
+                pass
+            try:
+                from src.core.observability import get_langfuse_client
+
+                client = get_langfuse_client()
+                if client:
+                    client.update_current_trace(metadata={"token_savings_report": report})
+            except Exception:
+                pass
+            logger.info(
+                "Token savings report: context_mode=%s compaction_events=%s tool_events=%s",
+                report.get("context_mode"),
+                len(compaction_list),
+                len(tool_list),
+            )
+            # Append one-line savings summary to final report for operators
+            try:
+                parts = []
+                if report.get("context_mode"):
+                    cm = report["context_mode"]
+                    parts.append(
+                        f"Context-mode: {cm.get('reduction_percent', 0)}% reduction, "
+                        f"+{cm.get('bytes_returned_delta', 0)} bytes to context."
+                    )
+                if report.get("compaction", {}).get("tokens_saved_total"):
+                    parts.append(
+                        f"Compaction: {report['compaction']['tokens_saved_total']} tokens saved."
+                    )
+                if report.get("tool_savings", {}).get("kept_out_bytes_total"):
+                    parts.append(
+                        f"Tool output kept out: {report['tool_savings']['kept_out_bytes_total']} bytes."
+                    )
+                if parts:
+                    summary_line = "\n\n---\n**운영 메트릭 (Token savings)**\n" + " ".join(parts)
+                    state["final_report"] = (state.get("final_report") or "") + summary_line
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug("Token savings report failed: %s", e)
+            state["token_savings_report"] = None
 
         # 백그라운드 메모리 생성 트리거 (세션 종료 시)
         try:
@@ -7683,55 +7827,63 @@ class AgentOrchestrator:
                 ce,
             )
 
-        # Execute workflow
+        # Token savings baseline for post-task report
         try:
-            # DataFlow Pipeline 옵션 확인 (환경 변수 또는 설정에서)
+            from src.core.context_mode.stats import get_session_stats
+
+            initial_state["_token_savings_snapshot"] = get_session_stats().snapshot()
+        except Exception:
+            initial_state["_token_savings_snapshot"] = None
+
+        # Execute workflow (wrapped in turn trace for Langfuse hierarchy)
+        try:
             use_pipeline = os.getenv("USE_DATAFLOW_PIPELINE", "false").lower() == "true"
 
-            if use_pipeline:
-                try:
-                    from src.dataflow.integration.orchestrator_pipeline_integration import (
-                        OrchestratorPipelineIntegration,
-                    )
+            with start_turn_trace(
+                name="turn",
+                input={"user_query": user_query[:500], "session_id": session_id},
+                session_id=session_id,
+            ):
+                if use_pipeline:
+                    try:
+                        from src.dataflow.integration.orchestrator_pipeline_integration import (
+                            OrchestratorPipelineIntegration,
+                        )
 
-                    pipeline_integration = OrchestratorPipelineIntegration(
-                        use_pipeline=True
-                    )
+                        pipeline_integration = OrchestratorPipelineIntegration(
+                            use_pipeline=True
+                        )
 
-                    # Pipeline을 사용하여 실행
-                    logger.info("Using DataFlow Pipeline for execution")
-                    result = await pipeline_integration.execute_with_pipeline(
-                        agent_state=dict(initial_state), session_id=session_id
-                    )
+                        logger.info("Using DataFlow Pipeline for execution")
+                        result = await pipeline_integration.execute_with_pipeline(
+                            agent_state=dict(initial_state), session_id=session_id
+                        )
 
-                    # 결과를 AgentState로 변환 (필수 키 보장)
-                    if isinstance(result, dict):
-                        result.setdefault("sparkle_ideas", None)
-                        result.setdefault("direct_forward_message", None)
-                        result.setdefault("direct_forward_from_agent", None)
-                    result = AgentState(**result)
-                except Exception as e:
-                    logger.warning(
-                        f"Pipeline execution failed, falling back to traditional workflow: {e}"
-                    )
-                    # Fallback to traditional workflow
+                        if isinstance(result, dict):
+                            result.setdefault("sparkle_ideas", None)
+                            result.setdefault("direct_forward_message", None)
+                            result.setdefault("direct_forward_from_agent", None)
+                        result = AgentState(**result)
+                    except Exception as e:
+                        logger.warning(
+                            f"Pipeline execution failed, falling back to traditional workflow: {e}"
+                        )
+                        run_config = get_langfuse_run_config(session_id=session_id)
+                        run_config.setdefault("configurable", {})["thread_id"] = (
+                            session_id or "default"
+                        )
+                        result = await self.graph.ainvoke(
+                            initial_state,
+                            config=run_config,
+                        )
+                else:
                     run_config = get_langfuse_run_config(session_id=session_id)
-                run_config.setdefault("configurable", {})["thread_id"] = (
-                    session_id or "default"
-                )
-                result = await self.graph.ainvoke(
-                        initial_state,
-                        config=run_config,
+                    run_config.setdefault("configurable", {})["thread_id"] = (
+                        session_id or "default"
                     )
-            else:
-                # Traditional workflow execution (with checkpointer thread_id for resume)
-                run_config = get_langfuse_run_config(session_id=session_id)
-                run_config.setdefault("configurable", {})["thread_id"] = (
-                    session_id or "default"
-                )
-                result = await self.graph.ainvoke(
-                    initial_state, config=run_config
-                )
+                    result = await self.graph.ainvoke(
+                        initial_state, config=run_config
+                    )
 
             # 세션 자동 저장 (워크플로우 완료 후)
             try:
@@ -7754,17 +7906,22 @@ class AgentOrchestrator:
     ) -> Dict[str, Any]:
         """Execute workflow via session lane (one run per session, serialized)."""
         lane = get_session_lane()
+        ensure_trace_context(envelope)
 
         async def run_fn(sid: str, env: InputEnvelope) -> Dict[str, Any]:
             # Heartbeat: suppress unless app sets custom run_fn that checks pending work
             if env.type == "heartbeat":
                 return {}
-            user_query = envelope_to_user_query(env)
-            return await self.execute(
-                user_query=user_query,
-                session_id=sid,
-                restore_session=False,
-            )
+            set_trace_context(env.metadata)
+            try:
+                user_query = envelope_to_user_query(env)
+                return await self.execute(
+                    user_query=user_query,
+                    session_id=sid,
+                    restore_session=False,
+                )
+            finally:
+                set_trace_context(None)
 
         return await lane.enqueue_and_wait(session_id, envelope, run_fn=run_fn)
 

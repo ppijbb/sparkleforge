@@ -20,6 +20,13 @@ from langgraph.graph import END, StateGraph
 from src.core.compression import compress_data
 from src.core.llm_manager import TaskType, execute_llm_task
 from src.core.mcp_integration import ToolCategory, execute_tool
+from src.core.input_router import (
+    TRACE_ENTRYPOINT,
+    TRACE_REQUEST_ID,
+    TRACE_SOURCE_TYPE,
+    TRACE_TURN_ID,
+    set_trace_context,
+)
 from src.core.observability import get_langfuse_run_config
 from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
 from src.core.researcher_config import (
@@ -3748,11 +3755,20 @@ class AutonomousOrchestrator:
                 "🤖 CLI mode detected - Autopilot mode enabled (auto-selecting responses)"
             )
 
-        # LangGraph 워크플로우 실행
+        # LangGraph 워크플로우 실행 (trace context for observability)
         logger.info("🔄 Executing LangGraph workflow with 8 core innovations")
-        final_state = await self.graph.ainvoke(
-            initial_state, config=get_langfuse_run_config()
-        )
+        set_trace_context({
+            TRACE_REQUEST_ID: execution_id,
+            TRACE_TURN_ID: execution_id,
+            TRACE_ENTRYPOINT: "autonomous",
+            TRACE_SOURCE_TYPE: "autonomous",
+        })
+        try:
+            final_state = await self.graph.ainvoke(
+                initial_state, config=get_langfuse_run_config()
+            )
+        finally:
+            set_trace_context(None)
 
         # 결과 포맷팅
         result = {

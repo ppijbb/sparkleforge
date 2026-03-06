@@ -117,6 +117,7 @@ from src.core.config import HTTPServerSpec
 from src.core.mcp_auto_discovery import FastMCPMulti
 from src.core.mcp_tool_loader import MCPToolLoader
 from src.core.mcp_tool_loader import ToolInfo as MCPToolInfo
+from src.core.observability import start_tool_span
 from src.core.researcher_config import get_llm_config, get_mcp_config
 
 logger = logging.getLogger(__name__)
@@ -2853,15 +2854,34 @@ class UniversalMCPHub:
                                 content_parts.append(str(item))
 
                         content_str = " ".join(content_parts)
+                        raw_bytes = len(content_str.encode("utf-8", errors="replace"))
                         # Context-mode interceptor: reduce large tool output before it enters LLM context (95%+ token savings)
                         try:
-                            from src.core.context_mode.interceptor import process as context_mode_process
+                            from src.core.context_mode.interceptor import (
+                                process as context_mode_process,
+                            )
+                            from src.core.context_mode.stats import (
+                                record_tool_context_savings,
+                            )
+                            from src.core.input_router import (
+                                TRACE_TURN_ID,
+                                get_trace_context,
+                            )
+
                             synthetic = {"content": [{"type": "text", "text": content_str}]}
                             processed = context_mode_process(tool_name, synthetic)
                             if processed.get("content") and len(processed["content"]) > 0:
                                 block = processed["content"][0]
                                 if isinstance(block, dict) and block.get("type") == "text":
                                     content_str = block.get("text", content_str)
+                            returned_bytes = len(content_str.encode("utf-8", errors="replace"))
+                            ctx = get_trace_context() or {}
+                            record_tool_context_savings(
+                                tool_name,
+                                raw_bytes,
+                                returned_bytes,
+                                turn_id=ctx.get(TRACE_TURN_ID),
+                            )
                         except Exception as interceptor_err:
                             logger.debug("Context-mode interceptor skip: %s", interceptor_err)
                         logger.debug(
@@ -4927,7 +4947,12 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         logger.info("[MCP][execute_tool] MCP Hub not initialized, initializing...")
         await mcp_hub.initialize_mcp()
 
-    result = await mcp_hub.execute_tool(tool_name, parameters)
+    with start_tool_span(
+        name=f"tool:{tool_name}",
+        tool_name=tool_name,
+        input={"tool_name": tool_name, "parameters_keys": list(parameters.keys())},
+    ):
+        result = await mcp_hub.execute_tool(tool_name, parameters)
 
     # Tool Design: format=concise 이면 응답 크기 제한 (Response Format Optimization)
     if (
