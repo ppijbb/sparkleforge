@@ -2,9 +2,11 @@
 
 컨텍스트 압축 관리자 (AgentPG 패턴 참고).
 85% 임계값에서 자동 압축을 수행합니다.
+Per-turn compaction savings are recorded for task-level reporting.
 """
 
 import logging
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List
@@ -26,6 +28,27 @@ from src.core.db.database_driver import Transaction
 from src.core.db.transaction_manager import get_transaction_manager
 
 logger = logging.getLogger(__name__)
+
+# Per-turn compaction savings for task-level reporting (append in compact_and_get_messages)
+_current_turn_compaction: ContextVar[List[Dict[str, Any]]] = ContextVar(
+    "turn_compaction_savings", default=[]
+)
+
+
+def get_current_turn_compaction_savings() -> List[Dict[str, Any]]:
+    """Return list of compaction savings recorded for the current turn."""
+    try:
+        return list(_current_turn_compaction.get())
+    except LookupError:
+        return []
+
+
+def clear_current_turn_compaction_savings() -> None:
+    """Clear recorded compaction savings (call at end of turn)."""
+    try:
+        _current_turn_compaction.set([])
+    except LookupError:
+        pass
 
 
 @dataclass
@@ -264,7 +287,30 @@ class CompactionManager:
         if strategy_name not in self.strategies:
             return messages
         strategy = self.strategies[strategy_name]
+        original_tokens = self._estimate_tokens(messages)
         compressed = await strategy.compact(messages, self.config)
+        compressed_tokens = self._estimate_tokens(compressed)
+        tokens_saved = max(0, original_tokens - compressed_tokens)
+        try:
+            from src.core.input_router import TRACE_TURN_ID, get_trace_context
+
+            ctx = get_trace_context() or {}
+            turn_id = ctx.get(TRACE_TURN_ID)
+        except Exception:
+            turn_id = None
+        try:
+            records = list(_current_turn_compaction.get())
+        except LookupError:
+            records = []
+        records.append({
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "tokens_saved": tokens_saved,
+            "original_tokens": original_tokens,
+            "compressed_tokens": compressed_tokens,
+            "strategy": strategy_name,
+        })
+        _current_turn_compaction.set(records)
         return compressed
 
     def _estimate_tokens(self, messages: List[Dict[str, Any]]) -> int:

@@ -9,7 +9,11 @@ import logging
 import time
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
-from src.core.input_router import InputEnvelope
+from src.core.input_router import (
+    TRACE_TURN_ID,
+    InputEnvelope,
+    ensure_trace_context,
+)
 from src.core.task_monitoring import get_task_metrics_collector
 
 logger = logging.getLogger(__name__)
@@ -52,9 +56,11 @@ class SessionLane:
                 item: _Item = await queue.get()
                 try:
                     envelope, future = item
+                    ensure_trace_context(envelope)
+                    turn_id = (envelope.metadata or {}).get(TRACE_TURN_ID) or session_id
                     try:
                         collector.record_dequeued(session_id)
-                        collector.record_start(session_id, task_id=None)
+                        collector.record_start(session_id, task_id=turn_id)
                     except Exception:
                         pass
                     start = time.monotonic()
@@ -64,14 +70,20 @@ class SessionLane:
                             future.set_result(result)
                         try:
                             collector.record_end(
-                                session_id, success=True, latency_sec=time.monotonic() - start
+                                session_id,
+                                success=True,
+                                latency_sec=time.monotonic() - start,
+                                task_id=turn_id,
                             )
                         except Exception:
                             pass
                     except asyncio.CancelledError:
                         try:
                             collector.record_end(
-                                session_id, success=False, latency_sec=time.monotonic() - start
+                                session_id,
+                                success=False,
+                                latency_sec=time.monotonic() - start,
+                                task_id=turn_id,
                             )
                         except Exception:
                             pass
@@ -82,7 +94,10 @@ class SessionLane:
                         logger.exception("SessionLane run failed: %s", e)
                         try:
                             collector.record_end(
-                                session_id, success=False, latency_sec=time.monotonic() - start
+                                session_id,
+                                success=False,
+                                latency_sec=time.monotonic() - start,
+                                task_id=turn_id,
                             )
                         except Exception:
                             pass
@@ -179,7 +194,8 @@ async def start_heartbeat_loop(
     lane: SessionLane | None = None,
 ) -> None:
     """Emit heartbeat envelopes every interval_seconds. Lane must have run_fn set (e.g. via set_run_fn).
-    Heartbeat is typically suppressed in run_fn unless there is pending work."""
+    Heartbeat is typically suppressed in run_fn unless there is pending work.
+    """
     from src.core.input_router import normalize_heartbeat
 
     lane = lane or get_session_lane()

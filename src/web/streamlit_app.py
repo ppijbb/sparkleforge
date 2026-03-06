@@ -874,6 +874,34 @@ async def execute_research_stream(query: str, session_id: str):
                                 ("log", current_agent, f"오류: {error_msg}", "error")
                             )
 
+                        # 운영 메트릭 (Token savings) - 완료 시 한 번 표시
+                        report = node_state.get("token_savings_report")
+                        if report:
+                            st.session_state["last_token_savings_report"] = report
+                            parts = []
+                            if report.get("context_mode"):
+                                cm = report["context_mode"]
+                                parts.append(
+                                    f"Context-mode: {cm.get('reduction_percent', 0)}% reduction"
+                                )
+                            if report.get("compaction", {}).get("tokens_saved_total"):
+                                parts.append(
+                                    f"Compaction: {report['compaction']['tokens_saved_total']} tokens saved"
+                                )
+                            if report.get("tool_savings", {}).get("kept_out_bytes_total"):
+                                parts.append(
+                                    f"Tool kept out: {report['tool_savings']['kept_out_bytes_total']} bytes"
+                                )
+                            if parts:
+                                st.session_state.streaming_queue.put(
+                                    (
+                                        "log",
+                                        "system",
+                                        "Token savings: " + " | ".join(parts),
+                                        "complete",
+                                    )
+                                )
+
         # 완료 처리
         if st.session_state.research_status == "running":
             st.session_state.streaming_queue.put(("status", "completed"))
