@@ -122,6 +122,16 @@ from src.core.researcher_config import get_llm_config, get_mcp_config
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_mcp_tool_alias(tool_name: str) -> str:
+    """Normalize legacy MCP tool names to SEP-986-safe aliases."""
+    return (
+        tool_name.replace("::", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace(" ", "_")
+    )
+
 # 9대 혁신: ToolTrace 추적 시스템
 _tool_trace_manager = None
 
@@ -785,6 +795,9 @@ class UniversalMCPHub:
                     func = create_sync_func(tool_name, "code")
                 elif category_str == "academic":
                     func = create_sync_func(tool_name, "academic")
+                elif category_str == "business":
+                    # 전용 business executor가 없으면 일반 검색으로 graceful fallback
+                    func = create_sync_func("g-search", "search")
 
             if func is None:
                 logger.warning(
@@ -1611,6 +1624,13 @@ class UniversalMCPHub:
                 if not command:
                     logger.error(f"No command provided for stdio server {server_name}")
                     return False
+
+                # stdio MCP 서버는 현재 실행 중인 Python 인터프리터(.venv)를 강제로 사용
+                # 그래야 fastmcp/httpx 등 프로젝트 가상환경 의존성을 자식 프로세스가 동일하게 본다.
+                if command in {"python", "python3"}:
+                    import sys
+
+                    command = sys.executable
 
                 # 환경변수 처리 (github 등 env가 필요한 서버)
                 env_vars = server_config.get("env", {})
@@ -3988,12 +4008,16 @@ class UniversalMCPHub:
             # tool_name만 주어진 경우 Registry에서 찾기
             tool_info = self.registry.get_tool_info(tool_name)
 
+        # suffix 매칭으로 찾은 경우, MCP 호출 시 이 이름을 써야 함 (2단계 이상 :: 인 경우)
+        resolved_registered_name: str | None = None
+
         # tool_name으로 직접 찾기 실패 시, 모든 MCP 서버에서 server_name::tool_name 형식으로 찾기
         if not tool_info:
             for registered_name in self.registry.get_all_tool_names():
                 # 이미 전체 이름 형식이면 정확히 매칭
                 if "::" in tool_name and registered_name == tool_name:
                     tool_info = self.registry.get_tool_info(registered_name)
+                    resolved_registered_name = registered_name
                     logger.info(f"Found tool by exact match: {tool_name}")
                     break
                 # server_name::tool_name 형식에서 tool_name 부분만 추출하여 비교
@@ -4001,10 +4025,22 @@ class UniversalMCPHub:
                     _, original_tool_name = registered_name.split("::", 1)
                     if original_tool_name == tool_name:
                         tool_info = self.registry.get_tool_info(registered_name)
+                        resolved_registered_name = registered_name
                         logger.info(f"Found tool {tool_name} as {registered_name}")
+                        break
+                    # SEP-986 별칭: legacy 이름을 안전한 MCP 이름으로 정규화해 매칭
+                    if "::" in tool_name and original_tool_name == _normalize_mcp_tool_alias(
+                        tool_name
+                    ):
+                        tool_info = self.registry.get_tool_info(registered_name)
+                        resolved_registered_name = registered_name
+                        logger.info(
+                            f"Found tool {tool_name} as {registered_name} (SEP-986 alias)"
+                        )
                         break
                 elif registered_name == tool_name:
                     tool_info = self.registry.get_tool_info(registered_name)
+                    resolved_registered_name = registered_name
                     break
 
         if not tool_info:
@@ -4102,8 +4138,18 @@ class UniversalMCPHub:
             found_tool_name = tool_name
             mcp_info = None
 
-            # tool_info가 있으면 MCP 도구인지 확인하고 mcp_info 추출
-            if tool_info:
+            # suffix 매칭으로 등록명이 정해진 경우, 반드시 그 이름으로 server/tool 해석 (2단계 이상 :: 대응)
+            if resolved_registered_name and "::" in resolved_registered_name:
+                _server, _tool = resolved_registered_name.split("::", 1)
+                if self.registry.is_mcp_tool(resolved_registered_name):
+                    mcp_info = self.registry.get_mcp_server_info(resolved_registered_name)
+                    found_tool_name = resolved_registered_name
+                    logger.info(
+                        f"[MCP][exec.resolve] Using resolved name: {tool_name} -> {resolved_registered_name} (server={_server}, tool={_tool})"
+                    )
+
+            # tool_info가 있으면 MCP 도구인지 확인하고 mcp_info 추출 (아직 안 찾았을 때만)
+            if tool_info and not mcp_info:
                 # tool_info에서 mcp_server 정보 확인
                 mcp_server = tool_info.mcp_server
                 if mcp_server:
@@ -5263,6 +5309,26 @@ async def _execute_search_tool(
     start_time = time.time()
     query = parameters.get("query", "")
     max_results = parameters.get("max_results", 10) or parameters.get("num_results", 10)
+
+    # API 키 없으면 tavily/exa 스킵 (에러 대신 빈 결과 반환)
+    if tool_name == "tavily" and not os.getenv("TAVILY_API_KEY"):
+        logger.debug("TAVILY_API_KEY not set, skipping tavily")
+        return ToolResult(
+            success=True,
+            data={"results": [], "query": query, "count": 0},
+            error=None,
+            execution_time=time.time() - start_time,
+            confidence=0.0,
+        )
+    if tool_name == "exa" and not os.getenv("EXA_API_KEY"):
+        logger.debug("EXA_API_KEY not set, skipping exa")
+        return ToolResult(
+            success=True,
+            data={"results": [], "query": query, "count": 0},
+            error=None,
+            execution_time=time.time() - start_time,
+            confidence=0.0,
+        )
 
     # DuckDuckGo 요청 빈도 제한 (동시 요청 방지)
     global _ddg_last_request_time

@@ -21,3 +21,5 @@ reports
 temp
 .ruff_cache
 *.egg-info
+.cache
+.benchmarks

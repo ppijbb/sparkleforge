@@ -351,8 +351,11 @@ class ErrorHandler:
             if error_info.context and error_info.context.agent_id:
                 error_message = f"{output_manager._format_agent_name(error_info.context.agent_id)} {error_message}"
 
-            # 복구 제안 표시
-            if error_info.recovery_suggestions:
+            # UNKNOWN 범주의 일반론적 복구 제안은 CLI 출력에서 제외해 노이즈를 줄임
+            if (
+                error_info.recovery_suggestions
+                and error_info.category != ErrorCategory.UNKNOWN
+            ):
                 error_message += "\n💡 복구 제안:"
                 for i, suggestion in enumerate(error_info.recovery_suggestions[:3], 1):
                     error_message += f"\n  {i}. {suggestion}"

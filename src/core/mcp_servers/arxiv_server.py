@@ -458,7 +458,7 @@ def get_categories() -> Dict[str, Dict[str, str]]:
 
 def run():
     """Run the arXiv MCP server."""
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

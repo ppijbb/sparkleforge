@@ -260,7 +260,7 @@ class CreativityAgent:
             return filtered_insights
 
         except Exception as e:
-            logger.error(f"Failed to generate creative insights: {e}")
+            logger.debug(f"Failed to generate creative insights: {e}")
             return []
 
     async def _generate_insights_by_type(
@@ -284,7 +284,7 @@ class CreativityAgent:
                 return []
 
         except Exception as e:
-            logger.error(f"Failed to generate {creativity_type.value} insights: {e}")
+            logger.debug(f"Failed to generate {creativity_type.value} insights: {e}")
             return []
 
     async def _generate_analogical_insights(
@@ -361,7 +361,7 @@ class CreativityAgent:
             return insights
 
         except Exception as e:
-            logger.error(f"Failed to generate analogical insights: {e}")
+            logger.debug(f"Failed to generate analogical insights: {e}")
             return []
 
     async def _generate_cross_domain_insights(
@@ -450,7 +450,7 @@ class CreativityAgent:
             return insights
 
         except Exception as e:
-            logger.error(f"Failed to generate cross-domain insights: {e}")
+            logger.debug(f"Failed to generate cross-domain insights: {e}")
             return []
 
     async def _generate_lateral_insights(
@@ -528,7 +528,7 @@ class CreativityAgent:
             return insights
 
         except Exception as e:
-            logger.error(f"Failed to generate lateral insights: {e}")
+            logger.debug(f"Failed to generate lateral insights: {e}")
             return []
 
     async def _generate_convergent_insights(
@@ -606,7 +606,7 @@ class CreativityAgent:
             return insights
 
         except Exception as e:
-            logger.error(f"Failed to generate convergent insights: {e}")
+            logger.debug(f"Failed to generate convergent insights: {e}")
             return []
 
     async def _generate_divergent_insights(
@@ -684,7 +684,7 @@ class CreativityAgent:
             return insights
 
         except Exception as e:
-            logger.error(f"Failed to generate divergent insights: {e}")
+            logger.debug(f"Failed to generate divergent insights: {e}")
             return []
 
     def _filter_and_rank_insights(

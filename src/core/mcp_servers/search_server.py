@@ -429,7 +429,7 @@ async def search_news(input: NewsSearchInput) -> str:
 
 def run():
     """Run the search MCP server."""
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

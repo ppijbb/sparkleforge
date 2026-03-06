@@ -136,6 +136,34 @@
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/semantic_scholar/server.py"
       ]
+    },
+    "fetch_service": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/fetch_service/server.py"
+      ]
+    },
+    "element_extractor": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/element_extractor/server.py"
+      ]
+    },
+    "web_fetcher": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/web_fetcher/server.py"
+      ]
+    },
+    "duckduckgo_search": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/duckduckgo_search/server.py"
+      ]
     }
   },
   "_metadata": {

@@ -384,8 +384,11 @@ Respond in JSON format:
 
             code_parts.append("")
 
-            # 도구 함수 생성 (유효한 식별자로 정의, MCP에는 원래 tool_name 노출)
-            code_parts.append(f'@mcp.tool(name="{tool_name}")')
+            # 도구 함수 생성 (유효한 식별자로 정의). SEP-986: MCP 도구명은 [a-zA-Z0-9_.-]만 허용
+            mcp_tool_name = (
+                tool_name.replace("::", "_").replace("-", "_").replace(" ", "_")
+            )
+            code_parts.append(f'@mcp.tool(name="{mcp_tool_name}")')
             code_parts.append(f"async def {func_name}(input: {model_name}) -> str:")
             code_parts.append('    """')
             code_parts.append(f"    {tool_name} tool")
@@ -486,8 +489,10 @@ Respond in JSON format:
             code_parts.append('        return json.dumps({"error": error_msg})')
             code_parts.append("")
 
-        # 메인 실행 부분
-        code_parts.extend(['if __name__ == "__main__":', "    mcp.run()", ""])
+        # 메인 실행 부분 (show_banner=False로 FastMCP 배너 비활성화)
+        code_parts.extend(
+            ['if __name__ == "__main__":', "    mcp.run(show_banner=False)", ""]
+        )
 
         server_code = "\n".join(code_parts)
         logger.debug(

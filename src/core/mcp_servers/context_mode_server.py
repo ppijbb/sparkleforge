@@ -326,7 +326,7 @@ if FASTMCP_AVAILABLE:
 def run() -> None:
     """Run the context-mode MCP server."""
     if FASTMCP_AVAILABLE:
-        mcp.run()
+        mcp.run(show_banner=False)
     else:
         raise RuntimeError("FastMCP is not available; install fastmcp to run context-mode server.")
 

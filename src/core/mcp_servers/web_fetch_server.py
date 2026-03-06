@@ -294,7 +294,7 @@ async def search(input: SearchInput) -> str:
 
 def run():
     """Run the web fetch MCP server."""
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

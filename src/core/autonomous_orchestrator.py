@@ -1157,6 +1157,24 @@ class AutonomousOrchestrator:
                             tool_parameters = self._generate_tool_parameters(
                                 task, tool_name
                             )
+                            missing_required = tool_parameters.pop(
+                                "__missing_required__", []
+                            )
+                            if missing_required:
+                                logger.info(
+                                    "⏭️ Skipping tool %s due to missing required parameters: %s",
+                                    tool_name,
+                                    ", ".join(missing_required),
+                                )
+                                tool_attempts.append(
+                                    {
+                                        "tool": tool_name,
+                                        "success": False,
+                                        "error": f"Missing required parameters: {', '.join(missing_required)}",
+                                        "execution_time": 0.0,
+                                    }
+                                )
+                                continue
                             tool_result = await execute_tool(tool_name, tool_parameters)
 
                             tool_attempts.append(
@@ -2315,10 +2333,24 @@ class AutonomousOrchestrator:
         num_tasks: int,
         complexity: float,
     ) -> List[Dict[str, Any]]:
-        """초기 태스크 생성 (기존 로직)."""
-        # LLM으로 task 생성 (사전 조사 결과 포함)
+        """초기 태스크 생성 (기존 로직). Supervisor 피드백이 있으면 프롬프트에 반영."""
+        # 이전 계획 거절 시 피드백 주입 (피드백 루프 정상화)
+        plan_iteration = state.get("plan_iteration", 0)
+        plan_feedback = state.get("plan_feedback") or ""
+        feedback_block = ""
+        if plan_iteration > 0 and plan_feedback:
+            feedback_block = f"""
+        [PREVIOUS PLAN REJECTED - YOU MUST ADDRESS THIS]
+        The previous plan was rejected. Reason and required changes:
+        {plan_feedback}
+        Revise your task decomposition to explicitly address the above. Do not repeat the same plan.
+        """
+
+        # LLM으로 task 생성 (사전 조사 결과 + 피드백 반영)
         decomposition_prompt = f"""
         Based on preliminary research, decompose the research into {num_tasks} specific, executable tasks:
+        {feedback_block}
+        CRITICAL REQUIREMENT: If the research request lacks essential parameters (e.g., specific location, timeframe) needed for search tools to function accurately, your FIRST task MUST be a context_resolution task to infer or prompt for this missing information (e.g., infer default location or add a step to resolve "user location" before weather/data collection). Do not assume tools can infer location automatically.
         
         Research Request: {state.get("user_request", "")}
         Objectives: {state.get("analyzed_objectives", [])}
@@ -2335,7 +2367,7 @@ class AutonomousOrchestrator:
             "task_id": "task_1",
             "name": "Specific task name",
             "description": "Detailed task description",
-            "type": "academic|market|technical|data|synthesis",
+            "type": "academic|market|technical|data|synthesis|context_resolution",
             "assigned_agent_type": "academic_researcher|market_analyst|technical_researcher|data_collector|synthesis_specialist",
             "required_tools": ["g-search", "arxiv", "tavily"],
             "dependencies": ["task_0"],
@@ -2351,7 +2383,7 @@ class AutonomousOrchestrator:
         result = await execute_llm_task(
             prompt=decomposition_prompt,
             task_type=TaskType.PLANNING,
-            system_message="You are an expert research project manager with deep knowledge of task decomposition and resource allocation.",
+            system_message="You are an expert research project manager with deep knowledge of task decomposition and resource allocation. You must proactively identify missing dependencies (e.g., location, time) and add resolution tasks before data-collection tasks when the user request does not specify them.",
         )
 
         # Task 결과 파싱
@@ -3088,6 +3120,7 @@ class AutonomousOrchestrator:
             "tavily": {"query": True},
             "exa": {"query": True},
             "ddg_search::search": {"query": True},
+            "ddg_search::fetch_content": {"q": True},
             "tavily-mcp::tavily-search": {"query": True},
             "exa::web_search_exa": {"query": True},
             "WebSearch-MCP::web_search": {"query": True},
@@ -3108,11 +3141,13 @@ class AutonomousOrchestrator:
 
         requirements = tool_requirements.get(tool_key, {})
 
+        missing_required: List[str] = []
+
         # 필수 파라미터 체크 및 자동 생성
         for param_name, is_required in requirements.items():
             if is_required and not parameters.get(param_name):
                 # 검색어 자동 생성
-                if param_name in ["query", "title"]:
+                if param_name in ["query", "title", "q"]:
                     if combined_text:
                         # task name에서 핵심 키워드 추출
                         # 간단한 키워드 추출: 긴 문장을 요약하거나 핵심 키워드만 사용
@@ -3130,6 +3165,8 @@ class AutonomousOrchestrator:
                         logger.info(
                             f"✅ Auto-generated {param_name} from fallback for {tool_name}: '{query}'"
                         )
+                else:
+                    missing_required.append(param_name)
 
         # 기본값 설정
         if "max_results" not in parameters and tool_key in [
@@ -3141,6 +3178,9 @@ class AutonomousOrchestrator:
             parameters["max_results"] = 10
         if "num_results" not in parameters and "exa" in tool_key:
             parameters["num_results"] = parameters.get("max_results", 10)
+
+        if missing_required:
+            parameters["__missing_required__"] = missing_required
 
         return parameters
 

@@ -1188,7 +1188,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enabled=get_optional_env("MCP_ENABLED", True, bool),
         server_names=get_optional_list_env(
             "MCP_SERVER_NAMES",
-            ["g-search", "tavily", "exa", "fetch", "filesystem", "python_coder", "code_interpreter", "arxiv", "scholar", "crunchbase", "linkedin"],
+            ["g-search", "tavily", "exa", "fetch", "filesystem", "python_coder", "code_interpreter", "arxiv", "scholar"],
         ),
         connection_timeout=get_optional_env("MCP_TIMEOUT", 30, int),
         enable_plugin_architecture=get_optional_env("ENABLE_PLUGIN_ARCHITECTURE", True, bool),
@@ -1209,7 +1209,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
             "MCP_ACADEMIC_TOOLS", ["arxiv", "scholar"]
         ),
         business_tools=get_optional_list_env(
-            "MCP_BUSINESS_TOOLS", ["crunchbase", "linkedin"]
+            "MCP_BUSINESS_TOOLS", ["g-search"]
         ),
         builder_enabled=get_optional_env("MCP_BUILDER_ENABLED", True, bool),
         builder_temp_dir=get_optional_env("MCP_BUILDER_TEMP_DIR", "temp/mcp_servers"),

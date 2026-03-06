@@ -750,7 +750,7 @@ async def copy_path(input: CopyInput) -> str:
 def run():
     """Run the filesystem MCP server."""
     load_config()
-    mcp.run()
+    mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":
