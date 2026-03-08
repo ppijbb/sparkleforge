@@ -9,7 +9,12 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,7 @@ class Skill:
     instructions: str
     overview: str
     usage: str
+    examples: str = ""
     scripts: List[str] = field(default_factory=list)
     resources: List[str] = field(default_factory=list)
     skill_path: Path = None
@@ -107,6 +113,7 @@ class SkillLoader:
                 instructions=parsed.get("instructions", ""),
                 overview=parsed.get("overview", ""),
                 usage=parsed.get("usage", ""),
+                examples=parsed.get("examples", ""),
                 skill_path=skill_path,
             )
 
@@ -123,6 +130,7 @@ class SkillLoader:
             "overview": "",
             "instructions": "",
             "usage": "",
+            "examples": "",
             "dependencies": [],
             "capabilities": [],
             "metadata": {},
@@ -142,6 +150,10 @@ class SkillLoader:
         # Usage 추출
         if "## Usage" in sections:
             parsed["usage"] = sections["## Usage"].strip()
+
+        # Examples 추출 (Few-shot 주입용)
+        if "## Examples" in sections:
+            parsed["examples"] = sections["## Examples"].strip()
 
         # Capabilities 추출
         if "## Capabilities" in sections:
@@ -288,3 +300,105 @@ class SkillLoader:
                     logger.warning(f"Failed to load resource {resource_path}: {e}")
 
         return resources
+
+    # --- 글로벌 룰 파일 (.cursorrules, .agentrules, .cursor/rules/*.mdc) ---
+
+    GLOBAL_RULE_FILENAMES = (".cursorrules", ".agentrules")
+
+    def load_global_rule_file(self, file_path: Path) -> Optional[Skill]:
+        """단일 글로벌 룰 파일(.cursorrules, .agentrules)을 Skill로 로드."""
+        if not file_path.is_file():
+            return None
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning("Failed to read global rule file %s: %s", file_path, e)
+            return None
+        name = file_path.name
+        skill_id = name if name in self.GLOBAL_RULE_FILENAMES else file_path.stem
+        metadata = SkillMetadata(
+            skill_id=skill_id,
+            name=skill_id.replace("_", " ").title(),
+            description=f"Global rules from {name}",
+            version="1.0.0",
+            category="global_rules",
+            tags=["global", "rules"],
+            author="Unknown",
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat(),
+            path=str(file_path),
+            enabled=True,
+            dependencies=[],
+            required_tools=[],
+            capabilities=[],
+        )
+        return Skill(
+            metadata=metadata,
+            instructions=content.strip(),
+            overview="",
+            usage="",
+            examples="",
+            skill_path=None,
+        )
+
+    def _parse_mdc_content(self, content: str) -> Dict[str, Any]:
+        """Cursor .mdc 규칙 파일 파싱 (선택적 YAML frontmatter + 본문)."""
+        result: Dict[str, Any] = {"instructions": "", "name": "", "description": ""}
+        if not content.strip():
+            return result
+        parts = content.strip().split("\n")
+        if parts[0].strip() == "---":
+            end = 1
+            while end < len(parts) and parts[end].strip() != "---":
+                end += 1
+            if end < len(parts):
+                if yaml:
+                    try:
+                        fm = yaml.safe_load("\n".join(parts[1:end]))
+                        if isinstance(fm, dict):
+                            result["name"] = fm.get("name", "")
+                            result["description"] = fm.get("description", "")
+                    except Exception:
+                        pass
+                result["instructions"] = "\n".join(parts[end + 1 :]).strip()
+            else:
+                result["instructions"] = content.strip()
+        else:
+            result["instructions"] = content.strip()
+        return result
+
+    def load_mdc_rule_file(self, file_path: Path) -> Optional[Skill]:
+        """Cursor 규칙 파일 .cursor/rules/*.mdc 를 Skill로 로드."""
+        if not file_path.is_file() or file_path.suffix.lower() != ".mdc":
+            return None
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning("Failed to read .mdc rule file %s: %s", file_path, e)
+            return None
+        parsed = self._parse_mdc_content(content)
+        skill_id = file_path.stem
+        metadata = SkillMetadata(
+            skill_id=skill_id,
+            name=parsed.get("name") or skill_id.replace("_", " ").title(),
+            description=parsed.get("description", f"Cursor rule: {skill_id}"),
+            version="1.0.0",
+            category="cursor_rules",
+            tags=["cursor", "rules"],
+            author="Unknown",
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat(),
+            path=str(file_path),
+            enabled=True,
+            dependencies=[],
+            required_tools=[],
+            capabilities=[],
+        )
+        return Skill(
+            metadata=metadata,
+            instructions=parsed.get("instructions", ""),
+            overview="",
+            usage="",
+            examples="",
+            skill_path=None,
+        )

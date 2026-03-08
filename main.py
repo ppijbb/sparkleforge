@@ -1623,8 +1623,21 @@ EXAMPLES:
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--skills",
+        type=str,
+        default=None,
+        metavar="ID1,ID2",
+        help="Comma-separated skill IDs to force-enable and inject into prompts (e.g. data_analyst,cursorrules)",
+    )
 
     args = parser.parse_args()
+
+    # --skills: 강제 주입할 스킬 설정 (run/query 전에 적용)
+    skills_arg = getattr(args, "skills", None)
+    if skills_arg:
+        from src.core.skills_manager import get_skill_manager
+        get_skill_manager().set_forced_skills([s.strip() for s in skills_arg.split(",")])
 
     # 하위 호환성 처리
     if args.legacy_request:

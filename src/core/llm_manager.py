@@ -2525,6 +2525,57 @@ def get_llm_orchestrator() -> "MultiModelOrchestrator":
     return _llm_orchestrator
 
 
+def _build_active_skills_system_block(
+    system_message: str | None, prompt: str, kwargs: Dict[str, Any]
+) -> str:
+    """SkillManager/Selector에서 활성 스킬을 수집해 system_message 하단에 [Active Agent Skills & Rules] 블록을 붙인다."""
+    try:
+        from src.core.skills_manager import get_skill_manager
+        from src.core.skills_selector import get_skill_selector
+    except ImportError:
+        return system_message or ""
+
+    sm = get_skill_manager()
+    parts: List[str] = []
+
+    # 1) CLI --skills로 지정된 스킬 (우선)
+    for skill_id in sm.get_forced_skills():
+        skill = sm.load_skill(skill_id)
+        if skill and skill.instructions:
+            parts.append(f"[{skill_id}]\n{skill.instructions}")
+            if getattr(skill, "examples", None):
+                parts.append(f"Examples:\n{skill.examples}")
+
+    # 2) 글로벌 룰 (.cursorrules, .agentrules, .cursor/rules/*.mdc)
+    for skill in sm.get_global_rules_skills():
+        if skill.instructions:
+            parts.append(f"[{skill.metadata.skill_id}]\n{skill.instructions}")
+
+    # 3) 현재 prompt/query 기준 선택 스킬 (중복 제외)
+    seen_ids = set(sm.get_forced_skills()) | {
+        s.metadata.skill_id for s in sm.get_global_rules_skills()
+    }
+    query_for_selector = kwargs.get("user_query") or prompt[:500] if prompt else ""
+    if query_for_selector:
+        for match in get_skill_selector().select_skills_for_task(
+            query_for_selector, max_skills=3
+        ):
+            if match.skill_id in seen_ids:
+                continue
+            seen_ids.add(match.skill_id)
+            skill = sm.load_skill(match.skill_id)
+            if skill and skill.instructions:
+                parts.append(f"[{match.skill_id}]\n{skill.instructions}")
+                if getattr(skill, "examples", None):
+                    parts.append(f"Examples:\n{skill.examples}")
+
+    if not parts:
+        return system_message or ""
+
+    block = "\n\n---\n\n[Active Agent Skills & Rules]\n\n" + "\n\n".join(parts)
+    return (system_message or "") + block
+
+
 @refine_llm_call
 async def execute_llm_task(
     prompt: str,
@@ -2537,6 +2588,9 @@ async def execute_llm_task(
 ) -> ModelResult:
     """LLM 작업 실행 (API 모델 + CLI 에이전트 지원)."""
     try:
+        system_message = _build_active_skills_system_block(
+            system_message, prompt, kwargs
+        )
         if not agent_name:
             from src.core.agent_security import get_current_agent_name
             agent_name = get_current_agent_name()
