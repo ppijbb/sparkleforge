@@ -125,7 +125,7 @@ class SkillLoader:
             return None
 
     def _parse_skill_md(self, content: str) -> Dict[str, Any]:
-        """SKILL.md 파일 파싱."""
+        """SKILL.md 파일 파싱. Agent Skills Spec 호환: YAML frontmatter(---) 우선 파싱."""
         parsed = {
             "overview": "",
             "instructions": "",
@@ -134,10 +134,29 @@ class SkillLoader:
             "dependencies": [],
             "capabilities": [],
             "metadata": {},
+            "frontmatter": {},
+            "name": "",
+            "description": "",
         }
 
+        content_to_parse = content
+        if content.strip().startswith("---"):
+            parts = content.strip().split("---", 2)
+            if len(parts) >= 3 and yaml:
+                try:
+                    frontmatter = yaml.safe_load(parts[1].strip())
+                    if isinstance(frontmatter, dict):
+                        parsed["frontmatter"] = frontmatter
+                        parsed["name"] = str(frontmatter.get("name", "")).strip()
+                        parsed["description"] = str(
+                            frontmatter.get("description", "")
+                        ).strip()
+                except Exception as e:
+                    logger.debug("YAML frontmatter parse skipped: %s", e)
+                content_to_parse = parts[2].strip()
+
         # 섹션 분리
-        sections = self._split_sections(content)
+        sections = self._split_sections(content_to_parse)
 
         # Overview 추출
         if "## Overview" in sections:
@@ -174,8 +193,10 @@ class SkillLoader:
                     deps.append(line.strip()[1:].strip())
             parsed["dependencies"] = deps
 
-        # Metadata 추출 (JSON 블록)
-        metadata_match = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
+        # Metadata 추출 (JSON 블록) - body 기준
+        metadata_match = re.search(
+            r"```json\s*(\{.*?\})\s*```", content_to_parse, re.DOTALL
+        )
         if metadata_match:
             try:
                 parsed["metadata"] = json.loads(metadata_match.group(1))
@@ -228,13 +249,20 @@ class SkillLoader:
             except Exception as e:
                 logger.warning(f"Failed to load registry metadata: {e}")
 
-        # 우선순위: parsed metadata > registry metadata > 기본값
+        # 우선순위: frontmatter (Agent Skills Spec) > parsed metadata > registry > 기본값
+        frontmatter = parsed.get("frontmatter") or {}
         return SkillMetadata(
             skill_id=metadata_json.get("skill_id")
             or registry_metadata.get("skill_id")
             or skill_id,
-            name=registry_metadata.get("name", skill_id.replace("_", " ").title()),
-            description=registry_metadata.get("description", ""),
+            name=parsed.get("name")
+            or frontmatter.get("name")
+            or registry_metadata.get("name")
+            or skill_id.replace("_", " ").title(),
+            description=parsed.get("description")
+            or frontmatter.get("description")
+            or registry_metadata.get("description")
+            or "",
             version=metadata_json.get("version")
             or registry_metadata.get("version", "1.0.0"),
             category=metadata_json.get("category")

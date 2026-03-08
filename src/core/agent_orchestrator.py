@@ -51,6 +51,8 @@ from src.core.shared_memory import MemoryScope, get_shared_memory
 from src.core.skills_loader import Skill
 from src.core.skills_manager import get_skill_manager
 from src.core.skills_selector import get_skill_selector
+from src.core.dynamic_sub_agent_factory import DynamicSubAgentFactory
+from src.core.sub_agent_manager import get_sub_agent_manager
 
 # prompt refiner는 execute_llm_task의 decorator에서 자동 적용됨
 
@@ -6750,6 +6752,11 @@ class AgentOrchestrator:
         workflow.add_node(
             "parallel_executor", self._parallel_executor_node
         )  # New parallel executor
+        # Phase 2: 동적 서브 에이전트 노드 (Planner 결과 기반 SubAgentManager 연동)
+        workflow.add_node(
+            "dynamic_executor",
+            self._dynamic_executor_node,
+        )
         workflow.add_node("verifier", self._verifier_node)  # Legacy
         workflow.add_node(
             "parallel_verifier", self._parallel_verifier_node
@@ -6757,11 +6764,11 @@ class AgentOrchestrator:
         workflow.add_node("generator", self._generator_node)
         workflow.add_node("end", self._end_node)
 
-        # Define edges - Sparkle-first then planner, 병렬 실행 노드 사용
+        # Define edges - Sparkle-first then planner, 동적 서브 에이전트 노드 사용
         workflow.set_entry_point("sparkle")
         workflow.add_edge("sparkle", "planner")
-        workflow.add_edge("planner", "parallel_executor")  # 병렬 실행 사용
-        workflow.add_edge("parallel_executor", "parallel_verifier")  # 병렬 검증 사용
+        workflow.add_edge("planner", "dynamic_executor")
+        workflow.add_edge("dynamic_executor", "parallel_verifier")
         workflow.add_edge("parallel_verifier", "generator")
         workflow.add_edge("generator", "end")
 
@@ -6878,6 +6885,20 @@ class AgentOrchestrator:
         ):
             return await self._parallel_executor_node_impl(state)
 
+    async def _dynamic_executor_node(self, state: AgentState) -> AgentState:
+        """동적 서브 에이전트 노드: Planner 결과 기반으로 SubAgentManager 네트워크 생성 후 병렬 실행."""
+        logger.info("=" * 80)
+        logger.info("🟢 [WORKFLOW] → Dynamic Executor Node (sub-agent network)")
+        logger.info("=" * 80)
+        with start_agent_span(
+            "dynamic_executor",
+            "dynamic_executor",
+            input={"session_id": state.get("session_id")},
+        ):
+            result = await self._parallel_executor_node_impl(state)
+            result["current_agent"] = "dynamic_executor"
+            return result
+
     async def _parallel_executor_node_impl(self, state: AgentState) -> AgentState:
         """Inner implementation of parallel executor (for agent span wrapping)."""
         sec = get_agent_security_manager()
@@ -6913,6 +6934,37 @@ class AgentOrchestrator:
         if not tasks:
             logger.warning("[WORKFLOW] No tasks found, falling back to single executor")
             return await self._executor_node(state)
+
+        # Dynamic sub-agent network: create agents from plan and delegate tasks
+        task_id_to_sub_agent: Dict[str, Any] = {}
+        try:
+            session_id = state.get("session_id") or "default"
+            factory = DynamicSubAgentFactory(
+                sub_agent_manager=get_sub_agent_manager(),
+                skill_manager=self.skill_manager,
+            )
+            plan = {"tasks": tasks, "coordinator": "planner"}
+            dynamic_agents = await factory.create_agents_from_plan(
+                plan,
+                network_id=session_id,
+                parent_agent_id="planner",
+                coordinator_name="planner",
+            )
+            for i, agent in enumerate(dynamic_agents):
+                if i < len(tasks):
+                    tid = tasks[i].get("task_id")
+                    if tid:
+                        task_id_to_sub_agent[tid] = agent
+            sam = get_sub_agent_manager()
+            if session_id in sam.networks:
+                for i, task in enumerate(tasks):
+                    tid = task.get("task_id")
+                    if tid and tid in task_id_to_sub_agent:
+                        await sam.delegate_task(
+                            session_id, "planner", task_id_to_sub_agent[tid].agent_id, task
+                        )
+        except Exception as e:
+            logger.debug("Dynamic sub-agent network setup skipped: %s", e)
 
         # Subagent context firewall: planner -> executor distilled context
         try:
@@ -7046,7 +7098,13 @@ class AgentOrchestrator:
             )
             for (idx, task), result in zip(ready, executor_results):
                 tid = task.get("task_id", "unknown")
+                sub_agent = task_id_to_sub_agent.get(tid)
                 if isinstance(result, Exception):
+                    if sub_agent:
+                        try:
+                            sub_agent.fail_task(tid, str(result))
+                        except Exception:
+                            pass
                     logger.error(
                         f"[WORKFLOW] ExecutorAgent {idx} raised exception: {result}"
                     )
@@ -7055,6 +7113,19 @@ class AgentOrchestrator:
                     communication_stats["communication_errors"] += 1
                     completed_ids.add(tid)
                 elif isinstance(result, dict):
+                    if sub_agent:
+                        try:
+                            sub_agent.complete_task(
+                                tid,
+                                {
+                                    "success": not result.get("research_failed", False),
+                                    "research_results": result.get(
+                                        "research_results", []
+                                    ),
+                                },
+                            )
+                        except Exception:
+                            pass
                     task_results = result.get("research_results", [])
                     if task_results:
                         all_results.extend(task_results)
@@ -7079,6 +7150,35 @@ class AgentOrchestrator:
                             errors.append(result["error"])
                             communication_stats["communication_errors"] += 1
                     completed_ids.add(tid)
+
+            # 능동적 스킬 동적 주입: 이번 웨이브 결과에서 새 도메인/컨텍스트 기반 추가 스킬 로드
+            try:
+                context_parts = []
+                for (_idx, _task), res in zip(ready, executor_results):
+                    if isinstance(res, dict):
+                        for r in res.get("research_results", [])[:2]:
+                            if isinstance(r, dict) and r.get("content"):
+                                context_parts.append(str(r.get("content", ""))[:300])
+                            elif isinstance(r, str):
+                                context_parts.append(r[:300])
+                if context_parts:
+                    intermediate_context = " ".join(context_parts)[:1500]
+                    skill_selector = get_skill_selector()
+                    additional = await skill_selector.select_skills_proactively(
+                        intermediate_context,
+                        context={"session_id": state.get("session_id"), "wave": wave_num},
+                        max_skills=2,
+                    )
+                    for m in additional:
+                        if m.skill_id not in selected_skills:
+                            extra = self.skill_manager.load_skill(m.skill_id)
+                            if extra:
+                                selected_skills[m.skill_id] = extra
+                                logger.info(
+                                    "[WORKFLOW] Dynamic skill injection: %s", m.skill_id
+                                )
+            except Exception as e:
+                logger.debug("Dynamic skill injection skipped: %s", e)
 
         # 통합된 상태 생성
         final_state = state.copy()
@@ -7513,6 +7613,20 @@ class AgentOrchestrator:
             f"Failed: {state.get('research_failed') or state.get('verification_failed') or state.get('report_failed')}"
         )
         logger.info("=" * 80)
+
+        # 서브 에이전트 성과 영속 저장
+        try:
+            from src.core.sub_agent_manager import SubAgentPerformanceStore
+
+            store = SubAgentPerformanceStore()
+            sam = get_sub_agent_manager()
+            for agent_id, agent in list(sam.agent_registry.items()):
+                try:
+                    store.record_performance(agent)
+                except Exception as e:
+                    logger.debug("SubAgent performance record skipped for %s: %s", agent_id, e)
+        except Exception as e:
+            logger.debug("SubAgentPerformanceStore recording skipped: %s", e)
 
         # Token savings report (post-task)
         try:

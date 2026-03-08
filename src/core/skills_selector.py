@@ -2,12 +2,14 @@
 
 작업 요청 시 관련 Skills를 자동으로 감지 및 로드하는 시스템.
 Semantic matching과 의존성 그래프를 활용.
+LLM 기반 능동적 스킬 선택(select_skills_proactively) 지원.
 """
 
+import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from src.core.skills_loader import Skill, SkillMetadata
 from src.core.skills_manager import SkillManager, get_skill_manager
@@ -67,6 +69,90 @@ class SkillSelector:
             f"Selected {len(selected_skills)} skills: {[s.skill_id for s in selected_skills]}"
         )
         return selected_skills
+
+    async def select_skills_proactively(
+        self, query: str, context: Dict[str, Any] | None = None, max_skills: int = 5
+    ) -> List[SkillMatch]:
+        """LLM이 스킬 목록을 보고 능동적으로 필요한 스킬을 선택."""
+        available = self.skill_manager.get_all_skills(enabled_only=True)
+        if not available:
+            return []
+
+        skill_catalog = "\n".join(
+            f"- {s.skill_id}: {s.description} (caps: {', '.join(s.capabilities or [])})"
+            for s in available
+        )
+        context_str = ""
+        if context:
+            try:
+                context_str = json.dumps(context, default=str, ensure_ascii=False)[:2000]
+            except Exception:
+                context_str = str(context)[:2000]
+
+        prompt = f"""Given the user query and optional context, select the most relevant skills from the catalog.
+User query: {query}
+Context (if any): {context_str}
+
+Available skills:
+{skill_catalog}
+
+Return a JSON array only, no other text. Each item: {{"skill_id": "<id>", "reason": "<short reason>", "priority": 1-5}}.
+Select at most {max_skills} skills, ordered by relevance (priority 5 = most relevant)."""
+
+        try:
+            from src.core.llm_manager import TaskType, execute_llm_task
+
+            result = await execute_llm_task(
+                prompt=prompt,
+                task_type=TaskType.ANALYSIS,
+                model_name=None,
+                system_message="You are a skill selector. Output only valid JSON array.",
+            )
+            text = (result.content or "").strip()
+            # Extract JSON array from response
+            start = text.find("[")
+            if start == -1:
+                return []
+            depth = 0
+            end = start
+            for i, c in enumerate(text[start:], start=start):
+                if c == "[":
+                    depth += 1
+                elif c == "]":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if depth != 0:
+                return []
+            json_str = text[start : end + 1]
+            items = json.loads(json_str)
+        except Exception as e:
+            logger.warning("select_skills_proactively LLM parse failed: %s", e)
+            return self.select_skills_for_task(query, max_skills=max_skills)
+
+        matches: List[SkillMatch] = []
+        for item in items[:max_skills]:
+            if not isinstance(item, dict):
+                continue
+            skill_id = item.get("skill_id") or item.get("id") or ""
+            if not skill_id:
+                continue
+            metadata = self.skill_manager.get_skill_by_id(skill_id)
+            if not metadata or not metadata.enabled:
+                continue
+            priority = int(item.get("priority", 3))
+            score = priority / 5.0
+            reason = item.get("reason", "LLM selected")
+            matches.append(
+                SkillMatch(
+                    skill_id=skill_id,
+                    score=score,
+                    reasons=[reason],
+                    metadata=metadata,
+                )
+            )
+        return self._add_dependencies(matches)
 
     def _build_keyword_map(self) -> Dict[str, List[str]]:
         """키워드 맵 구축."""
