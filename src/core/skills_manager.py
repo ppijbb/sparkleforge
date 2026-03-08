@@ -42,11 +42,15 @@ class SkillManager:
         self.registry: SkillRegistry | None = None
         self.loaded_skills: Dict[str, Skill] = {}  # 캐시
         self.skill_metadata_cache: Dict[str, SkillMetadata] = {}
+        self.global_rules_cache: Dict[str, Skill] = {}  # 글로벌 룰 파일 캐시
+        self._forced_skill_ids: List[str] = []  # CLI --skills로 지정된 스킬 (우선 주입)
 
         # 레지스트리 로드
         self._load_registry()
         # Skills 스캔
         self._scan_skills()
+        # 글로벌 룰 스캔 (.cursorrules, .agentrules, .cursor/rules/*.mdc)
+        self._scan_global_rules()
 
     def _load_registry(self):
         """skills_registry.json 로드."""
@@ -139,6 +143,39 @@ class SkillManager:
 
         logger.info(f"✅ Scanned {scanned_count} skills")
 
+    def _scan_global_rules(self):
+        """프로젝트 루트의 글로벌 룰 파일 스캔 및 캐싱."""
+        # .cursorrules, .agentrules
+        for name in SkillLoader.GLOBAL_RULE_FILENAMES:
+            path = self.project_root / name
+            if path.is_file():
+                skill = self.loader.load_global_rule_file(path)
+                if skill:
+                    sid = skill.metadata.skill_id
+                    self.skill_metadata_cache[sid] = skill.metadata
+                    self.global_rules_cache[sid] = skill
+                    logger.debug("Loaded global rule file: %s -> %s", name, sid)
+
+        # .cursor/rules/*.mdc
+        cursor_rules_dir = self.project_root / ".cursor" / "rules"
+        if cursor_rules_dir.is_dir():
+            for path in cursor_rules_dir.iterdir():
+                if path.is_file() and path.suffix.lower() == ".mdc":
+                    skill = self.loader.load_mdc_rule_file(path)
+                    if skill:
+                        sid = f"cursor_rule_{path.stem}"
+                        skill.metadata.skill_id = sid
+                        self.skill_metadata_cache[sid] = skill.metadata
+                        self.global_rules_cache[sid] = skill
+                        logger.debug("Loaded .mdc rule: %s -> %s", path.name, sid)
+
+        if self.global_rules_cache:
+            logger.info(
+                "✅ Scanned %d global rule(s): %s",
+                len(self.global_rules_cache),
+                list(self.global_rules_cache.keys()),
+            )
+
     def get_all_skills(self, enabled_only: bool = False) -> List[SkillMetadata]:
         """모든 Skills 메타데이터 반환."""
         skills = list(self.skill_metadata_cache.values())
@@ -166,6 +203,10 @@ class SkillManager:
 
     def load_skill(self, skill_id: str, force_reload: bool = False) -> Skill | None:
         """Skill을 로드 (lazy loading with caching)."""
+        # 글로벌 룰 캐시 우선
+        if not force_reload and skill_id in self.global_rules_cache:
+            return self.global_rules_cache[skill_id]
+
         # 캐시 확인
         if not force_reload and skill_id in self.loaded_skills:
             logger.debug(f"Using cached skill: {skill_id}")
@@ -181,7 +222,7 @@ class SkillManager:
             logger.warning(f"Skill {skill_id} is disabled")
             return None
 
-        # Skill 로드
+        # 글로벌 룰은 이미 캐시에 있음; 일반 스킬만 loader에서 로드
         skill = self.loader.load_skill(skill_id)
         if skill:
             self.loaded_skills[skill_id] = skill
@@ -260,11 +301,26 @@ class SkillManager:
     def refresh_registry(self):
         """레지스트리 새로고침 (스캔 재수행)."""
         self._scan_skills()
+        self._scan_global_rules()
 
     def clear_cache(self):
         """로드된 Skills 캐시 지우기."""
         self.loaded_skills.clear()
         logger.info("✅ Cleared skills cache")
+
+    def get_global_rules_skills(self) -> List[Skill]:
+        """캐시된 글로벌 룰 Skill 목록 반환 (LLM 주입용)."""
+        return list(self.global_rules_cache.values())
+
+    def set_forced_skills(self, skill_ids: List[str]) -> None:
+        """CLI --skills로 지정된 스킬 ID 목록 설정 (우선 주입용)."""
+        self._forced_skill_ids = [s.strip() for s in skill_ids if s.strip()]
+        for sid in self._forced_skill_ids:
+            self.enable_skill(sid)
+
+    def get_forced_skills(self) -> List[str]:
+        """우선 주입할 스킬 ID 목록 반환."""
+        return list(self._forced_skill_ids)
 
 
 # 전역 SkillManager 인스턴스 (lazy initialization)
