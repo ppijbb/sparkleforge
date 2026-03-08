@@ -322,6 +322,12 @@ class SkillManager:
         """우선 주입할 스킬 ID 목록 반환."""
         return list(self._forced_skill_ids)
 
+    def get_trigger_optimizer(self):
+        """SkillTriggerOptimizer 인스턴스 반환 (eval/improve 루프)."""
+        from src.core.skill_trigger_optimizer import SkillTriggerOptimizer
+
+        return SkillTriggerOptimizer(skill_manager=self)
+
 
 # 전역 SkillManager 인스턴스 (lazy initialization)
 _skill_manager: SkillManager | None = None

@@ -277,7 +277,7 @@ class ProgressTracker:
         """에이전트가 현재 단계에 속하는지 확인."""
         stage_agent_types = {
             WorkflowStage.PLANNING: ["planner"],
-            WorkflowStage.EXECUTING: ["executor", "parallel_executor"],
+            WorkflowStage.EXECUTING: ["executor", "parallel_executor", "dynamic_executor"],
             WorkflowStage.VERIFYING: ["verifier", "parallel_verifier"],
             WorkflowStage.GENERATING: ["generator"],
         }

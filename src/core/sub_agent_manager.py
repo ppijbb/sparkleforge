@@ -5,12 +5,15 @@
 """
 
 import asyncio
+import json
 import logging
 import time
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Set
 
 logger = logging.getLogger(__name__)
@@ -95,10 +98,9 @@ class SubAgentContext:
 
     def add_task(self, task: Dict[str, Any]):
         """태스크 추가."""
-        task_id = str(uuid.uuid4())
-        task.update(
-            {"task_id": task_id, "assigned_at": time.time(), "status": "pending"}
-        )
+        if task.get("task_id") is None:
+            task["task_id"] = str(uuid.uuid4())
+        task.update({"assigned_at": time.time(), "status": "pending"})
         self.current_tasks.append(task)
         self.last_active = time.time()
 
@@ -785,6 +787,182 @@ class SubAgentManager:
             "collaborations": len(agent.collaboration_history),
             "uptime": time.time() - agent.created_at,
         }
+
+
+@dataclass
+class SubAgentPerformanceRecord:
+    """영속 저장용 서브 에이전트 성과 레코드."""
+
+    agent_name: str
+    role: str
+    specialization_area: str
+    capabilities: List[str]
+    assigned_skills: List[str]
+    total_tasks: int
+    success_rate: float
+    avg_execution_time: float
+    quality_scores: List[float]
+    created_at: str
+    last_used_at: str
+
+
+def _get_store_path() -> Path:
+    """SparkleForge 프로젝트 루트 기준 .sparkleforge 경로 반환."""
+    # src/core/sub_agent_manager.py -> SparkleForge root
+    root = Path(__file__).resolve().parent.parent.parent
+    return root / ".sparkleforge" / "sub_agent_performance.json"
+
+
+class SubAgentPerformanceStore:
+    """서브 에이전트 성과를 파일 기반으로 영속 저장/조회."""
+
+    def __init__(self, store_path: Path | None = None):
+        self.store_path = store_path or _get_store_path()
+        self._records: Dict[str, SubAgentPerformanceRecord] = {}
+        self._load()
+
+    def _load(self) -> None:
+        """파일에서 레코드 로드."""
+        if not self.store_path.exists():
+            self._records = {}
+            return
+        try:
+            with open(self.store_path, encoding="utf-8") as f:
+                data = json.load(f)
+            records_list = data.get("records", [])
+            self._records = {}
+            for r in records_list:
+                rec = SubAgentPerformanceRecord(
+                    agent_name=r["agent_name"],
+                    role=r["role"],
+                    specialization_area=r.get("specialization_area", ""),
+                    capabilities=r.get("capabilities", []),
+                    assigned_skills=r.get("assigned_skills", []),
+                    total_tasks=r.get("total_tasks", 0),
+                    success_rate=float(r.get("success_rate", 0.0)),
+                    avg_execution_time=float(r.get("avg_execution_time", 0.0)),
+                    quality_scores=list(r.get("quality_scores", [])),
+                    created_at=r.get("created_at", ""),
+                    last_used_at=r.get("last_used_at", ""),
+                )
+                self._records[rec.agent_name] = rec
+        except Exception as e:
+            logger.warning("SubAgentPerformanceStore load failed: %s", e)
+            self._records = {}
+
+    def _save(self) -> None:
+        """파일에 레코드 저장."""
+        self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            records_list = [
+                asdict(r) for r in self._records.values()
+            ]
+            with open(self.store_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"records": records_list, "updated_at": datetime.now(timezone.utc).isoformat()},
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+        except Exception as e:
+            logger.warning("SubAgentPerformanceStore save failed: %s", e)
+
+    def record_performance(self, agent: SubAgentContext) -> None:
+        """서브 에이전트 성과 기록 (병합)."""
+        if agent.config.role.value == "coordinator":
+            return
+        total = len(agent.completed_tasks)
+        if total == 0:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        execution_times = []
+        for t in agent.completed_tasks:
+            if t.get("completed_at") and t.get("assigned_at"):
+                execution_times.append(
+                    t["completed_at"] - t["assigned_at"]
+                )
+        avg_time = sum(execution_times) / len(execution_times) if execution_times else 0.0
+        quality_scores = [
+            1.0 if t.get("success") else 0.0 for t in agent.completed_tasks
+        ]
+        rec = SubAgentPerformanceRecord(
+            agent_name=agent.agent_id,
+            role=agent.config.role.value,
+            specialization_area=agent.config.specialization_area or "",
+            capabilities=list(agent.config.capabilities),
+            assigned_skills=list(agent.knowledge_base.get("assigned_skills", [])),
+            total_tasks=total,
+            success_rate=agent.success_rate,
+            avg_execution_time=avg_time,
+            quality_scores=quality_scores,
+            created_at=now,
+            last_used_at=now,
+        )
+        existing = self._records.get(agent.agent_id)
+        if existing:
+            # 병합: 누적 태스크 수와 가중 평균
+            combined_tasks = existing.total_tasks + rec.total_tasks
+            if combined_tasks > 0:
+                rec = SubAgentPerformanceRecord(
+                    agent_name=rec.agent_name,
+                    role=rec.role,
+                    specialization_area=rec.specialization_area or existing.specialization_area,
+                    capabilities=rec.capabilities or existing.capabilities,
+                    assigned_skills=rec.assigned_skills or existing.assigned_skills,
+                    total_tasks=combined_tasks,
+                    success_rate=(
+                        existing.success_rate * existing.total_tasks
+                        + rec.success_rate * rec.total_tasks
+                    )
+                    / combined_tasks,
+                    avg_execution_time=(
+                        existing.avg_execution_time * existing.total_tasks
+                        + rec.avg_execution_time * rec.total_tasks
+                    )
+                    / combined_tasks,
+                    quality_scores=existing.quality_scores + rec.quality_scores,
+                    created_at=existing.created_at,
+                    last_used_at=rec.last_used_at,
+                )
+        self._records[agent.agent_id] = rec
+        self._save()
+
+    def get_top_agents(self, role: str, limit: int = 5) -> List[SubAgentPerformanceRecord]:
+        """역할별 고성과 에이전트 목록 (success_rate 내림차순)."""
+        candidates = [
+            r for r in self._records.values()
+            if r.role == role and r.total_tasks >= 1
+        ]
+        candidates.sort(key=lambda x: (x.success_rate, x.total_tasks), reverse=True)
+        return candidates[:limit]
+
+    def get_agent_template(self, name: str) -> SubAgentConfig | None:
+        """저장된 에이전트 이름으로 SubAgentConfig 템플릿 반환."""
+        rec = self._records.get(name)
+        if not rec:
+            return None
+        try:
+            role_enum = SubAgentRole(rec.role)
+        except ValueError:
+            role_enum = SubAgentRole.SPECIALIST
+        return SubAgentConfig(
+            role=role_enum,
+            name=name,
+            capabilities=rec.capabilities,
+            specialization_area=rec.specialization_area or None,
+        )
+
+    def prune_low_performers(self, threshold: float = 0.3) -> int:
+        """success_rate가 threshold 미만인 레코드 제거. 제거된 개수 반환."""
+        to_remove = [
+            k for k, r in self._records.items()
+            if r.total_tasks >= 3 and r.success_rate < threshold
+        ]
+        for k in to_remove:
+            del self._records[k]
+        if to_remove:
+            self._save()
+        return len(to_remove)
 
 
 # 전역 서브 에이전트 매니저 인스턴스
