@@ -1,11 +1,10 @@
 """Skills Selector - Automatic Skills identification and selection
 
 작업 요청 시 관련 Skills를 자동으로 감지 및 로드하는 시스템.
-Semantic matching과 의존성 그래프를 활용.
-LLM 기반 능동적 스킬 선택(select_skills_proactively) 지원.
+SkillRetriever (BM25 + FlashRank reranking) 기반 선택 및 의존성 그래프 활용.
 """
 
-import json
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -28,131 +27,93 @@ class SkillMatch:
 
 
 class SkillSelector:
-    """자동 Skills 식별 및 선택 클래스."""
+    """자동 Skills 식별 및 선택 클래스 (SkillRetriever + FlashRank 기반)."""
 
     def __init__(self, skill_manager: SkillManager | None = None):
         """초기화."""
         self.skill_manager = skill_manager or get_skill_manager()
-
-        # 키워드 기반 매칭을 위한 키워드 맵
         self.keyword_map = self._build_keyword_map()
+        self._retriever = None
+
+    def _get_retriever(self):
+        if self._retriever is None:
+            from src.core.skill_tree import (
+                HotSkillCache,
+                SkillRetriever,
+                get_skill_performance_tracker,
+            )
+            tracker = get_skill_performance_tracker()
+            hot_cache = HotSkillCache(self.skill_manager, max_size=50)
+            hot_cache.refresh(tracker)
+            self._retriever = SkillRetriever(
+                self.skill_manager,
+                hot_cache=hot_cache,
+                tracker=tracker,
+            )
+        return self._retriever
 
     def select_skills_for_task(
         self, query: str, max_skills: int = 5
     ) -> List[SkillMatch]:
-        """작업 쿼리에 필요한 Skills 자동 선택."""
+        """작업 쿼리에 필요한 Skills 자동 선택 (SkillRetriever + FlashRank)."""
         logger.info(f"Selecting skills for task: {query[:100]}")
+        try:
+            retriever = self._get_retriever()
 
-        # 1. 키워드 기반 매칭
+            async def _run() -> List[SkillMatch]:
+                return await retriever.retrieve(
+                    query, agent_skill_tree=None, top_k=max_skills
+                )
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is None:
+                matches = asyncio.run(_run())
+            else:
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    fut = pool.submit(asyncio.run, _run())
+                    matches = fut.result(timeout=30)
+            selected = self._add_dependencies(matches)
+            logger.info(
+                f"Selected {len(selected)} skills: {[s.skill_id for s in selected]}"
+            )
+            return selected
+        except Exception as e:
+            logger.warning("SkillRetriever path failed, using legacy matching: %s", e)
+            return self._select_skills_legacy(query, max_skills)
+
+    def _select_skills_legacy(self, query: str, max_skills: int) -> List[SkillMatch]:
+        """Legacy keyword/tag/description matching fallback."""
         keyword_matches = self._match_by_keywords(query)
-
-        # 2. 태그 기반 매칭
         tag_matches = self._match_by_tags(query)
-
-        # 3. 설명 기반 매칭 (semantic matching 간단 버전)
         description_matches = self._match_by_description(query)
-
-        # 4. 점수 통합
         all_matches = self._merge_matches(
             keyword_matches, tag_matches, description_matches
         )
-
-        # 5. 상위 N개 선택
         top_matches = sorted(all_matches, key=lambda x: x.score, reverse=True)[
             :max_skills
         ]
-
-        # 6. 의존성 추가
-        selected_skills = self._add_dependencies(top_matches)
-
-        logger.info(
-            f"Selected {len(selected_skills)} skills: {[s.skill_id for s in selected_skills]}"
-        )
-        return selected_skills
+        return self._add_dependencies(top_matches)
 
     async def select_skills_proactively(
         self, query: str, context: Dict[str, Any] | None = None, max_skills: int = 5
     ) -> List[SkillMatch]:
-        """LLM이 스킬 목록을 보고 능동적으로 필요한 스킬을 선택."""
-        available = self.skill_manager.get_all_skills(enabled_only=True)
-        if not available:
-            return []
-
-        skill_catalog = "\n".join(
-            f"- {s.skill_id}: {s.description} (caps: {', '.join(s.capabilities or [])})"
-            for s in available
-        )
-        context_str = ""
-        if context:
-            try:
-                context_str = json.dumps(context, default=str, ensure_ascii=False)[:2000]
-            except Exception:
-                context_str = str(context)[:2000]
-
-        prompt = f"""Given the user query and optional context, select the most relevant skills from the catalog.
-User query: {query}
-Context (if any): {context_str}
-
-Available skills:
-{skill_catalog}
-
-Return a JSON array only, no other text. Each item: {{"skill_id": "<id>", "reason": "<short reason>", "priority": 1-5}}.
-Select at most {max_skills} skills, ordered by relevance (priority 5 = most relevant)."""
-
+        """FlashRank 기반 스킬 선택 (LLM 대신 경량 reranker 사용)."""
         try:
-            from src.core.llm_manager import TaskType, execute_llm_task
-
-            result = await execute_llm_task(
-                prompt=prompt,
-                task_type=TaskType.ANALYSIS,
-                model_name=None,
-                system_message="You are a skill selector. Output only valid JSON array.",
+            retriever = self._get_retriever()
+            matches = await retriever.retrieve(
+                query, agent_skill_tree=None, top_k=max_skills
             )
-            text = (result.content or "").strip()
-            # Extract JSON array from response
-            start = text.find("[")
-            if start == -1:
-                return []
-            depth = 0
-            end = start
-            for i, c in enumerate(text[start:], start=start):
-                if c == "[":
-                    depth += 1
-                elif c == "]":
-                    depth -= 1
-                    if depth == 0:
-                        end = i
-                        break
-            if depth != 0:
-                return []
-            json_str = text[start : end + 1]
-            items = json.loads(json_str)
+            return self._add_dependencies(matches)
         except Exception as e:
-            logger.warning("select_skills_proactively LLM parse failed: %s", e)
-            return self.select_skills_for_task(query, max_skills=max_skills)
-
-        matches: List[SkillMatch] = []
-        for item in items[:max_skills]:
-            if not isinstance(item, dict):
-                continue
-            skill_id = item.get("skill_id") or item.get("id") or ""
-            if not skill_id:
-                continue
-            metadata = self.skill_manager.get_skill_by_id(skill_id)
-            if not metadata or not metadata.enabled:
-                continue
-            priority = int(item.get("priority", 3))
-            score = priority / 5.0
-            reason = item.get("reason", "LLM selected")
-            matches.append(
-                SkillMatch(
-                    skill_id=skill_id,
-                    score=score,
-                    reasons=[reason],
-                    metadata=metadata,
-                )
+            logger.warning(
+                "select_skills_proactively retriever failed, fallback to legacy: %s",
+                e,
             )
-        return self._add_dependencies(matches)
+            return self._select_skills_legacy(query, max_skills)
 
     def _build_keyword_map(self) -> Dict[str, List[str]]:
         """키워드 맵 구축."""

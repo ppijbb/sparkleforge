@@ -298,8 +298,10 @@ class SkillManager:
             self.registry.skills[skill_id]["enabled"] = False
         return True
 
-    def refresh_registry(self):
-        """레지스트리 새로고침 (스캔 재수행)."""
+    def refresh_registry(self, include_external: bool = False):
+        """레지스트리 새로고침 (스캔 재수행). include_external이 True면 외부 스킬 동기화 후 스캔."""
+        if include_external:
+            self.sync_external_skills()
         self._scan_skills()
         self._scan_global_rules()
 
@@ -327,6 +329,33 @@ class SkillManager:
         from src.core.skill_trigger_optimizer import SkillTriggerOptimizer
 
         return SkillTriggerOptimizer(skill_manager=self)
+
+    def get_performance_tracker(self):
+        """글로벌 SkillPerformanceTracker 인스턴스 반환."""
+        from src.core.skill_tree import get_skill_performance_tracker
+
+        return get_skill_performance_tracker()
+
+    def sync_external_skills(
+        self,
+        registry_urls: List[str] | None = None,
+        use_composio: bool = True,
+    ) -> int:
+        """OpenSkillProvider로 외부 스킬 수집 후 skills 디렉토리에 반영."""
+        from src.core.open_skill_provider import OpenSkillProvider
+
+        provider = OpenSkillProvider(skills_dir=self.skills_dir)
+        import asyncio
+
+        n = asyncio.run(
+            provider.sync_external_skills(
+                registry_urls=registry_urls,
+                use_composio=use_composio,
+                write_skill_md=True,
+            )
+        )
+        logger.info("sync_external_skills wrote %d skill(s)", n)
+        return n
 
 
 # 전역 SkillManager 인스턴스 (lazy initialization)

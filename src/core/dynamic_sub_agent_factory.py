@@ -1,8 +1,8 @@
 """Dynamic Sub-Agent Factory - Planner 분석 결과 기반 서브 에이전트 동적 생성.
 
 SubAgentManager와 연동하여 연구 계획의 태스크별로 서브 에이전트를 자율 정의하고,
-스킬 매칭을 통해 capabilities를 부여합니다. SubAgentPerformanceStore에서 고성과
-에이전트 템플릿을 우선 재활용합니다.
+SkillRetriever + SkillTree 기반으로 task-specific 스킬을 할당합니다.
+SubAgentPerformanceStore에서 고성과 에이전트 템플릿을 우선 재활용합니다.
 """
 
 import logging
@@ -18,7 +18,13 @@ from src.core.sub_agent_manager import (
     SubAgentStatus,
     get_sub_agent_manager,
 )
-from src.core.skills_selector import get_skill_selector
+from src.core.skills_manager import get_skill_manager
+from src.core.skill_tree import (
+    HotSkillCache,
+    SkillRetriever,
+    SkillTree,
+    get_skill_performance_tracker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +100,21 @@ class DynamicSubAgentFactory:
         skill_manager: Any = None,
     ):
         self.sam = sub_agent_manager or get_sub_agent_manager()
-        self._skill_manager = skill_manager
-        self._skill_selector = None
+        self._skill_manager = skill_manager or get_skill_manager()
+        self._retriever: SkillRetriever | None = None
+        self._hot_cache: HotSkillCache | None = None
 
-    def _get_skill_selector(self):
-        if self._skill_selector is None:
-            self._skill_selector = get_skill_selector()
-        return self._skill_selector
+    def _get_retriever(self) -> SkillRetriever:
+        if self._retriever is None:
+            tracker = get_skill_performance_tracker()
+            self._hot_cache = HotSkillCache(self._skill_manager, max_size=50)
+            self._hot_cache.refresh(tracker)
+            self._retriever = SkillRetriever(
+                self._skill_manager,
+                hot_cache=self._hot_cache,
+                tracker=tracker,
+            )
+        return self._retriever
 
     async def ensure_network(
         self, network_id: str, coordinator_name: str = "planner"
@@ -146,7 +160,7 @@ class DynamicSubAgentFactory:
             )
             return []
 
-        selector = self._get_skill_selector()
+        retriever = self._get_retriever()
         store = SubAgentPerformanceStore()
         agents: List[SubAgentContext] = []
 
@@ -192,14 +206,21 @@ class DynamicSubAgentFactory:
                     network_id, config, parent_agent_id
                 )
                 if agent:
-                    skill_matches = selector.select_skills_for_task(
-                        description or str(domain), max_skills=3
+                    query = description or str(domain or "")
+                    skill_matches = await retriever.retrieve(
+                        query, agent_skill_tree=None, top_k=3
                     )
-                    agent.knowledge_base["assigned_skills"] = [
-                        m.skill_id for m in skill_matches
-                    ]
+                    assigned_ids = [m.skill_id for m in skill_matches]
+                    agent.knowledge_base["assigned_skills"] = assigned_ids
                     agent.knowledge_base["task_id"] = task_id
                     agent.knowledge_base["task_description"] = description
+
+                    skill_tree = SkillTree(agent_id=agent.agent_id)
+                    for match in skill_matches:
+                        cat = getattr(match.metadata, "category", "general")
+                        skill_tree.add_skill(match.skill_id, [cat])
+                    agent.skill_tree = skill_tree
+
                     agent.status = SubAgentStatus.ACTIVE
                     agents.append(agent)
                     logger.info(

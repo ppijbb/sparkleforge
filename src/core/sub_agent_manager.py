@@ -14,7 +14,10 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Set
+
+if TYPE_CHECKING:
+    from src.core.skill_tree import SkillTree
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +84,7 @@ class SubAgentContext:
     performance_metrics: Dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
+    skill_tree: "SkillTree | None" = None
 
     @property
     def active_task_count(self) -> int:
@@ -926,6 +930,34 @@ class SubAgentPerformanceStore:
                 )
         self._records[agent.agent_id] = rec
         self._save()
+
+        # Record per-skill performance for SkillPerformanceTracker
+        try:
+            from src.core.skill_tree import get_skill_performance_tracker
+
+            tracker = get_skill_performance_tracker()
+            assigned = list(agent.knowledge_base.get("assigned_skills", []))
+            if not assigned and rec.assigned_skills:
+                assigned = rec.assigned_skills
+            for skill_id in assigned:
+                if skill_id:
+                    tracker.record(
+                        skill_id,
+                        success=rec.success_rate >= 0.5,
+                        latency_ms=rec.avg_execution_time * 1000.0,
+                        quality_score=rec.success_rate,
+                    )
+            if agent.skill_tree:
+                for skill_id in assigned:
+                    if skill_id:
+                        agent.skill_tree.update_performance(
+                            skill_id,
+                            rec.success_rate >= 0.5,
+                            rec.avg_execution_time * 1000.0,
+                            rec.success_rate,
+                        )
+        except Exception as e:
+            logger.debug("Skill performance recording skipped: %s", e)
 
     def get_top_agents(self, role: str, limit: int = 5) -> List[SubAgentPerformanceRecord]:
         """역할별 고성과 에이전트 목록 (success_rate 내림차순)."""
