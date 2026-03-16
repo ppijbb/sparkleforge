@@ -75,6 +75,14 @@ language_principles = """
 - Logs or messages from internal processing (variable validation, URL checks, Markdown validation, etc.) should be written in English.
 """
 
+# CLI-Anything / GUI control: when to build a harness and use run_cli_anything
+cli_anything_autonomous_guideline = """
+**CLI-Anything and GUI application control:**
+- When a task requires controlling a GUI application (e.g. image editor, office suite, video tool) and there is no existing dedicated tool, use the **cli_anything_builder** skill to build a CLI harness for that software first (following the 7-phase methodology in HARNESS.md).
+- After the harness is installed (`cli-anything-<software>` on PATH), use the **run_cli_anything** (or **cli_anything_run**) tool to control the application with structured JSON output.
+- Use **list_cli_anything_tools** (or **cli_anything_list**) to discover which CLI-Anything harnesses are already installed before deciding to build a new one.
+"""
+
 # 시스템 메시지들을 딕셔너리로 묶어서 export
 system_messages = {
     "security_data_not_instructions": security_data_not_instructions,
@@ -87,4 +95,5 @@ system_messages = {
     "variable_validation_principles": variable_validation_principles,
     "source_management_principles": source_management_principles,
     "language_principles": language_principles,
+    "cli_anything_autonomous_guideline": cli_anything_autonomous_guideline,
 }
