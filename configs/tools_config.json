@@ -361,6 +361,18 @@
       "description": "Session context consumption and savings stats",
       "server": "context-mode",
       "tool": "stats"
+    },
+    "cli_anything_run": {
+      "category": "cli_anything",
+      "description": "Run a CLI-Anything harness command (e.g. cli-anything-gimp, cli-anything-blender). Use after a harness is installed. Returns JSON by default.",
+      "server": "cli-anything",
+      "tool": "run_cli_anything"
+    },
+    "cli_anything_list": {
+      "category": "cli_anything",
+      "description": "List installed CLI-Anything harnesses in PATH. Use software names with cli_anything_run.",
+      "server": "cli-anything",
+      "tool": "list_cli_anything_tools"
     }
   },
   "tool_categories": {
@@ -371,7 +383,8 @@
     "business": ["crunchbase", "linkedin"],
     "memory": ["memory_store", "memory_recall", "memory_list"],
     "github": ["github_search", "github_issues", "github_pr", "github_code"],
-    "context_mode": ["context_mode_execute", "context_mode_execute_file", "context_mode_index", "context_mode_search", "context_mode_fetch_and_index", "context_mode_batch_execute", "context_mode_stats"]
+    "context_mode": ["context_mode_execute", "context_mode_execute_file", "context_mode_index", "context_mode_search", "context_mode_fetch_and_index", "context_mode_batch_execute", "context_mode_stats"],
+    "cli_anything": ["cli_anything_run", "cli_anything_list"]
   },
   "_metadata": {
     "version": "2.0.0",

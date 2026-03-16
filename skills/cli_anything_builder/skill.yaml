@@ -1,0 +1,27 @@
+# CLI-Anything Builder skill metadata
+name: CLI-Anything Builder
+skill_id: cli_anything_builder
+version: "1.0.0"
+category: builder
+description: Build agent-native CLI harnesses for GUI applications using the CLI-Anything 7-phase pipeline.
+
+triggers:
+  - "build a CLI for"
+  - "make .* agent-controllable"
+  - "CLI-Anything"
+  - "harness for"
+  - "control .* via command line"
+
+required_tools:
+  - filesystem
+  - cli_anything_run
+  - cli_anything_list
+
+capabilities:
+  - codebase_analysis
+  - cli_architecture_design
+  - harness_implementation
+  - test_planning_and_implementation
+  - pip_install_and_verify
+
+harness_path: reference/CLI-Anything/cli-anything-plugin/HARNESS.md
