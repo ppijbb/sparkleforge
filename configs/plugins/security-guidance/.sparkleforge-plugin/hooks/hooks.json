@@ -1,0 +1,16 @@
+{
+  "description": "Security reminder hook for file edit tools",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${SPARKLEFORGE_PLUGIN_ROOT}/.sparkleforge-plugin/hooks/security_reminder_hook.py"
+          }
+        ],
+        "matcher": "Edit|Write|MultiEdit|write_file|edit_file"
+      }
+    ]
+  }
+}

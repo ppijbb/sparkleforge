@@ -1,0 +1,11 @@
+{
+  "name": "security-guidance",
+  "version": "1.0.0",
+  "description": "Security reminder hook that warns about potential security issues when editing files (command injection, XSS, unsafe code patterns)",
+  "author": {
+    "name": "SparkleForge",
+    "email": ""
+  },
+  "skills": [],
+  "commands": []
+}

@@ -2528,31 +2528,42 @@ def get_llm_orchestrator() -> "MultiModelOrchestrator":
 def _build_active_skills_system_block(
     system_message: str | None, prompt: str, kwargs: Dict[str, Any]
 ) -> str:
-    """SkillManager/Selector에서 활성 스킬을 수집해 system_message 하단에 [Active Agent Skills & Rules] 블록을 붙인다."""
+    """SkillManager/Selector에서 활성 스킬을 수집해 system_message 하단에 [Active Agent Skills & Rules] 블록을 붙인다.
+    USE_PROGRESSIVE_SKILL_DISCLOSURE=true 이면 요약만 주입하고, 상세는 get_skill_instructions 도구로 로드하도록 안내.
+    """
     try:
         from src.core.skills_manager import get_skill_manager
         from src.core.skills_selector import get_skill_selector
     except ImportError:
         return system_message or ""
 
+    import os
+
     sm = get_skill_manager()
     parts: List[str] = []
+    use_progressive = (
+        os.getenv("USE_PROGRESSIVE_SKILL_DISCLOSURE", "false").lower() == "true"
+    )
 
     # 1) CLI --skills로 지정된 스킬 (우선)
-    for skill_id in sm.get_forced_skills():
-        skill = sm.load_skill(skill_id)
-        if skill and skill.instructions:
-            parts.append(f"[{skill_id}]\n{skill.instructions}")
-            if getattr(skill, "examples", None):
-                parts.append(f"Examples:\n{skill.examples}")
+    forced_ids = list(sm.get_forced_skills())
+    for skill_id in forced_ids:
+        if use_progressive:
+            parts.append(sm.get_skill_summary(skill_id))
+        else:
+            skill = sm.load_skill(skill_id)
+            if skill and skill.instructions:
+                parts.append(f"[{skill_id}]\n{skill.instructions}")
+                if getattr(skill, "examples", None):
+                    parts.append(f"Examples:\n{skill.examples}")
 
-    # 2) 글로벌 룰 (.cursorrules, .agentrules, .cursor/rules/*.mdc)
+    # 2) 글로벌 룰 (.cursorrules, .agentrules, .cursor/rules/*.mdc) - 항상 전체 주입
     for skill in sm.get_global_rules_skills():
         if skill.instructions:
             parts.append(f"[{skill.metadata.skill_id}]\n{skill.instructions}")
 
     # 3) 현재 prompt/query 기준 선택 스킬 (중복 제외)
-    seen_ids = set(sm.get_forced_skills()) | {
+    seen_ids = set(forced_ids) | {
         s.metadata.skill_id for s in sm.get_global_rules_skills()
     }
     query_for_selector = kwargs.get("user_query") or prompt[:500] if prompt else ""
@@ -2563,16 +2574,26 @@ def _build_active_skills_system_block(
             if match.skill_id in seen_ids:
                 continue
             seen_ids.add(match.skill_id)
-            skill = sm.load_skill(match.skill_id)
-            if skill and skill.instructions:
-                parts.append(f"[{match.skill_id}]\n{skill.instructions}")
-                if getattr(skill, "examples", None):
-                    parts.append(f"Examples:\n{skill.examples}")
+            if use_progressive:
+                parts.append(sm.get_skill_summary(match.skill_id))
+            else:
+                skill = sm.load_skill(match.skill_id)
+                if skill and skill.instructions:
+                    parts.append(f"[{match.skill_id}]\n{skill.instructions}")
+                    if getattr(skill, "examples", None):
+                        parts.append(f"Examples:\n{skill.examples}")
 
     if not parts:
         return system_message or ""
 
-    block = "\n\n---\n\n[Active Agent Skills & Rules]\n\n" + "\n\n".join(parts)
+    if use_progressive:
+        block = (
+            "\n\n---\n\n[Active Agent Skills – Summaries]\n\n"
+            + "\n\n".join(parts)
+            + "\n\nTo load full instructions for a skill, use the get_skill_instructions tool with skill_id."
+        )
+    else:
+        block = "\n\n---\n\n[Active Agent Skills & Rules]\n\n" + "\n\n".join(parts)
     return (system_message or "") + block
 
 

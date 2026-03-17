@@ -135,6 +135,18 @@
       },
       "disabled": false
     },
+    "sparkleforge-skills": {
+      "command": "python",
+      "args": [
+        "-m",
+        "src.core.mcp_servers.skills_provider_server"
+      ],
+      "env": {
+        "PYTHONPATH": "${PROJECT_ROOT}",
+        "PYTHONPATH_ADD": "${PROJECT_ROOT}"
+      },
+      "disabled": false
+    },
     "semanticscholar": {
       "type": "stdio",
       "command": "python",

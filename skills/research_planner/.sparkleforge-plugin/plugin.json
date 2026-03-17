@@ -1,0 +1,8 @@
+{
+  "name": "research-planner",
+  "version": "1.0.0",
+  "description": "Research planning skill with Multi-Model Orchestration",
+  "author": { "name": "Local Researcher Team" },
+  "skills": ["research_planner"],
+  "commands": []
+}

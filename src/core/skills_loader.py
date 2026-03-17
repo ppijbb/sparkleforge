@@ -237,8 +237,10 @@ class SkillLoader:
         # 메타데이터는 parsed["metadata"]와 skills_registry.json에서 가져옴
         metadata_json = parsed.get("metadata", {})
 
-        # skills_registry.json도 확인
-        registry_path = self.project_root / "skills_registry.json"
+        # configs/skills_registry.json 또는 skills_registry.json 확인
+        registry_path = self.project_root / "configs" / "skills_registry.json"
+        if not registry_path.exists():
+            registry_path = self.project_root / "skills_registry.json"
         registry_metadata = {}
         if registry_path.exists():
             try:

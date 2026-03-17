@@ -209,8 +209,10 @@ This skill is automatically invoked when relevant tasks are detected.
         return md_template
 
     def update_registry(self, skill_id: str, skill_data: Dict[str, Any]):
-        """skills_registry.json 업데이트."""
-        registry_path = self.project_root / "skills_registry.json"
+        """configs/skills_registry.json 또는 skills_registry.json 업데이트."""
+        registry_path = self.project_root / "configs" / "skills_registry.json"
+        if not registry_path.exists():
+            registry_path = self.project_root / "skills_registry.json"
 
         if registry_path.exists():
             with open(registry_path, encoding="utf-8") as f:
@@ -241,6 +243,7 @@ This skill is automatically invoked when relevant tasks are detected.
             registry["skill_dependencies"][skill_id] = dependencies
 
         # 저장
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
         with open(registry_path, "w", encoding="utf-8") as f:
             json.dump(registry, f, indent=2, ensure_ascii=False)
 

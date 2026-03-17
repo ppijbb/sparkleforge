@@ -4974,6 +4974,27 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
     """MCP 도구 실행 - UniversalMCPHub의 execute_tool 사용 (with caching)."""
     from src.core.result_cache import get_result_cache
 
+    # Lifecycle hooks: PreToolUse (can block execution with exit code 2)
+    try:
+        from src.core.skills_manager import get_skill_manager
+
+        hook_runner = get_skill_manager().get_hook_runner()
+        if hook_runner:
+            session_id = getattr(
+                get_skill_manager(), "_current_session_id", ""
+            ) or ""
+            allowed = await hook_runner.run_pre_tool_use(
+                tool_name, parameters, session_id
+            )
+            if not allowed:
+                return {
+                    "success": False,
+                    "error": "Tool execution blocked by PreToolUse hook",
+                    "data": None,
+                }
+    except Exception as hook_err:
+        logger.debug("PreToolUse hook skipped: %s", hook_err)
+
     result_cache = get_result_cache()
 
     # 캐시 확인
@@ -4993,12 +5014,55 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         logger.info("[MCP][execute_tool] MCP Hub not initialized, initializing...")
         await mcp_hub.initialize_mcp()
 
+    # SSE tool visualization: emit tool_use before execution
+    try:
+        from src.core.streaming_manager import get_streaming_manager
+
+        sm = get_streaming_manager()
+        session_id = getattr(get_skill_manager(), "_current_session_id", "") or "default"
+        await sm.stream_tool_use(session_id, tool_name, parameters)
+    except Exception as viz_err:
+        logger.debug("Tool visualization stream_tool_use skipped: %s", viz_err)
+
     with start_tool_span(
         name=f"tool:{tool_name}",
         tool_name=tool_name,
         input={"tool_name": tool_name, "parameters_keys": list(parameters.keys())},
     ):
         result = await mcp_hub.execute_tool(tool_name, parameters)
+
+    # SSE tool visualization: emit tool_result after execution
+    try:
+        from src.core.streaming_manager import get_streaming_manager
+
+        sm = get_streaming_manager()
+        session_id = getattr(get_skill_manager(), "_current_session_id", "") or "default"
+        summary = ""
+        if result.get("success") and result.get("data"):
+            d = result["data"]
+            summary = str(d)[:500] if not isinstance(d, str) else d[:500]
+        else:
+            summary = result.get("error", "failed") or "failed"
+        await sm.stream_tool_result(
+            session_id, tool_name, result.get("success", False), summary
+        )
+    except Exception as viz_err:
+        logger.debug("Tool visualization stream_tool_result skipped: %s", viz_err)
+
+    # Lifecycle hooks: PostToolUse
+    try:
+        from src.core.skills_manager import get_skill_manager
+
+        hook_runner = get_skill_manager().get_hook_runner()
+        if hook_runner:
+            session_id = getattr(
+                get_skill_manager(), "_current_session_id", ""
+            ) or ""
+            await hook_runner.run_post_tool_use(
+                tool_name, parameters, result, session_id
+            )
+    except Exception as hook_err:
+        logger.debug("PostToolUse hook skipped: %s", hook_err)
 
     # Tool Design: format=concise 이면 응답 크기 제한 (Response Format Optimization)
     if (
@@ -6816,7 +6880,35 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
         # ResourceLimits 모듈이 없으면 경고만 하고 계속 진행
         logger.debug("ResourceLimits module not available, skipping size check")
 
-    # 2. 샌드박스 타입에 따른 실행
+    # 2. Optional remote sandbox (Runloop/Daytona/Modal) from env SANDBOX_BACKEND
+    import os
+    backend_name = (os.getenv("SANDBOX_BACKEND") or "").strip().lower()
+    if backend_name in ("runloop", "daytona", "modal"):
+        try:
+            from src.core.sandbox.factory import get_sandbox_backend
+
+            backend = get_sandbox_backend()
+            if backend is not None:
+                resp = await backend.execute_code(code, language)
+                execution_time = time.time() - start_time
+                return ToolResult(
+                    success=resp.exit_code == 0,
+                    data={
+                        "code": code,
+                        "language": language,
+                        "output": resp.output,
+                        "error": resp.error,
+                        "exit_code": resp.exit_code,
+                        "sandbox_type": backend.id,
+                    },
+                    error=resp.error,
+                    execution_time=execution_time,
+                    confidence=0.9 if resp.exit_code == 0 else 0.5,
+                )
+        except Exception as e:
+            logger.debug("Remote sandbox (%s) failed, falling back: %s", backend_name, e)
+
+    # 3. 샌드박스 타입에 따른 실행
     if sandbox_type == "docker":
         # Docker 샌드박스 사용
         try:
@@ -6853,7 +6945,7 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 confidence=0.0,
             )
 
-    # 3. ERA 설정 확인 (기본값)
+    # 4. ERA 설정 확인 (기본값)
     try:
         from src.core.era_client import ERAClient
         from src.core.era_server_manager import get_era_server_manager
