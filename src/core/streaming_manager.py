@@ -44,6 +44,9 @@ class EventType(Enum):
     WORKFLOW_COMPLETE = "workflow_complete"
     ERROR_OCCURRED = "error_occurred"
     CREATIVE_INSIGHT = "creative_insight"  # 창의성 에이전트 인사이트
+    # Tool visualization (SSE-friendly for open-claude-cowork style UI)
+    TOOL_USE = "tool_use"
+    TOOL_RESULT = "tool_result"
 
 
 class AgentStatus(Enum):
@@ -384,6 +387,61 @@ class StreamingManager:
 
         except Exception as e:
             logger.error(f"Failed to stream creative insight: {e}", exc_info=True)
+            return False
+
+    async def stream_tool_use(
+        self,
+        workflow_id: str,
+        tool_name: str,
+        tool_input: Dict[str, Any],
+        agent_id: str | None = None,
+    ) -> bool:
+        """Emit tool_use event for SSE/UI tool visualization (open-claude-cowork style)."""
+        try:
+            # Truncate large input for display
+            display_input = dict(tool_input)
+            for k, v in list(display_input.items()):
+                if isinstance(v, str) and len(v) > 2000:
+                    display_input[k] = v[:2000] + "...[truncated]"
+            return await self.stream_event(
+                event_type=EventType.TOOL_USE,
+                agent_id=agent_id,
+                workflow_id=workflow_id,
+                data={
+                    "tool_name": tool_name,
+                    "tool_input": display_input,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+                priority=1,
+            )
+        except Exception as e:
+            logger.debug("stream_tool_use failed: %s", e)
+            return False
+
+    async def stream_tool_result(
+        self,
+        workflow_id: str,
+        tool_name: str,
+        success: bool,
+        result_summary: str,
+        agent_id: str | None = None,
+    ) -> bool:
+        """Emit tool_result event for SSE/UI tool visualization."""
+        try:
+            return await self.stream_event(
+                event_type=EventType.TOOL_RESULT,
+                agent_id=agent_id,
+                workflow_id=workflow_id,
+                data={
+                    "tool_name": tool_name,
+                    "success": success,
+                    "result_summary": result_summary[:1000] if result_summary else "",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+                priority=1,
+            )
+        except Exception as e:
+            logger.debug("stream_tool_result failed: %s", e)
             return False
 
     async def _broadcast_event(self, event: StreamingEvent) -> None:

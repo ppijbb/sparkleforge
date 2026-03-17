@@ -53,6 +53,15 @@ from src.core.skills_manager import get_skill_manager
 from src.core.skills_selector import get_skill_selector
 from src.core.dynamic_sub_agent_factory import DynamicSubAgentFactory
 from src.core.sub_agent_manager import get_sub_agent_manager
+from src.core.sub_agent_isolated_task import (
+    create_isolated_task_state,
+    merge_task_result_into_state,
+)
+from src.core.todo_middleware import (
+    get_session_todos,
+    sync_todos_from_research_tasks,
+    update_todo_status,
+)
 
 # prompt refiner는 execute_llm_task의 decorator에서 자동 적용됨
 
@@ -128,6 +137,7 @@ def _check_token_budget(
     try:
         pt = get_progress_tracker(session_id)
         pt.workflow_progress.metadata["token_budget"] = token_budget_ui
+        pt.workflow_progress.metadata["todos"] = get_session_todos(session_id)
     except Exception:
         pass
 
@@ -6858,6 +6868,10 @@ class AgentOrchestrator:
                 logger.warning("[SECURITY] Planner output blocked — sanitised")
 
             state.update(result)
+            # Todo middleware: sync task breakdown for progress tracking
+            tasks = result.get("research_tasks") or []
+            if tasks and state.get("session_id"):
+                sync_todos_from_research_tasks(state["session_id"], tasks)
         logger.info(f"🔵 [WORKFLOW] ✓ Planner completed: {result.get('current_agent')}")
         return state
 
@@ -7010,7 +7024,7 @@ class AgentOrchestrator:
         async def execute_single_task(
             task: Dict[str, Any], task_index: int
         ) -> AgentState:
-            """단일 작업을 실행하는 ExecutorAgent."""
+            """단일 작업을 격리된 컨텍스트로 실행 (메인 컨텍스트 오염 방지)."""
             agent_id = f"executor_{task_index}"
             context = AgentContext(
                 agent_id=agent_id,
@@ -7026,12 +7040,17 @@ class AgentOrchestrator:
                 context, selected_skills.get("research_executor")
             )
 
+            # Isolated task state: sub-agent receives minimal context (no full message history)
+            isolated_state = create_isolated_task_state(state, task, task_index)
+
             try:
                 logger.info(
                     f"[WORKFLOW] ExecutorAgent {agent_id} starting task {task.get('task_id', 'unknown')}"
                 )
                 with agent_security_context("executor"):
-                    result_state = await executor_agent.execute(state, assigned_task=task)
+                    result_state = await executor_agent.execute(
+                        isolated_state, assigned_task=task
+                    )
                 logger.info(
                     f"[WORKFLOW] ExecutorAgent {agent_id} completed: {len(result_state.get('research_results', []))} results"
                 )
@@ -7126,10 +7145,28 @@ class AgentOrchestrator:
                             )
                         except Exception:
                             pass
+                    # Todo middleware: mark task completed/failed for progress UI
+                    sid = state.get("session_id")
+                    if sid:
+                        update_todo_status(
+                            sid, tid,
+                            "completed" if not result.get("research_failed") else "failed",
+                        )
                     task_results = result.get("research_results", [])
                     if task_results:
-                        all_results.extend(task_results)
-                        communication_stats["agents_contributed"] += 1
+                        # Merge back into a temporary main_state so each result
+                        # is annotated with _task_id and _executor_index
+                        temp_state = {"research_results": []}
+                        merge_task_result_into_state(
+                            temp_state,
+                            task_id=tid,
+                            task_index=idx,
+                            result_state=result,
+                        )
+                        annotated_results = temp_state.get("research_results", [])
+                        if annotated_results:
+                            all_results.extend(annotated_results)
+                            communication_stats["agents_contributed"] += 1
                         logger.info(
                             f"[WORKFLOW] ExecutorAgent {idx} contributed {len(task_results)} results"
                         )
@@ -7837,6 +7874,14 @@ class AgentOrchestrator:
 
         logger.info(f"Starting workflow for query: {user_query}, session: {session_id}")
 
+        # Lifecycle hooks: PreTaskRun
+        try:
+            hook_runner = self.skill_manager.get_hook_runner()
+            if hook_runner:
+                await hook_runner.run_pre_task_run(session_id, task_description=user_query)
+        except Exception as hook_err:
+            logger.debug("PreTaskRun hook skipped: %s", hook_err)
+
         # 세션 복원 시도 (Session Intelligence: 5-factor score)
         initial_state = None
         if restore_session:
@@ -8005,12 +8050,41 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.warning(f"Failed to auto-save session: {e}")
 
+            # Lifecycle hooks: PostTaskRun (success)
+            try:
+                hook_runner = self.skill_manager.get_hook_runner()
+                if hook_runner:
+                    summary = (
+                        str(result.get("final_report", ""))[:500]
+                        if isinstance(result.get("final_report"), str)
+                        else ""
+                    )
+                    await hook_runner.run_post_task_run(
+                        session_id,
+                        task_description=user_query,
+                        success=True,
+                        result_summary=summary,
+                    )
+            except Exception as hook_err:
+                logger.debug("PostTaskRun hook skipped: %s", hook_err)
+
             # 백그라운드 메모리 생성은 _end_node에서 이미 트리거됨
 
             logger.info("Workflow execution completed successfully")
             return result
         except Exception as e:
             logger.error(f"Workflow execution failed: {e}")
+            try:
+                hook_runner = self.skill_manager.get_hook_runner()
+                if hook_runner:
+                    await hook_runner.run_post_task_run(
+                        session_id,
+                        task_description=user_query,
+                        success=False,
+                        result_summary=str(e)[:500],
+                    )
+            except Exception as hook_err:
+                logger.debug("PostTaskRun hook (failure) skipped: %s", hook_err)
             raise
 
     async def execute_via_lane(

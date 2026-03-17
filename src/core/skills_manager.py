@@ -36,10 +36,14 @@ class SkillManager:
 
         self.project_root = Path(project_root)
         self.skills_dir = self.project_root / "skills"
-        self.registry_path = self.project_root / "skills_registry.json"
+        self.registry_path = self.project_root / "configs" / "skills_registry.json"
+        if not self.registry_path.exists():
+            self.registry_path = self.project_root / "skills_registry.json"
 
         self.loader = SkillLoader(self.project_root)
         self.registry: SkillRegistry | None = None
+        self._plugin_discovery = None
+        self._hook_runner = None
         self.loaded_skills: Dict[str, Skill] = {}  # 캐시
         self.skill_metadata_cache: Dict[str, SkillMetadata] = {}
         self.global_rules_cache: Dict[str, Skill] = {}  # 글로벌 룰 파일 캐시
@@ -53,34 +57,45 @@ class SkillManager:
         self._scan_global_rules()
 
     def _load_registry(self):
-        """skills_registry.json 로드."""
-        if not self.registry_path.exists():
-            logger.warning(f"skills_registry.json not found at {self.registry_path}")
-            self.registry = SkillRegistry(
-                version="1.0.0", registry_updated_at=datetime.now().isoformat()
-            )
-            return
+        """Load registry: plugin discovery first, then merge configs/skills_registry.json."""
+        from src.core.plugin_system.discovery import PluginDiscovery
+        from src.core.plugin_system.hooks import HookRunner
 
-        try:
-            with open(self.registry_path, encoding="utf-8") as f:
-                data = json.load(f)
-                self.registry = SkillRegistry(
-                    version=data.get("version", "1.0.0"),
-                    registry_updated_at=data.get(
-                        "registry_updated_at", datetime.now().isoformat()
-                    ),
-                    skills=data.get("skills", {}),
-                    skill_categories=data.get("skill_categories", {}),
-                    skill_dependencies=data.get("skill_dependencies", {}),
-                )
-            logger.info(
-                f"✅ Loaded skills registry with {len(self.registry.skills)} skills"
+        self._plugin_discovery = PluginDiscovery(self.project_root)
+        self._plugin_discovery.discover()
+        self._hook_runner = HookRunner(self._plugin_discovery.get_plugin_roots())
+
+        existing_skills = {}
+        existing_categories = {}
+        existing_dependencies = {}
+        if self.registry_path.exists():
+            try:
+                with open(self.registry_path, encoding="utf-8") as f:
+                    data = json.load(f)
+                    existing_skills = data.get("skills", {})
+                    existing_categories = data.get("skill_categories", {})
+                    existing_dependencies = data.get("skill_dependencies", {})
+            except Exception as e:
+                logger.warning("Failed to load skills_registry.json: %s", e)
+
+        skills, skill_categories, skill_dependencies = (
+            self._plugin_discovery.build_registry_from_plugins(
+                existing_skills=existing_skills,
+                existing_categories=existing_categories,
+                existing_dependencies=existing_dependencies,
             )
-        except Exception as e:
-            logger.error(f"Failed to load registry: {e}")
-            self.registry = SkillRegistry(
-                version="1.0.0", registry_updated_at=datetime.now().isoformat()
-            )
+        )
+        self.registry = SkillRegistry(
+            version="1.0.0",
+            registry_updated_at=datetime.now().isoformat(),
+            skills=skills,
+            skill_categories=skill_categories,
+            skill_dependencies=skill_dependencies,
+        )
+        logger.info(
+            "✅ Loaded skills registry with %d skills (plugins + registry)",
+            len(self.registry.skills),
+        )
 
     def _scan_skills(self):
         """skills/ 디렉토리 스캔 및 메타데이터 캐싱."""
@@ -262,6 +277,16 @@ class SkillManager:
             return skill.instructions
         return None
 
+    def get_skill_summary(self, skill_id: str) -> str:
+        """Progressive disclosure: short summary from metadata only (no full SKILL.md load)."""
+        meta = self.get_skill_by_id(skill_id)
+        if not meta:
+            return f"Skill '{skill_id}' not found."
+        parts = [f"**{meta.name}** ({skill_id})", meta.description or ""]
+        if meta.tags:
+            parts.append("Tags: " + ", ".join(meta.tags[:5]))
+        return " | ".join(p for p in parts if p).strip()
+
     def get_available_skills(self) -> List[str]:
         """사용 가능한 Skill ID 목록 반환."""
         return [
@@ -323,6 +348,10 @@ class SkillManager:
     def get_forced_skills(self) -> List[str]:
         """우선 주입할 스킬 ID 목록 반환."""
         return list(self._forced_skill_ids)
+
+    def get_hook_runner(self):
+        """Return the lifecycle HookRunner for PreTaskRun/PostTaskRun/PreToolUse/PostToolUse."""
+        return self._hook_runner
 
     def get_trigger_optimizer(self):
         """SkillTriggerOptimizer 인스턴스 반환 (eval/improve 루프)."""
