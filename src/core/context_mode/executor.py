@@ -6,6 +6,7 @@ Ported from reference/claude-context-mode src/executor.ts.
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -61,9 +62,9 @@ def _smart_truncate(raw: str, max_bytes: int) -> str:
     return "\n".join(head_lines) + sep + "\n".join(tail_lines)
 
 
-def _detect_runtimes() -> Dict[str, Optional[str]]:
+def _detect_runtimes() -> Dict[str, str | None]:
     """Detect available runtimes (python, shell, javascript)."""
-    runtimes: Dict[str, Optional[str]] = {}
+    runtimes: Dict[str, str | None] = {}
     runtimes["python"] = shutil.which("python3") or shutil.which("python")
     runtimes["shell"] = shutil.which("bash") or shutil.which("sh") or "sh"
     runtimes["javascript"] = shutil.which("node")
@@ -108,15 +109,72 @@ class SandboxedExecutor:
 
     def __init__(
         self,
-        project_root: Optional[str] = None,
+        project_root: str | None = None,
         max_output_bytes: int = 102_400,
         hard_cap_bytes: int = 100 * 1024 * 1024,
-        runtimes: Optional[Dict[str, Optional[str]]] = None,
+        runtimes: Dict[str, str | None] | None = None,
     ):
         self.project_root = (Path(project_root) if project_root else Path.cwd()).resolve()
         self.max_output_bytes = max_output_bytes
         self.hard_cap_bytes = hard_cap_bytes
         self._runtimes = runtimes or _detect_runtimes()
+
+        self._autonomy_default_block_patterns: List[str] = [
+            # Network exfil / remote execution primitives
+            r"\brequests\b",
+            r"\bhttpx\b",
+            r"\burllib\b",
+            r"\bsocket\b",
+            r"\bsubprocess\b",
+            r"\bPopen\b",
+            r"os\.system",
+            r"\beval\s*\(",
+            r"\bexec\s*\(",
+            # Common shell network tools
+            r"\bcurl\b",
+            r"\bwget\b",
+            r"\bssh\b",
+            r"\bnc\b",
+            r"/dev/tcp",
+            # JS/TS network and process access
+            r"\bfetch\s*\(",
+            r"\baxios\b",
+            r"XMLHttpRequest",
+            r"process\.env",
+            r"child_process",
+        ]
+
+    def _is_autonomy_mode(self) -> bool:
+        return (
+            os.getenv("SPARKLEFORGE_AUTONOMY_MODE", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "y", "on"}
+        )
+
+    def _code_block_reason(self, language: str, code: str) -> str | None:
+        if not self._is_autonomy_mode():
+            return None
+
+        # Allow operator override: set empty string to disable default deny patterns.
+        patterns_csv = os.getenv("CONTEXT_MODE_AUTONOMY_BLOCK_PATTERNS", "")
+        block_patterns = (
+            [p.strip() for p in patterns_csv.split(",") if p.strip()]
+            if patterns_csv is not None
+            else []
+        )
+        if not block_patterns:
+            block_patterns = self._autonomy_default_block_patterns
+
+        for rx in block_patterns:
+            try:
+                if re.search(rx, code, flags=re.IGNORECASE | re.MULTILINE):
+                    return f"Autonomy mode: blocked pattern '{rx}' in code"
+            except re.error:
+                # Invalid regex is treated as non-matching to avoid accidental hard-block.
+                continue
+
+        return None
 
     def execute(
         self,
@@ -128,6 +186,15 @@ class SandboxedExecutor:
         lang = language.lower()
         if lang not in ("python", "shell", "javascript", "typescript"):
             lang = "python"
+
+        block_reason = self._code_block_reason(lang, code or "")
+        if block_reason is not None:
+            return ExecResult(
+                stdout="",
+                stderr=block_reason,
+                exit_code=1,
+                timed_out=False,
+            )
         runtime = self._runtimes.get(lang)
         if not runtime:
             return ExecResult(
