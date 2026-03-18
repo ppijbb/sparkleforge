@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 from typing import Any, Dict, List, Optional
@@ -26,6 +27,55 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("cli-anything")
+
+def _is_autonomy_mode() -> bool:
+    return (
+        os.getenv("SPARKLEFORGE_AUTONOMY_MODE", "false")
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "y", "on"}
+    )
+
+
+def _env_csv(name: str) -> List[str]:
+    value = os.getenv(name, "") or ""
+    items = [x.strip() for x in value.split(",")]
+    return [x for x in items if x]
+
+
+def _validate_cli_anything_autonomy(software: str, command: str) -> str | None:
+    """Autonomy mode에서 cli-anything 실행을 allowlist로 제한.
+
+    정책:
+    - `CLI_ANYTHING_ALLOWED_SOFTWARES`가 비어 있으면(=사용자 미설정) cli-anything 자체를 deny
+    - `CLI_ANYTHING_COMMAND_ALLOW_REGEXES`가 비어 있으면(=사용자 미설정) command deny
+    """
+    if not _is_autonomy_mode():
+        return None
+
+    allowed_softwares = _env_csv("CLI_ANYTHING_ALLOWED_SOFTWARES")
+    if not allowed_softwares:
+        return "Autonomy mode: CLI_ANYTHING_ALLOWED_SOFTWARES is not set (deny by default)"
+    if "*" not in allowed_softwares and software not in allowed_softwares:
+        return f"Autonomy mode: software '{software}' is not in CLI_ANYTHING_ALLOWED_SOFTWARES"
+
+    allowed_regexes = _env_csv("CLI_ANYTHING_COMMAND_ALLOW_REGEXES")
+    if not allowed_regexes:
+        return "Autonomy mode: CLI_ANYTHING_COMMAND_ALLOW_REGEXES is not set (deny by default)"
+
+    cmd = (command or "").strip()
+    if not cmd:
+        return "Autonomy mode: empty command is not allowed"
+
+    for rx in allowed_regexes:
+        try:
+            if re.search(rx, cmd, flags=re.IGNORECASE):
+                return None
+        except re.error:
+            # 잘못된 정규식은 운영자가 수정해야 하므로 deny에 포함
+            continue
+
+    return "Autonomy mode: command does not match any CLI_ANYTHING_COMMAND_ALLOW_REGEXES"
 
 
 class RunCliAnythingInput(BaseModel):
@@ -170,6 +220,19 @@ async def run_cli_anything(input: RunCliAnythingInput) -> str:
     Returns JSON with: success, returncode, software, command, and either
     data (parsed JSON from CLI) or stdout/stderr.
     """
+    denial = _validate_cli_anything_autonomy(input.software, input.command)
+    if denial is not None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": denial,
+                "software": input.software,
+                "command": input.command,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+
     result = await asyncio.to_thread(
         _run_cli_anything_sync,
         input.software,

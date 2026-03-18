@@ -28,6 +28,7 @@ from src.core.agent_tool_selector import AgentToolSelector
 from src.core.context_compaction import CompactionManager, get_compaction_manager
 from src.core.context_compaction.manager import set_compaction_manager
 from src.core.context_engineer import ContextEngineer, get_context_engineer
+from src.core.dynamic_sub_agent_factory import DynamicSubAgentFactory
 from src.core.input_router import (
     InputEnvelope,
     ensure_trace_context,
@@ -51,12 +52,11 @@ from src.core.shared_memory import MemoryScope, get_shared_memory
 from src.core.skills_loader import Skill
 from src.core.skills_manager import get_skill_manager
 from src.core.skills_selector import get_skill_selector
-from src.core.dynamic_sub_agent_factory import DynamicSubAgentFactory
-from src.core.sub_agent_manager import get_sub_agent_manager
 from src.core.sub_agent_isolated_task import (
     create_isolated_task_state,
     merge_task_result_into_state,
 )
+from src.core.sub_agent_manager import get_sub_agent_manager
 from src.core.todo_middleware import (
     get_session_todos,
     sync_todos_from_research_tasks,
@@ -377,6 +377,7 @@ class AgentState(TypedDict):
     user_responses: Dict[str, Any] | None  # 질문 ID -> 사용자 응답
     clarification_context: Dict[str, Any] | None  # 명확화된 정보
     waiting_for_user: bool | None  # 사용자 응답 대기 중인지
+    autopilot_mode: bool | None  # 질문/승인 없이 자동으로 진행
     current_agent: str | None
     iteration: int
     session_id: str | None
@@ -7957,6 +7958,7 @@ class AgentOrchestrator:
                 user_responses=None,
                 clarification_context=None,
                 waiting_for_user=None,
+                autopilot_mode=True,
                 direct_forward_message=None,
                 direct_forward_from_agent=None,
             )
@@ -7995,8 +7997,13 @@ class AgentOrchestrator:
             initial_state["_token_savings_snapshot"] = None
 
         # Execute workflow (wrapped in turn trace for Langfuse hierarchy)
+        prev_disable_approval = os.environ.get("APPROVAL_GATE_DISABLED_IN_AUTONOMY")
+        os.environ["APPROVAL_GATE_DISABLED_IN_AUTONOMY"] = "true"
+        os.environ["SPARKLEFORGE_AUTONOMY_MODE"] = "true"
         try:
-            use_pipeline = os.getenv("USE_DATAFLOW_PIPELINE", "false").lower() == "true"
+            use_pipeline = (
+                os.getenv("USE_DATAFLOW_PIPELINE", "false").lower() == "true"
+            )
 
             with start_turn_trace(
                 name="turn",
@@ -8086,6 +8093,13 @@ class AgentOrchestrator:
             except Exception as hook_err:
                 logger.debug("PostTaskRun hook (failure) skipped: %s", hook_err)
             raise
+        finally:
+            # Restore env overrides (so other runs/UI modes are not affected)
+            if prev_disable_approval is None:
+                os.environ.pop("APPROVAL_GATE_DISABLED_IN_AUTONOMY", None)
+            else:
+                os.environ["APPROVAL_GATE_DISABLED_IN_AUTONOMY"] = prev_disable_approval
+            os.environ.pop("SPARKLEFORGE_AUTONOMY_MODE", None)
 
     async def execute_via_lane(
         self,
@@ -8269,6 +8283,7 @@ class AgentOrchestrator:
             user_responses=initial_state.get("user_responses"),
             clarification_context=initial_state.get("clarification_context"),
             waiting_for_user=initial_state.get("waiting_for_user", False),
+            autopilot_mode=True,
             direct_forward_message=None,
             direct_forward_from_agent=None,
         )
@@ -8278,8 +8293,22 @@ class AgentOrchestrator:
         run_config.setdefault("configurable", {})["thread_id"] = (
             session_id or "default"
         )
-        async for event in self.graph.astream(agent_initial_state, config=run_config):
-            yield event
+        prev_disable_approval = os.environ.get("APPROVAL_GATE_DISABLED_IN_AUTONOMY")
+        os.environ["APPROVAL_GATE_DISABLED_IN_AUTONOMY"] = "true"
+        os.environ["SPARKLEFORGE_AUTONOMY_MODE"] = "true"
+        try:
+            async for event in self.graph.astream(
+                agent_initial_state, config=run_config
+            ):
+                yield event
+        finally:
+            if prev_disable_approval is None:
+                os.environ.pop("APPROVAL_GATE_DISABLED_IN_AUTONOMY", None)
+            else:
+                os.environ["APPROVAL_GATE_DISABLED_IN_AUTONOMY"] = (
+                    prev_disable_approval
+                )
+            os.environ.pop("SPARKLEFORGE_AUTONOMY_MODE", None)
 
 
 # Global orchestrator instance
