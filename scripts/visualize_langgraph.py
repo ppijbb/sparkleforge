@@ -108,6 +108,7 @@ def visualize_langgraph():
         # Create orchestrator (this builds the graph)
         print("\n[1] AutonomousOrchestrator 초기화 중...")
         orchestrator = AutonomousOrchestrator()
+        orchestrator.ensure_legacy_langgraph_workflow()
 
         if orchestrator.graph is None:
             print("❌ 그래프가 생성되지 않았습니다.")

@@ -37,7 +37,12 @@ from src.core.researcher_config import load_config_from_env
 config = load_config_from_env()
 
 # Use new AgentOrchestrator for multi-agent orchestration
-from src.core.agent_orchestrator import AgentOrchestrator as NewAgentOrchestrator
+from src.core.agent_orchestrator import (
+    AgentOrchestrator as NewAgentOrchestrator,
+)  # noqa: I001
+from src.core.agent_orchestrator import (
+    agent_workflow_result_to_public_dict,
+)
 from src.core.autonomous_orchestrator import AutonomousOrchestrator
 from src.monitoring.system_monitor import HealthMonitor
 
@@ -274,7 +279,10 @@ class AutonomousResearchSystem:
         # Initialize components with 8 innovations
         logger.info("🔧 Initializing system components...")
         try:
-            from src.core.db.database_driver import get_database_driver, set_database_driver
+            from src.core.db.database_driver import (
+                get_database_driver,
+                set_database_driver,
+            )
             from src.core.db.sqlite_driver import SQLiteDriver
 
             if get_database_driver() is None:
@@ -919,8 +927,9 @@ class AutonomousResearchSystem:
                 f"📊 Partial Result: {partial_result.get('summary', 'Processing...')}"
             )
 
-        # Use standard run_research but with streaming callback simulation
-        result = await self.orchestrator.run_research(user_request=request, context={})
+        # Unified path: same as non-streaming (AgentOrchestrator.execute)
+        raw = await self.orchestrator.execute(request)
+        result = agent_workflow_result_to_public_dict(raw)
 
         # Extract and format result
         final_synthesis = result.get("synthesis_results", {}).get("content", "")

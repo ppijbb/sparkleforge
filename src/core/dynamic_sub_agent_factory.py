@@ -3,11 +3,22 @@
 SubAgentManager와 연동하여 연구 계획의 태스크별로 서브 에이전트를 자율 정의하고,
 SkillRetriever + SkillTree 기반으로 task-specific 스킬을 할당합니다.
 SubAgentPerformanceStore에서 고성과 에이전트 템플릿을 우선 재활용합니다.
+
+서브 에이전트에는 Anthropic ``skill-creator``(Claude Code 스킬)를 기본 부착하여
+태스트별 스킬 초안·개선 워크플로를 동일 패턴으로 따를 수 있게 합니다.
 """
 
 import logging
+import os
 from typing import Any, Dict, List
 
+from src.core.skill_tree import (
+    HotSkillCache,
+    SkillRetriever,
+    SkillTree,
+    get_skill_performance_tracker,
+)
+from src.core.skills_manager import get_skill_manager
 from src.core.sub_agent_manager import (
     CollaborationNetwork,
     SubAgentConfig,
@@ -18,15 +29,11 @@ from src.core.sub_agent_manager import (
     SubAgentStatus,
     get_sub_agent_manager,
 )
-from src.core.skills_manager import get_skill_manager
-from src.core.skill_tree import (
-    HotSkillCache,
-    SkillRetriever,
-    SkillTree,
-    get_skill_performance_tracker,
-)
 
 logger = logging.getLogger(__name__)
+
+_SKILL_CREATOR_ENV_ID = "SPARKLEFORGE_SUBAGENT_SKILL_CREATOR_ID"
+_ATTACH_CREATOR_ENV = "SPARKLEFORGE_ATTACH_SKILL_CREATOR_TO_SUBAGENTS"
 
 
 def _infer_role(task: Dict[str, Any]) -> SubAgentRole:
@@ -211,14 +218,38 @@ class DynamicSubAgentFactory:
                         query, agent_skill_tree=None, top_k=3
                     )
                     assigned_ids = [m.skill_id for m in skill_matches]
+                    creator_id = os.getenv(_SKILL_CREATOR_ENV_ID, "skill-creator").strip()
+                    attach = os.getenv(_ATTACH_CREATOR_ENV, "true").lower() in (
+                        "1",
+                        "true",
+                        "yes",
+                    )
+                    if attach and creator_id and self._skill_manager.get_skill_by_id(
+                        creator_id
+                    ):
+                        assigned_ids = [creator_id] + [
+                            s for s in assigned_ids if s != creator_id
+                        ]
+                        agent.knowledge_base["skill_creator_skill_id"] = creator_id
+                    elif attach and creator_id:
+                        logger.debug(
+                            "Skill creator %s not in registry; skipping attach",
+                            creator_id,
+                        )
+
                     agent.knowledge_base["assigned_skills"] = assigned_ids
                     agent.knowledge_base["task_id"] = task_id
                     agent.knowledge_base["task_description"] = description
 
                     skill_tree = SkillTree(agent_id=agent.agent_id)
-                    for match in skill_matches:
-                        cat = getattr(match.metadata, "category", "general")
-                        skill_tree.add_skill(match.skill_id, [cat])
+                    for sid in assigned_ids:
+                        meta = self._skill_manager.get_skill_by_id(sid)
+                        cat = (
+                            getattr(meta, "category", "general")
+                            if meta
+                            else "general"
+                        )
+                        skill_tree.add_skill(sid, [str(cat)])
                     agent.skill_tree = skill_tree
 
                     agent.status = SubAgentStatus.ACTIVE

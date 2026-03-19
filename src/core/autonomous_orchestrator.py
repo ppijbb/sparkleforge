@@ -18,8 +18,6 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph import END, StateGraph
 
 from src.core.compression import compress_data
-from src.core.llm_manager import TaskType, execute_llm_task
-from src.core.mcp_integration import ToolCategory, execute_tool
 from src.core.input_router import (
     TRACE_ENTRYPOINT,
     TRACE_REQUEST_ID,
@@ -27,7 +25,8 @@ from src.core.input_router import (
     TRACE_TURN_ID,
     set_trace_context,
 )
-from src.core.observability import get_langfuse_run_config
+from src.core.llm_manager import TaskType, execute_llm_task
+from src.core.mcp_integration import ToolCategory, execute_tool
 from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
 from src.core.researcher_config import (
     get_agent_config,
@@ -146,11 +145,10 @@ class AutonomousOrchestrator:
         self.streaming_manager = get_streaming_manager()
 
         # 메모리 및 학습 시스템 초기화
-        from src.storage.hybrid_storage import HybridStorage
-
         from src.agents.creativity_agent import CreativityAgent
         from src.learning.research_recommender import ResearchRecommender
         from src.learning.user_profiler import UserProfiler
+        from src.storage.hybrid_storage import HybridStorage
 
         self.hybrid_storage = HybridStorage()
         self.user_profiler = UserProfiler()
@@ -197,6 +195,14 @@ class AutonomousOrchestrator:
         self.context_manager = get_recursive_context_manager()
 
         self.graph = None
+
+    def ensure_legacy_langgraph_workflow(self) -> None:
+        """레거시 ResearchState LangGraph가 필요할 때만 컴파일 (시각화 등).
+
+        실제 연구 실행은 :class:`AgentOrchestrator` 단일 경로로 통일됨.
+        """
+        if self.graph is not None:
+            return
         self._build_langgraph_workflow()
 
     def _build_langgraph_workflow(self):
@@ -3699,7 +3705,7 @@ class AutonomousOrchestrator:
     async def run_research(
         self, user_request: str, context: Dict[str, Any] | None = None
     ) -> Dict[str, Any]:
-        """연구 실행 (Production-Grade Reliability + ExecutionContext)."""
+        """연구 실행 — :class:`AgentOrchestrator` 단일 워크플로로 위임."""
         input_result = validate_user_input(user_request or "")
         if not input_result.is_safe:
             logger.warning(
@@ -3713,165 +3719,81 @@ class AutonomousOrchestrator:
                 "innovation_stats": {},
                 "system_health": {"overall_status": "degraded"},
                 "detailed_results": {},
+                "final_synthesis": {"content": REJECTION_MESSAGE},
             }
         user_request = input_result.sanitized_text
+        ctx = context or {}
 
-        logger.info(f"🚀 Starting research with 8 core innovations: {user_request}")
+        logger.info(
+            "🚀 Starting research (unified AgentOrchestrator path): %s", user_request
+        )
 
-        # ExecutionContext 설정 (ROMA 스타일)
         execution_id = f"exec_{int(datetime.now().timestamp())}"
         context_token = None
         try:
             from src.core.recursive_context_manager import ExecutionContext
 
             context_token = ExecutionContext.set(execution_id, self.context_manager)
-            logger.debug(f"ExecutionContext set for execution: {execution_id}")
+            logger.debug("ExecutionContext set for execution: %s", execution_id)
         except Exception as e:
-            logger.debug(f"Failed to set ExecutionContext: {e}")
+            logger.debug("Failed to set ExecutionContext: %s", e)
 
-        # CLI 모드 감지 및 autopilot 모드 설정
-        import sys
-
-        is_cli_mode = (
-            not hasattr(sys, "ps1")  # Interactive shell이 아님
-            and "streamlit" not in sys.modules  # Streamlit이 로드되지 않음
-            and not any(
-                "streamlit" in str(arg) for arg in sys.argv
-            )  # Streamlit 실행 인자가 없음
+        set_trace_context(
+            {
+                TRACE_REQUEST_ID: execution_id,
+                TRACE_TURN_ID: execution_id,
+                TRACE_ENTRYPOINT: "autonomous",
+                TRACE_SOURCE_TYPE: "autonomous",
+            }
         )
-
-        # 초기 상태 설정
-        initial_state = ResearchState(
-            user_request=user_request,
-            context=context or {},
-            objective_id=execution_id,  # execution_id 사용
-            analyzed_objectives=[],
-            intent_analysis={},
-            domain_analysis={},
-            scope_analysis={},
-            # Planning Agent 필드
-            preliminary_research={},
-            planned_tasks=[],
-            agent_assignments={},
-            execution_plan={},
-            plan_approved=False,
-            plan_feedback=None,
-            plan_iteration=0,
-            execution_results=[],
-            agent_status={},
-            execution_metadata={},
-            streaming_data=[],
-            compression_results=[],
-            compression_metadata={},
-            verification_results={},
-            confidence_scores={},
-            verification_stages=[],
-            evaluation_results={},
-            quality_metrics={},
-            improvement_areas=[],
-            validation_results={},
-            validation_score=0.0,
-            missing_elements=[],
-            final_synthesis={},
-            deliverable_path=None,
-            synthesis_metadata={},
-            context_window_usage={},
-            pending_questions=[],
-            user_responses={},
-            clarification_context={},
-            waiting_for_user=False,
-            autopilot_mode=is_cli_mode,  # CLI 모드이면 autopilot 활성화
-            current_step="analyze_objectives",
-            iteration=0,
-            max_iterations=10,
-            should_continue=True,
-            error_message=None,
-            innovation_stats={},
-            messages=[],
-        )
-
-        if is_cli_mode:
-            logger.info(
-                "🤖 CLI mode detected - Autopilot mode enabled (auto-selecting responses)"
-            )
-
-        # LangGraph 워크플로우 실행 (trace context for observability)
-        logger.info("🔄 Executing LangGraph workflow with 8 core innovations")
-        set_trace_context({
-            TRACE_REQUEST_ID: execution_id,
-            TRACE_TURN_ID: execution_id,
-            TRACE_ENTRYPOINT: "autonomous",
-            TRACE_SOURCE_TYPE: "autonomous",
-        })
         try:
-            final_state = await self.graph.ainvoke(
-                initial_state, config=get_langfuse_run_config()
+            from src.core.agent_orchestrator import (
+                AgentOrchestrator,
+                agent_workflow_result_to_public_dict,
             )
+
+            session_id = ctx.get("session_id")
+            if session_id is not None and not isinstance(session_id, str):
+                session_id = str(session_id)
+
+            agent_orch = AgentOrchestrator()
+            agent_state = await agent_orch.execute(
+                user_request,
+                session_id=session_id,
+                restore_session=False,
+            )
+            wf: Dict[str, Any] = (
+                dict(agent_state) if not isinstance(agent_state, dict) else agent_state
+            )
+            result = agent_workflow_result_to_public_dict(wf, context=ctx)
         finally:
             set_trace_context(None)
 
-        # 결과 포맷팅
-        result = {
-            "content": final_state.get("final_synthesis", {}).get(
-                "content", "Research completed"
-            ),
-            "metadata": {
-                "model_used": final_state.get("final_synthesis", {}).get(
-                    "model_used", "unknown"
-                ),
-                "execution_time": final_state.get("final_synthesis", {}).get(
-                    "execution_time", 0.0
-                ),
-                "cost": 0.0,
-                "confidence": final_state.get("final_synthesis", {}).get(
-                    "confidence", 0.9
-                ),
-            },
-            "synthesis_results": {
-                "content": final_state.get("final_synthesis", {}).get("content", ""),
-                "original_length": len(str(final_state.get("execution_results", []))),
-                "compressed_length": len(
-                    str(final_state.get("compression_results", []))
-                ),
-                "compression_ratio": final_state.get("compression_metadata", {}).get(
-                    "overall_compression_ratio", 1.0
-                ),
-            },
-            "innovation_stats": final_state.get("innovation_stats", {}),
-            "system_health": {"overall_status": "healthy", "health_score": 95},
-            "detailed_results": {
-                "analyzed_objectives": final_state.get("analyzed_objectives", []),
-                "planned_tasks": final_state.get("planned_tasks", []),
-                "execution_results": final_state.get("execution_results", []),
-                "compression_results": final_state.get("compression_results", []),
-                "verification_stages": final_state.get("verification_stages", []),
-                "evaluation_results": final_state.get("evaluation_results", {}),
-                "quality_metrics": final_state.get("quality_metrics", {}),
-            },
-        }
+        logger.info("✅ Research completed (unified orchestrator path)")
 
-        logger.info("✅ Research completed successfully with 8 core innovations")
-
-        # ExecutionContext 및 MCP Hub 정리 (ROMA 스타일)
         try:
             from src.core.recursive_context_manager import ExecutionContext
 
             if context_token:
                 ExecutionContext.reset(context_token)
-                logger.debug(f"ExecutionContext reset for execution: {execution_id}")
+                logger.debug("ExecutionContext reset for execution: %s", execution_id)
         except Exception as e:
-            logger.debug(f"Failed to reset ExecutionContext: {e}")
+            logger.debug("Failed to reset ExecutionContext: %s", e)
 
-        # MCP Hub 실행 세션 정리
         try:
             from src.core.mcp_integration import get_mcp_hub
 
             mcp_hub = get_mcp_hub()
-            await mcp_hub.cleanup_execution(execution_id)
+            cleanup_id = result.get("metadata", {}).get("session_id") or execution_id
+            await mcp_hub.cleanup_execution(str(cleanup_id))
         except Exception as e:
-            logger.debug(f"Failed to cleanup MCP Hub execution session: {e}")
+            logger.debug("Failed to cleanup MCP Hub execution session: %s", e)
 
         return result
+
+    async def execute_full_research_workflow(self, user_query: str) -> Dict[str, Any]:
+        """스케줄러·인터랙티브 CLI 호환: 단일 워크플로로 연구 실행."""
+        return await self.run_research(user_query, context={})
 
     async def _search_similar_research(
         self, query: str, user_id: str

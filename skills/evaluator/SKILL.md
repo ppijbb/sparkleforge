@@ -1,3 +1,9 @@
+---
+name: evaluator
+description: Continuous verification and critical evaluation of research outputs. Use when verifying sources, assessing quality, fact-checking, identifying gaps, or scoring confidence in findings.
+version: "1.0.0"
+---
+
 # Evaluator Skill
 
 ## Overview
