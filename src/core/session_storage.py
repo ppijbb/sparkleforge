@@ -127,6 +127,27 @@ class SessionStorage:
             logger.error(f"Failed to initialize database: {e}")
             self.use_database = False
 
+    def _json_safe(self, obj: Any) -> Any:
+        """Recursively normalize data so json.dumps never fails on key types."""
+        if isinstance(obj, dict):
+            normalized: Dict[str, Any] = {}
+            for k, v in obj.items():
+                if isinstance(k, str):
+                    key = k
+                elif hasattr(k, "value"):
+                    key = str(getattr(k, "value"))
+                else:
+                    key = str(k)
+                normalized[key] = self._json_safe(v)
+            return normalized
+        if isinstance(obj, list):
+            return [self._json_safe(x) for x in obj]
+        if isinstance(obj, tuple):
+            return [self._json_safe(x) for x in obj]
+        if hasattr(obj, "value"):
+            return self._json_safe(getattr(obj, "value"))
+        return obj
+
     def save_session(
         self,
         session_id: str,
@@ -150,14 +171,19 @@ class SessionStorage:
             성공 여부
         """
         try:
+            state_safe = self._json_safe(state)
+            context_safe = self._json_safe(context)
+            memory_safe = self._json_safe(memory)
+            metadata_safe = self._json_safe(metadata or {})
+
             # 세션 데이터 구성
             session_data = {
                 "session_id": session_id,
-                "state": state,
-                "context": context,
-                "memory": memory,
+                "state": state_safe,
+                "context": context_safe,
+                "memory": memory_safe,
                 "saved_at": datetime.now().isoformat(),
-                "metadata": metadata or {},
+                "metadata": metadata_safe,
             }
 
             # 파일 경로 결정
@@ -177,16 +203,16 @@ class SessionStorage:
             # 메타데이터 업데이트
             session_metadata = SessionMetadata(
                 session_id=session_id,
-                user_id=metadata.get("user_id") if metadata else None,
-                created_at=metadata.get("created_at", datetime.now().isoformat())
-                if metadata
+                user_id=metadata_safe.get("user_id") if metadata_safe else None,
+                created_at=metadata_safe.get("created_at", datetime.now().isoformat())
+                if metadata_safe
                 else datetime.now().isoformat(),
                 last_accessed=datetime.now().isoformat(),
-                state_version=metadata.get("state_version", 1) if metadata else 1,
-                context_size=len(json.dumps(context, ensure_ascii=False)),
-                memory_size=len(json.dumps(memory, ensure_ascii=False)),
-                tags=metadata.get("tags", []) if metadata else [],
-                description=metadata.get("description") if metadata else None,
+                state_version=metadata_safe.get("state_version", 1) if metadata_safe else 1,
+                context_size=len(json.dumps(context_safe, ensure_ascii=False)),
+                memory_size=len(json.dumps(memory_safe, ensure_ascii=False)),
+                tags=metadata_safe.get("tags", []) if metadata_safe else [],
+                description=metadata_safe.get("description") if metadata_safe else None,
             )
 
             # 트랜잭션이 있으면 트랜잭션 내에서 메타데이터 저장

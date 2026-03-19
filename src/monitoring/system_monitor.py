@@ -749,3 +749,23 @@ class HealthMonitor:
                 "timestamp": datetime.now().isoformat(),
                 "error": str(e),
             }
+
+    async def quick_health_check(self) -> bool:
+        """Return True unless overall status is critical or error (CLI health)."""
+        health = self.get_system_health()
+        status = health.get("overall_status", "error")
+        return status not in ("critical", "error")
+
+    async def run_comprehensive_health_check(self) -> Dict[str, Any]:
+        """상세 헬스: 지표·요약을 한 번에 반환 (무거운 비동기 I/O 없음)."""
+        current = self.get_current_metrics()
+        return {
+            "system_health": self.get_system_health(),
+            "performance_summary": self.get_performance_summary(),
+            "health_score": self.get_system_health_score(),
+            "current_metrics": asdict(current) if current else None,
+        }
+
+    def print_detailed_health_report(self, report: Dict[str, Any]) -> None:
+        """상세 헬스 리포트를 stdout에 출력."""
+        print(json.dumps(report, indent=2, default=str))

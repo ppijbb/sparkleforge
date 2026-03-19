@@ -5603,6 +5603,7 @@ class GeneratorAgent:
             )
 
         # SharedResultsManager에서 모든 공유된 검증 결과 가져오기
+        search_results = []
         if self.context.shared_results_manager:
             all_shared_results = (
                 await self.context.shared_results_manager.get_shared_results()
@@ -5687,15 +5688,35 @@ class GeneratorAgent:
                 f"[{self.name}]   - Additional research needed: {verification_summary.get('additional_research_needed_count', 0)}"
             )
 
-        if not verified_results or len(verified_results) == 0:
-            # Fallback 제거 - 명확한 에러만 반환
-            error_msg = "보고서 생성 실패: 검증된 연구 결과가 없습니다."
-            logger.error(f"[{self.name}] ❌ {error_msg}")
-            state["final_report"] = None
-            state["current_agent"] = self.name
-            state["report_failed"] = True
-            state["error"] = error_msg
-            return state
+        if not verified_results:
+            # 실무 상황에서 verifier가 비어도 executor 검색 결과가 있으면
+            # 생성 단계를 진행해 사용자가 빈 출력을 받지 않도록 한다.
+            fallback_from_search = []
+            for shared in search_results:
+                raw = getattr(shared, "result", None)
+                if isinstance(raw, dict):
+                    fallback_from_search.append(
+                        {
+                            **raw,
+                            "status": "unverified",
+                            "confidence": float(raw.get("confidence", 0.45)),
+                            "uncertainty_note": "Verifier 단계에서 확정 검증되지 않은 보조 결과",
+                        }
+                    )
+
+            if fallback_from_search:
+                verified_results = fallback_from_search
+                logger.warning(
+                    f"[{self.name}] ⚠️ No verified results; falling back to {len(verified_results)} search results with uncertainty marks"
+                )
+            else:
+                error_msg = "보고서 생성 실패: 검증된 연구 결과가 없습니다."
+                logger.error(f"[{self.name}] ❌ {error_msg}")
+                state["final_report"] = None
+                state["current_agent"] = self.name
+                state["report_failed"] = True
+                state["error"] = error_msg
+                return state
 
         # 실제 결과가 있는 경우 LLM으로 보고서 생성
         logger.info(
