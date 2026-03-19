@@ -143,6 +143,35 @@
           "python_version": ">=3.10"
         }
       }
+    },
+    "skill-creator": {
+      "skill_id": "skill-creator",
+      "name": "Skill Creator",
+      "description": "Create, edit, and improve Agent Skills (SKILL.md). Use when defining new task skills, refining descriptions, or structuring progressive disclosure.",
+      "version": "1.0.0",
+      "category": "authoring",
+      "tags": ["skills", "claude-code", "authoring", "eval", "skill-md"],
+      "path": "skills/skill-creator",
+      "enabled": true,
+      "dependencies": [],
+      "required_tools": [],
+      "allowed_tools": [],
+      "author": "Anthropic (vendored)",
+      "created_at": "2026-03-19",
+      "updated_at": "2026-03-19",
+      "metadata": {
+        "capabilities": [
+          "skill_authoring",
+          "skill_iteration",
+          "description_optimization",
+          "progressive_disclosure_design"
+        ],
+        "compatibility": {
+          "min_system_version": "2.0.0",
+          "python_version": ">=3.10",
+          "agent_skills_spec": "claude-code-compatible"
+        }
+      }
     }
   },
   "skill_categories": {
@@ -150,7 +179,8 @@
     "execution": ["research_executor"],
     "evaluation": ["evaluator"],
     "synthesis": ["synthesizer"],
-    "builder": ["cli_anything_builder"]
+    "builder": ["cli_anything_builder"],
+    "authoring": ["skill-creator"]
   },
   "skill_dependencies": {
     "research_executor": ["research_planner"],

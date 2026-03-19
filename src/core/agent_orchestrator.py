@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List
+from typing import Annotated, Any, Dict, List, Mapping
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
@@ -6475,6 +6475,76 @@ Agent 논박 결과:
 ###################
 # Orchestrator
 ###################
+
+
+def agent_workflow_result_to_public_dict(
+    workflow: Mapping[str, Any],
+    *,
+    context: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Map ``AgentOrchestrator.execute()`` state to the legacy ``run_research`` result shape.
+
+    Used so CLI, headless, schedulers, and adapters share one execution path.
+    """
+    ctx = dict(context) if context else {}
+    final_report = workflow.get("final_report")
+    content = "" if final_report is None else str(final_report)
+    session_id = workflow.get("session_id")
+    research_failed = bool(workflow.get("research_failed"))
+    verification_failed = bool(workflow.get("verification_failed"))
+    report_failed = bool(workflow.get("report_failed"))
+    err = workflow.get("error")
+    healthy = not (
+        research_failed or verification_failed or report_failed
+    ) and not err
+
+    metadata: Dict[str, Any] = {
+        "session_id": session_id,
+        "model_used": "multi-agent",
+        "research_failed": research_failed,
+        "verification_failed": verification_failed,
+        "report_failed": report_failed,
+        "error": err,
+        "execution_time": 0.0,
+        "cost": 0.0,
+        "confidence": 0.9 if healthy else 0.0,
+    }
+    if ctx:
+        metadata["request_context"] = ctx
+
+    detailed_results: Dict[str, Any] = {
+        "research_plan": workflow.get("research_plan"),
+        "research_results": workflow.get("research_results"),
+        "verified_results": workflow.get("verified_results"),
+        "research_tasks": workflow.get("research_tasks"),
+    }
+
+    body = content if content else (
+        "Research completed"
+        if healthy
+        else (str(err) if err else "Research completed")
+    )
+
+    return {
+        "content": body,
+        "metadata": metadata,
+        "synthesis_results": {
+            "content": content,
+            "original_length": len(str(workflow.get("research_results", []))),
+            "compressed_length": len(str(workflow.get("verified_results", []))),
+            "compression_ratio": 1.0,
+        },
+        "innovation_stats": {"multi_agent_orchestration": "unified"},
+        "system_health": {
+            "overall_status": "healthy" if healthy else "unhealthy",
+            "health_score": 95 if healthy else 30,
+        },
+        "detailed_results": detailed_results,
+        "final_synthesis": {
+            "content": content,
+            "confidence": float(metadata["confidence"]),
+        },
+    }
 
 
 class AgentOrchestrator:

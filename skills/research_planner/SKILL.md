@@ -1,3 +1,9 @@
+---
+name: research_planner
+description: Analyze requests and build actionable research plans with objectives, task decomposition, risk checks, and validation criteria. Use whenever a request needs structured planning before execution.
+version: "1.0.0"
+---
+
 # Research Planner Skill
 
 ## Overview

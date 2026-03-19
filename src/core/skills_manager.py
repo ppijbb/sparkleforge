@@ -5,6 +5,7 @@ Skills 스캔, 메타데이터 파싱, 필요 시에만 로드 (lazy loading), �
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -97,14 +98,10 @@ class SkillManager:
             len(self.registry.skills),
         )
 
-    def _scan_skills(self):
-        """skills/ 디렉토리 스캔 및 메타데이터 캐싱."""
-        if not self.skills_dir.exists():
-            logger.warning(f"Skills directory not found: {self.skills_dir}")
-            return
-
+    def _scan_skills_under_root(self, skills_root: Path) -> int:
+        """단일 skills 루트(각 하위 디렉터리 = 스킬) 스캔."""
         scanned_count = 0
-        for skill_dir in self.skills_dir.iterdir():
+        for skill_dir in skills_root.iterdir():
             if not skill_dir.is_dir():
                 continue
 
@@ -112,14 +109,18 @@ class SkillManager:
             skill_md_path = skill_dir / "SKILL.md"
 
             if not skill_md_path.exists():
-                logger.warning(f"SKILL.md not found for skill: {skill_id}")
+                logger.warning("SKILL.md not found for skill: %s", skill_id)
                 continue
 
             try:
-                # 레지스트리에 없는 경우 메타데이터만 로드 (빠른 스캔)
                 if skill_id in self.registry.skills:
-                    # 레지스트리에서 메타데이터 사용
                     reg_data = self.registry.skills[skill_id]
+                    reg_allowed = reg_data.get("allowed_tools", [])
+                    if not isinstance(reg_allowed, list):
+                        reg_allowed = []
+                    comp = reg_data.get("compatibility", "")
+                    if not isinstance(comp, str):
+                        comp = str(comp)
                     metadata = SkillMetadata(
                         skill_id=reg_data.get("skill_id", skill_id),
                         name=reg_data.get("name", skill_id),
@@ -141,10 +142,13 @@ class SkillManager:
                         capabilities=reg_data.get("metadata", {}).get(
                             "capabilities", []
                         ),
+                        allowed_tools=[str(x) for x in reg_allowed],
+                        compatibility=comp,
                     )
                 else:
-                    # SKILL.md에서 메타데이터 빠르게 추출 (전체 로드 아님)
-                    skill_content = skill_md_path.read_text(encoding="utf-8")
+                    skill_content = self.loader.read_text_for_metadata_scan(
+                        skill_md_path
+                    )
                     parsed = self.loader._parse_skill_md(skill_content)
                     metadata = self.loader._extract_metadata(
                         skill_id, skill_dir, parsed
@@ -154,9 +158,31 @@ class SkillManager:
                 scanned_count += 1
 
             except Exception as e:
-                logger.error(f"Failed to scan skill {skill_id}: {e}")
+                logger.error("Failed to scan skill %s: %s", skill_id, e)
 
-        logger.info(f"✅ Scanned {scanned_count} skills")
+        return scanned_count
+
+    def _scan_skills(self):
+        """skills/ 및 SPARKLEFORGE_EXTRA_SKILL_DIRS 스캔 (Claude Code 스킬 트리 호환)."""
+        roots: List[Path] = [self.skills_dir]
+        for raw in (
+            x.strip()
+            for x in os.getenv("SPARKLEFORGE_EXTRA_SKILL_DIRS", "").split(",")
+            if x.strip()
+        ):
+            roots.append(Path(raw).expanduser().resolve())
+
+        scanned_count = 0
+        primary_missing = not self.skills_dir.is_dir()
+        if primary_missing:
+            logger.warning("Skills directory not found: %s", self.skills_dir)
+
+        for root in roots:
+            if not root.is_dir():
+                continue
+            scanned_count += self._scan_skills_under_root(root)
+
+        logger.info("✅ Scanned %d skills", scanned_count)
 
     def _scan_global_rules(self):
         """프로젝트 루트의 글로벌 룰 파일 스캔 및 캐싱."""

@@ -1,3 +1,9 @@
+---
+name: research_executor
+description: Execute planned research tasks with MCP tools, deep analysis, and evidence gathering. Use whenever plan items must be executed and validated against real-world sources.
+version: "1.0.0"
+---
+
 # Research Executor Skill
 
 ## Overview

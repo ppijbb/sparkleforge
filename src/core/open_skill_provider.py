@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
@@ -35,7 +35,7 @@ def _default_metadata(
     description: str = "",
     category: str = "general",
 ) -> SkillMetadata:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     return SkillMetadata(
         skill_id=skill_id,
         name=name or skill_id.replace("_", " ").title(),
@@ -51,6 +51,8 @@ def _default_metadata(
         dependencies=[],
         required_tools=[],
         capabilities=[],
+        allowed_tools=[],
+        compatibility="",
     )
 
 
@@ -59,7 +61,7 @@ class OpenSkillProvider:
 
     def __init__(
         self,
-        skills_dir: Optional[Path] = None,
+        skills_dir: Path | None = None,
         request_timeout: float = 15.0,
     ) -> None:
         self.skills_dir = Path(skills_dir) if skills_dir else _default_skills_dir()
@@ -136,7 +138,7 @@ class OpenSkillProvider:
 
     async def fetch_from_composio(
         self,
-        categories: Optional[List[str]] = None,
+        categories: List[str] | None = None,
         limit: int = 100,
     ) -> List[SkillMetadata]:
         """Fetch tool/skill metadata from Composio when COMPOSIO_API_KEY is set."""
@@ -196,7 +198,7 @@ class OpenSkillProvider:
 
     async def sync_external_skills(
         self,
-        registry_urls: Optional[List[str]] = None,
+        registry_urls: List[str] | None = None,
         use_composio: bool = True,
         write_skill_md: bool = True,
     ) -> int:

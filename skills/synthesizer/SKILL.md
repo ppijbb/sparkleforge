@@ -1,3 +1,9 @@
+---
+name: synthesizer
+description: Synthesize multi-source findings into coherent, decision-ready outputs with confidence and implications. Use whenever execution artifacts must be consolidated into a final report.
+version: "1.0.0"
+---
+
 # Synthesizer Skill
 
 ## Overview
