@@ -4838,6 +4838,35 @@ class UniversalMCPHub:
 
         return server_status
 
+    def print_server_status(
+        self, server_status: Dict[str, Any], verbose: bool = False
+    ) -> None:
+        """CLI용: :meth:`check_mcp_servers` 결과를 사람이 읽기 쉽게 출력."""
+        summary = server_status.get("summary", {})
+        print("=" * 80)
+        print("MCP server status")
+        print("=" * 80)
+        print(f"Timestamp: {server_status.get('timestamp', '')}")
+        print(f"Total configured: {server_status.get('total_servers', 0)}")
+        print(f"Connected sessions: {server_status.get('connected_servers', 0)}")
+        print(f"Connection rate: {summary.get('connection_rate', 'n/a')}")
+        print(f"Total tools (discovered): {summary.get('total_tools_available', 0)}")
+        print()
+        for name, info in server_status.get("servers", {}).items():
+            icon = "OK " if info.get("connected") else "ERR"
+            print(
+                f"[{icon}] {name}  tools={info.get('tools_count', 0)}  "
+                f"type={info.get('type', '?')}"
+            )
+            if verbose and info.get("error"):
+                print(f"      error: {info['error']}")
+            if verbose and info.get("tools"):
+                for t in info["tools"][:15]:
+                    print(f"      - {name}::{t}")
+                if len(info["tools"]) > 15:
+                    print(f"      ... +{len(info['tools']) - 15} more")
+        print("=" * 80)
+
     async def health_check(self) -> Dict[str, Any]:
         """강화된 헬스 체크 - OpenRouter, Gemini 2.5 Flash Lite, MCP 도구 검증."""
         try:

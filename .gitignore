@@ -15,7 +15,7 @@ node_modules
 .agent
 .pytest_cache
 *.sqlite3
-storage
+/storage
 reports
 .mypy_cache
 temp

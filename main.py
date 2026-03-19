@@ -1671,38 +1671,49 @@ EXAMPLES:
         else:
             args.command = "repl"  # run 없이 바로 REPL로
 
-    # 서브커맨드 처리
-    if args.command == "run":
-        await handle_run_command(args)
-    elif args.command == "query":
-        await handle_run_command(args)
-    elif args.command == "web":
-        await handle_web_command(args)
-    elif args.command == "mcp":
-        await handle_mcp_command(args)
-    elif args.command == "health":
-        await handle_health_command(args)
-    elif args.command == "tools":
-        await handle_tools_command(args)
-    elif args.command == "docker":
-        await handle_docker_command(args)
-    elif args.command == "setup":
-        await handle_setup_command(args)
-    elif args.command == "cli":
-        await handle_cli_command(args)
-    elif args.command == "interactive":
-        await handle_interactive_command(args)
-    elif args.command == "repl":
+    # 서브커맨드 처리 (반환 코드는 프로세스 종료까지 전달)
+    cli_rc: int | None = None
+    cmd = getattr(args, "command", None)
+    if cmd == "run":
+        cli_rc = await handle_run_command(args)
+    elif cmd == "query":
+        cli_rc = await handle_run_command(args)
+    elif cmd == "web":
+        cli_rc = await handle_web_command(args)
+    elif cmd == "mcp":
+        cli_rc = await handle_mcp_command(args)
+    elif cmd == "health":
+        cli_rc = await handle_health_command(args)
+    elif cmd == "tools":
+        cli_rc = await handle_tools_command(args)
+    elif cmd == "docker":
+        cli_rc = await handle_docker_command(args)
+    elif cmd == "setup":
+        cli_rc = await handle_setup_command(args)
+    elif cmd == "cli":
+        cli_rc = await handle_cli_command(args)
+    elif cmd == "interactive":
+        cli_rc = await handle_interactive_command(args)
+    elif cmd == "repl":
         # REPL로 바로 진입 (아무것도 안 하고 아래 is_repl_mode 블록으로 진행)
         pass
     else:
         parser.print_help()
+        cli_rc = 0
+
+    def _exit_code(rc: int | None) -> int:
+        return 0 if rc is None else int(rc)
 
     # --query로 run/query 실행한 경우 여기서 종료 (이중 초기화·빈 워크플로우 요약 방지)
-    if (getattr(args, "command", None) in ("run", "query")) and getattr(
-        args, "query", None
-    ):
-        return
+    if cmd in ("run", "query") and getattr(args, "query", None):
+        return _exit_code(cli_rc)
+
+    # 한 번만 실행하고 AutonomousResearchSystem/ERA 등 무거운 초기화로 넘어가면 안 되는 명령
+    _STANDALONE_CLI = frozenset(
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive"}
+    )
+    if cmd in _STANDALONE_CLI:
+        return _exit_code(cli_rc)
 
     # --query가 있으면 쿼리만 실행하고 종료. query 없을 때만 TLI(REPL) 진입
     is_repl_mode = getattr(args, "command", None) in ("interactive", "repl") or (
@@ -2130,13 +2141,27 @@ EXAMPLES:
             except Exception as e:
                 logger.debug(f"Error in final cleanup: {e}")
 
+    return 0
+
 
 # 서브커맨드 핸들러 함수들
+def _ensure_database_driver_for_cli() -> None:
+    """Initialize SQLite driver for lightweight CLI commands if needed."""
+    from src.core.db.database_driver import get_database_driver, set_database_driver
+    from src.core.db.sqlite_driver import SQLiteDriver
+
+    if get_database_driver() is None:
+        sqlite_db_path = Path(__file__).resolve().parent / "data" / "sparkleforge.db"
+        set_database_driver(SQLiteDriver(str(sqlite_db_path)))
+        logger.info("✅ SQLite database driver initialized: %s", sqlite_db_path)
+
+
 async def handle_run_command(args):
     """연구 실행 커맨드 처리"""
     logger.info(f"🔬 Starting research: {args.query}")
 
     try:
+        _ensure_database_driver_for_cli()
         # Autonomous Orchestrator 초기화
         orchestrator = AutonomousOrchestrator()
 
@@ -2146,20 +2171,31 @@ async def handle_run_command(args):
             context={},
         )
 
-        # 결과 출력 (result는 dict: content, metadata, synthesis_results 등)
-        if args.output:
-            with open(args.output, "w", encoding="utf-8") as f:
-                if args.format == "json":
-                    json.dump(result, f, ensure_ascii=False, indent=2)
-                else:
-                    text = result.get("content", str(result)) if isinstance(result, dict) else str(result)
-                    f.write(text)
-            logger.info(f"✅ Results saved to {args.output}")
-        else:
-            if isinstance(result, dict) and "content" in result:
-                print(result["content"])
+        # 결과 출력/저장 (output 미지정 시 output/ 아래 기본 파일 생성)
+        output_path = args.output
+        if not output_path:
+            output_dir = project_root / "output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ext = ".json" if args.format == "json" else ".md"
+            output_path = str(output_dir / f"query_{ts}{ext}")
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            if args.format == "json":
+                json.dump(result, f, ensure_ascii=False, indent=2)
             else:
-                print(result)
+                text = (
+                    result.get("content", str(result))
+                    if isinstance(result, dict)
+                    else str(result)
+                )
+                f.write(text)
+        logger.info(f"✅ Results saved to {output_path}")
+
+        if isinstance(result, dict) and "content" in result:
+            print(result["content"])
+        else:
+            print(result)
 
     except Exception as e:
         logger.error(f"❌ Research failed: {e}")
@@ -2263,10 +2299,21 @@ async def handle_tools_command(args):
             mcp_hub = get_mcp_hub()
             await mcp_hub.initialize_mcp()
 
-            # 도구 목록 출력
-            tools_by_category = {}
+            # 도구 목록 출력 (ToolInfo dataclass 또는 dict 모두 허용)
+            tools_by_category: Dict[str, List[str]] = {}
             for tool_name, tool_info in mcp_hub.tools.items():
-                category = tool_info.get("category", "unknown")
+                if isinstance(tool_info, dict):
+                    raw_cat = tool_info.get("category", "unknown")
+                    category = (
+                        raw_cat.value
+                        if hasattr(raw_cat, "value")
+                        else str(raw_cat)
+                    )
+                else:
+                    cat = getattr(tool_info, "category", None)
+                    category = cat.value if hasattr(cat, "value") else str(
+                        cat or "unknown"
+                    )
                 if category not in tools_by_category:
                     tools_by_category[category] = []
                 tools_by_category[category].append(tool_name)
@@ -2752,8 +2799,10 @@ async def handle_cli_command(args):
 
 def main_entry():
     """Entry point for sparkleforge / sparkle CLI (called from src.cli.entry or __main__)."""
+    exit_code = 0
     try:
-        asyncio.run(main())
+        result = asyncio.run(main())
+        exit_code = int(result) if isinstance(result, int) else 0
     finally:
         # Flush Langfuse traces for short-lived CLI (optional; no-op if disabled)
         try:
@@ -2765,6 +2814,7 @@ def main_entry():
         except Exception:
             # Do not log exception message: may contain URLs or internal details
             logger.warning("Langfuse trace flush failed (traces may be incomplete).")
+    raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

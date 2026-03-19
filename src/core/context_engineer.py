@@ -170,7 +170,7 @@ class ContextChunk:
         content_bytes = len(content.encode("utf-8", errors="replace"))
         if content_bytes > threshold_bytes:
             try:
-                from src.core.context_mode.store import get_store, FTS5_AVAILABLE
+                from src.core.context_mode.store import FTS5_AVAILABLE, get_store
                 if FTS5_AVAILABLE:
                     store = get_store()
                     indexed = store.index_plain_text(content, "context_engineer:tool_results")
@@ -544,11 +544,13 @@ class ContextEngineer:
                     session_manager = get_session_manager()
 
                     if agent_state:
-                        await session_manager.save_session(
+                        save_result = session_manager.save_session(
                             session_id=session_id,
                             agent_state=agent_state,
                             metadata={"uploaded_at": datetime.now().isoformat()},
                         )
+                        if asyncio.iscoroutine(save_result):
+                            await save_result
                     logger.debug(
                         f"Context uploaded in background for session {session_id}"
                     )
