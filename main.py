@@ -1405,6 +1405,22 @@ EXAMPLES:
         "--streaming", action="store_true", help="Enable streaming output"
     )
 
+    # work 커맨드
+    work_parser = subparsers.add_parser("work", help="Execute work goal as coworker")
+    work_parser.add_argument("goal", nargs="+", help="Work goal")
+
+    # actions 커맨드
+    actions_parser = subparsers.add_parser("actions", help="List pending actions")
+
+    # approve 커맨드
+    approve_parser = subparsers.add_parser("approve", help="Approve action")
+    approve_parser.add_argument("action_id", help="Action ID or 'all'")
+
+    # deny 커맨드
+    deny_parser = subparsers.add_parser("deny", help="Deny action")
+    deny_parser.add_argument("action_id", help="Action ID")
+    deny_parser.add_argument("reason", nargs="*", help="Reason for denial")
+
     # query 커맨드 (run과 동일 — sparkleforge query "..." 형태 지원)
     query_parser = subparsers.add_parser(
         "query", help="Send research query (alias for run)"
@@ -1678,6 +1694,14 @@ EXAMPLES:
         cli_rc = await handle_run_command(args)
     elif cmd == "query":
         cli_rc = await handle_run_command(args)
+    elif cmd == "work":
+        cli_rc = await handle_work_command(args)
+    elif cmd == "actions":
+        cli_rc = await handle_actions_command(args)
+    elif cmd == "approve":
+        cli_rc = await handle_approve_command(args)
+    elif cmd == "deny":
+        cli_rc = await handle_deny_command(args)
     elif cmd == "web":
         cli_rc = await handle_web_command(args)
     elif cmd == "mcp":
@@ -1710,7 +1734,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem/ERA 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive"}
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "actions", "approve", "deny"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)
@@ -2197,11 +2221,38 @@ async def handle_run_command(args):
         else:
             print(result)
 
+        # 실행 성공/실패를 결과 페이로드 기준으로 일관되게 반환
+        if isinstance(result, dict) and not bool(result.get("success", False)):
+            logger.error("❌ Research completed with failure state")
+            return 1
+
     except Exception as e:
         logger.error(f"❌ Research failed: {e}")
         return 1
     return 0
 
+
+async def handle_work_command(args):
+    """협업 세션 실행 커맨드 처리"""
+    goal = " ".join(args.goal)
+    logger.info(f"🤝 Starting coworker session for: {goal}")
+    from src.core.agent_orchestrator import get_orchestrator
+    orchestrator = get_orchestrator()
+    result = await orchestrator.execute(goal, custom_state={"mode": "coworker", "current_goal": goal})
+    print(result.get("content", ""))
+    return 0
+
+async def handle_actions_command(args):
+    print("To view actions, please enter REPL mode (run without commands) and type 'actions'.")
+    return 0
+
+async def handle_approve_command(args):
+    print(f"Approving {args.action_id}... please enter REPL mode to manage actions.")
+    return 0
+
+async def handle_deny_command(args):
+    print(f"Denying {args.action_id}... please enter REPL mode to manage actions.")
+    return 0
 
 async def handle_web_command(args):
     """웹 대시보드 시작 커맨드 처리"""
@@ -2297,7 +2348,13 @@ async def handle_tools_command(args):
             from src.core.mcp_integration import get_mcp_hub
 
             mcp_hub = get_mcp_hub()
-            await mcp_hub.initialize_mcp()
+            try:
+                # 전체 초기화가 지연될 수 있으므로 타임아웃 후 부분 결과로 진행
+                await asyncio.wait_for(mcp_hub.initialize_mcp(), timeout=25.0)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "⚠️ MCP initialization timed out; showing currently discovered tools only"
+                )
 
             # 도구 목록 출력 (ToolInfo dataclass 또는 dict 모두 허용)
             tools_by_category: Dict[str, List[str]] = {}
@@ -2324,6 +2381,12 @@ async def handle_tools_command(args):
                     for tool in sorted(tools):
                         print(f"  - {tool}")
 
+            if not tools_by_category:
+                logger.error(
+                    "❌ No tools discovered. Check MCP server connectivity with `sparkleforge mcp status`."
+                )
+                return 1
+
         except Exception as e:
             logger.error(f"❌ Failed to list tools: {e}")
             return 1
@@ -2335,7 +2398,7 @@ async def handle_tools_command(args):
             from src.core.mcp_integration import get_mcp_hub
 
             mcp_hub = get_mcp_hub()
-            await mcp_hub.initialize_mcp()
+            await asyncio.wait_for(mcp_hub.initialize_mcp(), timeout=25.0)
 
             # 도구 테스트
             result = await mcp_hub.test_tool(args.tool_name)

@@ -390,6 +390,11 @@ class AgentState(TypedDict):
     direct_forward_message: str | None
     direct_forward_from_agent: str | None
 
+    # Coworker additions
+    mode: str | None
+    current_goal: str | None
+    action_proposals: Annotated[list, override_reducer] | None
+    last_next_step: str | None
 
 ###################
 # Agent Definitions
@@ -5689,8 +5694,12 @@ class GeneratorAgent:
             )
 
         if not verified_results:
-            # 실무 상황에서 verifier가 비어도 executor 검색 결과가 있으면
-            # 생성 단계를 진행해 사용자가 빈 출력을 받지 않도록 한다.
+            allow_unverified_fallback = (
+                os.getenv("SPARKLEFORGE_ALLOW_UNVERIFIED_FALLBACK", "false").lower()
+                == "true"
+            )
+            # 기본 정책: 검증 결과가 없으면 실패 처리한다.
+            # (옵션으로만 미검증 fallback 허용)
             fallback_from_search = []
             for shared in search_results:
                 raw = getattr(shared, "result", None)
@@ -5704,7 +5713,7 @@ class GeneratorAgent:
                         }
                     )
 
-            if fallback_from_search:
+            if fallback_from_search and allow_unverified_fallback:
                 verified_results = fallback_from_search
                 logger.warning(
                     f"[{self.name}] ⚠️ No verified results; falling back to {len(verified_results)} search results with uncertainty marks"
@@ -6538,6 +6547,7 @@ def agent_workflow_result_to_public_dict(
         "research_results": workflow.get("research_results"),
         "verified_results": workflow.get("verified_results"),
         "research_tasks": workflow.get("research_tasks"),
+        "action_proposals": workflow.get("action_proposals"),
     }
 
     body = content if content else (
@@ -6869,7 +6879,13 @@ class AgentOrchestrator:
         # Define edges - Sparkle-first then planner, 동적 서브 에이전트 노드 사용
         workflow.set_entry_point("sparkle")
         workflow.add_edge("sparkle", "planner")
-        workflow.add_edge("planner", "dynamic_executor")
+        
+        def planner_router(state: AgentState):
+            if state.get("waiting_for_user"):
+                return "end"
+            return "dynamic_executor"
+            
+        workflow.add_conditional_edges("planner", planner_router, {"dynamic_executor": "dynamic_executor", "end": "end"})
         workflow.add_edge("dynamic_executor", "parallel_verifier")
         workflow.add_edge("parallel_verifier", "generator")
         workflow.add_edge("generator", "end")
@@ -6951,6 +6967,90 @@ class AgentOrchestrator:
                     )
             except Exception as e:
                 logger.debug(f"Failed to update progress tracker: {e}")
+
+            if state.get("mode") == "coworker":
+                user_responses = state.get("user_responses", {})
+                action_proposals = state.get("action_proposals", []) or []
+                if state.get("waiting_for_user") and user_responses:
+                    remaining_questions = []
+                    for q in state.get("pending_questions", []):
+                        qid = q.get("id", "")
+                        if qid in user_responses:
+                            resp = user_responses[qid].get("response") if isinstance(user_responses[qid], dict) else user_responses[qid]
+                            if qid.startswith("action_"):
+                                action_id = qid[7:]
+                                for ap in action_proposals:
+                                    if ap["id"] == action_id:
+                                        ap["status"] = resp
+                        else:
+                            remaining_questions.append(q)
+                    state["action_proposals"] = action_proposals
+                    state["pending_questions"] = remaining_questions
+                    if not remaining_questions:
+                        state["waiting_for_user"] = False
+                
+                pending_actions = [ap for ap in action_proposals if ap["status"] == "pending"]
+                approved_actions = [ap for ap in action_proposals if ap["status"] == "approved"]
+                
+                if not action_proposals or (not pending_actions and not approved_actions):
+                    from src.core.llm_manager import TaskType, execute_llm_task
+                    import json, re
+                    goal = state.get("current_goal") or state.get("user_query", "")
+                    class_prompt = f"Classify this user request into one of: 'research_only', 'codebase_read', 'actionable_repo_work', 'mixed'.\nRequest: {goal}\nRespond with only JSON containing 'category'."
+                    class_res = await execute_llm_task(prompt=class_prompt, task_type=TaskType.ANALYSIS)
+                    cat = "mixed"
+                    if class_res.content:
+                        m = re.search(r'"category"\s*:\s*"([^"]+)"', class_res.content)
+                        if m: cat = m.group(1)
+                    
+                    prop_prompt = f"Goal: {goal}\nCategory: {cat}\nPropose a list of actions to achieve this goal. For read-only actions, requires_approval should be false. For write, git, shell execution actions, requires_approval MUST be true. Return JSON with a 'proposals' array containing objects with: id (e.g. act_1), title, tool_type, preview, risk_level, requires_approval (bool)."
+                    prop_res = await execute_llm_task(prompt=prop_prompt, task_type=TaskType.PLANNING)
+                    new_proposals = []
+                    try:
+                        match = re.search(r'\[.*\]', prop_res.content, re.DOTALL)
+                        if match:
+                            arr = json.loads(match.group(0))
+                            for a in arr:
+                                new_proposals.append({
+                                    "id": a.get("id", f"act_{len(new_proposals)+1}"),
+                                    "title": a.get("title", ""),
+                                    "tool_type": a.get("tool_type", "shell"),
+                                    "preview": a.get("preview", ""),
+                                    "risk_level": a.get("risk_level", "low"),
+                                    "requires_approval": a.get("requires_approval", True),
+                                    "status": "pending",
+                                    "result_summary": None,
+                                    "artifact_refs": []
+                                })
+                    except Exception:
+                        pass
+                    
+                    state["action_proposals"] = action_proposals + new_proposals
+                    questions = state.get("pending_questions", []) or []
+                    for ap in new_proposals:
+                        if ap["requires_approval"]:
+                            questions.append({"id": f"action_{ap['id']}", "type": "tool_approval", "message": f"Approve action: [{ap['tool_type']}] {ap['title']}\nPreview: {ap['preview']}"})
+                        else:
+                            ap["status"] = "approved"
+                    state["pending_questions"] = questions
+                    if questions:
+                        state["waiting_for_user"] = True
+                        return state
+                
+                tasks = []
+                for ap in state.get("action_proposals", []):
+                    if ap["status"] == "approved":
+                        tasks.append({
+                            "task_id": ap["id"],
+                            "name": ap["title"],
+                            "description": ap["preview"],
+                            "type": ap["tool_type"],
+                            "search_queries": [ap["preview"]],
+                            "assigned_agent_type": "technical_researcher"
+                        })
+                state["research_tasks"] = tasks
+                state["current_agent"] = "planner"
+                return state
 
             with agent_security_context("planner"):
                 result = await self.planner.execute(scoped_state)
@@ -7930,6 +8030,7 @@ class AgentOrchestrator:
         user_query: str,
         session_id: str | None = None,
         restore_session: bool = False,
+        custom_state: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Execute multi-agent workflow with Skills auto-selection.
 
@@ -7994,6 +8095,8 @@ class AgentOrchestrator:
                 # 복원된 세션의 쿼리와 새 쿼리가 다를 수 있으므로 업데이트
                 if user_query:
                     initial_state["user_query"] = user_query
+                if custom_state:
+                    initial_state.update(custom_state)
             else:
                 logger.info(
                     f"Session not found or restore failed: {session_id}, starting new session"
@@ -8052,6 +8155,10 @@ class AgentOrchestrator:
                 autopilot_mode=True,
                 direct_forward_message=None,
                 direct_forward_from_agent=None,
+                mode=custom_state.get("mode") if custom_state else None,
+                current_goal=custom_state.get("current_goal") if custom_state else None,
+                action_proposals=custom_state.get("action_proposals") if custom_state else [],
+                last_next_step=custom_state.get("last_next_step") if custom_state else None,
             )
 
         # Context Engineering: 워크플로우 시작 전 4단계 사이클 실행
@@ -8148,7 +8255,14 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.warning(f"Failed to auto-save session: {e}")
 
-            # Lifecycle hooks: PostTaskRun (success)
+            workflow_failed = bool(
+                result.get("research_failed")
+                or result.get("verification_failed")
+                or result.get("report_failed")
+                or not result.get("final_report")
+            )
+
+            # Lifecycle hooks: PostTaskRun
             try:
                 hook_runner = self.skill_manager.get_hook_runner()
                 if hook_runner:
@@ -8160,7 +8274,7 @@ class AgentOrchestrator:
                     await hook_runner.run_post_task_run(
                         session_id,
                         task_description=user_query,
-                        success=True,
+                        success=not workflow_failed,
                         result_summary=summary,
                     )
             except Exception as hook_err:
@@ -8168,7 +8282,17 @@ class AgentOrchestrator:
 
             # 백그라운드 메모리 생성은 _end_node에서 이미 트리거됨
 
-            logger.info("Workflow execution completed successfully")
+            if workflow_failed:
+                logger.error(
+                    "Workflow execution completed with failure flags "
+                    "(research_failed=%s, verification_failed=%s, report_failed=%s, has_report=%s)",
+                    bool(result.get("research_failed")),
+                    bool(result.get("verification_failed")),
+                    bool(result.get("report_failed")),
+                    bool(result.get("final_report")),
+                )
+            else:
+                logger.info("Workflow execution completed successfully")
             return result
         except Exception as e:
             logger.error(f"Workflow execution failed: {e}")
