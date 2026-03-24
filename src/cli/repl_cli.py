@@ -128,9 +128,19 @@ class REPLCLI:
             session_stats_command,
             session_tasks_command,
         )
+        from src.cli.commands.work import (
+            work_command,
+            actions_command,
+            approve_command,
+            deny_command,
+        )
 
         self.command_handlers = {
             "research": research_command,
+            "work": work_command,
+            "actions": actions_command,
+            "approve": approve_command,
+            "deny": deny_command,
             "session": {
                 "list": session_list_command,
                 "show": session_show_command,
