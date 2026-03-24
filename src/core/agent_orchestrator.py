@@ -2068,6 +2068,25 @@ class ExecutorAgent:
                 search_query: str, query_index: int
             ) -> Dict[str, Any]:
                 """단일 검색 실행 (여러 검색 도구 fallback 지원)."""
+                def _count_results(payload: Dict[str, Any]) -> int:
+                    data = payload.get("data")
+                    if isinstance(data, list):
+                        return len(data)
+                    if isinstance(data, dict):
+                        for key in ("results", "items", "documents", "hits"):
+                            value = data.get(key)
+                            if isinstance(value, list):
+                                return len(value)
+                        nested = data.get("data")
+                        if isinstance(nested, list):
+                            return len(nested)
+                        if isinstance(nested, dict):
+                            for key in ("results", "items", "documents", "hits"):
+                                value = nested.get(key)
+                                if isinstance(value, list):
+                                    return len(value)
+                    return 0
+
                 # 실제 검색 쿼리 값 로그 출력
                 logger.info(
                     f"[{self.name}] Search {query_index + 1}/{len(search_queries)}: '{search_query}'"
@@ -2091,10 +2110,16 @@ class ExecutorAgent:
                             {"query": search_query, "max_results": results_per_query},
                         )
 
-                        # 성공한 경우
+                        # 성공한 경우 (단, 결과가 0개면 다음 도구로 fallback)
                         if search_result.get("success", False):
+                            result_count = _count_results(search_result)
+                            if result_count <= 0:
+                                logger.warning(
+                                    f"[{self.name}] ⚠️ {tool_name} returned 0 results; trying next tool"
+                                )
+                                continue
                             logger.info(
-                                f"[{self.name}] ✅ Search succeeded with {tool_name}"
+                                f"[{self.name}] ✅ Search succeeded with {tool_name} ({result_count} results)"
                             )
                             return {
                                 "query": search_query,
@@ -2279,16 +2304,45 @@ Return only the queries, one per line, without numbering or bullets."""
                 error_msg = f"연구 실행 실패: 모든 검색 쿼리 실행이 실패했습니다. ({len(failed_searches)}/{len(search_results_list)} 실패)"
                 raise RuntimeError(error_msg)
 
-            # 모든 검색 결과를 통합 (하드코딩 제거, 동적 통합)
-            all_search_data = []
+            # 모든 검색 결과를 통합 (응답 스키마 차이를 견디도록 재귀 추출)
+            def _extract_search_items(payload: Any) -> List[Dict[str, Any]]:
+                extracted: List[Dict[str, Any]] = []
+
+                def _walk(node: Any) -> None:
+                    if isinstance(node, list):
+                        # 결과 리스트 패턴: 각 항목이 문서(dict)인 경우
+                        if node and all(isinstance(x, dict) for x in node):
+                            has_doc_shape = any(
+                                any(k in x for k in ("title", "url", "link", "snippet", "content"))
+                                for x in node
+                            )
+                            if has_doc_shape:
+                                for item in node:
+                                    extracted.append(item)
+                                return
+                        for item in node:
+                            _walk(item)
+                        return
+
+                    if isinstance(node, dict):
+                        # 흔한 컨테이너 키 우선 탐색
+                        for key in ("results", "items", "documents", "hits", "data", "result"):
+                            if key in node:
+                                _walk(node.get(key))
+
+                _walk(payload)
+                return extracted
+
+            all_search_data: List[Dict[str, Any]] = []
             for sr in successful_results:
-                result_data = sr["result"].get("data", {})
-                if isinstance(result_data, dict):
-                    items = result_data.get("results", result_data.get("items", []))
-                    if isinstance(items, list):
-                        all_search_data.extend(items)
-                elif isinstance(result_data, list):
-                    all_search_data.extend(result_data)
+                payload = sr.get("result", {})
+                extracted_items = _extract_search_items(payload)
+                if extracted_items:
+                    all_search_data.extend(extracted_items)
+                else:
+                    logger.warning(
+                        f"[{self.name}] ⚠️ Could not extract items from search payload (query='{sr.get('query', '')[:60]}...')"
+                    )
 
             # 통합된 결과를 하나의 검색 결과 형식으로 구성
             search_result = {
