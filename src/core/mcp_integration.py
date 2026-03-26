@@ -7402,10 +7402,10 @@ async def _execute_browser_tool(
             if not query:
                 raise ValueError("query parameter is required for browser_search")
 
-            if engine not in {"wikipedia", "google"}:
+            if engine not in {"wikipedia", "google", "bing", "duckduckgo"}:
                 raise ValueError(
                     f"Unsupported browser_search engine: {engine}. "
-                    "Use 'wikipedia' or 'google'."
+                    "Use 'wikipedia', 'google', 'bing', or 'duckduckgo'."
                 )
 
             from src.automation.browser_manager import BrowserManager
@@ -7417,7 +7417,8 @@ async def _execute_browser_tool(
 
             page = browser_manager.playwright_page
 
-            if engine == "wikipedia":
+            async def _wikipedia_search() -> ToolResult:
+                """Playwright로 Wikipedia 검색을 수행하고 결과를 ToolResult로 반환."""
                 q_encoded = urllib.parse.quote(query)
                 url = (
                     f"https://en.wikipedia.org/w/index.php?search={q_encoded}"
@@ -7425,7 +7426,7 @@ async def _execute_browser_tool(
                 )
                 await page.goto(url, wait_until="networkidle", timeout=30000)
                 await page.wait_for_timeout(1200)
-                results = await page.evaluate(
+                wiki_results = await page.evaluate(
                     """
                     (maxResults) => {
                         const clean = (s) => (s || '').toString().trim();
@@ -7484,7 +7485,31 @@ async def _execute_browser_tool(
                     """,
                     max_results,
                 )
-            else:
+
+                if not isinstance(wiki_results, list) or len(wiki_results) == 0:
+                    return ToolResult(
+                        success=False,
+                        data={"results": [], "query": query, "engine": "wikipedia"},
+                        execution_time=time.time() - start_time,
+                        confidence=0.0,
+                        error="wikipedia returned no results",
+                    )
+
+                return ToolResult(
+                    success=True,
+                    data={
+                        "results": wiki_results,
+                        "query": query,
+                        "engine": "wikipedia",
+                    },
+                    execution_time=time.time() - start_time,
+                    confidence=0.9,
+                )
+
+            if engine == "wikipedia":
+                return await _wikipedia_search()
+
+            elif engine == "google":
                 hl = os.getenv("BROWSER_SEARCH_GOOGLE_HL", "ko")
                 gl = os.getenv("BROWSER_SEARCH_GOOGLE_GL", "kr")
                 num = min(max_results, 15)
@@ -7505,32 +7530,16 @@ async def _execute_browser_tool(
                 except Exception:
                     pass
                 if await page.query_selector("form#captcha-form"):
-                    return ToolResult(
-                        success=False,
-                        data={"results": [], "query": query, "engine": engine},
-                        execution_time=time.time() - start_time,
-                        confidence=0.0,
-                        error=(
-                            "google_blocked: captcha/consent page (headless IP often blocked; "
-                            "orchestrator falls back to wikipedia browser_search / other tools)"
-                        ),
-                    )
+                    return await _wikipedia_search()
+
                 body_lower = ((await page.content()) or "")[:120000].lower()
                 if (
                     "detected unusual traffic" in body_lower
                     or "unusual traffic from your computer network" in body_lower
                     or "/recaptcha/" in body_lower
                 ):
-                    return ToolResult(
-                        success=False,
-                        data={"results": [], "query": query, "engine": engine},
-                        execution_time=time.time() - start_time,
-                        confidence=0.0,
-                        error=(
-                            "google_blocked: unusual traffic / automation detection "
-                            "(headless SERP may be rate-limited; try again later or use wikipedia engine)"
-                        ),
-                    )
+                    return await _wikipedia_search()
+
                 results = await page.evaluate(
                     """
                     (maxResults) => {
@@ -7549,9 +7558,7 @@ async def _execute_browser_tool(
                         };
                         let nodes = document.querySelectorAll('#search a h3');
                         if (!nodes.length) nodes = document.querySelectorAll('#rso a h3');
-                        if (!nodes.length) {
-                            nodes = document.querySelectorAll('div[data-hveid] a h3');
-                        }
+                        if (!nodes.length) nodes = document.querySelectorAll('div[data-hveid] a h3');
                         for (const h3 of nodes) {
                             const a = h3.closest('a');
                             if (!a || !a.href) continue;
@@ -7577,16 +7584,9 @@ async def _execute_browser_tool(
                                 a.closest('div');
                             if (block) {
                                 const st = clean(block.innerText || '');
-                                if (st.length > title.length + 8) {
-                                    snippet = st.slice(0, 500);
-                                }
+                                if (st.length > title.length + 8) snippet = st.slice(0, 500);
                             }
-                            out.push({
-                                title,
-                                url: href,
-                                snippet,
-                                source: 'google',
-                            });
+                            out.push({ title, url: href, snippet, source: 'google' });
                             if (out.length >= maxResults) break;
                         }
                         return out.slice(0, maxResults);
@@ -7595,21 +7595,103 @@ async def _execute_browser_tool(
                     max_results,
                 )
 
-            if not isinstance(results, list) or len(results) == 0:
+                if not isinstance(results, list) or len(results) == 0:
+                    return await _wikipedia_search()
+
                 return ToolResult(
-                    success=False,
-                    data={"results": [], "query": query, "engine": engine},
+                    success=True,
+                    data={"results": results, "query": query, "engine": engine},
                     execution_time=time.time() - start_time,
-                    confidence=0.0,
-                    error="browser_search returned no results",
+                    confidence=0.85,
                 )
 
-            return ToolResult(
-                success=True,
-                data={"results": results, "query": query, "engine": engine},
-                execution_time=time.time() - start_time,
-                confidence=0.85 if engine == "google" else 0.9,
-            )
+            elif engine == "bing":
+                q_enc = urllib.parse.quote(query)
+                b_url = (
+                    f"https://www.bing.com/search?q={q_enc}"
+                    f"&setlang=en-US&cc=US&form=QBLH&sp=-1"
+                )
+                await page.goto(b_url, wait_until="domcontentloaded", timeout=45000)
+                await page.wait_for_timeout(1000)
+                results = await page.evaluate(
+                    """
+                    (maxResults) => {
+                        const clean = (s) => (s || '').toString().replace(/\\s+/g, ' ').trim();
+                        const out = [];
+                        const nodes = document.querySelectorAll('#b_results .b_algo h2 a');
+                        for (let i = 0; i < nodes.length && out.length < maxResults; i++) {
+                            const a = nodes[i];
+                            const title = clean(a.textContent);
+                            const href = a.href || '';
+                            let snippet = '';
+                            const li = a.closest('li') || a.parentElement;
+                            if (li) {
+                                const p = li.querySelector('p');
+                                if (p) snippet = clean(p.textContent);
+                                else {
+                                    const cap = li.querySelector('.b_caption p');
+                                    if (cap) snippet = clean(cap.textContent);
+                                }
+                            }
+                            if (title && href) {
+                                out.push({ title, url: href, snippet: snippet.slice(0, 500), source: 'bing' });
+                            }
+                        }
+                        return out;
+                    }
+                    """,
+                    max_results,
+                )
+                if not isinstance(results, list) or len(results) == 0:
+                    return await _wikipedia_search()
+                return ToolResult(
+                    success=True,
+                    data={"results": results, "query": query, "engine": engine},
+                    execution_time=time.time() - start_time,
+                    confidence=0.8,
+                )
+
+            elif engine == "duckduckgo":
+                q_enc = urllib.parse.quote(query)
+                ddg_url = f"https://duckduckgo.com/html/?q={q_enc}&kl=us-en&kp=1"
+                await page.goto(ddg_url, wait_until="domcontentloaded", timeout=45000)
+                await page.wait_for_timeout(1200)
+                results = await page.evaluate(
+                    """
+                    (maxResults) => {
+                        const clean = (s) => (s || '').toString().replace(/\\s+/g, ' ').trim();
+                        const out = [];
+                        const blocks = Array.from(document.querySelectorAll('.result'));
+                        for (const b of blocks) {
+                            const a = b.querySelector('a.result__a');
+                            if (!a) continue;
+                            const title = clean(a.textContent);
+                            let href = a.href || b.querySelector('a')?.getAttribute('href') || '';
+                            if (!href || !href.startsWith('http')) {
+                                try {
+                                    href = new URL(href, location.origin).href;
+                                } catch (e) {}
+                            }
+                            const sn = b.querySelector('.result__snippet');
+                            const snippet = sn ? clean(sn.textContent) : '';
+                            if (title && href) {
+                                out.push({ title, url: href, snippet: snippet.slice(0, 500), source: 'duckduckgo' });
+                            }
+                            if (out.length >= maxResults) break;
+                        }
+                        return out;
+                    }
+                    """,
+                    max_results,
+                )
+                if not isinstance(results, list) or len(results) == 0:
+                    return await _wikipedia_search()
+                return ToolResult(
+                    success=True,
+                    data={"results": results, "query": query, "engine": engine},
+                    execution_time=time.time() - start_time,
+                    confidence=0.75,
+                )
 
         else:
             raise ValueError(f"Unknown browser tool: {tool_name}")
