@@ -2189,11 +2189,88 @@ async def handle_run_command(args):
         # Autonomous Orchestrator 초기화
         orchestrator = AutonomousOrchestrator()
 
-        # 연구 실행 (run_research 사용)
-        result = await orchestrator.run_research(
-            user_request=args.query,
-            context={},
+        # CLI에서 추가 단서를 즉시 받아 재시도할지 여부
+        # - 인터랙티브(실제 콘솔 입력 가능)일 때만 사용
+        # - stdin이 TTY가 아니면 자동으로 기존 비대화형 동작으로 폴백
+        should_interact = (
+            hasattr(sys, "stdin")
+            and hasattr(sys, "stdout")
+            and sys.stdin is not None
+            and sys.stdout is not None
+            and sys.stdin.isatty()
+            and sys.stdout.isatty()
+            and os.getenv("SPARKLEFORGE_CLI_INTERACTIVE", "true").lower() == "true"
         )
+
+        def _needs_clarification(content: str) -> bool:
+            if not content:
+                return False
+            # "리포트에 질문을 넣는" 기존 패턴을 감지
+            keywords = (
+                "추가로 사용자가 제공해야 할 단서",
+                "후보 확정을 위한 추가 정보 요청",
+                "추가 질문",
+                "추가 단서",
+                "식별을 위해",
+            )
+            return any(k in content for k in keywords) and (
+                "확정" in content or "단정" in content or "미확정" in content
+            )
+
+        def _extract_clarification_block(content: str) -> str:
+            # 콘솔 표시용: 특정 섹션 헤딩 주변만 보여준다.
+            markers = (
+                "추가로 사용자가 제공해야 할 단서",
+                "후보 확정을 위한 추가 정보 요청",
+            )
+            for m in markers:
+                idx = content.find(m)
+                if idx != -1:
+                    # 다음 '---'까지 대략 잘라냄
+                    end = content.find("\n---", idx)
+                    if end == -1:
+                        end = min(len(content), idx + 1400)
+                    return content[idx : end].strip()
+            return ""
+
+        # 연구 실행 (run_research 사용)
+        base_query = args.query
+        user_addendum = ""
+        max_rounds = 3 if should_interact else 1
+
+        result: dict[str, Any] | None = None
+        for round_idx in range(max_rounds):
+            active_query = base_query if not user_addendum else f"{base_query}\n\n{user_addendum}"
+            result = await orchestrator.run_research(
+                user_request=active_query,
+                context={},
+            )
+
+            # 추가 단서가 필요하면 콘솔에서 받아서 이어가기
+            content = result.get("content", "") if isinstance(result, dict) else ""
+            if should_interact and _needs_clarification(content) and round_idx < max_rounds - 1:
+                clarification_block = _extract_clarification_block(content)
+                if clarification_block:
+                    print("\n[추가 단서 요청 감지]\n")
+                    print(clarification_block)
+
+                prompt = (
+                    "\n위 요청에 맞는 추가 단서(자유 입력)를 넣고 Enter를 누르면 "
+                    "SparkleForge가 이어서 재시도합니다. (원하면 빈 입력으로 건너뜁니다): "
+                )
+                try:
+                    user_input = input(prompt).strip()
+                except EOFError:
+                    user_input = ""
+
+                if not user_input:
+                    break
+
+                # 다음 라운드에서 프롬프트에 사용자 단서 반영
+                user_addendum = f"[사용자 추가 단서]\n{user_input}"
+                continue
+
+            break
 
         # 결과 출력/저장 (output 미지정 시 output/ 아래 기본 파일 생성)
         output_path = args.output

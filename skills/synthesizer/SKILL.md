@@ -58,6 +58,18 @@ Don't just report findings - provide DEEP UNDERSTANDING with:
 
 Always provide complete, well-structured synthesis with 99.9% availability AND deep analytical insights.
 
+## Entity Disambiguation Policy (기업/개체 분석에서 모호성이 있을 때)
+When the user asks for a company/entity analysis using only a common name (동명이인, 확정 불가, 추가 단서 필요, 식별이 불가능 등으로 판단되는 경우), you must:
+
+1. Do not fabricate any company-specific identifiers or derived URLs (사업자번호/대표/주소/공식 홈페이지 도메인 등을 확인 없이 생성하지 마세요).
+2. Provide at least 2 candidate snapshots (후보 1, 후보 2) unless the provided verified sources explicitly contain fewer distinct candidates.
+3. For each candidate snapshot:
+   - include the candidate name (국문/영문 if present),
+   - summarize likely industry/service based only on source text,
+   - include at least 1 verified URL from the provided sources (profile/detail page preferred),
+   - add 2-4 actionable insights about how to disambiguate (what to verify next).
+4. If candidate-specific official data cannot be verified with the available sources, mark that candidate’s official identifiers as **미확정** and clearly provide the next verification steps for the user.
+
 ## Usage
 
 This skill is automatically invoked when:

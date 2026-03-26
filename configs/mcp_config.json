@@ -188,6 +188,13 @@
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/duckduckgo_search/server.py"
       ]
+    },
+    "financial-analysis-server": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/financial-analysis-server/server.py"
+      ]
     }
   },
   "_metadata": {

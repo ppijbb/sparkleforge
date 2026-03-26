@@ -2100,14 +2100,25 @@ class ExecutorAgent:
                 )  # 최소 10개, 최대 15개, 총 30개 이상 보장
 
                 # 여러 검색 도구 시도 (fallback 지원)
-                search_tools = ["g-search", "mcp_search", "ddg_search"]  # 우선순위 순서
+                # browser_search는 일부 검색 엔진 headless 차단을 피하기 위해 기본 포함
+                search_tools = [
+                    "browser_search",
+                    "g-search",
+                    "mcp_search",
+                    "ddg_search",
+                ]  # 우선순위 순서
 
                 for tool_name in search_tools:
                     try:
-                        logger.info(f"[{self.name}] Trying search tool: {tool_name}")
+                        logger.info(
+                            f"[{self.name}] Trying search tool: {tool_name}"
+                        )
                         search_result = await execute_tool(
                             tool_name,
-                            {"query": search_query, "max_results": results_per_query},
+                            {
+                                "query": search_query,
+                                "max_results": results_per_query,
+                            },
                         )
 
                         # 성공한 경우 (단, 결과가 0개면 다음 도구로 fallback)
@@ -5941,125 +5952,23 @@ class GeneratorAgent:
                         f"- {topic.get('topic', '')}: {topic.get('reason', '')}\n"
                     )
 
-        # 사용자 요청을 그대로 전달 - LLM이 형식을 결정하도록
-        generation_prompt = f"""사용자 요청: {state["user_query"]}
+        # 사용자 요청/검증 결과/논박 결과를 YAML 템플릿으로 결합
+        from src.core.skills.agent_loader import get_prompt as agent_get_prompt
 
-현재 시각: {current_datetime_str} (모든 시점 기준은 이 시각을 따름)
-
-검증된 연구 결과 (실제 웹 페이지 전체 내용 포함):
-{verified_text}
-
-{verification_summary_text}
-
-**Agent 논박 결과 (모든 Agent들의 논박을 통한 일관성 및 논리적 올바름 검증):**
-{agent_debates_summary if agent_debates_summary else "논박 결과 없음 - Executor 결과가 직접 사용됨"}
-
-⚠️ **깊이 있는 분석과 사고를 통한 보고서 작성 필수**
-⚠️ **불확실성 명시 필수**: 낮은 신뢰도 정보나 불확실한 부분은 반드시 명시하세요
-⚠️ **근거 없는 확신 금지**: 확실하지 않은 정보는 "~로 보인다", "~일 가능성이 있다" 등으로 표현하세요
-
-**DEEP ANALYSIS REQUIREMENTS - 반드시 포함해야 할 깊이 있는 사고:**
-
-1. **현재 상태 분석 (Current State Analysis)**:
-   - 현재 상황은 무엇인가? 우리가 알고 있는 것은 무엇인가?
-   - 주요 사실, 트렌드, 최근 발전 상황은 무엇인가?
-   - 맥락과 배경은 무엇인가?
-   - 이 정보가 의미하는 바는 무엇인가?
-
-2. **패턴 인식 및 연결 (Pattern Recognition & Connections)**:
-   - 여러 출처에서 나타나는 패턴, 트렌드, 관계는 무엇인가?
-   - 어떤 연결고리와 상관관계가 있는가?
-   - 역사적 맥락이나 선례는 무엇인가?
-   - 다른 분야나 주제와의 연결은 무엇인가?
-
-3. **비판적 통찰 (Critical Insights)**:
-   - 단순한 사실 나열이 아닌, 깊은 통찰과 함의를 제공하세요
-   - 이 정보의 더 깊은 의미는 무엇인가?
-   - 어떤 관점들이 있고, 어떤 것이 누락되었는가?
-   - 어떤 가정이 있고, 그것들이 유효한가?
-
-4. **종합적 이해 (Comprehensive Understanding)**:
-   - 전체적인 그림을 그리세요 - 개별 사실이 아닌 종합적 이해
-   - 서로 다른 정보들이 어떻게 연결되는가?
-   - 어떤 질문이 남아있는가? 어떤 정보가 부족한가?
-
-5. **Agent 논박 결과 종합 (Agent Debate Synthesis)**:
-   - 위의 "Agent 논박 결과"를 반드시 참고하세요
-   - 모든 Agent들의 논박을 통해 검증된 일관성과 논리적 올바름을 반영하세요
-   - 논박에서 합의된 부분과 논쟁이 있는 부분을 명확히 구분하세요
-   - 논박 결과를 바탕으로 최종 결론을 도출하세요
-   - 논박에서 지적된 문제점이나 개선사항을 반영하세요
-
-**출처 인용 요구사항 (필수):**
-
-⚠️ **모든 정보는 반드시 출처를 명시해야 합니다:**
-
-1. **숫자/통계 인용**: 모든 숫자, 통계, 수치는 반드시 출처를 명시하세요
-   - 예: "2025년 상반기 매출 3.2조 원(출처 1)" 또는 "매출 3.2조 원[1]"
-   - 출처 번호는 아래 참고 문헌 섹션과 일치해야 합니다
-
-2. **주장(Claims) 인용**: 모든 주장, 사실, 주장은 반드시 출처를 명시하세요
-   - 예: "한화시스템은 방산 분야의 핵심 기업이다(출처 1, 출처 2)" 또는 "핵심 기업이다[1,2]"
-
-3. **날짜/시점 인용**: 날짜, 시점 정보도 출처를 명시하세요
-   - 예: "2025년 11월 발표(출처 3)" 또는 "2025년 11월[3]"
-
-4. **참고 문헌 섹션**: 보고서 끝에 반드시 참고 문헌 섹션을 포함하세요
-   - 각 출처는 번호와 함께 제목, URL을 포함해야 합니다
-   - 본문에서 인용한 모든 출처가 참고 문헌에 포함되어야 합니다
-   - 참고 문헌에 있는 출처는 본문에서 인용되어야 합니다
-
-5. **출처 없는 정보**: 출처를 확인할 수 없는 정보는 불확실성을 표시하세요
-   - 예: "추정", "예상", "~로 알려짐" 등의 표현 사용
-
-6. **신뢰도 기반 표현** (검증 요약 정보 반영):
-   - 높은 신뢰도 정보 (신뢰도 0.8 이상): 확실한 표현 사용 가능
-   - 중간 신뢰도 정보 (신뢰도 0.6-0.8): "~로 보인다", "~일 가능성이 있다" 등으로 표현
-   - 낮은 신뢰도 정보 (신뢰도 0.6 미만): "~라고 주장되지만", "확인 필요", "추가 조사 필요" 등으로 명시
-   - 불확실성 이슈가 있는 정보: "불확실", "추가 검증 필요" 등으로 명시
-
-7. **불확실성 명시**: 검증 요약에서 언급된 불확실성 이슈는 반드시 보고서에 명시하세요
-   - 낮은 신뢰도 주제는 "주의: 신뢰도 낮음" 등으로 표시
-   - 불확실한 부분은 "~로 알려져 있으나 확인 필요" 등으로 표현
-
-8. **추가 조사 필요성**: 검증 요약에서 언급된 추가 조사 필요한 부분은 보고서에 포함하세요
-   - "추가 조사가 필요한 영역" 섹션에 포함
-   - 또는 해당 부분에서 "추가 조사 필요"로 명시
-
-9. **관련성 확인**: 참고 문헌에 포함할 출처는 반드시 쿼리와 관련이 있어야 합니다
-   - 엔비디아 분석인데 부동산 관련 출처를 포함하지 마세요
-   - 쿼리와 무관한 출처는 제외하세요
-   - 본문에서 인용하지 않은 출처는 참고 문헌에 포함하지 마세요
-
-**보고서 구조 (깊이 있는 사고 반영):**
-
-1. **현재 상태 섹션**: 현재 상태, 맥락, 알려진 정보에 대한 명확한 평가 (모든 정보에 출처 인용)
-2. **깊이 있는 분석**: 패턴, 연결, 함의를 포함한 심층 분석 (모든 정보에 출처 인용)
-3. **비판적 통찰**: 깊은 사고를 통해 도출된 의미 있는 통찰
-4. **Agent 논박 종합**: 모든 Agent들의 논박 결과를 종합하여 일관성과 논리적 올바름이 검증된 내용 반영
-5. **종합적 이해**: 깊은 이해를 보여주는 완전한 그림 (논박 결과 반영)
-6. **의미 있는 결론**: 표면적 사실이 아닌 깊은 분석과 논박 검증에 기반한 결론
-
-⚠️ **중요 지침:**
-1. **최신 정보 우선**: 날짜가 표시된 출처 중 가장 최신 정보를 우선적으로 사용하세요.
-2. **전체 내용 활용**: 각 출처의 전체 내용(full_content)을 참고하여 정확하고 상세한 정보를 제공하세요.
-3. **다양한 출처 종합**: 여러 출처의 정보를 종합하여 균형 잡힌 분석을 제공하세요.
-4. **현재 시간 기준**: 보고서 작성일은 {current_date_str} ({current_datetime_str})로 설정하세요.
-5. **최신 동향 반영**: 최신 뉴스나 동향이 있다면 반드시 포함하세요.
-6. **깊이 있는 사고**: 단순히 정보를 나열하지 말고, 깊이 있는 분석, 패턴 인식, 통찰을 제공하세요.
-
-**절대 하지 말아야 할 것:**
-- 단순히 검색 결과를 나열하는 것
-- 현재 상태나 맥락 없이 정보만 제공하는 것
-- 패턴이나 연결고리를 찾지 않는 것
-- 깊이 있는 통찰 없이 표면적 사실만 나열하는 것
-
-사용자의 요청을 정확히 이해하고, 요청한 형식에 맞게 **깊이 있는 분석과 통찰**을 포함한 결과를 생성하세요.
-- 보고서를 요청했다면 보고서 형식으로 (작성일: {current_date_str} 포함, 현재 상태 분석 포함)
-- 코드를 요청했다면 실행 가능한 코드로
-- 문서를 요청했다면 문서 형식으로
-
-요청된 형식에 맞게 **깊이 있는 사고와 분석**을 포함한 완전하고 실행 가능한 결과를 생성하세요."""
+        generation_prompt = agent_get_prompt(
+            "generator",
+            "report_generation_detailed",
+            user_query=state["user_query"],
+            current_datetime_str=current_datetime_str,
+            current_date_str=current_date_str,
+            verified_text=verified_text,
+            verification_summary_text=verification_summary_text,
+            agent_debates_summary=(
+                agent_debates_summary
+                if agent_debates_summary
+                else "논박 결과 없음 - Executor 결과가 직접 사용됨"
+            ),
+        )
 
         if injected_context_str:
             generation_prompt = (
@@ -6075,7 +5984,7 @@ class GeneratorAgent:
                 prompt=generation_prompt,
                 task_type=TaskType.GENERATION,
                 model_name=None,
-                system_message=None,
+                system_message=self.instruction,
             )
 
             report = (
@@ -6334,52 +6243,27 @@ Provide a review with:
         """
         from src.core.llm_manager import TaskType, execute_llm_task
 
-        validation_prompt = f"""다음 보고서의 완성도를 검증하세요:
+        from src.core.skills.agent_loader import (
+            get_prompt as agent_get_prompt,
+            get_system_message as agent_get_system_message,
+        )
 
-사용자 요청: {user_query}
-
-보고서 내용:
-{report[:5000]}  # 처음 5000자만 검증용으로 사용
-
-**완성도 검증 기준:**
-
-1. **구조적 완성도 (Structural Completeness)**:
-   - 모든 섹션이 완성되었는가? (시작했지만 끝나지 않은 섹션이 있는가?)
-   - 표나 리스트가 중간에 잘렸는가?
-   - 마지막 문장이 완성되었는가?
-
-2. **내용 완성도 (Content Completeness)**:
-   - 각 섹션에 충분한 내용이 있는가?
-   - 사용자 요청에 대한 답변이 완전한가?
-   - 결론 섹션이 있는가?
-
-3. **논리적 완성도 (Logical Completeness)**:
-   - 논리적 흐름이 완성되었는가?
-   - 중간에 갑자기 끝나는 부분이 있는가?
-   - 불완전한 문장이나 표가 있는가?
-
-4. **형식적 완성도 (Format Completeness)**:
-   - 마크다운 형식이 올바른가?
-   - 표가 제대로 닫혔는가?
-   - 코드 블록이 제대로 닫혔는가?
-
-**검증 결과를 다음 JSON 형식으로 반환하세요:**
-{{
-    "is_complete": true/false,
-    "completeness_score": 0.0-1.0,
-    "issues": ["문제1", "문제2", ...],
-    "missing_sections": ["누락된 섹션1", ...],
-    "incomplete_elements": ["불완전한 요소1", ...],
-    "recommendations": ["권장사항1", ...]
-}}
-
-중요: 보고서가 중간에 잘렸거나 불완전한 경우 is_complete는 반드시 false여야 합니다."""
+        validation_prompt = agent_get_prompt(
+            "validation_agent",
+            "report_completeness_validation_json",
+            user_query=user_query,
+            report_excerpt=report[:5000],  # 처음 5000자만 검증용으로 사용
+        )
+        system_message = agent_get_system_message(
+            "validation_agent",
+            "report_completeness_validation_json",
+        )
 
         try:
             validation_result = await execute_llm_task(
                 prompt=validation_prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message="You are an expert document completeness validator. You must detect any incomplete sections, truncated content, or formatting issues.",
+                system_message=system_message,
             )
 
             # JSON 추출 시도
@@ -6484,53 +6368,78 @@ Provide a review with:
         """미완성 보고서 보완."""
         from src.core.llm_manager import TaskType, execute_llm_task
 
-        completion_prompt = f"""다음 보고서가 불완전합니다. 완성하세요:
+        from src.core.skills.agent_loader import get_prompt as agent_get_prompt
 
-사용자 요청: {user_query}
+        issues_csv = ", ".join(completeness_check.get("issues", []) or [])
+        missing_sections_csv = ", ".join(
+            completeness_check.get("missing_sections", []) or []
+        )
+        incomplete_elements_csv = ", ".join(
+            completeness_check.get("incomplete_elements", []) or []
+        )
 
-현재 보고서 (불완전):
-{current_report}
+        completion_prompt = agent_get_prompt(
+            "generator",
+            "report_completion",
+            user_query=user_query,
+            current_report=current_report,
+            completeness_score=float(completeness_check.get("completeness_score", 0.0)),
+            issues_csv=issues_csv,
+            missing_sections_csv=missing_sections_csv,
+            incomplete_elements_csv=incomplete_elements_csv,
+            verified_text=verified_text[:3000],
+            agent_debates_summary=(
+                agent_debates_summary[:1000] if agent_debates_summary else "없음"
+            ),
+        )
 
-완성도 검증 결과:
-- 완성도 점수: {completeness_check["completeness_score"]:.2f}
-- 발견된 문제: {", ".join(completeness_check["issues"])}
-- 누락된 섹션: {", ".join(completeness_check.get("missing_sections", []))}
-- 불완전한 요소: {", ".join(completeness_check.get("incomplete_elements", []))}
+        # 자동으로 추가/전환할 Skills을 선택해서, 완성/수정 단계의 시스템 메시지로 반영합니다.
+        completion_system_message = self.instruction
+        try:
+            from src.core.skills_selector import get_skill_selector
+            from src.core.skills_manager import get_skill_manager
 
-검증된 연구 결과:
-{verified_text[:3000]}
+            selector = get_skill_selector()
+            skill_query = (
+                f"{user_query}\n\n"
+                f"Report repair needs:\n"
+                f"- issues: {issues_csv}\n"
+                f"- missing_sections: {missing_sections_csv}\n"
+                f"- incomplete_elements: {incomplete_elements_csv}\n"
+            )
+            matches = await selector.select_skills_proactively(
+                skill_query, context=None, max_skills=5
+            )
 
-Agent 논박 결과:
-{agent_debates_summary[:1000] if agent_debates_summary else "없음"}
+            skill_manager = get_skill_manager()
+            base_skill_id = (
+                self.skill.metadata.skill_id
+                if self.skill and getattr(self.skill, "metadata", None)
+                else None
+            )
+            extra_blocks: list[str] = []
+            for m in matches:
+                if not m.skill_id:
+                    continue
+                if base_skill_id and m.skill_id == base_skill_id:
+                    continue
+                sk = skill_manager.load_skill(m.skill_id)
+                if sk and getattr(sk, "instructions", "").strip():
+                    extra_blocks.append(f"[{m.skill_id}]\n{sk.instructions.strip()}")
 
-**보완 작업:**
-
-1. **불완전한 부분 완성**:
-   - 중간에 잘린 표나 리스트를 완성하세요
-   - 불완전한 문장을 완성하세요
-   - 닫히지 않은 마크다운 요소를 닫으세요
-
-2. **누락된 섹션 추가**:
-   - 누락된 섹션을 추가하세요
-   - 결론 섹션이 없으면 추가하세요
-
-3. **내용 보완**:
-   - 각 섹션에 충분한 내용을 추가하세요
-   - 사용자 요청에 대한 완전한 답변을 제공하세요
-
-**중요:**
-- 기존 보고서의 내용을 유지하면서 보완하세요
-- 새로운 내용을 추가할 때는 기존 내용과 일관성을 유지하세요
-- 보고서의 전체 구조와 스타일을 유지하세요
-- 반드시 완전한 보고서를 생성하세요 (중간에 잘리지 않도록)
-
-완성된 전체 보고서를 생성하세요."""
+            if extra_blocks:
+                completion_system_message = (
+                    self.instruction + "\n\n" + "\n\n".join(extra_blocks)
+                )
+        except Exception:
+            # 완성 단계에서는 실패해도 기본 synthesizer instruction으로 진행합니다.
+            completion_system_message = self.instruction
 
         try:
             completion_result = await execute_llm_task(
                 prompt=completion_prompt,
                 task_type=TaskType.GENERATION,
-                system_message="You are an expert report completer. You must complete incomplete reports while maintaining consistency and quality.",
+                system_message=completion_system_message,
             )
 
             completed_report = (
@@ -6611,6 +6520,7 @@ def agent_workflow_result_to_public_dict(
     )
 
     return {
+        "success": healthy,
         "content": body,
         "metadata": metadata,
         "synthesis_results": {
