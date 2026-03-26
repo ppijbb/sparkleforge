@@ -54,6 +54,103 @@ prompts:
       - research_data
       - current_time
 
+  report_generation_detailed:
+    system_message: |
+      You are a production-grade report generation agent.
+      You collaborate with a Validation Agent to ensure completeness and source-grounded claims.
+      If you are uncertain, you MUST label uncertainty and recommend what to verify next.
+    template: |
+      사용자 요청: {user_query}
+
+      현재 시각: {current_datetime_str} (모든 시점 기준은 이 시각을 따름)
+
+      검증된 연구 결과 (웹 페이지 전체 내용 포함):
+      {verified_text}
+
+      {verification_summary_text}
+
+      Agent 논박 결과:
+      {agent_debates_summary}
+
+      ⚠️ 불확실성 명시 필수: 낮은 신뢰도 정보나 불확실한 부분은 반드시 명시하세요
+      ⚠️ 근거 없는 확신 금지: 확실하지 않은 정보는 "~로 보인다", "~일 가능성이 있다" 등으로 표현하세요
+
+      DEEP ANALYSIS REQUIREMENTS (반드시 포함):
+      1. 현재 상태 분석 (Current State Analysis)
+      2. 패턴 인식 및 연결 (Pattern Recognition & Connections)
+      3. 비판적 통찰 (Critical Insights)
+      4. 종합적 이해 (Comprehensive Understanding)
+      5. Agent 논박 결과 종합 (Agent Debate Synthesis)
+
+      출처 인용 요구사항 (필수):
+      1. 모든 숫자/통계/수치/날짜/시점 정보는 반드시 출처를 명시하세요.
+      2. 모든 주장(Claims)과 사실은 반드시 출처를 명시하세요.
+      3. 보고서 끝에 참고문헌(References) 섹션을 반드시 포함하고, 본문에 인용된 출처만 포함하세요.
+      4. 출처를 확인할 수 없는 내용은 불확실성으로 표시하고 추가 조사 필요를 명시하세요.
+
+      보고서 구조 (필수 섹션 포함):
+      1. 현재 상태 섹션
+      2. 깊이 있는 분석 섹션
+      3. 비판적 통찰 섹션
+      4. Agent 논박 종합 섹션
+      5. 종합적 이해/의미 있는 결론 섹션
+      (요청 형식이 다르면 그 형식을 우선하되, 위 요구사항은 유지하세요.)
+
+      중요 지침:
+      - 보고서 작성일은 {current_date_str} ({current_datetime_str})로 설정하세요.
+      - 최신 정보가 우선이며, 서로 다른 출처를 균형 있게 종합하세요.
+      - 단순 나열 금지: 반드시 패턴/연결/함의를 포함한 분석을 제공하세요.
+    variables:
+      - user_query
+      - current_datetime_str
+      - current_date_str
+      - verified_text
+      - verification_summary_text
+      - agent_debates_summary
+
+  report_completion:
+    system_message: |
+      You are a production-grade report completer.
+      You must preserve the original report structure and style, and complete any truncated or incomplete parts.
+    template: |
+      다음 보고서가 불완전합니다. 완성하세요:
+
+      사용자 요청: {user_query}
+
+      현재 보고서 (불완전):
+      {current_report}
+
+      완성도 검증 결과:
+      - 완성도 점수: {completeness_score:.2f}
+      - 발견된 문제: {issues_csv}
+      - 누락된 섹션: {missing_sections_csv}
+      - 불완전한 요소: {incomplete_elements_csv}
+
+      검증된 연구 결과:
+      {verified_text}
+
+      Agent 논박 결과:
+      {agent_debates_summary}
+
+      보완 작업:
+      1. 불완전한 부분 완성 (잘린 표/리스트/문장, 닫히지 않은 마크다운 요소)
+      2. 누락된 섹션 추가 (특히 결론 섹션)
+      3. 사용자 요청에 대한 완전한 답변 제공
+
+      중요:
+      - 기존 보고서 내용을 유지하면서 보완하세요
+      - 새로운 내용을 추가할 때 기존 내용과 일관성을 유지하세요
+      - 보고서 전체가 중간에 잘리지 않도록 완전한 결과를 생성하세요
+    variables:
+      - user_query
+      - current_report
+      - completeness_score
+      - issues_csv
+      - missing_sections_csv
+      - incomplete_elements_csv
+      - verified_text
+      - agent_debates_summary
+
 configuration:
   default_model: null
   task_type: "GENERATION"

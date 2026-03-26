@@ -6,7 +6,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from string import Template
 from typing import Any, Dict, List
 
 import yaml
@@ -71,13 +70,14 @@ class AgentLoader:
         prompt_config = config.prompts[prompt_name]
         template_str = prompt_config["template"]
 
-        # 템플릿 변수 치환
-        template = Template(template_str)
+        # YAML 템플릿은 주로 `{var}` 형태를 사용합니다.
+        # Python `str.format`로 치환하며, 누락 변수가 있으면 즉시 에러로 처리합니다.
         try:
-            rendered = template.safe_substitute(**kwargs)
-            return rendered
+            return template_str.format(**kwargs)
         except KeyError as e:
             raise ValueError(f"Missing required template variable: {e}")
+        except Exception as e:
+            raise ValueError(f"Failed to render prompt '{prompt_name}': {e}")
 
     def get_system_message(self, agent_name: str, prompt_name: str) -> str:
         """시스템 메시지 반환"""

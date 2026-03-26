@@ -105,6 +105,42 @@ prompts:
       - query
       - research_results
 
+  report_completeness_validation_json:
+    system_message: |
+      You are an expert document completeness validator.
+      You MUST return ONLY valid JSON matching the requested schema.
+    template: |
+      다음 보고서의 완성도를 검증하세요:
+
+      사용자 요청: {user_query}
+
+      보고서 내용 (검증용 일부):
+      {report_excerpt}
+
+      완성도 검증 기준:
+      1. 구조적 완성도: 모든 섹션이 완성되었는가? 표/리스트가 중간에 잘리지 않았는가? 마지막 문장이 완성되었는가?
+      2. 내용 완성도: 사용자 요청에 대한 답변이 충분한가? 결론 섹션이 있는가?
+      3. 논리적 완성도: 중간에 갑자기 끝난 부분이 없는가? 불완전한 문장/표가 없는가?
+      4. 형식적 완성도: 마크다운/코드 블록/표가 올바르게 닫혔는가?
+
+      검증 결과를 다음 JSON 형식으로 반환하세요:
+      {{
+        "is_complete": true/false,
+        "completeness_score": 0.0-1.0,
+        "issues": ["문제1", "문제2"],
+        "missing_sections": ["누락된 섹션1"],
+        "incomplete_elements": ["불완전한 요소1"],
+        "recommendations": ["권장사항1"]
+      }}
+
+      중요: 보고서가 중간에 잘렸거나 불완전한 경우 is_complete는 반드시 false여야 합니다.
+
+      JSON 이외의 텍스트를 출력하지 마세요.
+
+    variables:
+      - user_query
+      - report_excerpt
+
 configuration:
   default_model: null
   task_type: "VALIDATION"

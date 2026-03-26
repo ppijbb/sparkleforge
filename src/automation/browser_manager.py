@@ -24,11 +24,13 @@ try:
     BROWSER_USE_AVAILABLE = True
 except ImportError:
     BROWSER_USE_AVAILABLE = False
-    BrowserUseBrowser = None
-    BrowserConfig = None
-    BrowserContext = None
-    BrowserContextConfig = None
-    DomService = None
+    # Runtime safety: type hints like `BrowserContext | None` should not evaluate to `None | None`.
+    # These are used only for typing; browser-use functionality is disabled when unavailable.
+    BrowserUseBrowser = Any
+    BrowserConfig = Any
+    BrowserContext = Any
+    BrowserContextConfig = Any
+    DomService = Any
 
 # Playwright imports for advanced features
 try:

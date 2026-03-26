@@ -3607,9 +3607,15 @@ class UniversalMCPHub:
                 f"[MCP][exec.browser] Routing {tool_name} to _execute_browser_tool"
             )
             try:
-                from src.core.mcp_integration import ToolResult, _execute_browser_tool
+                # IMPORTANT: avoid binding the name `_execute_browser_tool` in this scope.
+                # If we import it with the same identifier, Python treats it as a local variable
+                # across the whole function (leading to UnboundLocalError in the local-tool branch).
+                from src.core.mcp_integration import (
+                    ToolResult,
+                    _execute_browser_tool as browser_execute_tool,
+                )
 
-                tool_result = await _execute_browser_tool(tool_name, parameters)
+                tool_result = await browser_execute_tool(tool_name, parameters)
                 execution_time = time.time() - start_time
 
                 result_summary = ""
@@ -7164,8 +7170,9 @@ async def _execute_browser_tool(
         # BrowserManager 인스턴스 생성 (싱글톤 패턴 고려)
         browser_manager = BrowserManager()
 
-        # 브라우저 초기화 (아직 안 되어 있으면)
-        if not browser_manager.browser_available:
+        # browser-use 기반 브라우저 유틸은 `browser_navigate`/`browser_extract`에서만 사용됩니다.
+        # `browser_search` 등 Playwright 전용 경로에서는 browser-use가 없어도 동작해야 합니다.
+        if tool_name in {"browser_navigate", "browser_extract"} and not browser_manager.browser_available:
             await browser_manager.initialize_browser()
 
         if tool_name == "browser_navigate":
@@ -7351,6 +7358,127 @@ async def _execute_browser_tool(
                     )
             else:
                 raise RuntimeError("Playwright not available for browser interaction")
+
+        elif tool_name == "browser_search":
+            # Headless browser-based search.
+            # Note: Some search engines block automation; therefore this tool defaults to Wikipedia,
+            # where headless HTML fetching is stable.
+            query = parameters.get("query", "")
+            engine = (parameters.get("engine") or "wikipedia").lower()
+            max_results = int(parameters.get("max_results", 3))
+
+            if not query:
+                raise ValueError("query parameter is required for browser_search")
+
+            if engine not in {"wikipedia"}:
+                raise ValueError(f"Unsupported browser_search engine: {engine}")
+
+            from src.automation.browser_manager import BrowserManager
+
+            browser_manager = BrowserManager()
+            # Ensure Playwright is ready (BrowserManager may use browser-use otherwise).
+            await browser_manager.initialize_playwright()
+            if not browser_manager.playwright_page:
+                raise RuntimeError("Playwright page not initialized for browser_search")
+
+            import urllib.parse
+
+            q_encoded = urllib.parse.quote(query)
+            url = (
+                f"https://en.wikipedia.org/w/index.php?search={q_encoded}"
+                f"&title=Special:Search&ns0=1"
+            )
+
+            page = browser_manager.playwright_page
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.wait_for_timeout(1200)
+
+            results = await page.evaluate(
+                """
+                (maxResults) => {
+                    const clean = (s) => (s || '').toString().trim();
+
+                    const pageUrl = window.location.href;
+
+                    // 1) Search results list mode (Wikipedia renders result cards in DOM)
+                    const resultEls = Array.from(
+                        document.querySelectorAll(
+                            '#mw-content-text .mw-search-result, #mw-content-text li.mw-search-result'
+                        )
+                    );
+                    const out = [];
+                    for (const el of resultEls) {
+                        const a = el.querySelector('a');
+                        if (!a) continue;
+                        const title = clean(a.textContent);
+
+                        let href = a.href || a.getAttribute('href') || '';
+                        if (href && href.startsWith('/')) {
+                            href = new URL(href, location.origin).href;
+                        }
+
+                        const snippetEl =
+                            el.querySelector('.searchresult') ||
+                            el.querySelector('.mw-search-result-data') ||
+                            el.querySelector('p') ||
+                            el;
+                        const snippet = clean(snippetEl.textContent);
+
+                        if (title && href) {
+                            out.push({
+                                title,
+                                url: href,
+                                snippet: snippet.slice(0, 500),
+                                source: 'wikipedia',
+                            });
+                        }
+                        if (out.length >= maxResults) break;
+                    }
+
+                    if (out.length) return out.slice(0, maxResults);
+
+                    // 2) Redirect mode (Wikipedia goes directly to an article page)
+                    const h1 = document.querySelector('h1');
+                    const title = clean(h1 ? h1.innerText : document.title);
+
+                    const ps = Array.from(
+                        document.querySelectorAll('#mw-content-text .mw-parser-output p')
+                    );
+                    let snippet = '';
+                    for (const p of ps) {
+                        const t = clean(p.innerText);
+                        if (t && t.length >= 30) {
+                            snippet = t;
+                            break;
+                        }
+                    }
+
+                    return [{
+                        title,
+                        url: pageUrl,
+                        snippet: clean(snippet).slice(0, 500),
+                        source: 'wikipedia',
+                    }].slice(0, maxResults);
+                }
+                """,
+                max_results,
+            )
+
+            if not isinstance(results, list) or len(results) == 0:
+                return ToolResult(
+                    success=False,
+                    data={"results": [], "query": query, "engine": engine},
+                    execution_time=time.time() - start_time,
+                    confidence=0.0,
+                    error="browser_search returned no results",
+                )
+
+            return ToolResult(
+                success=True,
+                data={"results": results, "query": query, "engine": engine},
+                execution_time=time.time() - start_time,
+                confidence=0.9,
+            )
 
         else:
             raise ValueError(f"Unknown browser tool: {tool_name}")
