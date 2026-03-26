@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import re
+import sys
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -17,14 +18,13 @@ try:
     import httpx
     from fastmcp import FastMCP
     from pydantic import BaseModel, Field
-
-    FASTMCP_AVAILABLE = True
-except ImportError:
-    FASTMCP_AVAILABLE = False
-    FastMCP = None
-    BaseModel = None
-    Field = None
-    httpx = None
+except ImportError as e:
+    raise ImportError(
+        "search_server requires httpx, fastmcp, and pydantic. "
+        "Install them in the same Python environment that runs this MCP process "
+        f"(e.g. project .venv). Current interpreter: {sys.executable}. "
+        "Tip: embedded MCP stdio servers should use sys.executable, not bare 'python'."
+    ) from e
 
 logger = logging.getLogger(__name__)
 
