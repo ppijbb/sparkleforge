@@ -2182,6 +2182,37 @@ def _ensure_database_driver_for_cli() -> None:
 
 async def handle_run_command(args):
     """연구 실행 커맨드 처리"""
+    def _sanitize_embedded_cli_flags(query: str) -> tuple[str, bool]:
+        """Query 문자열에 잘못 포함된 CLI 플래그를 제거.
+
+        예: "질문 ... --format markdown --output out.md"
+        """
+        if not query:
+            return query, False
+        markers = (" --format ", " --output ", " --streaming", " -o ")
+        cut_positions = [query.find(m) for m in markers if query.find(m) != -1]
+        if not cut_positions:
+            return query, False
+        cut_at = min(cut_positions)
+        cleaned = query[:cut_at].strip()
+        # CLI 플래그가 제거된 결과가 빈 문자열이더라도, "플래그 제거가 감지됨"은 맞으므로 True 유지.
+        # 대신 caller에서 빈 쿼리를 실행하지 않도록 처리한다.
+        return cleaned, True
+
+    original_query = getattr(args, "query", "")
+    sanitized_query, was_sanitized = _sanitize_embedded_cli_flags(original_query)
+    if was_sanitized:
+        if not sanitized_query.strip():
+            logger.warning(
+                "Detected embedded CLI flags inside query text, but removing them left an empty query. "
+                "Aborting run to avoid executing a misleading/empty request."
+            )
+            return 1
+        logger.warning(
+            "Detected embedded CLI flags inside query text; sanitized query for research execution."
+        )
+        args.query = sanitized_query
+
     logger.info(f"🔬 Starting research: {args.query}")
 
     try:

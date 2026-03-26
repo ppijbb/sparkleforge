@@ -2104,7 +2104,8 @@ class ExecutorAgent:
                 browser_engine_chain = [
                     e.strip()
                     for e in os.getenv(
-                        "SPARKLEFORGE_BROWSER_SEARCH_ENGINES", "google,wikipedia"
+                        "SPARKLEFORGE_BROWSER_SEARCH_ENGINES",
+                        "google,bing,duckduckgo,wikipedia",
                     ).split(",")
                     if e.strip()
                 ]
