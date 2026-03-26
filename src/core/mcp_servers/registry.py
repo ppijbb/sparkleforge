@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from src.core.mcp_python import resolve_mcp_python_executable
+
 logger = logging.getLogger(__name__)
 
 
@@ -110,8 +112,8 @@ def get_embedded_server_config(server_name: str) -> Dict[str, Any] | None:
 
     server = EMBEDDED_SERVERS[server_name]
 
-    # Get Python executable
-    python_path = os.getenv("MCP_PYTHON_PATH", "python")
+    # Get Python executable (venv와 동일 인터프리터 사용; MCP_PYTHON_PATH 우선)
+    python_path = resolve_mcp_python_executable("python")
 
     # Get project root
     project_root = Path(__file__).parent.parent.parent

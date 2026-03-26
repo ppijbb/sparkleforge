@@ -1385,6 +1385,11 @@ class UniversalMCPHub:
                     os.environ["PROJECT_ROOT"] = str(project_root)
                     # 환경변수 치환
                     resolved_configs = self._resolve_env_vars_in_value(raw_configs)
+                    from src.core.mcp_python import normalize_mcp_servers_python_commands
+
+                    resolved_configs = normalize_mcp_servers_python_commands(
+                        resolved_configs
+                    )
 
                     # API 키 확인 및 필터링
                     filtered_configs = {}
@@ -7158,6 +7163,28 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
         )
 
 
+async def _playwright_dismiss_google_consent(page: Any) -> None:
+    """Google 검색 진입 시 지역·쿠키 동의 UI가 뜨면 닫기 시도."""
+    candidates = [
+        'button:has-text("Accept all")',
+        'button:has-text("Accept All")',
+        'button:has-text("I agree")',
+        'button:has-text("동의")',
+        'button:has-text("모두 동의")',
+        '[aria-label="Accept all"]',
+        'form[action*="consent"] button',
+    ]
+    for sel in candidates:
+        try:
+            loc = page.locator(sel).first
+            if await loc.is_visible(timeout=1200):
+                await loc.click(timeout=2500)
+                await page.wait_for_timeout(400)
+                break
+        except Exception:
+            continue
+
+
 async def _execute_browser_tool(
     tool_name: str, parameters: Dict[str, Any]
 ) -> ToolResult:
@@ -7360,109 +7387,213 @@ async def _execute_browser_tool(
                 raise RuntimeError("Playwright not available for browser interaction")
 
         elif tool_name == "browser_search":
-            # Headless browser-based search.
-            # Note: Some search engines block automation; therefore this tool defaults to Wikipedia,
-            # where headless HTML fetching is stable.
+            # Headless Playwright 검색. Wikipedia는 안정적, Google은 SERP 파싱(차단 가능).
+            import urllib.parse
+
             query = parameters.get("query", "")
-            engine = (parameters.get("engine") or "wikipedia").lower()
-            max_results = int(parameters.get("max_results", 3))
+            engine = (
+                parameters.get("engine")
+                or os.getenv("SPARKLEFORGE_BROWSER_SEARCH_ENGINE", "wikipedia")
+            ).lower().strip()
+            max_results = int(
+                min(20, max(1, int(parameters.get("max_results", 3) or 3)))
+            )
 
             if not query:
                 raise ValueError("query parameter is required for browser_search")
 
-            if engine not in {"wikipedia"}:
-                raise ValueError(f"Unsupported browser_search engine: {engine}")
+            if engine not in {"wikipedia", "google"}:
+                raise ValueError(
+                    f"Unsupported browser_search engine: {engine}. "
+                    "Use 'wikipedia' or 'google'."
+                )
 
             from src.automation.browser_manager import BrowserManager
 
             browser_manager = BrowserManager()
-            # Ensure Playwright is ready (BrowserManager may use browser-use otherwise).
             await browser_manager.initialize_playwright()
             if not browser_manager.playwright_page:
                 raise RuntimeError("Playwright page not initialized for browser_search")
 
-            import urllib.parse
-
-            q_encoded = urllib.parse.quote(query)
-            url = (
-                f"https://en.wikipedia.org/w/index.php?search={q_encoded}"
-                f"&title=Special:Search&ns0=1"
-            )
-
             page = browser_manager.playwright_page
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(1200)
 
-            results = await page.evaluate(
-                """
-                (maxResults) => {
-                    const clean = (s) => (s || '').toString().trim();
-
-                    const pageUrl = window.location.href;
-
-                    // 1) Search results list mode (Wikipedia renders result cards in DOM)
-                    const resultEls = Array.from(
-                        document.querySelectorAll(
-                            '#mw-content-text .mw-search-result, #mw-content-text li.mw-search-result'
-                        )
-                    );
-                    const out = [];
-                    for (const el of resultEls) {
-                        const a = el.querySelector('a');
-                        if (!a) continue;
-                        const title = clean(a.textContent);
-
-                        let href = a.href || a.getAttribute('href') || '';
-                        if (href && href.startsWith('/')) {
-                            href = new URL(href, location.origin).href;
+            if engine == "wikipedia":
+                q_encoded = urllib.parse.quote(query)
+                url = (
+                    f"https://en.wikipedia.org/w/index.php?search={q_encoded}"
+                    f"&title=Special:Search&ns0=1"
+                )
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.wait_for_timeout(1200)
+                results = await page.evaluate(
+                    """
+                    (maxResults) => {
+                        const clean = (s) => (s || '').toString().trim();
+                        const pageUrl = window.location.href;
+                        const resultEls = Array.from(
+                            document.querySelectorAll(
+                                '#mw-content-text .mw-search-result, #mw-content-text li.mw-search-result'
+                            )
+                        );
+                        const out = [];
+                        for (const el of resultEls) {
+                            const a = el.querySelector('a');
+                            if (!a) continue;
+                            const title = clean(a.textContent);
+                            let href = a.href || a.getAttribute('href') || '';
+                            if (href && href.startsWith('/')) {
+                                href = new URL(href, location.origin).href;
+                            }
+                            const snippetEl =
+                                el.querySelector('.searchresult') ||
+                                el.querySelector('.mw-search-result-data') ||
+                                el.querySelector('p') ||
+                                el;
+                            const snippet = clean(snippetEl.textContent);
+                            if (title && href) {
+                                out.push({
+                                    title,
+                                    url: href,
+                                    snippet: snippet.slice(0, 500),
+                                    source: 'wikipedia',
+                                });
+                            }
+                            if (out.length >= maxResults) break;
                         }
-
-                        const snippetEl =
-                            el.querySelector('.searchresult') ||
-                            el.querySelector('.mw-search-result-data') ||
-                            el.querySelector('p') ||
-                            el;
-                        const snippet = clean(snippetEl.textContent);
-
-                        if (title && href) {
+                        if (out.length) return out.slice(0, maxResults);
+                        const h1 = document.querySelector('h1');
+                        const title = clean(h1 ? h1.innerText : document.title);
+                        const ps = Array.from(
+                            document.querySelectorAll('#mw-content-text .mw-parser-output p')
+                        );
+                        let snippet = '';
+                        for (const p of ps) {
+                            const t = clean(p.innerText);
+                            if (t && t.length >= 30) {
+                                snippet = t;
+                                break;
+                            }
+                        }
+                        return [{
+                            title,
+                            url: pageUrl,
+                            snippet: clean(snippet).slice(0, 500),
+                            source: 'wikipedia',
+                        }].slice(0, maxResults);
+                    }
+                    """,
+                    max_results,
+                )
+            else:
+                hl = os.getenv("BROWSER_SEARCH_GOOGLE_HL", "ko")
+                gl = os.getenv("BROWSER_SEARCH_GOOGLE_GL", "kr")
+                num = min(max_results, 15)
+                q_enc = urllib.parse.quote(query)
+                g_url = (
+                    f"https://www.google.com/search?q={q_enc}"
+                    f"&hl={urllib.parse.quote(hl)}&gl={urllib.parse.quote(gl)}"
+                    f"&num={num}&pws=0"
+                )
+                await page.goto(g_url, wait_until="domcontentloaded", timeout=45000)
+                await _playwright_dismiss_google_consent(page)
+                await page.wait_for_timeout(800)
+                try:
+                    await page.wait_for_selector(
+                        "#search, #rso, form#captcha-form, div#recaptcha",
+                        timeout=15000,
+                    )
+                except Exception:
+                    pass
+                if await page.query_selector("form#captcha-form"):
+                    return ToolResult(
+                        success=False,
+                        data={"results": [], "query": query, "engine": engine},
+                        execution_time=time.time() - start_time,
+                        confidence=0.0,
+                        error=(
+                            "google_blocked: captcha/consent page (headless IP often blocked; "
+                            "orchestrator falls back to wikipedia browser_search / other tools)"
+                        ),
+                    )
+                body_lower = ((await page.content()) or "")[:120000].lower()
+                if (
+                    "detected unusual traffic" in body_lower
+                    or "unusual traffic from your computer network" in body_lower
+                    or "/recaptcha/" in body_lower
+                ):
+                    return ToolResult(
+                        success=False,
+                        data={"results": [], "query": query, "engine": engine},
+                        execution_time=time.time() - start_time,
+                        confidence=0.0,
+                        error=(
+                            "google_blocked: unusual traffic / automation detection "
+                            "(headless SERP may be rate-limited; try again later or use wikipedia engine)"
+                        ),
+                    )
+                results = await page.evaluate(
+                    """
+                    (maxResults) => {
+                        const clean = (s) => (s || '').toString().replace(/\\s+/g, ' ').trim();
+                        const out = [];
+                        const seen = new Set();
+                        const skipUrl = (u) => {
+                            if (!u || !u.startsWith('http')) return true;
+                            try {
+                                const h = new URL(u).hostname.toLowerCase();
+                                if (h === 'google.com' || h.endsWith('.google.com')) return true;
+                                if (h.includes('gstatic.com')) return true;
+                                if (h.includes('youtube.com')) return true;
+                            } catch (e) { return true; }
+                            return false;
+                        };
+                        let nodes = document.querySelectorAll('#search a h3');
+                        if (!nodes.length) nodes = document.querySelectorAll('#rso a h3');
+                        if (!nodes.length) {
+                            nodes = document.querySelectorAll('div[data-hveid] a h3');
+                        }
+                        for (const h3 of nodes) {
+                            const a = h3.closest('a');
+                            if (!a || !a.href) continue;
+                            let href = a.href;
+                            if (href.startsWith('/url?')) {
+                                try {
+                                    const sp = new URL(href, location.origin).searchParams;
+                                    href = sp.get('q') || sp.get('url') || href;
+                                } catch (e) {}
+                            }
+                            if (href.startsWith('/')) {
+                                try { href = new URL(href, location.origin).href; } catch (e) {}
+                            }
+                            if (skipUrl(href)) continue;
+                            const title = clean(h3.textContent);
+                            if (!title || seen.has(href)) continue;
+                            seen.add(href);
+                            let snippet = '';
+                            const block =
+                                a.closest('div[data-sokoban-container]') ||
+                                a.closest('div.Gx5Zad') ||
+                                a.closest('div.g') ||
+                                a.closest('div');
+                            if (block) {
+                                const st = clean(block.innerText || '');
+                                if (st.length > title.length + 8) {
+                                    snippet = st.slice(0, 500);
+                                }
+                            }
                             out.push({
                                 title,
                                 url: href,
-                                snippet: snippet.slice(0, 500),
-                                source: 'wikipedia',
+                                snippet,
+                                source: 'google',
                             });
+                            if (out.length >= maxResults) break;
                         }
-                        if (out.length >= maxResults) break;
+                        return out.slice(0, maxResults);
                     }
-
-                    if (out.length) return out.slice(0, maxResults);
-
-                    // 2) Redirect mode (Wikipedia goes directly to an article page)
-                    const h1 = document.querySelector('h1');
-                    const title = clean(h1 ? h1.innerText : document.title);
-
-                    const ps = Array.from(
-                        document.querySelectorAll('#mw-content-text .mw-parser-output p')
-                    );
-                    let snippet = '';
-                    for (const p of ps) {
-                        const t = clean(p.innerText);
-                        if (t && t.length >= 30) {
-                            snippet = t;
-                            break;
-                        }
-                    }
-
-                    return [{
-                        title,
-                        url: pageUrl,
-                        snippet: clean(snippet).slice(0, 500),
-                        source: 'wikipedia',
-                    }].slice(0, maxResults);
-                }
-                """,
-                max_results,
-            )
+                    """,
+                    max_results,
+                )
 
             if not isinstance(results, list) or len(results) == 0:
                 return ToolResult(
@@ -7477,7 +7608,7 @@ async def _execute_browser_tool(
                 success=True,
                 data={"results": results, "query": query, "engine": engine},
                 execution_time=time.time() - start_time,
-                confidence=0.9,
+                confidence=0.85 if engine == "google" else 0.9,
             )
 
         else:

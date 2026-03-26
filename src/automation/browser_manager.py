@@ -461,7 +461,12 @@ class BrowserManager:
                     if self.is_cli or self.is_background:
                         self.playwright_browser = await self.playwright.chromium.launch(
                             headless=True,
-                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                            args=[
+                                "--no-sandbox",
+                                "--disable-dev-shm-usage",
+                                "--disable-blink-features=AutomationControlled",
+                            ],
+                            ignore_default_args=["--enable-automation"],
                         )
                     else:
                         self.playwright_browser = await self.playwright.chromium.launch(
@@ -469,9 +474,26 @@ class BrowserManager:
                         )
 
                     # Create context with optimized settings
+                    # 최신 Chromium UA에 가깝게 유지 (구글 등 SERP에서 구형 headless UA 차단 완화)
+                    _pw_ua = os.getenv(
+                        "PLAYWRIGHT_USER_AGENT",
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    )
                     self.playwright_context = await self.playwright_browser.new_context(
                         viewport={"width": 1920, "height": 1080},
-                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                        user_agent=_pw_ua,
+                        locale=os.getenv("PLAYWRIGHT_LOCALE", "ko-KR"),
+                        extra_http_headers={
+                            "Accept-Language": os.getenv(
+                                "PLAYWRIGHT_ACCEPT_LANGUAGE", "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+                            ),
+                        },
+                    )
+                    await self.playwright_context.add_init_script(
+                        """
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                        """
                     )
 
                     self.playwright_page = await self.playwright_context.new_page()

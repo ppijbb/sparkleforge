@@ -2100,25 +2100,48 @@ class ExecutorAgent:
                 )  # 최소 10개, 최대 15개, 총 30개 이상 보장
 
                 # 여러 검색 도구 시도 (fallback 지원)
-                # browser_search는 일부 검색 엔진 headless 차단을 피하기 위해 기본 포함
-                search_tools = [
-                    "browser_search",
-                    "g-search",
-                    "mcp_search",
-                    "ddg_search",
-                ]  # 우선순위 순서
+                # browser_search: Playwright로 google → wikipedia 순 시도 (환경변수로 순서 조정 가능)
+                browser_engine_chain = [
+                    e.strip()
+                    for e in os.getenv(
+                        "SPARKLEFORGE_BROWSER_SEARCH_ENGINES", "google,wikipedia"
+                    ).split(",")
+                    if e.strip()
+                ]
+                search_tool_specs: List[Dict[str, Any]] = []
+                for eng in browser_engine_chain:
+                    search_tool_specs.append(
+                        {
+                            "name": "browser_search",
+                            "params_extra": {"engine": eng},
+                        }
+                    )
+                search_tool_specs.extend(
+                    [
+                        {"name": "g-search", "params_extra": {}},
+                        {"name": "mcp_search", "params_extra": {}},
+                        {"name": "ddg_search", "params_extra": {}},
+                    ]
+                )
 
-                for tool_name in search_tools:
+                for spec in search_tool_specs:
+                    tool_name = spec["name"]
+                    params: Dict[str, Any] = {
+                        "query": search_query,
+                        "max_results": results_per_query,
+                    }
+                    params.update(spec.get("params_extra") or {})
                     try:
+                        eng_note = params.get("engine")
                         logger.info(
-                            f"[{self.name}] Trying search tool: {tool_name}"
+                            "[%s] Trying search tool: %s%s",
+                            self.name,
+                            tool_name,
+                            f" (engine={eng_note})" if eng_note else "",
                         )
                         search_result = await execute_tool(
                             tool_name,
-                            {
-                                "query": search_query,
-                                "max_results": results_per_query,
-                            },
+                            params,
                         )
 
                         # 성공한 경우 (단, 결과가 0개면 다음 도구로 fallback)
@@ -6616,6 +6639,11 @@ class AgentOrchestrator:
                     os.environ["PROJECT_ROOT"] = str(project_root)
                     # 환경변수 치환
                     resolved_configs = self._resolve_env_vars_in_value(raw_configs)
+                    from src.core.mcp_python import normalize_mcp_servers_python_commands
+
+                    resolved_configs = normalize_mcp_servers_python_commands(
+                        resolved_configs
+                    )
 
                     # FastMCP가 기대하는 형식으로 정리
                     # - stdio 서버: command, args, env, cwd만 유지
