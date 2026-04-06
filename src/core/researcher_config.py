@@ -1039,7 +1039,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
     try:
         from dotenv import load_dotenv
     except ImportError:
-        load_dotenv = lambda: None
+        load_dotenv = lambda *args, **kwargs: None
 
     project_root = Path(__file__).parent.parent.parent
     env_file = project_root / ".env"

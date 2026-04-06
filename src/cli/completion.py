@@ -30,7 +30,21 @@ class SparkleForgeCompleter(Completer):
             ],
             "context": ["show", "reload"],
             "checkpoint": ["save", "list", "restore", "delete"],
-            "schedule": ["list", "add", "remove", "enable", "disable"],
+            "schedule": [
+                "list",
+                "create",
+                "show",
+                "pause",
+                "resume",
+                "delete",
+                "history",
+                "stats",
+                "run",
+                "add",
+                "remove",
+                "enable",
+                "disable",
+            ],
             "config": ["show", "set", "get"],
             "help": [],
             "exit": [],
@@ -104,7 +118,8 @@ class SparkleForgeCompleter(Completer):
                 elif (
                     len(words) == 3
                     and first_word == "schedule"
-                    and words[1] in ["remove", "enable", "disable"]
+                    and words[1]
+                    in ["show", "pause", "resume", "delete", "history", "run", "remove", "enable", "disable"]
                 ):
                     # 스케줄 ID 자동완성
                     schedule_ids = self._get_schedule_ids()
@@ -168,20 +183,10 @@ class SparkleForgeCompleter(Completer):
     def _get_schedule_ids(self) -> list:
         """스케줄 ID 목록 반환 (자동완성용)."""
         try:
-            import asyncio
-
             from src.core.scheduler import get_scheduler
 
             scheduler = get_scheduler()
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return []
-            else:
-                schedules = loop.run_until_complete(scheduler.list_schedules())
-                return (
-                    [s.get("schedule_id") for s in schedules if s.get("schedule_id")]
-                    if schedules
-                    else []
-                )
+            schedules = scheduler.list_schedules()
+            return [s.schedule_id for s in schedules] if schedules else []
         except Exception:
             return []

@@ -4671,10 +4671,24 @@ class UniversalMCPHub:
         tools_in_category = self.registry.get_tools_by_category(category)
         return tools_in_category[0] if tools_in_category else None
 
+    def get_allowed_tools(self, trust: Any | None = None) -> List[str]:
+        """Return tools filtered by the current trust context."""
+        if trust is None:
+            from src.core.trust_gate import get_current_trust_context
+
+            trust = get_current_trust_context()
+
+        allowed: List[str] = []
+        for tool_name in self.registry.get_all_tool_names():
+            info = self.registry.get_tool_info(tool_name)
+            mcp_server = info.mcp_server if info else None
+            if trust.allows_tool(tool_name, mcp_server):
+                allowed.append(tool_name)
+        return allowed
+
     def get_available_tools(self) -> List[str]:
         """사용 가능한 도구 목록 반환 - Registry 기반."""
-        # Registry의 모든 Tool 이름 반환
-        return self.registry.get_all_tool_names()
+        return self.get_allowed_tools()
 
     async def get_tool_for_execution(
         self, tool_name: str, execution_id: str | None = None
@@ -5014,6 +5028,24 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
     """MCP 도구 실행 - UniversalMCPHub의 execute_tool 사용 (with caching)."""
     from src.core.result_cache import get_result_cache
 
+    mcp_hub = get_mcp_hub()
+
+    # Startup-time trust filtering is enforced here as a defensive runtime check.
+    try:
+        from src.core.trust_gate import get_current_trust_context
+
+        trust = get_current_trust_context()
+        tool_info = mcp_hub.registry.get_tool_info(tool_name)
+        mcp_server = tool_info.mcp_server if tool_info else None
+        if not trust.allows_tool(tool_name, mcp_server):
+            return {
+                "success": False,
+                "error": f"Tool execution denied by TrustGate: {tool_name}",
+                "data": None,
+            }
+    except Exception as trust_err:
+        logger.debug("TrustGate check skipped: %s", trust_err)
+
     # Lifecycle hooks: PreToolUse (can block execution with exit code 2)
     try:
         from src.core.skills_manager import get_skill_manager
@@ -5047,8 +5079,6 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         return cached_result
 
     # MCP Hub 실행
-    mcp_hub = get_mcp_hub()
-
     # MCP Hub가 초기화되지 않았으면 초기화
     if not mcp_hub.mcp_sessions:
         logger.info("[MCP][execute_tool] MCP Hub not initialized, initializing...")
