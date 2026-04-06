@@ -36,14 +36,6 @@ from src.core.researcher_config import load_config_from_env
 # CRITICAL: Load configuration BEFORE importing any modules that depend on it
 config = load_config_from_env()
 
-# Use new AgentOrchestrator for multi-agent orchestration
-from src.core.agent_orchestrator import (
-    AgentOrchestrator as NewAgentOrchestrator,
-)  # noqa: I001
-from src.core.agent_orchestrator import (
-    agent_workflow_result_to_public_dict,
-)
-from src.core.autonomous_orchestrator import AutonomousOrchestrator
 from src.monitoring.system_monitor import HealthMonitor
 
 # Configure logging for production-grade reliability
@@ -106,6 +98,23 @@ class HTTPErrorFilter(logging.Filter):
             record.args = ()  # args 초기화
 
         return True
+
+
+def _load_agent_orchestrator():
+    """Lazy import to keep lightweight CLI paths usable without full optional deps."""
+    from src.core.agent_orchestrator import (
+        AgentOrchestrator,
+        agent_workflow_result_to_public_dict,
+    )
+
+    return AgentOrchestrator, agent_workflow_result_to_public_dict
+
+
+def _load_autonomous_orchestrator():
+    """Lazy import for heavy orchestrator paths."""
+    from src.core.autonomous_orchestrator import AutonomousOrchestrator
+
+    return AutonomousOrchestrator
 
 
 logger = logging.getLogger(__name__)
@@ -293,7 +302,8 @@ class AutonomousResearchSystem:
                 logger.info(f"✅ SQLite database driver initialized: {sqlite_db_path}")
 
             # Use new multi-agent orchestrator (no fallback - fail clearly)
-            self.orchestrator = NewAgentOrchestrator()
+            AgentOrchestrator, _ = _load_agent_orchestrator()
+            self.orchestrator = AgentOrchestrator()
             logger.info("✅ Multi-Agent Orchestrator initialized (no fallback mode)")
             logger.info("✅ Autonomous Orchestrator initialized")
         except Exception as e:
@@ -929,6 +939,7 @@ class AutonomousResearchSystem:
 
         # Unified path: same as non-streaming (AgentOrchestrator.execute)
         raw = await self.orchestrator.execute(request)
+        _, agent_workflow_result_to_public_dict = _load_agent_orchestrator()
         result = agent_workflow_result_to_public_dict(raw)
 
         # Extract and format result
@@ -1655,6 +1666,11 @@ EXAMPLES:
         metavar="ID1,ID2",
         help="Comma-separated skill IDs to force-enable and inject into prompts (e.g. data_analyst,cursorrules)",
     )
+    parser.add_argument(
+        "--debug-bootstrap",
+        action="store_true",
+        help="Print BootstrapGraph stage timings and trust/runtime diagnostics",
+    )
 
     args = parser.parse_args()
 
@@ -1686,6 +1702,24 @@ EXAMPLES:
             args.command = "run"
         else:
             args.command = "repl"  # run 없이 바로 REPL로
+
+    runtime_mode = "repl" if args.command in ("repl", "interactive") else str(
+        args.command or "local"
+    )
+
+    from src.core.bootstrap_graph import BootstrapGraph
+
+    bootstrap_result = await BootstrapGraph(
+        project_root=project_root,
+        runtime_mode=runtime_mode,
+    ).run()
+    if args.debug_bootstrap:
+        for line in bootstrap_result.render_lines():
+            print(line)
+    if not bootstrap_result.ok:
+        return 1
+    if args.debug_bootstrap and args.command == "repl" and not getattr(args, "prompt", None):
+        return 0
 
     # 서브커맨드 처리 (반환 코드는 프로세스 종료까지 전달)
     cli_rc: int | None = None
@@ -1940,44 +1974,39 @@ EXAMPLES:
         # 기본 동작: REPL 모드 (아무 옵션도 없으면)
         # 또는 --cli 옵션이 있으면
         if is_repl_mode:
+            scheduler = None
             try:
                 from src.cli.repl_cli import REPLCLI
+                from src.core.scheduler import (
+                    configure_scheduler_execution,
+                    get_scheduler,
+                )
 
+                scheduler = configure_scheduler_execution(get_scheduler())
+                await scheduler.start()
                 cli = REPLCLI()
                 await cli.run()
             except (EOFError, KeyboardInterrupt, SystemExit):
                 # 정상 종료
                 pass
             finally:
-                pass
+                if scheduler is not None:
+                    try:
+                        await scheduler.stop()
+                    except Exception:
+                        pass
             return
 
         # Interactive 모드 (기존)
         if args.interactive:
             from src.cli.interactive_cli import InteractiveCLI
-            from src.core.scheduler import get_scheduler
+            from src.core.scheduler import (
+                configure_scheduler_execution,
+                get_scheduler,
+            )
 
             # 스케줄러 초기화 및 시작
-            scheduler = get_scheduler()
-
-            # 실행 콜백 설정 (USE_SESSION_LANE이면 cron envelope + session lane 사용)
-            use_session_lane = os.getenv("USE_SESSION_LANE", "false").lower() == "true"
-            if use_session_lane:
-                from src.core.session_lane import make_cron_execution_callback
-
-                orch = NewAgentOrchestrator()
-                scheduler.set_execution_callback(make_cron_execution_callback(orch))
-            else:
-                from src.core.autonomous_orchestrator import AutonomousOrchestrator
-
-                autonomous_orchestrator = AutonomousOrchestrator()
-
-                async def execute_scheduled_query(user_query: str, session_id: str):
-                    return await autonomous_orchestrator.execute_full_research_workflow(
-                        user_query
-                    )
-
-                scheduler.set_execution_callback(execute_scheduled_query)
+            scheduler = configure_scheduler_execution(get_scheduler())
             await scheduler.start()
 
             cli = InteractiveCLI()
@@ -2218,6 +2247,7 @@ async def handle_run_command(args):
     try:
         _ensure_database_driver_for_cli()
         # Autonomous Orchestrator 초기화
+        AutonomousOrchestrator = _load_autonomous_orchestrator()
         orchestrator = AutonomousOrchestrator()
 
         # CLI에서 추가 단서를 즉시 받아 재시도할지 여부

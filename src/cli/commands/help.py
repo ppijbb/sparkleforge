@@ -36,10 +36,15 @@ async def help_command(console: Console):
 
 [bold]Schedule:[/bold]
   schedule list                 List all schedules
-  schedule add <name> <cron> <query>  Add schedule
-  schedule remove <id>          Remove schedule
-  schedule enable <id>          Enable schedule
-  schedule disable <id>         Disable schedule
+  schedule create <name> <cron> <query>  Create schedule
+  schedule show <id>            Show schedule details
+  schedule pause <id>           Pause schedule
+  schedule resume <id>          Resume schedule
+  schedule delete <id>          Delete schedule
+  schedule history [id] [limit] Show execution history
+  schedule stats                Show scheduler statistics
+  schedule run <id>             Run schedule immediately
+  schedule add/remove/enable/disable    Legacy aliases
 
 [bold]Config:[/bold]
   config show                   Show configuration

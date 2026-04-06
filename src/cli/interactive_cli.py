@@ -6,9 +6,16 @@ gemini-cli의 CLI 패턴을 참고하여 구현.
 
 import asyncio
 import logging
+import shlex
 import uuid
 from datetime import datetime
 from typing import List
+
+from rich.console import Console
+
+from src.core.execution_registry import ExecutionRegistry, RegisteredCommand
+from src.core.prompt_router import PromptRouter, RouteTargetType
+from src.core.trust_gate import get_current_trust_context
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +26,8 @@ class InteractiveCLI:
     def __init__(self):
         """초기화."""
         self.history: List[str] = []
+        self.console = Console()
+        self.prompt_router = PromptRouter()
         self.context_loader = None
         self.checkpoint_manager = None
 
@@ -76,6 +85,9 @@ class InteractiveCLI:
                 elif user_input.lower().startswith("schedule"):
                     await self._handle_schedule(user_input)
                 else:
+                    routed = await self._try_route_command(user_input)
+                    if routed:
+                        continue
                     # 연구 요청으로 처리
                     await self._handle_research_request(user_input)
 
@@ -443,6 +455,61 @@ Available commands:
         else:
             print(f"Unknown task action: {action}")
 
+    async def _handle_schedule(self, command: str):
+        """스케줄 관리 명령 처리."""
+        from src.cli.commands.schedule import (
+            schedule_add_command,
+            schedule_create_command,
+            schedule_delete_command,
+            schedule_disable_command,
+            schedule_enable_command,
+            schedule_history_command,
+            schedule_list_command,
+            schedule_pause_command,
+            schedule_remove_command,
+            schedule_resume_command,
+            schedule_run_command,
+            schedule_show_command,
+            schedule_stats_command,
+        )
+
+        try:
+            parts = shlex.split(command)
+        except ValueError as e:
+            print(f"❌ Invalid schedule command: {e}")
+            return
+
+        if len(parts) < 2:
+            print(
+                "Usage: schedule <create|list|show|pause|resume|delete|history|stats|run>"
+            )
+            return
+
+        handlers = {
+            "list": schedule_list_command,
+            "create": schedule_create_command,
+            "show": schedule_show_command,
+            "pause": schedule_pause_command,
+            "resume": schedule_resume_command,
+            "delete": schedule_delete_command,
+            "history": schedule_history_command,
+            "stats": schedule_stats_command,
+            "run": schedule_run_command,
+            "add": schedule_add_command,
+            "remove": schedule_remove_command,
+            "enable": schedule_enable_command,
+            "disable": schedule_disable_command,
+        }
+
+        action = parts[1].lower()
+        handler = handlers.get(action)
+        if not handler:
+            print(f"Unknown schedule action: {action}")
+            print(f"Available: {', '.join(handlers.keys())}")
+            return
+
+        await handler(self, parts[2:])
+
     async def _handle_research_request(self, request: str):
         """연구 요청 처리."""
         from src.core.session_control import SessionStatus, get_session_control
@@ -526,3 +593,75 @@ Available commands:
                 )
                 session_control.active_sessions[session_id]["error_count"] += 1
             print(f"❌ Error: {e}")
+
+    async def _build_execution_registry(self) -> ExecutionRegistry:
+        """Build a lightweight registry for prompt routing."""
+        from src.core.mcp_integration import get_mcp_hub
+        from src.core.scheduler import get_scheduler
+        from src.core.skills_manager import get_skill_manager
+
+        return await ExecutionRegistry.build(
+            mcp_hub=get_mcp_hub(),
+            skill_manager=get_skill_manager(),
+            scheduler=get_scheduler(),
+            trust=get_current_trust_context(),
+        )
+
+    def _is_safe_command_route(
+        self,
+        command: RegisteredCommand,
+        user_input: str,
+    ) -> bool:
+        prompt_tokens = set(self.prompt_router._tokenize(user_input))
+        if set(command.dispatch).issubset(prompt_tokens) and not command.requires_args:
+            return True
+
+        for alias in command.aliases:
+            alias_tokens = set(self.prompt_router._tokenize(alias))
+            if alias_tokens and alias_tokens.issubset(prompt_tokens) and not command.requires_args:
+                return True
+
+        return False
+
+    async def _try_route_command(self, user_input: str) -> bool:
+        """Attempt safe command routing before defaulting to research."""
+        registry = await self._build_execution_registry()
+        routes = await self.prompt_router.route(
+            user_input,
+            registry,
+            get_current_trust_context(),
+        )
+        if not routes:
+            return False
+
+        top = routes[0]
+        if top.target_type != RouteTargetType.COMMAND:
+            return False
+
+        command = registry.lookup(top.target)
+        if not isinstance(command, RegisteredCommand):
+            return False
+
+        if not self._is_safe_command_route(command, user_input):
+            return False
+
+        await self._dispatch_routed_command(command.dispatch)
+        return True
+
+    async def _dispatch_routed_command(self, dispatch: tuple[str, ...]):
+        """Dispatch a routed command back into the interactive handlers."""
+        command = " ".join(dispatch)
+        if command == "help":
+            self._show_help()
+            return
+        if command.startswith("context"):
+            await self._handle_context(command)
+            return
+        if command.startswith("session"):
+            await self._handle_session(command)
+            return
+        if command.startswith("checkpoint"):
+            await self._handle_checkpoint(command)
+            return
+        if command.startswith("schedule"):
+            await self._handle_schedule(command)

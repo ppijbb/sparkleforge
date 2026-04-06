@@ -6,6 +6,7 @@ Cron 표현식 기반 스케줄링, 주기적 세션 실행, 스케줄 관리 �
 import asyncio
 import json
 import logging
+import os
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -518,7 +519,7 @@ class Scheduler:
         """스케줄 실행."""
         if schedule.schedule_id in self.running_tasks:
             logger.warning(f"Schedule already running: {schedule.schedule_id}")
-            return
+            return None
 
         execution_id = (
             f"exec_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -597,6 +598,19 @@ class Scheduler:
         except Exception as e:
             logger.error(f"Error executing schedule: {e}", exc_info=True)
 
+        return execution
+
+    async def run_now(self, schedule_id: str) -> ScheduleExecution:
+        """지정한 스케줄을 즉시 실행."""
+        schedule = self.get_schedule(schedule_id)
+        if not schedule:
+            raise ValueError(f"Schedule not found: {schedule_id}")
+
+        execution = await self._execute_schedule(schedule)
+        if execution is None:
+            raise RuntimeError(f"Schedule already running: {schedule_id}")
+        return execution
+
     def get_execution_history(
         self, schedule_id: str | None = None, limit: int = 100
     ) -> List[ScheduleExecution]:
@@ -658,3 +672,34 @@ def get_scheduler() -> Scheduler:
     if _scheduler is None:
         _scheduler = Scheduler()
     return _scheduler
+
+
+def configure_scheduler_execution(
+    scheduler: Scheduler | None = None,
+) -> Scheduler:
+    """Attach the shared scheduled execution callback if it is missing."""
+    scheduler = scheduler or get_scheduler()
+    if scheduler.execution_callback is not None:
+        return scheduler
+
+    use_session_lane = os.getenv("USE_SESSION_LANE", "false").lower() == "true"
+    if use_session_lane:
+        from src.core.agent_orchestrator import AgentOrchestrator
+        from src.core.session_lane import make_cron_execution_callback
+
+        orch = AgentOrchestrator()
+        scheduler.set_execution_callback(make_cron_execution_callback(orch))
+        return scheduler
+
+    from src.core.autonomous_orchestrator import AutonomousOrchestrator
+
+    autonomous_orchestrator = AutonomousOrchestrator()
+
+    async def execute_scheduled_query(user_query: str, session_id: str):
+        return await autonomous_orchestrator.run_research(
+            user_query,
+            context={"session_id": session_id, "source": "scheduler"},
+        )
+
+    scheduler.set_execution_callback(execute_scheduled_query)
+    return scheduler

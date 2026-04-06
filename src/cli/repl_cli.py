@@ -21,6 +21,9 @@ from rich.text import Text
 
 from src.cli.completion import SparkleForgeCompleter
 from src.cli.history import SparkleForgeHistory
+from src.core.execution_registry import ExecutionRegistry, RegisteredCommand
+from src.core.prompt_router import PromptRouter, RouteTargetType
+from src.core.trust_gate import get_current_trust_context
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,7 @@ class REPLCLI:
 
         # 명령어 핸들러
         self.command_handlers = {}
+        self.prompt_router = PromptRouter()
         self._register_handlers()
 
         # 컨텍스트 및 체크포인트 매니저
@@ -112,10 +116,18 @@ class REPLCLI:
         from src.cli.commands.research import research_command
         from src.cli.commands.schedule import (
             schedule_add_command,
+            schedule_create_command,
+            schedule_delete_command,
             schedule_disable_command,
             schedule_enable_command,
+            schedule_history_command,
             schedule_list_command,
+            schedule_pause_command,
             schedule_remove_command,
+            schedule_resume_command,
+            schedule_run_command,
+            schedule_show_command,
+            schedule_stats_command,
         )
         from src.cli.commands.session import (
             session_cancel_command,
@@ -164,6 +176,14 @@ class REPLCLI:
             },
             "schedule": {
                 "list": schedule_list_command,
+                "create": schedule_create_command,
+                "show": schedule_show_command,
+                "pause": schedule_pause_command,
+                "resume": schedule_resume_command,
+                "delete": schedule_delete_command,
+                "history": schedule_history_command,
+                "stats": schedule_stats_command,
+                "run": schedule_run_command,
                 "add": schedule_add_command,
                 "remove": schedule_remove_command,
                 "enable": schedule_enable_command,
@@ -439,6 +459,9 @@ Generate the greeting:"""
                     # 직접 명령어
                     await handler(self, parts[1:])
             else:
+                routed = await self._try_route_command(text)
+                if routed:
+                    return
                 # 연구 요청으로 처리 (명령어가 없으면)
                 # 중복 출력 방지: research_command에서 이미 출력하므로 여기서는 호출만
                 await self.command_handlers["research"](self, [text])
@@ -459,3 +482,59 @@ Generate the greeting:"""
     async def _handle_clear(self):
         """화면 지우기."""
         self.console.clear()
+
+    async def _build_execution_registry(self) -> ExecutionRegistry:
+        """Build a lightweight registry for prompt routing."""
+        from src.core.mcp_integration import get_mcp_hub
+        from src.core.scheduler import get_scheduler
+        from src.core.skills_manager import get_skill_manager
+
+        return await ExecutionRegistry.build(
+            mcp_hub=get_mcp_hub(),
+            skill_manager=get_skill_manager(),
+            scheduler=get_scheduler(),
+            trust=get_current_trust_context(),
+        )
+
+    def _is_safe_command_route(
+        self,
+        text: str,
+        command: RegisteredCommand,
+    ) -> bool:
+        """Only auto-dispatch commands when the prompt clearly expresses them."""
+        prompt_tokens = set(self.prompt_router._tokenize(text))
+        if set(command.dispatch).issubset(prompt_tokens) and not command.requires_args:
+            return True
+
+        for alias in command.aliases:
+            alias_tokens = set(self.prompt_router._tokenize(alias))
+            if alias_tokens and alias_tokens.issubset(prompt_tokens) and not command.requires_args:
+                return True
+
+        return False
+
+    async def _try_route_command(self, text: str) -> bool:
+        """Attempt safe command routing before falling back to research."""
+        registry = await self._build_execution_registry()
+        routes = await self.prompt_router.route(
+            text,
+            registry,
+            get_current_trust_context(),
+        )
+        if not routes:
+            return False
+
+        top = routes[0]
+        if top.target_type != RouteTargetType.COMMAND:
+            return False
+
+        command = registry.lookup(top.target)
+        if not isinstance(command, RegisteredCommand):
+            return False
+
+        if not self._is_safe_command_route(text, command):
+            return False
+
+        canonical = " ".join(command.dispatch)
+        await self.handle_command(canonical)
+        return True
