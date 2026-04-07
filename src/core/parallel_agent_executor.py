@@ -22,7 +22,7 @@ from src.core.researcher_config import (
 )
 from src.core.result_cache import get_result_cache
 from src.core.streaming_manager import EventType, get_streaming_manager
-from src.core.task_queue import TaskQueue
+from src.core.task_graph import TaskGraph
 from src.core.task_validator import TaskValidator
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class ParallelAgentExecutor:
         )
 
         # 컴포넌트 초기화
-        self.task_queue = TaskQueue()
+        self.task_graph = TaskGraph()
         self.agent_pool = AgentPool(max_pool_size=self.max_concurrent * 2)
         self.streaming_manager = get_streaming_manager()
         self.task_validator = TaskValidator()
@@ -122,14 +122,14 @@ class ParallelAgentExecutor:
             )
             use_dependency_graph = False
             dependency_graph = None
-            # 작업 큐 초기화 (fallback)
-            self.task_queue.add_tasks(tasks)
+            # 통합 큐 초기화 (fallback)
+            for t in tasks:
+                self.task_graph.add_task_from_dict(t)
             parallel_groups = execution_plan.get("parallel_groups", [])
             if parallel_groups:
                 logger.info(
                     f"Using {len(parallel_groups)} parallel groups from execution plan"
                 )
-                self.task_queue.parallel_groups = parallel_groups
 
         # 스트리밍 이벤트: 실행 시작
         await self.streaming_manager.stream_event(

@@ -156,8 +156,17 @@ class SparkleForgeA2AWrapper(A2AAdapter):
         if not self.orchestrator:
             raise ValueError(f"Orchestrator not initialized for agent {self.agent_id}")
 
-        context = context or {}
-        result = await self.orchestrator.execute(query, context)
+        from src.core.input_router import InputEnvelope, InputType
+        env = InputEnvelope(
+            type=InputType.A2A_MESSAGE,
+            content=query,
+            session_id=context.get("session_id", "a2a_session") if context else "a2a_session"
+        )
+        
+        result = await self.orchestrator.execute(
+            request=env.content,
+            session_id=env.session_id
+        )
 
         return result
 

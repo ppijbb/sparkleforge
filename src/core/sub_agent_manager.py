@@ -419,8 +419,20 @@ class SubAgentManager:
         target_agent = network.agents[to_agent]
         target_agent.add_task(task)
 
+        # SubAgentExecutor를 통해 격리된 컨텍스트에서 실제 실행 예약
+        from src.core.subagent_executor import get_subagent_executor
+        executor = get_subagent_executor()
+        
+        async def _execute_and_notify():
+            result_task = await executor.execute_isolated(task, target_agent.config)
+            target_agent.complete_task(task.get("task_id"), result_task.get("result", {}))
+            
+            # 발신자에게 결과 통보 로직 추가 가능
+            
+        asyncio.create_task(_execute_and_notify())
+
         logger.info(
-            f"Delegated task from {from_agent} to {to_agent} in network {network_id}"
+            f"Delegated task from {from_agent} to {to_agent} in network {network_id} and execution started."
         )
         return True
 

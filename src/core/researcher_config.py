@@ -390,12 +390,12 @@ class CouncilConfig(BaseModel):
     # Council models - Optional with defaults (gemini-2.5-flash 계열 우선)
     council_models: List[str] = Field(
         default_factory=lambda: [
-            "google/gemini-2.5-flash-lite",
+            "google/gemini-3.1-flash-lite-preview",
             "openai/gpt-4o-mini",
             "anthropic/claude-3-haiku",
         ]
     )
-    chairman_model: str = "google/gemini-2.5-flash-lite"
+    chairman_model: str = "google/gemini-3.1-flash-lite-preview"
 
     # Auto-activation thresholds - Optional with defaults
     min_complexity_for_auto: float = 0.6
@@ -1331,13 +1331,13 @@ def load_config_from_env() -> ResearcherSystemConfig:
         council_models=get_optional_list_env(
             "COUNCIL_MODELS",
             [
-                "google/gemini-2.5-flash-lite",
+                "google/gemini-3.1-flash-lite-preview",
                 "openai/gpt-4o-mini",
                 "anthropic/claude-3-haiku",
             ],
         ),
         chairman_model=get_optional_env(
-            "COUNCIL_CHAIRMAN_MODEL", "google/gemini-2.5-flash-lite"
+            "COUNCIL_CHAIRMAN_MODEL", "google/gemini-3.1-flash-lite-preview"
         ),
         min_complexity_for_auto=get_optional_env("COUNCIL_MIN_COMPLEXITY", 0.6, float),
         enable_for_planning=get_optional_env("COUNCIL_ENABLE_FOR_PLANNING", True, bool),

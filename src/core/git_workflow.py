@@ -193,7 +193,7 @@ Generate a concise commit message following conventional commit format (e.g., "f
 Return only the commit message, no additional text."""
 
             response = await mcp_hub.call_llm_async(
-                model="gemini-2.5-flash-lite",
+                model="gemini-3.1-flash-lite-preview",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
                 max_tokens=200,
