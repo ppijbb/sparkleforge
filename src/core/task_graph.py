@@ -166,3 +166,33 @@ class TaskGraph:
             queue = next_queue
             
         return levels
+
+    # --- Legacy Compatibility Methods ---
+    
+    def has_pending_tasks(self) -> bool:
+        """대기 중이거나 실행 중인 태스크가 있는지 확인"""
+        for task in self.tasks.values():
+            if task.status in ("pending", "ready", "running"):
+                return True
+        return False
+
+    def get_next_task_group(self, max_group_size: int) -> List[str]:
+        """준비된 태스크들을 최대 동시 실행 수만큼 반환"""
+        ready = self.get_ready_tasks()
+        return [t.task_id for t in ready[:max_group_size]]
+
+    def get_task(self, task_id: str) -> Optional[UnifiedTask]:
+        """태스크 객체 반환"""
+        return self.tasks.get(task_id)
+
+    def get_progress(self) -> Dict[str, Any]:
+        """진행 상태 반환"""
+        total = len(self.tasks)
+        completed = sum(1 for t in self.tasks.values() if t.status == "completed")
+        failed = sum(1 for t in self.tasks.values() if t.status == "failed")
+        return {
+            "total": total,
+            "completed": completed,
+            "failed": failed,
+            "percent": (completed / total * 100) if total > 0 else 0
+        }
