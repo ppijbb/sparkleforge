@@ -44,7 +44,7 @@ class ParallelAgentExecutor:
         )
 
         # 컴포넌트 초기화
-        self.task_graph = TaskGraph()
+        self.task_queue = TaskGraph()
         self.agent_pool = AgentPool(max_pool_size=self.max_concurrent * 2)
         self.streaming_manager = get_streaming_manager()
         self.task_validator = TaskValidator()
@@ -124,7 +124,7 @@ class ParallelAgentExecutor:
             dependency_graph = None
             # 통합 큐 초기화 (fallback)
             for t in tasks:
-                self.task_graph.add_task_from_dict(t)
+                self.task_queue.add_task_from_dict(t)
             parallel_groups = execution_plan.get("parallel_groups", [])
             if parallel_groups:
                 logger.info(
@@ -386,7 +386,7 @@ class ParallelAgentExecutor:
                 if task:
                     group_tasks.append(
                         self._execute_single_task(
-                            task_id, task, agent_assignments, semaphore, objective_id
+                            task_id, task.to_dict() if hasattr(task, "to_dict") else task, agent_assignments, semaphore, objective_id
                         )
                     )
 
@@ -399,10 +399,10 @@ class ParallelAgentExecutor:
                 if isinstance(result, Exception):
                     logger.error(f"Task {task_id} failed with exception: {result}")
                     self.failed_tasks.append({"task_id": task_id, "error": str(result)})
-                    self.task_queue.mark_completed(task_id)
+                    self.task_queue.mark_completed(task_id, str(result))
                 else:
                     results.append(result)
-                    self.task_queue.mark_completed(task_id)
+                    self.task_queue.mark_completed(task_id, result)
 
         return results
 

@@ -11,7 +11,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Set
+from typing import Any, Callable, Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class AgentPool:
         logger.info(f"AgentPool initialized with max_pool_size={max_pool_size}")
 
     async def get_agent(
-        self, agent_type: str, agent_factory: callable | None = None
+        self, agent_type: str, agent_factory: Callable | None = None
     ) -> Any | None:
         """사용 가능한 agent 가져오기 또는 생성."""
         async with self._lock:
@@ -109,7 +109,7 @@ class AgentPool:
                 logger.warning(f"No agent factory provided for type {agent_type}")
                 return None
 
-    async def _create_agent(self, agent_factory: callable, agent_type: str) -> Any:
+    async def _create_agent(self, agent_factory: Callable, agent_type: str) -> Any:
         """Agent 생성 (비동기 지원)."""
         if asyncio.iscoroutinefunction(agent_factory):
             return await agent_factory(agent_type)
@@ -138,7 +138,7 @@ class AgentPool:
         self,
         agent_types: List[str],
         pool_size_per_type: int = 3,
-        agent_factory: callable | None = None,
+        agent_factory: Callable | None = None,
     ) -> Dict[str, int]:
         """Agent 풀 사전 생성."""
         created_counts = {}
