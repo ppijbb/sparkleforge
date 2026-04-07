@@ -476,7 +476,7 @@ Target file: {file_path}
 Follow the codebase conventions and patterns. Generate production-ready code."""
 
         response = await mcp_hub.call_llm_async(
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite-preview",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=4000,
@@ -525,7 +525,7 @@ Current code:
 Apply the refactoring and return only the refactored code."""
 
         response = await mcp_hub.call_llm_async(
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite-preview",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=4000,

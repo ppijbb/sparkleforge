@@ -265,3 +265,34 @@ def propagate_trace_context(
             propagate_attributes(metadata=meta)
     except (ImportError, Exception):
         pass
+
+@contextmanager
+def track_harness_transition(
+    session_id: str,
+    old_phase: str,
+    new_phase: str,
+) -> Generator[Any, None, None]:
+    """Harness 상태 전이 및 감사 로깅을 기록합니다."""
+    # 1. Workflow Audit Log 기록
+    try:
+        from src.core.workflow_audit import get_audit_logger
+        audit = get_audit_logger()
+        audit.log_state_transition(session_id, old_phase, new_phase, {"status": "transitioned"})
+    except ImportError:
+        pass
+        
+    # 2. Observability Span 기록
+    if not _langfuse_enabled():
+        yield None
+        return
+    try:
+        from langfuse import get_client
+        client = get_client()
+        with client.start_as_current_observation(
+            as_type="span",
+            name=f"HarnessTransition_{old_phase}_to_{new_phase}",
+            metadata={"session_id": session_id, "old_phase": old_phase, "new_phase": new_phase},
+        ) as span:
+            yield span
+    except (ImportError, Exception):
+        yield None

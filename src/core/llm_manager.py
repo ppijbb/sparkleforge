@@ -362,7 +362,7 @@ class MultiModelOrchestrator:
         self.models["gemini-flash-lite"] = ModelConfig(
             name="gemini-flash-lite",
             provider="google",
-            model_id="gemini-2.5-flash-lite",
+            model_id="gemini-3.1-flash-lite-preview",
             temperature=0.1,
             max_tokens=4000,
             cost_per_token=0.0001,
@@ -623,7 +623,7 @@ class MultiModelOrchestrator:
 
         # Google 모델 ID를 OpenRouter 형식으로 변환
         google_to_openrouter = {
-            "gemini-2.5-flash-lite": "google/gemini-2.0-flash-exp:free",
+            "gemini-3.1-flash-lite-preview": "google/gemini-2.0-flash-exp:free",
             "gemini-2.5-flash": "google/gemini-2.0-flash-exp:free",
             "gemini-2.5-pro": "google/gemini-2.0-flash-thinking-exp:free",
             "gemini-flash-lite": "google/gemini-2.0-flash-exp:free",

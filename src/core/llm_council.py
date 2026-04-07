@@ -33,7 +33,7 @@ async def query_model_via_openrouter(
     """OpenRouter API를 통해 단일 모델 쿼리.
 
     Args:
-        model: OpenRouter 모델 식별자 (예: "google/gemini-2.5-flash-lite")
+        model: OpenRouter 모델 식별자 (예: "google/gemini-3.1-flash-lite-preview")
         messages: 메시지 딕셔너리 리스트 ('role'과 'content' 키 포함)
         api_key: OpenRouter API 키
         api_url: OpenRouter API URL

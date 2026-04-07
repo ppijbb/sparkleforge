@@ -40,7 +40,7 @@ class TestProductionUpgrade:
             {
                 "OPENROUTER_API_KEY": "test_key",
                 "LLM_PROVIDER": "openrouter",
-                "LLM_MODEL": "google/gemini-2.5-flash-lite",
+                "LLM_MODEL": "google/gemini-3.1-flash-lite-preview",
                 "MCP_ENABLED": "true",
                 "ENABLE_AUTO_FALLBACK": "false",
             },
@@ -138,7 +138,7 @@ class TestProductionUpgrade:
         assert len(gemini_models) > 0, "No Gemini models loaded"
 
         # Gemini 2.5 Flash Lite가 기본 모델인지 확인
-        assert "gemini-2.5-flash-lite" in [
+        assert "gemini-3.1-flash-lite-preview" in [
             config.model_id for config in llm_orchestrator.models.values()
         ], "Gemini 2.5 Flash Lite should be loaded"
 
@@ -269,7 +269,7 @@ class TestProductionUpgrade:
             assert "OPENROUTER_API_KEY" in content, (
                 "env.example should include OpenRouter API key"
             )
-            assert "google/gemini-2.5-flash-lite" in content, (
+            assert "google/gemini-3.1-flash-lite-preview" in content, (
                 "env.example should use Gemini 2.5 Flash Lite"
             )
 

@@ -587,7 +587,7 @@ Optional behavior is handled with human-in-the-loop when needed:
 OPENROUTER_API_KEY=your_api_key_here
 
 # Optional
-LLM_MODEL=google/gemini-2.5-flash-lite
+LLM_MODEL=google/gemini-3.1-flash-lite-preview
 MAX_SOURCES=20
 ENABLE_STREAMING=true
 ENABLE_CREATIVE_FORGE=true

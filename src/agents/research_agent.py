@@ -68,9 +68,9 @@ class ResearchAgent:
                 return None
 
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.5-flash-lite")
+            model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
             logger.info(
-                "LLM initialized for ResearchAgent with model: gemini-2.5-flash-lite"
+                "LLM initialized for ResearchAgent with model: gemini-3.1-flash-lite-preview"
             )
             return model
         except Exception as e:

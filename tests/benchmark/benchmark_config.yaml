@@ -114,7 +114,7 @@ execution:
 environment:
   # LLM Configuration - OpenRouter + Gemini 2.5 Flash Lite
   llm_provider: "openrouter"
-  llm_model: "google/gemini-2.5-flash-lite"
+  llm_model: "google/gemini-3.1-flash-lite-preview"
   enable_auto_fallback: false  # No fallbacks in production
   
   # MCP Configuration
