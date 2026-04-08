@@ -8352,6 +8352,28 @@ async def get_tool_for_category(category: ToolCategory) -> str | None:
     return mcp_hub.get_tool_for_category(category)
 
 
+async def get_best_tool_for_task(task_type: str, category: ToolCategory | None = None) -> str | None:
+    """태스크 타입에 가장 적합한 도구 반환."""
+    if category is not None:
+        return await get_tool_for_category(category)
+    mcp_hub = get_mcp_hub()
+    # task_type 키워드로 카테고리 추론
+    keyword_map = {
+        "search": ToolCategory.SEARCH,
+        "academic": ToolCategory.ACADEMIC,
+        "data": ToolCategory.DATA,
+        "code": ToolCategory.CODE,
+        "file": ToolCategory.FILE,
+        "browser": ToolCategory.BROWSER,
+        "document": ToolCategory.DOCUMENT,
+        "git": ToolCategory.GIT,
+    }
+    for keyword, cat in keyword_map.items():
+        if keyword in task_type.lower():
+            return mcp_hub.get_tool_for_category(cat)
+    return None
+
+
 async def health_check() -> Dict[str, Any]:
     """헬스 체크."""
     mcp_hub = get_mcp_hub()

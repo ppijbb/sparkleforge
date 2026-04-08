@@ -1050,6 +1050,10 @@ class BenchmarkRunner:
         if not critical_passed:
             return False
 
+        # If all metrics explicitly mark passed=False, the test fails
+        if all(hasattr(m, "passed") and not m.passed for m in metrics):
+            return False
+
         # Check expected values against actual results
         for key, expected_value in expected.items():
             if key == "max_response_time":
@@ -1082,46 +1086,55 @@ class BenchmarkRunner:
     def run_research_quality_benchmark(self) -> List[BenchmarkResult]:
         """Run research quality focused benchmarks."""
         test_cases = [
-            tc
-            for tc in self.config.get("test_cases", [])
-            if tc.get("category") in ["Technology", "Science", "Health"]
+            tc for tc in self._all_test_cases()
+            if tc.get("category") in ["Technology", "Science", "Health", "WebNavigation", "ToolUsage"]
         ]
+        if not test_cases:
+            test_cases = self._all_test_cases()[:3]
         return self._run_sequential_benchmarks(test_cases)
+
+    def _all_test_cases(self) -> List[Dict[str, Any]]:
+        """Return all test cases from config regardless of key name."""
+        return self.config.get("test_cases", self.config.get("agent_tasks", []))
 
     def run_performance_benchmark(self) -> List[BenchmarkResult]:
         """Run performance focused benchmarks."""
         test_cases = [
-            tc
-            for tc in self.config.get("test_cases", [])
-            if tc.get("category") in ["Technology", "Business"]
+            tc for tc in self._all_test_cases()
+            if tc.get("category") in ["Technology", "Business", "WebNavigation", "ToolUsage"]
         ]
+        if not test_cases:
+            test_cases = self._all_test_cases()[:2]
         return self._run_sequential_benchmarks(test_cases)
 
     def run_source_validation_benchmark(self) -> List[BenchmarkResult]:
         """Run source validation focused benchmarks."""
         test_cases = [
-            tc
-            for tc in self.config.get("test_cases", [])
-            if tc.get("category") in ["Science", "Health"]
+            tc for tc in self._all_test_cases()
+            if tc.get("category") in ["Science", "Health", "MultiAgent", "Reasoning"]
         ]
+        if not test_cases:
+            test_cases = self._all_test_cases()[:2]
         return self._run_sequential_benchmarks(test_cases)
 
     def run_creative_insights_benchmark(self) -> List[BenchmarkResult]:
         """Run creative insights focused benchmarks."""
         test_cases = [
-            tc
-            for tc in self.config.get("test_cases", [])
-            if tc.get("category") in ["Creative", "Health"]
+            tc for tc in self._all_test_cases()
+            if tc.get("category") in ["Creative", "Health", "Reasoning"]
         ]
+        if not test_cases:
+            test_cases = self._all_test_cases()[:2]
         return self._run_sequential_benchmarks(test_cases)
 
     def run_memory_learning_benchmark(self) -> List[BenchmarkResult]:
         """Run memory and learning focused benchmarks."""
         test_cases = [
-            tc
-            for tc in self.config.get("test_cases", [])
-            if tc.get("category") in ["Technology", "Business"]
+            tc for tc in self._all_test_cases()
+            if tc.get("category") in ["Technology", "Business", "MultiAgent"]
         ]
+        if not test_cases:
+            test_cases = self._all_test_cases()[:2]
         return self._run_sequential_benchmarks(test_cases)
 
     def get_benchmark_summary(self, results: List[BenchmarkResult]) -> Dict[str, Any]:

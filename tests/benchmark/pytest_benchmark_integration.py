@@ -25,8 +25,8 @@ def project_root():
 @pytest.fixture(scope="session")
 def benchmark_runner(project_root):
     """Create benchmark runner instance for session."""
-    config_path = project_root / "tests" / "benchmark_config.yaml"
-    thresholds_path = project_root / "tests" / "benchmark_thresholds.yaml"
+    config_path = project_root / "tests" / "benchmark" / "benchmark_config.yaml"
+    thresholds_path = project_root / "tests" / "benchmark" / "benchmark_thresholds.yaml"
     return BenchmarkRunner(str(project_root), str(config_path), str(thresholds_path))
 
 

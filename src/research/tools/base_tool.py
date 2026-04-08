@@ -346,9 +346,7 @@ class BaseResearchTool(ABC):
             # Use MCP tools for HTTP requests instead of direct aiohttp
             from src.core.mcp_integration import execute_tool
 
-            result = await execute_tool(
-                "fetch",
-                {
+            result = await execute_tool("fetch", {
                     "url": url,
                     "method": method,
                     "headers": headers or {},

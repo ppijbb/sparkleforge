@@ -393,25 +393,24 @@ class MetricsCollector:
         if not domain:
             return 0.5
 
-        # Simple domain-based credibility estimation
-        high_cred_domains = [
-            ".edu",
-            ".gov",
-            ".org",
-            "nature.com",
-            "science.org",
-            "arxiv.org",
-        ]
-        medium_cred_domains = [".com", ".net", "wikipedia.org", "medium.com"]
+        # Domain-based credibility estimation
+        high_cred_specific = ["nature.com", "science.org", "arxiv.org", "pubmed.ncbi.nlm.nih.gov"]
+        high_cred_suffixes = [".edu", ".gov", ".org"]
+        medium_cred_specific = ["wikipedia.org", "medium.com", "reuters.com", "bbc.com", "nytimes.com"]
 
         domain_lower = domain.lower()
 
-        if any(high_domain in domain_lower for high_domain in high_cred_domains):
+        # 1. Specific high-cred domains
+        if any(d in domain_lower for d in high_cred_specific):
             return 0.9
-        elif any(med_domain in domain_lower for med_domain in medium_cred_domains):
+        # 2. Specific medium-cred domains (override suffix rules)
+        if any(d in domain_lower for d in medium_cred_specific):
             return 0.7
-        else:
-            return 0.5
+        # 3. High-cred suffixes (.edu, .gov, .org) — non-wikipedia .org
+        if any(s in domain_lower for s in high_cred_suffixes):
+            return 0.9
+        # 4. Unknown .com/.net gets low credibility (default)
+        return 0.5
 
     def _extract_keywords(self, text: str) -> List[str]:
         """Extract keywords from text."""
@@ -449,6 +448,14 @@ class MetricsCollector:
             "would",
             "could",
             "should",
+            "new",
+            "this",
+            "that",
+            "these",
+            "those",
+            "its",
+            "it",
+            "not",
         }
         keywords = [word for word in words if word not in stop_words and len(word) > 2]
         return keywords[:10]  # Return top 10 keywords

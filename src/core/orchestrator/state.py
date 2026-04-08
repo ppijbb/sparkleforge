@@ -2,7 +2,7 @@ from typing import Annotated, Any, Dict, List, TypedDict
 from langchain_core.messages import BaseMessage
 
 class ResearchState(TypedDict):
-    \"\"\"LangGraph 연구 워크플로우 상태 정의 (8대 혁신 통합).\"\"\"
+    """LangGraph 연구 워크플로우 상태 정의 (8대 혁신 통합)."""
 
     # Input
     user_request: str
@@ -88,4 +88,4 @@ class ResearchState(TypedDict):
     innovation_stats: Dict[str, Any]
 
     # Messages for LangGraph
-    messages: Annotated[List[BaseMessage], \"Messages in the conversation\"]
+    messages: Annotated[List[BaseMessage], "Messages in the conversation"]
