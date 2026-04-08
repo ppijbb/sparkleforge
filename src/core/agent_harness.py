@@ -79,8 +79,8 @@ class AgentHarness:
         query = state["workflow"]["user_query"]
         logger.info(f"[Harness] Classify Node: Analyzing query '{query[:50]}...'")
         
-        # TaskRouter를 통해 경로 결정
-        route = self.router.determine_route(query)
+        # TaskRouter를 통해 경로 결정 (LLM 기반 — await 필요)
+        route = await self.router.determine_route(query)
         logger.info(f"[Harness] Route determined: {route.name}")
         
         # 라우트에 따른 초기 상태 세팅
@@ -133,16 +133,23 @@ class AgentHarness:
         except Exception as e:
             logger.warning(f"[Harness] MCP Hub initialization failed: {e}")
 
-        executor = ParallelAgentExecutor()
-        
-        # Execute tasks using parallel execution engine
+        # 에이전트 동적 할당 (TaskRouter 활용)
         tasks = state["workflow"]["tasks"]
+        agent_assignments = {}
+        for task in tasks:
+            agent_id = task.get("task_id")
+            # LLM이 태스크 성격에 맞는 전문가 에이전트 선정 (async)
+            assigned_agent = await self.router.assign_agent_for_task(task)
+            agent_assignments[agent_id] = assigned_agent
+            logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
+
+        executor = ParallelAgentExecutor()
         session_id = state["workflow"]["session_id"]
         
-        # In a real environment, wait for execution results
+        # Execute tasks using parallel execution engine with dynamic assignments
         results = await executor.execute_parallel_tasks(
             tasks=tasks,
-            agent_assignments={},
+            agent_assignments=agent_assignments,
             execution_plan={"strategy": "parallel_groups"},
             objective_id=session_id
         )
@@ -150,14 +157,13 @@ class AgentHarness:
         # Update tasks with results
         execution_results = results.get("execution_results", [])
         if execution_results:
-            # Simple zip update for simplicity
             for i, res in enumerate(execution_results):
                 if i < len(tasks):
                     tasks[i]["result"] = res.get("result")
                     tasks[i]["status"] = res.get("status")
                     
         state["workflow"]["tasks"] = tasks
-        state["workflow"]["final_output"] = f"Executed {len(tasks)} tasks via parallel agent. See individual results."
+        state["workflow"]["final_output"] = f"Executed {len(tasks)} tasks via dynamic agent army. See individual results."
         return state
 
     async def _node_subagent_delegate(self, state: HarnessState) -> Dict[str, Any]:

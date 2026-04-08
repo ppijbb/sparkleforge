@@ -1,17 +1,24 @@
-"""Task Router for Agent Harness.
+"""Task Router for Agent Harness — LLM-Powered Intent Classifier.
 
-이 모듈은 사용자의 입력(User Query) 또는 동적 생성된 Task를 분석하여
+이 모듈은 사용자의 입력(User Query) 또는 동적 생성된 Task를 LLM으로 분석하여
 가장 적합한 Agent 또는 Workflow Path로 라우팅합니다.
+
+핵심 원칙:
+- 하드코딩된 키워드 매핑 ZERO (LLM 실패 시에만 폴백으로 사용)
+- LLM이 의도(Intent)를 분석하여 경로 결정 (async/await)
+- 태스크별 최적 에이전트 동적 할당
 """
 
 import logging
 import re
+import json
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
 from src.core.harness_state import HarnessState, TaskState
 
 logger = logging.getLogger(__name__)
+
 
 class RoutePath(Enum):
     """실행 경로 옵션"""
@@ -22,72 +29,196 @@ class RoutePath(Enum):
     CREATIVITY_AGENT = "creativity_agent"
 
 
-class TaskRouter:
-    """사용자 요청을 적절한 워크플로우 경로로 라우팅합니다."""
-    
-    def __init__(self):
-        # 라우팅을 위한 키워드 매핑
-        self.financial_keywords = [
-            "주식", "종목", "주가", "환율", "금리", "시장", "경제", "투자", 
-            "stock", "price", "market", "finance", "economy", "invest", "trading", "ticker"
-        ]
-        self.codebase_keywords = [
-            "코드", "리팩터링", "버그", "함수", "클래스", "python", "javascript", 
-            "bug", "code", "refactor", "function", "class", "github", "repo", "repository"
-        ]
-        self.creativity_keywords = [
-            "소설", "시나리오", "이야기", "창작", "디자인", "아이디어", "브레인스토밍",
-            "story", "novel", "creative", "design", "idea", "brainstorm"
-        ]
-        
-    def determine_route(self, query: str) -> RoutePath:
-        """입력된 쿼리에 기반하여 실행 경로를 결정합니다."""
-        query_lower = query.lower()
-        
-        # 1. 재무/경제 파이프라인 체크
-        if any(kw in query_lower for kw in self.financial_keywords):
-            logger.info(f"TaskRouter: Route mapped to FINANCIAL_PIPELINE for query: '{query[:30]}...'")
-            return RoutePath.FINANCIAL_PIPELINE
-            
-        # 2. 코드 생성/수정 체크
-        if any(kw in query_lower for kw in self.codebase_keywords):
-            logger.info(f"TaskRouter: Route mapped to CODEBASE_AGENT for query: '{query[:30]}...'")
-            return RoutePath.CODEBASE_AGENT
-            
-        # 3. 창의적 작업 체크
-        if any(kw in query_lower for kw in self.creativity_keywords):
-            logger.info(f"TaskRouter: Route mapped to CREATIVITY_AGENT for query: '{query[:30]}...'")
-            return RoutePath.CREATIVITY_AGENT
-            
-        # 4. 단순 vs 복합 쿼리 체크 (길이나 특정 단어로 휴리스틱)
-        is_complex = len(query) > 100 or any(kw in query_lower for kw in ["비교", "분석", "연구", "리서치", "compare", "analyze", "research"])
-        
-        if is_complex:
-            logger.info(f"TaskRouter: Route mapped to PLANNER_PARALLEL for complex query")
-            return RoutePath.PLANNER_PARALLEL
-        else:
-            logger.info(f"TaskRouter: Route mapped to SINGLE_AGENT for simple query")
-            return RoutePath.SINGLE_AGENT
+# LLM 라우팅 판단용 프롬프트
+_ROUTE_CLASSIFY_PROMPT = """You are an intelligent task router for an AI agent system.
+Analyze the user's request and determine the MOST appropriate pipeline.
 
-    def assign_agent_for_task(self, task: TaskState) -> str:
-        """분할된 서브 태스크에 적합한 특화 에이전트 역할을 할당합니다."""
-        desc = task.get("description", "").lower()
-        title = task.get("description", "").split('\n')[0].lower() # 간이 타이틀
-        
-        if any(k in desc for k in ["verify", "validate", "검증", "평가", "확인", "fact_check"]):
+Available pipelines:
+- "codebase_agent": Software development tasks — writing code, building systems, implementing applications, debugging, architecture design, APIs, services, tools. Use this when the user wants to BUILD or CREATE software.
+- "financial_pipeline": Financial/economic research — stock analysis, market data, investment strategies, economic indicators.
+- "creativity_agent": Creative writing, story generation, design ideation, brainstorming.
+- "planner_parallel": Complex multi-step research requiring synthesis across multiple sources — scientific research, technical deep-dives, comparative analysis.
+- "single_agent": Simple, direct questions that require a single focused answer.
+
+User request: "{query}"
+
+Think step by step:
+1. What is the user's PRIMARY goal? (build software / research information / analyze data / create content)
+2. What is the expected OUTPUT? (code files / research report / financial chart / creative text)
+3. Which pipeline best serves that goal?
+
+Respond with ONLY a JSON object:
+{{"route": "<pipeline_name>", "reason": "<one sentence explanation>"}}"""
+
+# 태스크별 에이전트 할당 프롬프트
+_AGENT_ASSIGN_PROMPT = """You are an AI task dispatcher.
+Given a sub-task description, assign the MOST appropriate specialist agent.
+
+Available agents:
+- "code_architect_agent": Designs system architecture, defines interfaces, data models, module structure.
+- "code_implementor_agent": Writes actual implementation code for a specific module or feature.
+- "code_reviewer_agent": Reviews code for correctness, security, performance.
+- "researcher_agent": Gathers technical information, specifications, best practices.
+- "analyzer_agent": Analyzes requirements, compares approaches, benchmarks solutions.
+- "validator_agent": Tests, verifies, and fact-checks results.
+- "synthesizer_agent": Combines multiple results into a coherent final output.
+
+Sub-task description: "{description}"
+
+Respond with ONLY a JSON object:
+{{"agent": "<agent_name>", "reason": "<one sentence>"}}"""
+
+
+class TaskRouter:
+    """LLM 기반 지능형 태스크 라우터.
+
+    사용자 요청의 의도(Intent)를 LLM이 직접 분석하여
+    최적의 파이프라인과 에이전트를 동적으로 결정합니다.
+    - determine_route(): async — LLM이 파이프라인 결정
+    - assign_agent_for_task(): async — LLM이 에이전트 결정
+    """
+
+    def __init__(self):
+        pass  # LLM orchestrator는 호출 시점에 lazy하게 가져옴
+
+    def _extract_json(self, text: str) -> dict:
+        """LLM 응답에서 JSON을 추출합니다."""
+        text = re.sub(r"```json\s*", "", text)
+        text = re.sub(r"```\s*", "", text)
+        match = re.search(r"\{.*?\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+        return {}
+
+    async def determine_route(self, query: str) -> RoutePath:
+        """LLM이 쿼리의 의도를 분석하여 실행 경로를 결정합니다 (async)."""
+        try:
+            from src.core.llm_manager import get_llm_orchestrator, TaskType
+            orchestrator = get_llm_orchestrator()
+            prompt = _ROUTE_CLASSIFY_PROMPT.format(query=query)
+
+            result = await orchestrator.execute_with_model(
+                prompt=prompt,
+                task_type=TaskType.ANALYSIS,
+                use_cascade=False,
+            )
+            parsed = self._extract_json(result.content)
+            route_str = parsed.get("route", "").lower().strip()
+            reason = parsed.get("reason", "")
+
+            route_map = {
+                "codebase_agent": RoutePath.CODEBASE_AGENT,
+                "financial_pipeline": RoutePath.FINANCIAL_PIPELINE,
+                "creativity_agent": RoutePath.CREATIVITY_AGENT,
+                "planner_parallel": RoutePath.PLANNER_PARALLEL,
+                "single_agent": RoutePath.SINGLE_AGENT,
+            }
+
+            if route_str in route_map:
+                route = route_map[route_str]
+                logger.info(f"TaskRouter [LLM]: Route → {route.name} | Reason: {reason}")
+                return route
+            else:
+                logger.warning(
+                    f"TaskRouter [LLM]: Unrecognized route '{route_str}', using heuristic"
+                )
+
+        except Exception as e:
+            logger.warning(f"TaskRouter [LLM]: routing failed ({e}), using heuristic")
+
+        # === Fallback: 키워드 휴리스틱 (LLM 실패 시에만) ===
+        return self._heuristic_route(query)
+
+    def _heuristic_route(self, query: str) -> RoutePath:
+        """LLM 실패 시 사용하는 키워드 기반 폴백 라우터."""
+        q = query.lower()
+        financial_kw = [
+            "주식", "주가", "환율", "금리", "stock", "finance", "market", "invest", "trading",
+        ]
+        code_kw = [
+            "코드", "code", "구현", "서비스", "앱", "application", "app", "api", "server",
+            "client", "함수", "클래스", "python", "javascript", "개발", "implement", "build",
+            "작성", "기능", "화상통화", "video", "stream", "socket", "프로토콜", "protocol",
+        ]
+        creative_kw = ["소설", "시나리오", "창작", "story", "creative", "novel", "design"]
+
+        if any(k in q for k in financial_kw):
+            logger.info("TaskRouter [Heuristic]: FINANCIAL_PIPELINE")
+            return RoutePath.FINANCIAL_PIPELINE
+        if any(k in q for k in code_kw):
+            logger.info("TaskRouter [Heuristic]: CODEBASE_AGENT")
+            return RoutePath.CODEBASE_AGENT
+        if any(k in q for k in creative_kw):
+            logger.info("TaskRouter [Heuristic]: CREATIVITY_AGENT")
+            return RoutePath.CREATIVITY_AGENT
+
+        is_complex = len(query) > 80 or any(
+            k in q for k in ["비교", "분석", "연구", "compare", "analyze", "research"]
+        )
+        if is_complex:
+            logger.info("TaskRouter [Heuristic]: PLANNER_PARALLEL")
+            return RoutePath.PLANNER_PARALLEL
+
+        logger.info("TaskRouter [Heuristic]: SINGLE_AGENT")
+        return RoutePath.SINGLE_AGENT
+
+    async def assign_agent_for_task(self, task: TaskState) -> str:
+        """LLM이 서브 태스크를 분석하여 최적 에이전트를 결정합니다 (async)."""
+        description = task.get("description", "")
+        try:
+            from src.core.llm_manager import get_llm_orchestrator, TaskType
+            orchestrator = get_llm_orchestrator()
+            prompt = _AGENT_ASSIGN_PROMPT.format(description=description[:500])
+
+            result = await orchestrator.execute_with_model(
+                prompt=prompt,
+                task_type=TaskType.ANALYSIS,
+                use_cascade=False,
+            )
+            parsed = self._extract_json(result.content)
+            agent = parsed.get("agent", "").lower().strip()
+            reason = parsed.get("reason", "")
+
+            valid_agents = {
+                "code_architect_agent", "code_implementor_agent", "code_reviewer_agent",
+                "researcher_agent", "analyzer_agent", "validator_agent", "synthesizer_agent",
+            }
+
+            if agent in valid_agents:
+                logger.info(f"TaskRouter [LLM]: Agent → {agent} | Reason: {reason}")
+                return agent
+            else:
+                logger.warning(f"TaskRouter [LLM]: Unrecognized agent '{agent}', using heuristic")
+
+        except Exception as e:
+            logger.warning(f"TaskRouter [LLM]: agent assignment failed ({e}), using heuristic")
+
+        # === Fallback 휴리스틱 ===
+        return self._heuristic_assign(description)
+
+    def _heuristic_assign(self, description: str) -> str:
+        """LLM 실패 시 키워드 기반 에이전트 폴백 할당."""
+        d = description.lower()
+        if any(k in d for k in ["verify", "validate", "검증", "평가", "fact_check", "test"]):
             return "validator_agent"
-        if any(k in desc for k in ["analyze", "분석", "compare", "비교", "benchmark"]):
+        if any(k in d for k in ["architecture", "설계", "아키텍처", "structure", "interface", "모듈"]):
+            return "code_architect_agent"
+        if any(k in d for k in ["implement", "구현", "write code", "코드 작성", "develop", "개발", "build"]):
+            return "code_implementor_agent"
+        if any(k in d for k in ["review", "리뷰", "검토", "audit"]):
+            return "code_reviewer_agent"
+        if any(k in d for k in ["analyze", "분석", "compare", "비교", "benchmark"]):
             return "analyzer_agent"
-        if any(k in desc for k in ["synthesize", "summarize", "종합", "요약", "report"]):
+        if any(k in d for k in ["synthesize", "summarize", "종합", "요약", "report", "보고"]):
             return "synthesizer_agent"
-        
-        # 기본값
         return "researcher_agent"
 
     def update_state_for_route(self, state: HarnessState, route: RoutePath) -> HarnessState:
         """결정된 라우트에 따라 파이프라인의 초기 상태 플래그를 설정합니다."""
         if route == RoutePath.FINANCIAL_PIPELINE:
             state["governance"]["is_economic_request"] = True
-            
         state["workflow"]["phase"] = "classify"
         return state
