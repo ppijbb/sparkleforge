@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 EMBEDDED_SERVERS = {
     "web-fetch": {
         "name": "web-fetch",
-        "module": "embedded_mcp_servers.web_fetch_server",
+        "module": "src.core.mcp_servers.web_fetch_server",
         "description": "Web content fetching and search",
         "tools": ["fetch", "search"],
         "type": "embedded",
@@ -28,7 +28,7 @@ EMBEDDED_SERVERS = {
     },
     "search": {
         "name": "search",
-        "module": "embedded_mcp_servers.search_server",
+        "module": "src.core.mcp_servers.search_server",
         "description": "Web search with multiple providers",
         "tools": ["search", "search_all", "multi_search", "search_news"],
         "type": "embedded",
@@ -36,7 +36,7 @@ EMBEDDED_SERVERS = {
     },
     "arxiv": {
         "name": "arxiv",
-        "module": "embedded_mcp_servers.arxiv_server",
+        "module": "src.core.mcp_servers.arxiv_server",
         "description": "Academic paper search from arXiv",
         "tools": [
             "search",
@@ -50,7 +50,7 @@ EMBEDDED_SERVERS = {
     },
     "memory": {
         "name": "memory",
-        "module": "embedded_mcp_servers.memory_server",
+        "module": "src.core.mcp_servers.memory_server",
         "description": "Persistent memory storage",
         "tools": [
             "store_memory",
@@ -67,7 +67,7 @@ EMBEDDED_SERVERS = {
     },
     "filesystem": {
         "name": "filesystem",
-        "module": "embedded_mcp_servers.filesystem_server",
+        "module": "src.core.mcp_servers.filesystem_server",
         "description": "File system operations",
         "tools": [
             "read_file",
@@ -85,7 +85,7 @@ EMBEDDED_SERVERS = {
     },
     "github": {
         "name": "github",
-        "module": "embedded_mcp_servers.github_server",
+        "module": "src.core.mcp_servers.github_server",
         "description": "GitHub API operations",
         "tools": [
             "search_repositories",
