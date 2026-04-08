@@ -132,7 +132,6 @@ class ColoredFormatter(logging.Formatter):
         "validation_agent": "\033[91m",  # Light Red
         "synthesis_agent": "\033[97m",  # White
         "mcp_integration": "\033[90m",  # Gray
-        "llm_methods": "\033[94m",  # Blue
         "RESET": "\033[0m",  # Reset
     }
 
