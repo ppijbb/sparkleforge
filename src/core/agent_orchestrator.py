@@ -5,18 +5,31 @@
 """
 
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, TypedDict
 
 from src.core.agent_harness import AgentHarness
 from src.core.task_router import RoutePath
+
+
+class AgentState(TypedDict, total=False):
+    """Agent workflow state shared across orchestration steps."""
+    request: str
+    session_id: str
+    plan: str
+    tasks: List[Dict[str, Any]]
+    results: str
+    final_report: str
+    success: bool
+    error: Optional[str]
 
 logger = logging.getLogger(__name__)
 
 class AgentOrchestrator:
     """Agent Harness 기반의 경량화된 Orchestrator Wrapper"""
     
-    def __init__(self):
+    def __init__(self, config=None):
         self.harness = AgentHarness()
+        self.config = config
         logger.info("AgentOrchestrator initialized with AgentHarness")
 
     async def execute(self, request: str, session_id: str = "default_session", max_iterations: int = 10, **kwargs) -> Dict[str, Any]:
