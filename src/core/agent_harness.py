@@ -33,6 +33,7 @@ class AgentHarness:
         workflow.add_node("planner", self._node_planner)
         workflow.add_node("executor", self._node_executor)
         workflow.add_node("subagent_delegate", self._node_subagent_delegate)
+        workflow.add_node("document_processor", self._node_document_processor)
         workflow.add_node("synthesize", self._node_synthesize)
         
         # 기본 라우팅 그래프 
@@ -46,8 +47,9 @@ class AgentHarness:
                 "single_agent": "single_agent",
                 "planner_parallel": "planner",
                 "financial_pipeline": "planner", 
-                "codebase_agent": "planner",  # 코드 작업도 플래너에서 태스크로 분할
-                "creativity_agent": "planner" # 창의성도 마찬가지
+                "codebase_agent": "planner",  
+                "creativity_agent": "planner",
+                "document_pipeline": "document_processor"
             }
         )
         
@@ -68,6 +70,7 @@ class AgentHarness:
         workflow.add_edge("subagent_delegate", "synthesize")
         
         # 합성이 끝나면 종료
+        workflow.add_edge("document_processor", "planner") # 문서 처리 후 추가 계획 수립 가능
         workflow.add_edge("synthesize", END)
         
         return workflow.compile(checkpointer=self.memory)
@@ -172,6 +175,39 @@ class AgentHarness:
         state["workflow"]["phase"] = "execute_isolated"
         return state
 
+    async def _node_document_processor(self, state: HarnessState) -> Dict[str, Any]:
+        """[Node] Docling을 이용한 지능형 문서 처리 및 리소스 추출"""
+        logger.info("[Harness] Document Processor Node")
+        query = state["workflow"]["user_query"]
+        
+        from src.core.document_processing.docling_processor import DoclingProcessor
+        from src.storage.hybrid_storage import HybridStorage
+        
+        processor = DoclingProcessor()
+        storage = HybridStorage()
+        
+        # URL 또는 파일 경로 추출 (단순 정규식 또는 LLM 전략)
+        import re
+        urls = re.findall(r'https?://\S+', query)
+        paths = re.findall(r'/[^/\s]+\.[^/\s]+', query)
+        
+        source = urls[0] if urls else (paths[0] if paths else None)
+        
+        if source:
+            logger.info(f"[Harness] Processing document: {source}")
+            result = await processor.process(source, user_id="default_user", instruction=query)
+            
+            if result.get("success"):
+                await processor.store_to_history(storage, result)
+                # 컨텍스트에 마크다운 결과 추가
+                state["workflow"]["user_query"] += f"\n\n[PROCESSED DOCUMENT CONTENT]\n{result['markdown'][:2000]}..."
+                logger.info(f"[Harness] Document processed and stored: {result['doc_id']}")
+            else:
+                logger.warning(f"[Harness] Document processing failed: {result.get('error')}")
+        
+        state["workflow"]["phase"] = "plan" # 문서 처리 후 다시 기획 단계로 유도 가능
+        return state
+
     async def _node_synthesize(self, state: HarnessState) -> Dict[str, Any]:
         """[Node] 결과 총합 및 최종 응답 생성"""
         print("\n\n=============== [SYNTHESIZE NODE STARTED] ===============\n\n")
@@ -202,6 +238,8 @@ class AgentHarness:
             return "codebase_agent"
         elif phase == RoutePath.CREATIVITY_AGENT.value:
             return "creativity_agent"
+        elif phase == RoutePath.DOCUMENT_PIPELINE.value:
+            return "document_pipeline"
             
         return "single_agent" # 기본 폴백
 
