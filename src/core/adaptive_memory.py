@@ -161,7 +161,7 @@ class AdaptiveMemory:
         memory: BaseMemory,
         tx: Transaction | None = None,  # 기본값: None (기존 동작 유지)
     ) -> bool:
-        """BaseMemory 객체를 저장 (memory_service.py 호환).
+        """BaseMemory 객체를 저장.
 
         Args:
             memory: BaseMemory 객체

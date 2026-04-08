@@ -363,16 +363,6 @@ class AutonomousResearchSystem:
                 self.guardrails_validator = None
                 logger.info("⚠️ Guardrails Validator disabled (via DISABLE_GUARDRAILS)")
 
-            # Agent Tool Wrapper (기본 활성화)
-            if FeatureFlags.ENABLE_AGENT_TOOLS:
-                # 에이전트는 나중에 할당 (execute 시점)
-                self.agent_tool_wrapper = None
-                logger.info(
-                    "✅ Agent Tool Wrapper enabled (default, will be initialized on first execution)"
-                )
-            else:
-                self.agent_tool_wrapper = None
-                logger.info("⚠️ Agent Tool Wrapper disabled (via DISABLE_AGENT_TOOLS)")
 
             # YAML 설정 로더 (기본 활성화)
             if FeatureFlags.ENABLE_YAML_CONFIG:
@@ -391,7 +381,6 @@ class AutonomousResearchSystem:
             self.mcp_stability_service = None
             self.mcp_health_service = None
             self.guardrails_validator = None
-            self.agent_tool_wrapper = None
             self.yaml_config_loader = None
 
         try:
