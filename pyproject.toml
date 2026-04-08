@@ -71,6 +71,7 @@ dependencies = [
     "open-skills>=0.2.0",
     "composio>=0.5.0",
     "composio-langgraph>=0.11.0",
+    "docling>=2.85.0",
 ]
 
 [project.optional-dependencies]

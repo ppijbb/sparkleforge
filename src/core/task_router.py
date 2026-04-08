@@ -27,6 +27,7 @@ class RoutePath(Enum):
     FINANCIAL_PIPELINE = "financial_pipeline"
     CODEBASE_AGENT = "codebase_agent"
     CREATIVITY_AGENT = "creativity_agent"
+    DOCUMENT_PIPELINE = "document_pipeline"
 
 
 # LLM 라우팅 판단용 프롬프트
@@ -37,6 +38,7 @@ Available pipelines:
 - "codebase_agent": Software development tasks — writing code, building systems, implementing applications, debugging, architecture design, APIs, services, tools. Use this when the user wants to BUILD or CREATE software.
 - "financial_pipeline": Financial/economic research — stock analysis, market data, investment strategies, economic indicators.
 - "creativity_agent": Creative writing, story generation, design ideation, brainstorming.
+- "document_pipeline": Document reading and extraction — specifically for PDF, DOCX, PPTX, XLSX files or URLs. Use this when the user wants to READ, ANALYZE, or EXTRACT info from a document.
 - "planner_parallel": Complex multi-step research requiring synthesis across multiple sources — scientific research, technical deep-dives, comparative analysis.
 - "single_agent": Simple, direct questions that require a single focused answer.
 
@@ -113,6 +115,7 @@ class TaskRouter:
                 "codebase_agent": RoutePath.CODEBASE_AGENT,
                 "financial_pipeline": RoutePath.FINANCIAL_PIPELINE,
                 "creativity_agent": RoutePath.CREATIVITY_AGENT,
+                "document_pipeline": RoutePath.DOCUMENT_PIPELINE,
                 "planner_parallel": RoutePath.PLANNER_PARALLEL,
                 "single_agent": RoutePath.SINGLE_AGENT,
             }
@@ -144,6 +147,7 @@ class TaskRouter:
             "작성", "기능", "화상통화", "video", "stream", "socket", "프로토콜", "protocol",
         ]
         creative_kw = ["소설", "시나리오", "창작", "story", "creative", "novel", "design"]
+        doc_kw = ["문서", "파일", "pdf", "docx", "pptx", "xlsx", "읽어줘", "분석해줘", "document", "extract", "parse"]
 
         if any(k in q for k in financial_kw):
             logger.info("TaskRouter [Heuristic]: FINANCIAL_PIPELINE")
@@ -154,6 +158,9 @@ class TaskRouter:
         if any(k in q for k in creative_kw):
             logger.info("TaskRouter [Heuristic]: CREATIVITY_AGENT")
             return RoutePath.CREATIVITY_AGENT
+        if any(k in q for k in doc_kw) or q.endswith(".pdf") or q.endswith(".docx"):
+            logger.info("TaskRouter [Heuristic]: DOCUMENT_PIPELINE")
+            return RoutePath.DOCUMENT_PIPELINE
 
         is_complex = len(query) > 80 or any(
             k in q for k in ["비교", "분석", "연구", "compare", "analyze", "research"]

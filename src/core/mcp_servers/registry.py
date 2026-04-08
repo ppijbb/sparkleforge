@@ -102,6 +102,14 @@ EMBEDDED_SERVERS = {
         "type": "embedded",
         "transport": "stdio",
     },
+    "docling": {
+        "name": "docling",
+        "module": "src.core.mcp_servers.docling_server",
+        "description": "Intelligent document processing and resource extraction",
+        "tools": ["process_document"],
+        "type": "embedded",
+        "transport": "stdio",
+    },
 }
 
 
