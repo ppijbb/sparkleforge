@@ -38,16 +38,16 @@ class AgentHarness:
         # 기본 라우팅 그래프 
         workflow.set_entry_point("classify")
         
-        # 조건부 엣지 - classify 이후 라우팅
+        # 파이프라인 상관없이 복잡한 태스크는 모두 Planner-TaskGraph 엔진으로 연결
         workflow.add_conditional_edges(
             "classify",
             self._route_after_classify,
             {
                 "single_agent": "single_agent",
                 "planner_parallel": "planner",
-                "financial_pipeline": "planner",  # 일단 플래너로 라우팅 후 처리
-                "codebase_agent": "single_agent", # 향후 codebase 폴백
-                "creativity_agent": "single_agent" # 향후 창의성 워크플로 풀백
+                "financial_pipeline": "planner", 
+                "codebase_agent": "planner",  # 코드 작업도 플래너에서 태스크로 분할
+                "creativity_agent": "planner" # 창의성도 마찬가지
             }
         )
         
@@ -123,6 +123,16 @@ class AgentHarness:
         state["workflow"]["phase"] = "execute"
         
         from src.core.parallel_agent_executor import ParallelAgentExecutor
+        from src.core.mcp_integration import get_mcp_hub
+        
+        # Ensure MCP Hub is initialized before execution
+        try:
+            mcp_hub = get_mcp_hub()
+            await mcp_hub.initialize_mcp()
+            logger.info("[Harness] MCP Hub initialized")
+        except Exception as e:
+            logger.warning(f"[Harness] MCP Hub initialization failed: {e}")
+
         executor = ParallelAgentExecutor()
         
         # Execute tasks using parallel execution engine
@@ -137,6 +147,16 @@ class AgentHarness:
             objective_id=session_id
         )
         
+        # Update tasks with results
+        execution_results = results.get("execution_results", [])
+        if execution_results:
+            # Simple zip update for simplicity
+            for i, res in enumerate(execution_results):
+                if i < len(tasks):
+                    tasks[i]["result"] = res.get("result")
+                    tasks[i]["status"] = res.get("status")
+                    
+        state["workflow"]["tasks"] = tasks
         state["workflow"]["final_output"] = f"Executed {len(tasks)} tasks via parallel agent. See individual results."
         return state
 
@@ -148,13 +168,15 @@ class AgentHarness:
 
     async def _node_synthesize(self, state: HarnessState) -> Dict[str, Any]:
         """[Node] 결과 총합 및 최종 응답 생성"""
+        print("\n\n=============== [SYNTHESIZE NODE STARTED] ===============\n\n")
         logger.info("[Harness] Synthesize Node")
         state["workflow"]["phase"] = "synthesize"
         
-        # 더미 결과 추가
-        final_output = state["workflow"].get("final_output")
-        if not final_output:
-            state["workflow"]["final_output"] = "Placeholder logic completed"
+        from src.agents.generator_agent import GeneratorAgent
+        generator = GeneratorAgent()
+        result = await generator.synthesize(state)
+        
+        state["workflow"]["final_output"] = result.get("final_output", "")
             
         return state
 
@@ -201,7 +223,9 @@ class AgentHarness:
         
         # 3. 그래프 실행
         try:
+            print("\n\n=============== [Aরাজনৈতিক] ===============\n\n")
             final_state = await self.graph.ainvoke(initial_state, config)
+            print("\n\n=============== [AINVOKE DONE] ===============\n\n")
             logger.info(f"✅ Harness completed in {time.time() - start_time:.2f}s")
             
             # API 호환을 위해 결과 반환

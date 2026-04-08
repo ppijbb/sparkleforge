@@ -114,11 +114,13 @@ class PlannerAgent:
         # 구조 맞추기
         formatted_tasks = []
         for i, t in enumerate(tasks):
-             formatted_tasks.append({
-                 "task_id": t.get("task_id", f"task_{i+1}"),
-                 "description": t.get("description", user_query),
-                 "status": "pending"
-             })
+            formatted_tasks.append({
+                "task_id": t.get("task_id", f"task_{i+1}"),
+                "name": t.get("name", t.get("description", user_query)[:50]),
+                "description": t.get("description", user_query),
+                "task_type": t.get("task_type", "general"),
+                "status": "pending"
+            })
              
         return {
             "plan": plan,

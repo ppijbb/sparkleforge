@@ -19,18 +19,30 @@ class AgentOrchestrator:
         self.harness = AgentHarness()
         logger.info("AgentOrchestrator initialized with AgentHarness")
 
-    async def execute(self, request: str, session_id: str = "default_session", max_iterations: int = 10) -> Dict[str, Any]:
+    async def execute(self, request: str, session_id: str = "default_session", max_iterations: int = 10, **kwargs) -> Dict[str, Any]:
         """하네스를 기동하여 요청을 처리합니다."""
         logger.info(f"AgentOrchestrator delegating request to AgentHarness (session: {session_id})")
         
         # Harness 실행
-        return await self.harness.execute(
+        harness_result = await self.harness.execute(
             session_id=session_id, 
             request=request, 
             max_iterations=max_iterations
         )
+        
+        # main.py 호환을 위한 필드 추가
+        return {
+            "success": harness_result.get("success", False),
+            "plan": harness_result.get("plan", ""),
+            "tasks": harness_result.get("tasks", []),
+            "results": harness_result.get("results", ""),
+            "final_report": harness_result.get("results", ""),  # results를 final_report로 매핑
+            "session_id": session_id,
+            "research_failed": not harness_result.get("success", False),
+            "error": harness_result.get("error")
+        }
 
-def agent_workflow_result_to_public_dict(result: Dict[str, Any]) -> Dict[str, Any]:
+def agent_workflow_result_to_public_dict(result: Dict[str, Any], context: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """이전 버전의 API 호환성을 위한 포맷터"""
     return {
         "plan": result.get("plan", ""),
