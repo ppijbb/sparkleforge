@@ -70,6 +70,7 @@ class MetaState(TypedDict):
     total_tokens_used: int
     warnings: List[str]
     current_agent: str
+    output_dir: str
 
 
 class HarnessState(TypedDict):
@@ -88,17 +89,20 @@ class HarnessState(TypedDict):
 
 
 def create_initial_harness_state(
-    session_id: str, 
+    session_id: Optional[str], 
     user_query: str, 
     max_iterations: int = 10
 ) -> HarnessState:
     """초기 HarnessState 객체를 생성합니다."""
     import time
     
+    # 세션 ID가 없으면 기본값 설정
+    safe_session_id = session_id if session_id else "default"
+    
     return {
         "messages": [],
         "workflow": {
-            "session_id": session_id,
+            "session_id": safe_session_id,
             "user_query": user_query,
             "phase": "start",
             "plan": "",
@@ -129,6 +133,7 @@ def create_initial_harness_state(
             "start_time": time.time(),
             "total_tokens_used": 0,
             "warnings": [],
-            "current_agent": "system"
+            "current_agent": "system",
+            "output_dir": f"output/{time.strftime('%Y%m%d_%H%M%S')}_{safe_session_id[:8]}"
         }
     }

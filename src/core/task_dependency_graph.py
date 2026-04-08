@@ -160,17 +160,23 @@ class TaskDependencyGraph:
 
         return ready_tasks
 
-    def mark_completed(self, task_id: str):
+    def mark_completed(self, task_id: str, result: Any = None):
         """태스크 완료 표시."""
         if task_id in self.running_tasks:
             self.running_tasks.remove(task_id)
         self.completed_tasks.add(task_id)
+        if result is not None:
+             # 결과 저장 (옵션)
+             if task_id in self.tasks:
+                 self.tasks[task_id]["result"] = result
         logger.debug(f"  Task {task_id} marked as completed")
 
-    def mark_running(self, task_id: str):
+    def mark_running(self, task_id: str, agent_id: str = "unknown"):
         """태스크 실행 중 표시."""
         self.running_tasks.add(task_id)
-        logger.debug(f"  Task {task_id} marked as running")
+        if task_id in self.tasks:
+            self.tasks[task_id]["assigned_agent"] = agent_id
+        logger.debug(f"  Task {task_id} marked as running (agent: {agent_id})")
 
     def get_task(self, task_id: str) -> Dict[str, Any] | None:
         """태스크 정보 반환."""

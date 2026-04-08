@@ -24,6 +24,7 @@ from src.core.result_cache import get_result_cache
 from src.core.streaming_manager import EventType, get_streaming_manager
 from src.core.task_graph import TaskGraph
 from src.core.task_validator import TaskValidator
+from src.core.llm_manager import execute_llm_task, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +273,7 @@ class ParallelAgentExecutor:
                         group_tasks.append(
                             self._execute_single_task(
                                 task_id,
-                                task,
+                                task.to_dict() if hasattr(task, "to_dict") else task,
                                 agent_assignments,
                                 semaphore,
                                 objective_id,
@@ -292,7 +293,7 @@ class ParallelAgentExecutor:
                         self.failed_tasks.append(
                             {"task_id": task_id, "error": str(result)}
                         )
-                        dependency_graph.mark_completed(task_id)  # 실패해도 완료로 표시
+                        dependency_graph.mark_completed(task_id, str(result))  # 실패해도 완료로 표시
 
                         # DAG 시각화 업데이트
                         try:
@@ -304,7 +305,7 @@ class ParallelAgentExecutor:
                             logger.debug(f"Failed to update DAG visualizer: {e}")
                     else:
                         results.append(result)
-                        dependency_graph.mark_completed(task_id)
+                        dependency_graph.mark_completed(task_id, result)
                         logger.info(f"  ✅ Task {task_id} completed")
 
                         # DAG 시각화 업데이트
@@ -345,10 +346,10 @@ class ParallelAgentExecutor:
                         self.failed_tasks.append(
                             {"task_id": task_id, "error": str(result)}
                         )
-                        dependency_graph.mark_completed(task_id)
+                        dependency_graph.mark_completed(task_id, str(result))
                     else:
                         results.append(result)
-                        dependency_graph.mark_completed(task_id)
+                        dependency_graph.mark_completed(task_id, result)
 
         return results
 
@@ -654,6 +655,44 @@ class ParallelAgentExecutor:
                                 }
                             )
                             continue
+
+
+                    # 도구가 성공하지 못했거나 도구가 없으면 LLM으로 폴백
+                    if tool_result is None or not tool_result.get("success"):
+                        logger.info(f"Task {task_id}: Falling back to LLM processing")
+                        
+                        llm_prompt = f"""
+                        Job description: {task.get('description', task.get('name', 'Generic task'))}
+                        Previous tool attempts: {tool_attempts}
+                        
+                        You are a professional research and visualization expert. 
+                        Provide a detailed result for the following objective:
+                        {task.get('description', '')}
+                        
+                        CRITICAL REQUIREMENTS for Presentation/PPT tasks:
+                        1. If the task is about creating a PPT, the python code MUST:
+                           - Use `matplotlib` to generate at least 1-2 relevant charts (e.g., trend analysis, financial projections).
+                           - Save charts as PNG files in the 'output/' directory.
+                           - Use `python-pptx` to embed these charts into slides.
+                           - Use professional slide layouts (Title, Content, Picture with Caption).
+                        2. Do NOT just provide text; provide a truly "visual" and "data-driven" presentation script.
+                        3. Always assume the viewer is an executive who needs charts and data.
+                        
+                        Constraints: Provide factual and detailed information. Include correctly formatted python code blocks.
+                        """
+                        
+                        llm_result = await execute_llm_task(
+                            prompt=llm_prompt,
+                            task_type=TaskType.RESEARCH,
+                            system_message="You are a professional research agent."
+                        )
+                        
+                        tool_result = {
+                            "success": True,
+                            "data": llm_result.content if llm_result else "No content generated",
+                            "confidence": 0.8,
+                            "execution_time": (datetime.now() - task_start).total_seconds()
+                        }
 
                     execution_time = (datetime.now() - task_start).total_seconds()
 

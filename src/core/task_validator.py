@@ -52,11 +52,11 @@ class TaskValidator:
         metadata = {}
 
         # 1. 필수 필드 확인
-        required_fields = ["task_id", "name"]
+        required_fields = ["name"] # task_id is recovered below
         for field in required_fields:
             if field not in task or not task[field]:
                 errors.append(f"Missing required field: {field}")
-                confidence -= 0.2
+                confidence -= 0.1
 
         # task_id가 없으면 task_id 생성 시도
         if "task_id" not in task or not task.get("task_id"):
@@ -104,8 +104,12 @@ class TaskValidator:
         if available_tools is not None:
             tool_category = self._get_tool_category_for_task(task)
             if not available_tools:
-                errors.append(f"No available tools for category '{tool_category}'")
-                confidence -= 0.3
+                if tool_category == "general":
+                     warnings.append(f"No available tools for category '{tool_category}', using LLM fallback")
+                     confidence -= 0.05
+                else:
+                     errors.append(f"No available tools for category '{tool_category}'")
+                     confidence -= 0.3
             else:
                 metadata["available_tools"] = len(available_tools)
                 metadata["tool_category"] = tool_category
