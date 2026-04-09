@@ -31,6 +31,7 @@ class ToolCategory(Enum):
     PLANNING = "planning"
     VERIFICATION = "verification"
     GENERATION = "generation"
+    COMPUTER = "computer"  # 가상 데스크톱 / GUI 자동화
 
 
 @dataclass
@@ -60,6 +61,7 @@ class AgentToolSelector:
                 ToolCategory.ACADEMIC,
                 ToolCategory.BUSINESS,
                 ToolCategory.CODE,
+                ToolCategory.COMPUTER,
             ],
             AgentType.VERIFIER: [
                 ToolCategory.VERIFICATION,
@@ -177,6 +179,22 @@ class AgentToolSelector:
                 "content",
                 "draft",
                 "compose",
+            ],
+            ToolCategory.COMPUTER: [
+                "screenshot",
+                "mouse",
+                "keyboard",
+                "mouse_click",
+                "mouse_move",
+                "mouse_scroll",
+                "type_text",
+                "key_press",
+                "open_application",
+                "display",
+                "virtual",
+                "desktop",
+                "gui",
+                "computer_use",
             ],
         }
 

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Type
 from .base_cli_agent import BaseCLIAgent
 from .claude_code_agent import ClaudeCodeAgent
 from .cline_cli_agent import ClineCLIAgent
+from .computer_use_agent import ComputerUseAgent
 from .gemini_cli_agent import GeminiCLIAgent
 from .open_code_agent import OpenCodeAgent
 
@@ -38,6 +39,7 @@ class CLIAgentManager:
             "open_code": OpenCodeAgent,
             "gemini_cli": GeminiCLIAgent,
             "cline_cli": ClineCLIAgent,
+            "computer_use": ComputerUseAgent,
         }
 
         for agent_name, agent_class in default_agents.items():
@@ -124,6 +126,7 @@ class CLIAgentManager:
             "open_code": OpenCodeAgent,
             "gemini_cli": GeminiCLIAgent,
             "cline_cli": ClineCLIAgent,
+            "computer_use": ComputerUseAgent,
         }
         return agent_classes.get(name)
 

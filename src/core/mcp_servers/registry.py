@@ -110,6 +110,23 @@ EMBEDDED_SERVERS = {
         "type": "embedded",
         "transport": "stdio",
     },
+    "computer-use": {
+        "name": "computer-use",
+        "module": "src.core.mcp_servers.computer_use_server",
+        "description": "Virtual desktop screenshot, mouse, and keyboard control via Xvfb",
+        "tools": [
+            "screenshot",
+            "mouse_click",
+            "mouse_move",
+            "mouse_scroll",
+            "type_text",
+            "key_press",
+            "open_application",
+            "get_display_info",
+        ],
+        "type": "embedded",
+        "transport": "stdio",
+    },
 }
 
 

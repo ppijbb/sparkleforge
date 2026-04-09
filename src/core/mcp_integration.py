@@ -252,6 +252,15 @@ def _infer_tool_type(tool_name: str) -> str:
         return "run_code"
     elif "browser" in tool_lower:
         return "browser"
+    elif (
+        "screenshot" in tool_lower
+        or "mouse" in tool_lower
+        or "keyboard" in tool_lower
+        or "computer_use" in tool_lower
+        or "key_press" in tool_lower
+        or "type_text" in tool_lower
+    ):
+        return "computer"
     elif "generate" in tool_lower or "document" in tool_lower:
         return "document_generation"
     elif "file" in tool_lower:
@@ -297,6 +306,7 @@ class ToolCategory(Enum):
     DOCUMENT = "document"  # 문서 생성
     FILE = "file"  # 파일 작업
     GIT = "git"  # Git 워크플로우
+    COMPUTER = "computer"  # 가상 데스크톱 / GUI 자동화
 
 
 def _actionable_error_message(tool_name: str, error: str | Exception) -> str:

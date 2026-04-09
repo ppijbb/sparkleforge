@@ -72,6 +72,12 @@ dependencies = [
     "composio>=0.5.0",
     "composio-langgraph>=0.11.0",
     "docling>=2.85.0",
+    # Virtual Computer / Computer Use
+    "anthropic>=0.40.0",
+    "pyautogui>=0.9.54",
+    "mss>=9.0.1",
+    "xvfbwrapper>=0.2.9",
+    "Pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]

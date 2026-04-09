@@ -128,4 +128,11 @@ redis>=5.0.0  # State persistence
 asyncio-mqtt>=0.16.0  # Health monitoring
 
 # Dependency graph (ROMA integration)
-networkx>=3.0  # Task dependency graph for smart parallel execution 
+networkx>=3.0  # Task dependency graph for smart parallel execution
+
+# Virtual Computer / Computer Use
+anthropic>=0.40.0       # Anthropic Computer Use API (betas=[computer-use-2024-10-22])
+pyautogui>=0.9.54       # Mouse + keyboard automation (requires X11/Xvfb)
+mss>=9.0.1              # Fast cross-platform screenshots
+xvfbwrapper>=0.2.9      # Python lifecycle wrapper for Xvfb virtual display
+Pillow>=10.0.0          # Image I/O for screenshot encoding
