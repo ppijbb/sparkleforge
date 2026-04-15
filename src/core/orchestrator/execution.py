@@ -8,6 +8,18 @@ from src.core.mcp_integration import ToolCategory, execute_tool
 
 logger = logging.getLogger(__name__)
 
+# Playwright controller lazy import
+_playwright_controller = None
+
+
+def _get_browser_controller():
+    """PlaywrightController 인스턴스를 lazy하게 가져옵니다."""
+    global _playwright_controller
+    if _playwright_controller is None:
+        from src.automation.browser_manager import get_playwright_controller
+        _playwright_controller = get_playwright_controller()
+    return _playwright_controller
+
 class ExecutionNode(BaseNode):
     """Handler for research execution and resource allocation."""
 
@@ -103,6 +115,21 @@ class ExecutionNode(BaseNode):
                 tool_attempts = []
                 try:
                     tool_category = self._get_tool_category_for_task(task)
+
+                    # BROWSER 카테고리: PlaywrightController로 직접 처리
+                    if tool_category == ToolCategory.BROWSER:
+                        browser_result = await self._execute_browser_task(task)
+                        if browser_result:
+                            execution_results.append(browser_result)
+                            streaming_data.append({
+                                "timestamp": datetime.now().isoformat(),
+                                "task_id": task.get("id"),
+                                "status": browser_result.get("status", "completed"),
+                                "data": browser_result.get("result"),
+                                "tool_used": "playwright",
+                            })
+                            continue
+
                     available_tools = self._get_available_tools_for_category(tool_category)
 
                     for tool_name in available_tools:
@@ -141,7 +168,12 @@ class ExecutionNode(BaseNode):
                             logger.warning(f"Tool {tool_name} failed: {e}")
                     
                     if not task_success:
-                        execution_results.append({"task_id": task.get("id"), "status": "failed", "error": "All tools failed"})
+                        execution_results.append({
+                            "task_id": task.get("id"),
+                            "status": "failed",
+                            "error": f"All {len(available_tools)} tools failed",
+                            "attempts": tool_attempts,
+                        })
                 except Exception as e:
                     logger.error(f"Task execution error: {e}")
 
@@ -212,19 +244,95 @@ class ExecutionNode(BaseNode):
         return queue
 
     def _get_tool_category_for_task(self, task: Dict[str, Any]) -> ToolCategory:
+        """태스크 타입에서 도구 카테고리를 결정합니다."""
         tt = task.get("type", "research").lower()
-        if "search" in tt: return ToolCategory.SEARCH
-        if "academic" in tt: return ToolCategory.ACADEMIC
-        if "data" in tt: return ToolCategory.DATA
+        desc = task.get("description", "").lower()
+
+        # BROWSER: URL 접근, 웹 스크래핑, 폼 제출 등
+        if "browser" in tt or "web" in tt or "scrape" in tt:
+            return ToolCategory.BROWSER
+        if any(kw in desc for kw in ["navigate", "browse", "screenshot", "scrape", "fill form"]):
+            return ToolCategory.BROWSER
+
+        if "search" in tt:
+            return ToolCategory.SEARCH
+        if "academic" in tt:
+            return ToolCategory.ACADEMIC
+        if "data" in tt:
+            return ToolCategory.DATA
+        if "code" in tt:
+            return ToolCategory.CODE
+
         return ToolCategory.SEARCH
 
     def _get_available_tools_for_category(self, category: ToolCategory) -> List[str]:
+        """카테고리별 사용 가능한 도구 목록을 반환합니다."""
         mapping = {
             ToolCategory.SEARCH: ["g-search", "ddg_search::search", "tavily-mcp::tavily-search"],
             ToolCategory.ACADEMIC: ["semantic_scholar::papers-search-basic", "arxiv::arxiv_search"],
             ToolCategory.DATA: ["fetch::fetch_url", "fetch::extract_elements"],
+            ToolCategory.CODE: ["python_coder", "code_interpreter"],
+            ToolCategory.BROWSER: [],  # PlaywrightController에서 직접 처리
         }
-        return mapping.get(category, ["g-search"])
+        tools = mapping.get(category)
+        if tools is None:
+            raise ValueError(f"No tools configured for category: {category.value}")
+        return tools
+
+    async def _execute_browser_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """PlaywrightController를 사용하여 브라우저 태스크를 실행합니다."""
+        controller = _get_browser_controller()
+        task_desc = task.get("description", "")
+        task_url = task.get("url", "")
+        task_actions = task.get("actions", [])
+
+        try:
+            await controller.initialize()
+
+            # URL이 있으면 navigate
+            if task_url:
+                page_state = await controller.navigate(task_url)
+            elif "http" in task_desc:
+                import re
+                url_match = re.search(r'https?://\S+', task_desc)
+                if url_match:
+                    page_state = await controller.navigate(url_match.group())
+
+            # actions가 있으면 interact
+            if task_actions:
+                action_results = await controller.interact(task_actions)
+
+            # 콘텐츠 추출
+            extraction_spec = task.get("extraction", {"full_text": True, "metadata": True})
+            extracted = await controller.extract(extraction_spec)
+
+            # 검증
+            expectations = task.get("verify", [])
+            if expectations:
+                verification = await controller.verify(expectations)
+                extracted["verification"] = {
+                    "verified": verification.verified,
+                    "confidence": verification.confidence,
+                    "details": verification.details,
+                }
+
+            return {
+                "task_id": task.get("id"),
+                "task_name": task.get("name"),
+                "tool_used": "playwright",
+                "result": extracted,
+                "status": "completed",
+            }
+
+        except Exception as e:
+            logger.error(f"Browser task execution failed: {e}")
+            return {
+                "task_id": task.get("id"),
+                "task_name": task.get("name"),
+                "tool_used": "playwright",
+                "status": "failed",
+                "error": str(e),
+            }
 
     def _generate_tool_parameters(self, task: Dict[str, Any], tool_name: str) -> Dict[str, Any]:
         params = (task.get("parameters") or {}).copy()

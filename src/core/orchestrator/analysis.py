@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import json
 import re
@@ -108,18 +109,48 @@ class AnalysisNode(BaseNode):
         """
 
         try:
-            # Multi-Model Orchestration으로 분석
-            result = await execute_llm_task(
-                prompt=analysis_prompt,
-                task_type=TaskType.ANALYSIS,
-                system_message="You are an expert research analyst with comprehensive domain knowledge.",
-            )
+            # Multi-Model Orchestration으로 분석 (JSON 파싱 실패 시 재시도)
+            analysis_data = None
+            last_error = None
 
-            logger.info(f"✅ Analysis completed using model: {result.model_used}")
-            logger.info(f"📊 Analysis confidence: {result.confidence}")
+            for attempt in range(3):
+                try:
+                    retry_hint = ""
+                    if attempt > 0:
+                        retry_hint = (
+                            "\n\nIMPORTANT: Your previous response was not valid JSON. "
+                            "You MUST return a valid JSON object with the exact structure specified above. "
+                            "Do NOT include any text outside the JSON object.\n"
+                        )
 
-            # 분석 결과 파싱
-            analysis_data = self._parse_analysis_result(result.content)
+                    result = await execute_llm_task(
+                        prompt=analysis_prompt + retry_hint,
+                        task_type=TaskType.ANALYSIS,
+                        system_message="You are an expert research analyst. Always respond with valid JSON.",
+                    )
+
+                    analysis_data = self._parse_analysis_result(result.content)
+                    if analysis_data is not None:
+                        logger.info(f"✅ Analysis completed using model: {result.model_used}")
+                        logger.info(f"📊 Analysis confidence: {result.confidence}")
+                        break
+
+                    last_error = "LLM returned unparseable response"
+                    logger.warning(
+                        f"Analysis parse attempt {attempt + 1}/3 failed, retrying..."
+                    )
+
+                except Exception as e:
+                    last_error = str(e)
+                    logger.warning(f"Analysis attempt {attempt + 1}/3 failed: {e}")
+
+                if attempt < 2:
+                    await asyncio.sleep(1.0 * (2 ** attempt))
+
+            if analysis_data is None:
+                raise RuntimeError(
+                    f"Analysis failed after 3 attempts. Last error: {last_error}"
+                )
 
             logger.info(
                 f"🎯 Identified objectives: {len(analysis_data.get('objectives', []))}"
@@ -184,8 +215,8 @@ class AnalysisNode(BaseNode):
 
         return state
 
-    def _parse_analysis_result(self, content: str) -> Dict[str, Any]:
-        """분석 결과 파싱 — JSON이면 파싱, 아니면 텍스트 기반 fallback 구조 생성."""
+    def _parse_analysis_result(self, content: str) -> Dict[str, Any] | None:
+        """분석 결과 파싱 — JSON이면 파싱, 실패 시 None 반환 (retry 유도)."""
         cleaned = (content or "").strip()
 
         # Markdown 코드 블록 제거
@@ -196,21 +227,18 @@ class AnalysisNode(BaseNode):
         # JSON 파싱 시도
         if cleaned.startswith("{"):
             try:
-                return json.loads(cleaned)
+                parsed = json.loads(cleaned)
+                # 최소 필수 필드 검증
+                if "objectives" in parsed or "intent" in parsed or "complexity" in parsed:
+                    return parsed
+                logger.warning("Parsed JSON missing required fields")
+                return None
             except json.JSONDecodeError:
-                logger.warning("JSON decode failed, using text fallback")
+                logger.warning("JSON decode failed in analysis result")
+                return None
 
-        # 텍스트 응답 → 기본 구조로 변환
-        logger.info("LLM returned non-JSON analysis; building fallback structure from text")
-        return {
-            "objectives": [
-                {"id": "obj_1", "description": cleaned[:500] or "General research", "priority": "high"}
-            ],
-            "intent": {"primary": "research", "secondary": "analysis"},
-            "domain": {"fields": ["general"], "expertise": "general"},
-            "scope": {"breadth": "comprehensive", "depth": "detailed"},
-            "complexity": 5.0,
-        }
+        logger.warning("Analysis result is not JSON")
+        return None
 
     async def _search_similar_research(
         self, query: str, user_id: str

@@ -128,16 +128,36 @@ class PlannerAgent:
         }
 
     def _parse_tasks(self, content: str, user_query: str) -> List[Dict[str, Any]]:
+        """LLM 응답에서 태스크 리스트를 파싱합니다.
+
+        파싱 실패 시 빈 리스트 대신 에러를 발생시킵니다.
+        """
         if not content:
-            return [{"task_id": "task_1", "description": user_query}]
-            
-        json_match = re.search(r"\{[\s\S]*\}", content)
-        if json_match:
+            raise ValueError("LLM returned empty content for task decomposition")
+
+        # JSON 배열 또는 객체 추출 시도
+        # 배열 먼저 시도
+        array_match = re.search(r"\[[\s\S]*\]", content)
+        if array_match:
             try:
-                return json.loads(json_match.group()).get("tasks", [])
+                tasks = json.loads(array_match.group())
+                if isinstance(tasks, list) and len(tasks) > 0:
+                    return tasks
             except json.JSONDecodeError:
                 pass
-                
-        # 기본 폴백
-        return [{"task_id": "task_1", "description": user_query}]
+
+        # 객체에서 "tasks" 키 추출
+        obj_match = re.search(r"\{[\s\S]*\}", content)
+        if obj_match:
+            try:
+                parsed = json.loads(obj_match.group())
+                tasks = parsed.get("tasks", [])
+                if isinstance(tasks, list) and len(tasks) > 0:
+                    return tasks
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError(
+            f"Failed to parse task decomposition from LLM response (length={len(content)})"
+        )
 
