@@ -9,6 +9,7 @@
 - 태스크별 최적 에이전트 동적 할당
 """
 
+import asyncio
 import logging
 import re
 import json
@@ -76,9 +77,12 @@ class TaskRouter:
 
     사용자 요청의 의도(Intent)를 LLM이 직접 분석하여
     최적의 파이프라인과 에이전트를 동적으로 결정합니다.
-    - determine_route(): async — LLM이 파이프라인 결정
-    - assign_agent_for_task(): async — LLM이 에이전트 결정
+    - determine_route(): async — LLM이 파이프라인 결정 (retry with backoff)
+    - assign_agent_for_task(): async — LLM이 에이전트 결정 (retry with backoff)
     """
+
+    MAX_RETRIES = 3
+    BASE_BACKOFF = 1.0  # 오
 
     def __init__(self):
         pass  # LLM orchestrator는 호출 시점에 lazy하게 가져옴
@@ -96,132 +100,110 @@ class TaskRouter:
         return {}
 
     async def determine_route(self, query: str) -> RoutePath:
-        """LLM이 쿼리의 의도를 분석하여 실행 경로를 결정합니다 (async)."""
-        try:
-            from src.core.llm_manager import get_llm_orchestrator, TaskType
-            orchestrator = get_llm_orchestrator()
-            prompt = _ROUTE_CLASSIFY_PROMPT.format(query=query)
+        """LLM이 쿼리의 의도를 분석하여 실행 경로를 결정합니다.
 
-            result = await orchestrator.execute_with_model(
-                prompt=prompt,
-                task_type=TaskType.ANALYSIS,
-                use_cascade=False,
-            )
-            parsed = self._extract_json(result.content)
-            route_str = parsed.get("route", "").lower().strip()
-            reason = parsed.get("reason", "")
+        최대 MAX_RETRIES회 재시도하며, 모든 시도가 실패하면 예외를 발생시킵니다.
+        """
+        from src.core.llm_manager import get_llm_orchestrator, TaskType
 
-            route_map = {
-                "codebase_agent": RoutePath.CODEBASE_AGENT,
-                "financial_pipeline": RoutePath.FINANCIAL_PIPELINE,
-                "creativity_agent": RoutePath.CREATIVITY_AGENT,
-                "document_pipeline": RoutePath.DOCUMENT_PIPELINE,
-                "planner_parallel": RoutePath.PLANNER_PARALLEL,
-                "single_agent": RoutePath.SINGLE_AGENT,
-            }
+        route_map = {
+            "codebase_agent": RoutePath.CODEBASE_AGENT,
+            "financial_pipeline": RoutePath.FINANCIAL_PIPELINE,
+            "creativity_agent": RoutePath.CREATIVITY_AGENT,
+            "document_pipeline": RoutePath.DOCUMENT_PIPELINE,
+            "planner_parallel": RoutePath.PLANNER_PARALLEL,
+            "single_agent": RoutePath.SINGLE_AGENT,
+        }
 
-            if route_str in route_map:
-                route = route_map[route_str]
-                logger.info(f"TaskRouter [LLM]: Route → {route.name} | Reason: {reason}")
-                return route
-            else:
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                orchestrator = get_llm_orchestrator()
+                prompt = _ROUTE_CLASSIFY_PROMPT.format(query=query)
+
+                result = await orchestrator.execute_with_model(
+                    prompt=prompt,
+                    task_type=TaskType.ANALYSIS,
+                    use_cascade=False,
+                )
+                parsed = self._extract_json(result.content)
+                route_str = parsed.get("route", "").lower().strip()
+                reason = parsed.get("reason", "")
+
+                if route_str in route_map:
+                    route = route_map[route_str]
+                    logger.info(f"TaskRouter [LLM]: Route → {route.name} | Reason: {reason}")
+                    return route
+                else:
+                    last_error = f"Unrecognized route: '{route_str}'"
+                    logger.warning(
+                        f"TaskRouter: attempt {attempt + 1}/{self.MAX_RETRIES} — {last_error}"
+                    )
+
+            except Exception as e:
+                last_error = str(e)
                 logger.warning(
-                    f"TaskRouter [LLM]: Unrecognized route '{route_str}', using heuristic"
+                    f"TaskRouter: attempt {attempt + 1}/{self.MAX_RETRIES} failed — {e}"
                 )
 
-        except Exception as e:
-            logger.warning(f"TaskRouter [LLM]: routing failed ({e}), using heuristic")
+            if attempt < self.MAX_RETRIES - 1:
+                backoff = self.BASE_BACKOFF * (2 ** attempt)
+                await asyncio.sleep(backoff)
 
-        # === Fallback: 키워드 휴리스틱 (LLM 실패 시에만) ===
-        return self._heuristic_route(query)
-
-    def _heuristic_route(self, query: str) -> RoutePath:
-        """LLM 실패 시 사용하는 키워드 기반 폴백 라우터."""
-        q = query.lower()
-        financial_kw = [
-            "주식", "주가", "환율", "금리", "stock", "finance", "market", "invest", "trading",
-        ]
-        code_kw = [
-            "코드", "code", "구현", "서비스", "앱", "application", "app", "api", "server",
-            "client", "함수", "클래스", "python", "javascript", "개발", "implement", "build",
-            "작성", "기능", "화상통화", "video", "stream", "socket", "프로토콜", "protocol",
-        ]
-        creative_kw = ["소설", "시나리오", "창작", "story", "creative", "novel", "design"]
-        doc_kw = ["문서", "파일", "pdf", "docx", "pptx", "xlsx", "읽어줘", "분석해줘", "document", "extract", "parse"]
-
-        if any(k in q for k in financial_kw):
-            logger.info("TaskRouter [Heuristic]: FINANCIAL_PIPELINE")
-            return RoutePath.FINANCIAL_PIPELINE
-        if any(k in q for k in code_kw):
-            logger.info("TaskRouter [Heuristic]: CODEBASE_AGENT")
-            return RoutePath.CODEBASE_AGENT
-        if any(k in q for k in creative_kw):
-            logger.info("TaskRouter [Heuristic]: CREATIVITY_AGENT")
-            return RoutePath.CREATIVITY_AGENT
-        if any(k in q for k in doc_kw) or q.endswith(".pdf") or q.endswith(".docx"):
-            logger.info("TaskRouter [Heuristic]: DOCUMENT_PIPELINE")
-            return RoutePath.DOCUMENT_PIPELINE
-
-        is_complex = len(query) > 80 or any(
-            k in q for k in ["비교", "분석", "연구", "compare", "analyze", "research"]
+        raise RuntimeError(
+            f"TaskRouter: 모든 {self.MAX_RETRIES}회 라우팅 시도 실패. 마지막 오류: {last_error}"
         )
-        if is_complex:
-            logger.info("TaskRouter [Heuristic]: PLANNER_PARALLEL")
-            return RoutePath.PLANNER_PARALLEL
-
-        logger.info("TaskRouter [Heuristic]: SINGLE_AGENT")
-        return RoutePath.SINGLE_AGENT
 
     async def assign_agent_for_task(self, task: TaskState) -> str:
-        """LLM이 서브 태스크를 분석하여 최적 에이전트를 결정합니다 (async)."""
+        """LLM이 서브 태스크를 분석하여 최적 에이전트를 결정합니다.
+
+        최대 MAX_RETRIES회 재시도하며, 모든 시도가 실패하면 예외를 발생시킵니다.
+        """
         description = task.get("description", "")
-        try:
-            from src.core.llm_manager import get_llm_orchestrator, TaskType
-            orchestrator = get_llm_orchestrator()
-            prompt = _AGENT_ASSIGN_PROMPT.format(description=description[:500])
+        from src.core.llm_manager import get_llm_orchestrator, TaskType
 
-            result = await orchestrator.execute_with_model(
-                prompt=prompt,
-                task_type=TaskType.ANALYSIS,
-                use_cascade=False,
-            )
-            parsed = self._extract_json(result.content)
-            agent = parsed.get("agent", "").lower().strip()
-            reason = parsed.get("reason", "")
+        valid_agents = {
+            "code_architect_agent", "code_implementor_agent", "code_reviewer_agent",
+            "researcher_agent", "analyzer_agent", "validator_agent", "synthesizer_agent",
+        }
 
-            valid_agents = {
-                "code_architect_agent", "code_implementor_agent", "code_reviewer_agent",
-                "researcher_agent", "analyzer_agent", "validator_agent", "synthesizer_agent",
-            }
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                orchestrator = get_llm_orchestrator()
+                prompt = _AGENT_ASSIGN_PROMPT.format(description=description[:500])
 
-            if agent in valid_agents:
-                logger.info(f"TaskRouter [LLM]: Agent → {agent} | Reason: {reason}")
-                return agent
-            else:
-                logger.warning(f"TaskRouter [LLM]: Unrecognized agent '{agent}', using heuristic")
+                result = await orchestrator.execute_with_model(
+                    prompt=prompt,
+                    task_type=TaskType.ANALYSIS,
+                    use_cascade=False,
+                )
+                parsed = self._extract_json(result.content)
+                agent = parsed.get("agent", "").lower().strip()
+                reason = parsed.get("reason", "")
 
-        except Exception as e:
-            logger.warning(f"TaskRouter [LLM]: agent assignment failed ({e}), using heuristic")
+                if agent in valid_agents:
+                    logger.info(f"TaskRouter [LLM]: Agent → {agent} | Reason: {reason}")
+                    return agent
+                else:
+                    last_error = f"Unrecognized agent: '{agent}'"
+                    logger.warning(
+                        f"TaskRouter: agent assign attempt {attempt + 1}/{self.MAX_RETRIES} — {last_error}"
+                    )
 
-        # === Fallback 휴리스틱 ===
-        return self._heuristic_assign(description)
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    f"TaskRouter: agent assign attempt {attempt + 1}/{self.MAX_RETRIES} failed — {e}"
+                )
 
-    def _heuristic_assign(self, description: str) -> str:
-        """LLM 실패 시 키워드 기반 에이전트 폴백 할당."""
-        d = description.lower()
-        if any(k in d for k in ["verify", "validate", "검증", "평가", "fact_check", "test"]):
-            return "validator_agent"
-        if any(k in d for k in ["architecture", "설계", "아키텍처", "structure", "interface", "모듈"]):
-            return "code_architect_agent"
-        if any(k in d for k in ["implement", "구현", "write code", "코드 작성", "develop", "개발", "build"]):
-            return "code_implementor_agent"
-        if any(k in d for k in ["review", "리뷰", "검토", "audit"]):
-            return "code_reviewer_agent"
-        if any(k in d for k in ["analyze", "분석", "compare", "비교", "benchmark"]):
-            return "analyzer_agent"
-        if any(k in d for k in ["synthesize", "summarize", "종합", "요약", "report", "보고"]):
-            return "synthesizer_agent"
-        return "researcher_agent"
+            if attempt < self.MAX_RETRIES - 1:
+                backoff = self.BASE_BACKOFF * (2 ** attempt)
+                await asyncio.sleep(backoff)
+
+        raise RuntimeError(
+            f"TaskRouter: 모든 {self.MAX_RETRIES}회 에이전트 할당 시도 실패. 마지막 오류: {last_error}"
+        )
 
     def update_state_for_route(self, state: HarnessState, route: RoutePath) -> HarnessState:
         """결정된 라우트에 따라 파이프라인의 초기 상태 플래그를 설정합니다."""

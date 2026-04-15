@@ -97,16 +97,8 @@ class PlanningNode(BaseNode):
             except Exception as e:
                 logger.debug(f"Failed to load context: {e}")
 
-            # CLI 모드 감지
-            import sys
-            is_cli_mode = (
-                not hasattr(sys, "ps1")
-                and "streamlit" not in sys.modules
-                and not any("streamlit" in str(arg) for arg in sys.argv)
-            )
-
-            # 불명확한 부분 감지
-            if not state.get("clarification_context") and not is_cli_mode:
+            # 불명확한 부분 감지 (항상 수행)
+            if not state.get("clarification_context"):
                 from src.core.human_clarification_handler import get_clarification_handler
                 clarification_handler = get_clarification_handler()
                 try:
@@ -121,18 +113,19 @@ class PlanningNode(BaseNode):
                         ),
                         timeout=10.0,
                     )
-                except TimeoutError:
-                    logger.warning("detect_ambiguities timeout, skipping clarification")
+                except (TimeoutError, asyncio.TimeoutError):
+                    logger.warning("detect_ambiguities timeout, proceeding without clarification")
                     ambiguities = []
-            elif is_cli_mode:
-                ambiguities = []
-                logger.info("🤖 CLI mode: Skipping ambiguity detection")
+                except Exception as e:
+                    logger.warning(f"detect_ambiguities failed: {e}")
+                    ambiguities = []
             else:
                 ambiguities = []
 
             if ambiguities:
-                if is_cli_mode or state.get("autopilot_mode", False):
-                    logger.info("🤖 CLI/Autopilot mode detected - auto-selecting responses")
+                # autopilot_mode: LLM이 자율 추론으로 해소
+                if state.get("autopilot_mode", False):
+                    logger.info("🤖 Autopilot mode — LLM auto-selecting responses")
                     user_responses = {}
                     clarification_context = {}
 
@@ -159,6 +152,7 @@ class PlanningNode(BaseNode):
                     state["pending_questions"] = []
                     state["autopilot_mode"] = True
                 else:
+                    # interactive mode: 사용자에게 질문 전달
                     questions = []
                     for ambiguity in ambiguities:
                         question = await clarification_handler.generate_question(

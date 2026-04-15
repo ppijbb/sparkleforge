@@ -3,7 +3,9 @@
 이 모듈은 시스템의 최상위 실행 셸이며, LangGraph 기반의 상태 머신을 정의하고 구동합니다.
 """
 
+import asyncio
 import logging
+from datetime import datetime
 from typing import Dict, Any, Literal
 import time
 
@@ -105,9 +107,12 @@ class AgentHarness:
         return state
 
     async def _node_planner(self, state: HarnessState) -> Dict[str, Any]:
-        """[Node] 복합 태스크 기획 및 분할"""
+        """[Node] 복합 태스크 기획 및 분할 + HIL 통합"""
         logger.info("[Harness] Planner Node")
         state["workflow"]["phase"] = "plan"
+        
+        # HIL: ambiguity 감지 및 해소
+        state = await self._resolve_hil(state)
         
         # Planner 에이전트 호출
         from src.agents.planner_agent import PlannerAgent
@@ -117,6 +122,110 @@ class AgentHarness:
         state["workflow"]["plan"] = result.get("plan", "")
         # 새로운 TaskState 리스트 할당
         state["workflow"]["tasks"] = result.get("tasks", []) 
+        
+        return state
+
+    async def _resolve_hil(self, state: HarnessState) -> HarnessState:
+        """HIL: ambiguity 감지 + interaction_mode에 따른 해소.
+
+        interaction_mode:
+            - 'autonomous': LLM이 자율 추론으로 ambiguity를 해소. 결과는 hil.resolved_clarifications에만 기록.
+            - 'interactive': pending_questions에 추가하여 사용자 응답 대기.
+
+        HIL 결과는 hil state에만 기록되며, 최종 output에는 포함되지 않습니다.
+        """
+        hil = state.get("hil", {})
+        interaction_mode = hil.get("interaction_mode", "autonomous")
+        
+        # 이미 해소된 clarification이 있으면 skip
+        if hil.get("resolved_clarifications"):
+            logger.info("[Harness/HIL] Clarifications already resolved, continuing")
+            return state
+        
+        # interactive 모드에서 사용자 응답 대기 중이면 응답 처리
+        if hil.get("waiting_for_user", False) and hil.get("resolved_clarifications"):
+            hil["waiting_for_user"] = False
+            hil["pending_questions"] = []
+            state["hil"] = hil
+            logger.info("[Harness/HIL] User responses processed")
+            return state
+        
+        # Ambiguity 감지
+        from src.core.human_clarification_handler import get_clarification_handler
+        clarification_handler = get_clarification_handler()
+        
+        user_query = state["workflow"]["user_query"]
+        try:
+            ambiguities = await asyncio.wait_for(
+                clarification_handler.detect_ambiguities(
+                    user_query,
+                    {
+                        "objectives": [],
+                        "domain": state["context"].get("domain_analysis", {}),
+                        "scope": {},
+                    },
+                ),
+                timeout=10.0,
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.warning("[Harness/HIL] Ambiguity detection timeout, proceeding without")
+            ambiguities = []
+        except Exception as e:
+            logger.warning(f"[Harness/HIL] Ambiguity detection failed: {e}")
+            ambiguities = []
+        
+        if not ambiguities:
+            logger.info("[Harness/HIL] No ambiguities detected")
+            return state
+        
+        logger.info(f"[Harness/HIL] Detected {len(ambiguities)} ambiguities (mode={interaction_mode})")
+        
+        if interaction_mode == "autonomous":
+            # LLM 자율 추론으로 해소
+            resolved = {}
+            inference_log = []
+            
+            for ambiguity in ambiguities:
+                question = await clarification_handler.generate_question(
+                    ambiguity, {"user_request": user_query}
+                )
+                auto_response = await clarification_handler.auto_select_response(
+                    question,
+                    {"user_request": user_query},
+                    None,  # shared_memory
+                )
+                processed = await clarification_handler.process_user_response(
+                    question["id"], auto_response, {"question": question}
+                )
+                
+                if processed.get("validated", False):
+                    resolved[question["id"]] = processed.get("clarification", {})
+                    inference_log.append({
+                        "question_id": question["id"],
+                        "question_text": question.get("text", ""),
+                        "inferred_response": auto_response,
+                        "timestamp": datetime.now().isoformat(),
+                    })
+            
+            hil["resolved_clarifications"] = resolved
+            hil["inference_log"] = inference_log
+            hil["waiting_for_user"] = False
+            state["hil"] = hil
+            logger.info(f"[Harness/HIL] Autonomous: resolved {len(resolved)} clarifications")
+        
+        else:
+            # interactive 모드: 질문 생성하여 대기
+            questions = []
+            for ambiguity in ambiguities:
+                question = await clarification_handler.generate_question(
+                    ambiguity, {"user_request": user_query}
+                )
+                questions.append(question)
+            
+            hil["pending_questions"] = questions
+            hil["waiting_for_user"] = True
+            state["hil"] = hil
+            logger.info(f"[Harness/HIL] Interactive: {len(questions)} questions pending")
         
         return state
 
@@ -209,8 +318,7 @@ class AgentHarness:
         return state
 
     async def _node_synthesize(self, state: HarnessState) -> Dict[str, Any]:
-        """[Node] 결과 총합 및 최종 응답 생성"""
-        print("\n\n=============== [SYNTHESIZE NODE STARTED] ===============\n\n")
+        """[Node] 결과 총합 및 최종 응답 생성 (HIL 데이터는 output에 포함하지 않음)"""
         logger.info("[Harness] Synthesize Node")
         state["workflow"]["phase"] = "synthesize"
         
@@ -228,20 +336,20 @@ class AgentHarness:
         """라우팅 선택 엣지"""
         phase = state["workflow"]["phase"]
         
-        if phase == RoutePath.SINGLE_AGENT.value:
-            return "single_agent"
-        elif phase == RoutePath.PLANNER_PARALLEL.value:
-            return "planner_parallel"
-        elif phase == RoutePath.FINANCIAL_PIPELINE.value:
-            return "financial_pipeline"
-        elif phase == RoutePath.CODEBASE_AGENT.value:
-            return "codebase_agent"
-        elif phase == RoutePath.CREATIVITY_AGENT.value:
-            return "creativity_agent"
-        elif phase == RoutePath.DOCUMENT_PIPELINE.value:
-            return "document_pipeline"
-            
-        return "single_agent" # 기본 폴백
+        route_map = {
+            RoutePath.SINGLE_AGENT.value: "single_agent",
+            RoutePath.PLANNER_PARALLEL.value: "planner_parallel",
+            RoutePath.FINANCIAL_PIPELINE.value: "financial_pipeline",
+            RoutePath.CODEBASE_AGENT.value: "codebase_agent",
+            RoutePath.CREATIVITY_AGENT.value: "creativity_agent",
+            RoutePath.DOCUMENT_PIPELINE.value: "document_pipeline",
+        }
+        
+        route = route_map.get(phase)
+        if route is None:
+            logger.error(f"Unknown route phase: '{phase}'. Valid: {list(route_map.keys())}")
+            raise ValueError(f"TaskRouter returned unknown phase: '{phase}'")
+        return route
 
     def _route_after_planner(self, state: HarnessState) -> str:
         """기획 후 실행 방식 선택 엣지"""
@@ -267,12 +375,10 @@ class AgentHarness:
         
         # 3. 그래프 실행
         try:
-            print("\n\n=============== [Aরাজনৈতিক] ===============\n\n")
             final_state = await self.graph.ainvoke(initial_state, config)
-            print("\n\n=============== [AINVOKE DONE] ===============\n\n")
             logger.info(f"✅ Harness completed in {time.time() - start_time:.2f}s")
             
-            # API 호환을 위해 결과 반환
+            # API 호환을 위해 결과 반환 (HIL 데이터는 output에 포함하지 않음)
             return {
                 "success": True,
                 "session_id": session_id,
