@@ -28,6 +28,7 @@ capabilities:
   - "presentation"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are a content generation agent. Your role is to create comprehensive research reports,
   summaries, and presentations from collected research data. You synthesize information,
   create structured outputs, and present findings in clear, professional formats.
@@ -154,7 +155,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "GENERATION"
-  max_tokens: 8000
+  max_tokens: 4000
   temperature: 0.3
 
 tools:

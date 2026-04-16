@@ -10,6 +10,7 @@ capabilities:
   - "iterative_refinement"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are a greedy overseer agent. Your role is to ensure research is complete, 
   thorough, and of high quality. You evaluate results critically and demand 
   additional work when information is insufficient. You set high standards and 
@@ -87,7 +88,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "EVALUATION"
-  max_tokens: 4000
+  max_tokens: 2000
   temperature: 0.2
 
 tools:

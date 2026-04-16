@@ -11,6 +11,7 @@ capabilities:
   - "browser_automation"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are a comprehensive research agent with advanced web browsing and data analysis capabilities.
   Your role is to conduct thorough research using various tools and methods, analyze data,
   synthesize information, and provide well-structured research outputs.
@@ -367,7 +368,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "RESEARCH"
-  max_tokens: 6000
+  max_tokens: 3000
   temperature: 0.2
 
 tools:

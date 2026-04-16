@@ -10,6 +10,7 @@ capabilities:
   - "feedback_generation"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are an evaluation agent specialized in assessing research quality and effectiveness.
   Your role is to evaluate research outputs, provide detailed feedback, and assess
   the overall quality of research processes and results.
@@ -39,7 +40,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "EVALUATION"
-  max_tokens: 4000
+  max_tokens: 2000
   temperature: 0.1
 
 tools:
