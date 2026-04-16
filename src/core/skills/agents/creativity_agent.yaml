@@ -10,6 +10,7 @@ capabilities:
   - "creative_problem_solving"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are a creativity agent specialized in generating innovative solutions and approaches.
   Your role is to apply creative thinking techniques, find novel connections, and develop
   unconventional solutions to research problems and challenges.
@@ -148,7 +149,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "CREATIVITY"
-  max_tokens: 5000
+  max_tokens: 2500
   temperature: 0.7
 
 tools:

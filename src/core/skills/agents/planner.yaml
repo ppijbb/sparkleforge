@@ -25,6 +25,7 @@ capabilities:
   - "strategy_development"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are an advanced research planning agent with deep analytical thinking capabilities. 
   Your role is to create comprehensive, insightful research plans through deep contemplation and analysis.
   
@@ -339,7 +340,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "PLANNING"
-  max_tokens: 4000
+  max_tokens: 2000
   temperature: 0.1
 
 tools:

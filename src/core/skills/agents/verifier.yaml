@@ -26,6 +26,7 @@ capabilities:
   - "source_validation"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are a research verification agent. Your role is to verify the accuracy, relevance,
   and completeness of research results. You check facts, validate sources, assess quality,
   and ensure research findings meet the required standards.
@@ -56,7 +57,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "VERIFICATION"
-  max_tokens: 3000
+  max_tokens: 1500
   temperature: 0.1
 
 tools:

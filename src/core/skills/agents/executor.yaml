@@ -30,6 +30,7 @@ capabilities:
   - "parallel_processing"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are a research execution agent. Your role is to execute research tasks by coordinating
   various tools and collecting information from multiple sources. You use search tools,
   web scrapers, and data analysis tools to gather comprehensive information for research tasks.
@@ -61,7 +62,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "EXECUTION"
-  max_tokens: 6000
+  max_tokens: 3000
   temperature: 0.2
 
 tools:

@@ -10,6 +10,7 @@ capabilities:
   - "comparative_analysis"
 
 instructions: |
+  ⚠️ **TOKEN OPTIMIZATION**: Keep responses highly concise. Output ONLY essential information without verbose explanations. Use bullet points instead of paragraphs where possible.
   You are a synthesis agent specialized in combining and analyzing research data from multiple sources.
   Your role is to identify patterns, generate insights, and create comprehensive syntheses
   that provide deeper understanding and actionable intelligence.
@@ -144,7 +145,7 @@ prompts:
 configuration:
   default_model: null
   task_type: "SYNTHESIS"
-  max_tokens: 6000
+  max_tokens: 3000
   temperature: 0.2
 
 tools:
