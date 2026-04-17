@@ -1052,9 +1052,12 @@ class MultiModelOrchestrator:
         system_message: str = None,
         use_cascade: bool = True,
         complexity: float = 5.0,
+        history_messages: List[Dict[str, Any]] = None,
         **kwargs,
     ) -> ModelResult:
-        """모델로 실행 - Cascade 지원."""
+        """모델로 실행 - Cascade 및 Tool support 지원."""
+        if history_messages:
+            kwargs["history_messages"] = history_messages
         if model_name is None:
             model_name = self.select_model(task_type)
 
@@ -1473,10 +1476,17 @@ class MultiModelOrchestrator:
         )
 
         # 메시지 구성
+        history = kwargs.pop("history_messages", [])
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
-        messages.append({"role": "user", "content": prompt})
+        
+        if history:
+            messages.extend(history)
+            
+        # If the last message in history is already the user prompt, don't duplicate
+        if not history or history[-1].get("content") != prompt:
+            messages.append({"role": "user", "content": prompt})
 
         # OpenRouter API 직접 호출
         api_key = os.getenv("OPENROUTER_API_KEY")
@@ -1646,7 +1656,9 @@ class MultiModelOrchestrator:
             )
 
         data = response.json()
-        content = data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        content = message.get("content", "")
+        tool_calls = message.get("tool_calls", [])
 
         return {
             "content": content,
@@ -1658,6 +1670,7 @@ class MultiModelOrchestrator:
                 "model_id": model_config.model_id,
                 "tokens_used": len(content.split()),
                 "usage": data.get("usage", {}),
+                "tool_calls": tool_calls,
             },
         }
 
@@ -2159,10 +2172,14 @@ class MultiModelOrchestrator:
         model_id = self._get_valid_groq_model_id(model_config.model_id)
 
         # 메시지 구성
+        history = kwargs.pop('history_messages', [])
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
-        messages.append({"role": "user", "content": prompt})
+        if history:
+            messages.extend(history)
+        if not history or (history and history[-1].get('content') != prompt):
+            messages.append({"role": "user", "content": prompt})
 
         try:
             # Groq API 호출
@@ -2178,6 +2195,7 @@ class MultiModelOrchestrator:
             )
 
             content = response.choices[0].message.content
+            tool_calls = getattr(response.choices[0].message, "tool_calls", [])
 
             return {
                 "content": content,
@@ -2190,7 +2208,8 @@ class MultiModelOrchestrator:
                     "original_model_id": model_config.model_id,  # 원래 요청한 모델 ID
                     "tokens_used": response.usage.total_tokens
                     if hasattr(response, "usage")
-                    else len(content.split()),
+                    else len(str(content).split()),
+                    "tool_calls": tool_calls,
                 },
             }
         except Exception as e:
@@ -2283,10 +2302,14 @@ class MultiModelOrchestrator:
         model_config = self.models[model_name]
 
         # 메시지 구성
+        history = kwargs.pop('history_messages', [])
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
-        messages.append({"role": "user", "content": prompt})
+        if history:
+            messages.extend(history)
+        if not history or (history and history[-1].get('content') != prompt):
+            messages.append({"role": "user", "content": prompt})
 
         try:
             # OpenAI API 호출
@@ -2302,6 +2325,7 @@ class MultiModelOrchestrator:
             )
 
             content = response.choices[0].message.content
+            tool_calls = getattr(response.choices[0].message, "tool_calls", [])
 
             return {
                 "content": content,
@@ -2313,7 +2337,8 @@ class MultiModelOrchestrator:
                     "model_id": model_config.model_id,
                     "tokens_used": response.usage.total_tokens
                     if hasattr(response, "usage")
-                    else len(content.split()),
+                    else len(str(content).split()),
+                    "tool_calls": tool_calls,
                 },
             }
         except Exception as e:
