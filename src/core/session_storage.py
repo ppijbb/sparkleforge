@@ -31,6 +31,7 @@ class SessionMetadata:
     context_size: int
     memory_size: int
     tags: List[str]
+    total_cost: float = 0.0 # Phase 6: Cost tracking
     description: str | None = None
 
 

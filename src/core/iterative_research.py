@@ -133,6 +133,8 @@ class IterativeResearchState(BaseModel):
     quality_threshold: float = Field(
         default=0.8, ge=0.0, le=1.0, description="종료 품질 임계값"
     )
+    is_continuous: bool = Field(default=False, description="24/7 연속 실행 모드 (장기 세션)")
+    intermediate_reports: List[str] = Field(default_factory=list, description="중간 보고 기록")
 
     # Evolving Summary Report (중앙 메모리)
     evolving_summary: str = Field(default="", description="진화하는 요약 보고서")
@@ -253,6 +255,7 @@ class IterativeResearchEngine:
         self.on_report_complete: Callable | None = None
         self.on_action_complete: Callable | None = None
         self.on_round_complete: Callable | None = None
+        self.on_intermediate_report: Callable | None = None
 
         logger.info(
             f"IterativeResearchEngine initialized: "
@@ -267,6 +270,8 @@ class IterativeResearchEngine:
         report_fn: Callable,
         action_fn: Callable,
         initial_context: Dict[str, Any] | None = None,
+        is_continuous: bool = False,
+        report_interval: int = 3,
     ) -> IterativeResearchState:
         """반복적 연구 실행.
 
@@ -287,15 +292,16 @@ class IterativeResearchEngine:
             session_id=session_id,
             max_rounds=self.max_rounds,
             quality_threshold=self.quality_threshold,
+            is_continuous=is_continuous,
         )
 
         previous_quality = 0.0
         stagnation_count = 0
         max_stagnation = 2  # 연속 2라운드 개선 없으면 종료
 
-        logger.info(f"🔄 Starting iterative research for query: {query[:100]}...")
+        logger.info(f"🔄 Starting iterative research for query: {query[:100]}... (Continuous: {state.is_continuous})")
 
-        while not state.is_complete and state.current_round <= self.max_rounds:
+        while not state.is_complete and (state.is_continuous or state.current_round <= self.max_rounds):
             round_start = datetime.now()
 
             # 라운드 시작 콜백
@@ -375,6 +381,21 @@ class IterativeResearchEngine:
                 state.accumulated_findings.extend(report_output.key_findings)
                 state.all_sources.extend(report_output.sources_used)
 
+                if state.is_continuous:
+                    # Keep memory bounded to avoid context overflow in long sessions
+                    max_reports = 10
+                    max_findings = 50
+                    if len(state.round_reports) > max_reports:
+                        state.round_reports = state.round_reports[-max_reports:]
+                    if len(state.accumulated_findings) > max_findings:
+                        state.accumulated_findings = state.accumulated_findings[-max_findings:]
+
+                    # Intermediate reporting
+                    if state.current_round % report_interval == 0:
+                        if self.on_intermediate_report:
+                            await self._safe_callback(self.on_intermediate_report, state, report_output)
+                        state.intermediate_reports.append(f"Report complete at round {state.current_round}")
+
                 # 종료 조건 확인
                 current_quality = report_output.quality_metrics.overall_score
 
@@ -385,8 +406,9 @@ class IterativeResearchEngine:
                     logger.info(f"✅ {state.termination_reason}")
 
                 # 개선 정체 확인
+                # 연속 모드가 아닐 때만 정체 종료 조건 적용
                 improvement = current_quality - previous_quality
-                if improvement < self.min_improvement_threshold:
+                if not state.is_continuous and improvement < self.min_improvement_threshold:
                     stagnation_count += 1
                     if stagnation_count >= max_stagnation:
                         state.is_complete = True
@@ -426,7 +448,7 @@ class IterativeResearchEngine:
                     raise
 
         # 최대 라운드 도달
-        if not state.is_complete:
+        if not state.is_complete and not state.is_continuous:
             state.is_complete = True
             state.termination_reason = f"Max rounds ({self.max_rounds}) reached"
             logger.info(f"📍 {state.termination_reason}")

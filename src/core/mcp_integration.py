@@ -26,6 +26,9 @@ try:
 except ImportError:
     pass
 
+# SparkleForge Registry
+from src.core.tools.registry import registry as global_registry, ToolMetadata
+
 # MCP imports
 try:
     from urllib.parse import urlencode
@@ -293,210 +296,20 @@ def _format_query_string(tool_name: str, parameters: Dict[str, Any]) -> str:
     return json.dumps(parameters, ensure_ascii=False)[:200]
 
 
-class ToolCategory(Enum):
-    """MCP 도구 카테고리."""
 
-    SEARCH = "search"
-    DATA = "data"
-    CODE = "code"
-    ACADEMIC = "academic"
-    BUSINESS = "business"
-    UTILITY = "utility"
-    BROWSER = "browser"  # 브라우저 자동화
-    DOCUMENT = "document"  # 문서 생성
-    FILE = "file"  # 파일 작업
-    GIT = "git"  # Git 워크플로우
-    COMPUTER = "computer"  # 가상 데스크톱 / GUI 자동화
+# Centralized Tool Registry imports
+from src.core.tools.registry import (
+    ToolCategory, 
+    ToolInfo, 
+    ToolMetadata, 
+    ToolResult, 
+    ToolRegistry,
+    registry as global_registry
+)
 
+# Alias for backward compatibility
+SEP986ToolResult = ToolResult
 
-def _actionable_error_message(tool_name: str, error: str | Exception) -> str:
-    """Agent-recoverable error message (Tool Design: Error Message Design)."""
-    msg = str(error).strip() if error else "Unknown error"
-    lower = msg.lower()
-    if "timeout" in lower or "timed out" in lower:
-        return f"What happened: Tool '{tool_name}' timed out. How to fix: Retry with a simpler query or increase timeout."
-    if "rate limit" in lower or "429" in msg:
-        return f"What happened: Rate limit hit for '{tool_name}'. How to fix: Wait and retry, or use a different tool."
-    if "not found" in lower or "404" in msg:
-        return f"What happened: Resource not found for '{tool_name}'. How to fix: Check URL/path/query and try a valid input."
-    if "invalid" in lower or "400" in msg:
-        return f"What happened: Invalid input for '{tool_name}'. How to fix: Check parameter format (e.g. query string, URL)."
-    if "connection" in lower or "network" in lower:
-        return f"What happened: Network/connection error for '{tool_name}'. How to fix: Check connectivity and retry."
-    return f"What happened: {msg[:300]}. How to fix: Retry or try a different tool/parameter."
-
-
-def _structured_tool_description(tool_config: Dict[str, Any], tool_name: str) -> str:
-    """Tool Description Engineering: What, When, Inputs, Returns (Agent-Skills tool-design)."""
-    base = tool_config.get("description", f"{tool_name} tool")
-    what = tool_config.get("description_what")
-    when = tool_config.get("description_when")
-    inputs = tool_config.get("description_inputs")
-    returns = tool_config.get("description_returns")
-    if not any([what, when, inputs, returns]):
-        return base
-    parts = [f"What: {what or base}"]
-    if when:
-        parts.append(f"When: {when}")
-    if inputs:
-        parts.append(f"Inputs: {inputs}")
-    if returns:
-        parts.append(f"Returns: {returns}")
-    return " ".join(parts)
-
-
-@dataclass
-class ToolInfo:
-    """도구 정보."""
-
-    name: str
-    category: ToolCategory
-    description: str
-    parameters: Dict[str, Any]
-    mcp_server: str
-
-
-def _cap_tool_result_for_context(result: Dict[str, Any], tool_name: str) -> Dict[str, Any]:
-    """Apply 32K hard cap and oversized guard to tool result (OpenClaw pattern)."""
-    if not result.get("success") or result.get("data") is None:
-        return result
-    try:
-        from src.core.scratch_pad import cap_tool_result_for_context
-        return cap_tool_result_for_context(result, tool_name)
-    except Exception as e:
-        logger.debug("Tool result cap skipped: %s", e)
-        return result
-
-
-@dataclass
-class ToolResult:
-    """도구 실행 결과."""
-
-    success: bool
-    data: Any = None
-    error: str | None = None
-    execution_time: float = 0.0
-    confidence: float = 0.0
-    tool_name: str | None = None
-    source: str | None = None
-
-
-class ToolRegistry:
-    """Tool 중앙 관리 시스템 - MCP 및 로컬 Tool 통합 관리."""
-
-    def __init__(self):
-        """ToolRegistry 초기화."""
-        self.tools: Dict[str, ToolInfo] = {}  # tool_name -> ToolInfo
-        self.langchain_tools: Dict[str, BaseTool] = {}  # tool_name -> LangChain Tool
-        self.tool_sources: Dict[str, str] = {}  # tool_name -> source (mcp/local)
-        self.mcp_tool_mapping: Dict[
-            str, Tuple[str, str]
-        ] = {}  # tool_name -> (server_name, original_tool_name)
-
-    def register_mcp_tool(self, server_name: str, tool: Any, tool_def: Any = None):
-        """MCP Tool을 server_name::tool_name 형식으로 등록.
-
-        Args:
-            server_name: MCP 서버 이름
-            tool: MCP Tool 객체 또는 tool name
-            tool_def: MCP Tool 정의 (description, inputSchema 등 포함)
-        """
-        if isinstance(tool, str):
-            tool_name = tool
-        else:
-            tool_name = tool.name if hasattr(tool, "name") else str(tool)
-
-        # server_name::tool_name 형식으로 등록
-        registered_name = f"{server_name}::{tool_name}"
-
-        # ToolInfo 생성
-        if tool_def and hasattr(tool_def, "description"):
-            description = tool_def.description
-            input_schema = (
-                tool_def.inputSchema if hasattr(tool_def, "inputSchema") else {}
-            )
-        else:
-            description = f"Tool from MCP server {server_name}"
-            input_schema = {}
-
-        # 카테고리 추론 (기본값: UTILITY)
-        category = ToolCategory.UTILITY
-        tool_lower = tool_name.lower()
-        if "search" in tool_lower:
-            category = ToolCategory.SEARCH
-        elif "scholar" in tool_lower or "arxiv" in tool_lower or "paper" in tool_lower:
-            category = ToolCategory.ACADEMIC
-        elif "browser" in tool_lower:
-            category = ToolCategory.BROWSER
-        elif (
-            tool_lower.startswith("generate_")
-            or "document" in tool_lower
-            or "pdf" in tool_lower
-            or "docx" in tool_lower
-            or "pptx" in tool_lower
-        ):
-            category = ToolCategory.DOCUMENT
-        elif "file" in tool_lower and "fetch" not in tool_lower:
-            category = ToolCategory.FILE
-        elif "fetch" in tool_lower:
-            category = ToolCategory.DATA
-        elif "code" in tool_lower or "python" in tool_lower:
-            category = ToolCategory.CODE
-
-        tool_info = ToolInfo(
-            name=registered_name,
-            category=category,
-            description=description,
-            parameters=input_schema,
-            mcp_server=server_name,
-        )
-
-        self.tools[registered_name] = tool_info
-        self.tool_sources[registered_name] = "mcp"
-        self.mcp_tool_mapping[registered_name] = (server_name, tool_name)
-
-        logger.debug(
-            f"Registered MCP tool: {registered_name} from server {server_name}"
-        )
-
-    def register_local_tool(self, tool_info: ToolInfo, langchain_tool: BaseTool):
-        """로컬 Tool을 LangChain Tool과 함께 등록.
-
-        Args:
-            tool_info: ToolInfo 객체
-            langchain_tool: LangChain BaseTool 인스턴스
-        """
-        tool_name = tool_info.name
-
-        self.tools[tool_name] = tool_info
-        self.langchain_tools[tool_name] = langchain_tool
-        self.tool_sources[tool_name] = "local"
-
-        logger.debug(f"Registered local tool: {tool_name}")
-
-    def get_tool_info(self, tool_name: str) -> ToolInfo | None:
-        """Tool 정보 조회."""
-        return self.tools.get(tool_name)
-
-    def get_langchain_tool(self, tool_name: str) -> BaseTool | None:
-        """LangChain Tool 조회."""
-        return self.langchain_tools.get(tool_name)
-
-    def get_all_langchain_tools(self) -> List[BaseTool]:
-        """모든 Tool을 LangChain Tool 리스트로 반환."""
-        return list(self.langchain_tools.values())
-
-    def get_tools_by_category(self, category: ToolCategory) -> List[str]:
-        """카테고리별 Tool 목록 반환."""
-        return [name for name, info in self.tools.items() if info.category == category]
-
-    def is_mcp_tool(self, tool_name: str) -> bool:
-        """Tool이 MCP Tool인지 확인."""
-        return self.tool_sources.get(tool_name) == "mcp"
-
-    def get_mcp_server_info(self, tool_name: str) -> Tuple[str, str] | None:
-        """MCP Tool의 서버 정보 반환: (server_name, original_tool_name)."""
-        return self.mcp_tool_mapping.get(tool_name)
 
     def get_all_tool_names(self) -> List[str]:
         """등록된 모든 Tool 이름 반환."""
@@ -542,7 +355,7 @@ class UniversalMCPHub:
         self.llm_config = get_llm_config()
 
         # ToolRegistry 통합 관리
-        self.registry = ToolRegistry()
+        self.registry = global_registry
 
         # 실행 컨텍스트별 MCP 세션 관리 (ROMA 스타일)
         # 각 실행마다 독립적인 MCP 세션 풀을 유지

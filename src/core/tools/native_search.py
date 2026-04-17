@@ -23,6 +23,17 @@ USER_AGENTS = [
 ]
 
 
+from src.core.tools.registry import tool, ToolCategory
+
+@tool(
+    name="ddg_search",
+    description="Search DuckDuckGo natively (no MCP required). Robust fallback for failing MCP servers.",
+    parameters={
+        "query": {"type": "string", "description": "Search query"},
+        "max_results": {"type": "integer", "description": "Max results (default: 5)"}
+    },
+    category=ToolCategory.SEARCH
+)
 def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, str]]:
     """Search DuckDuckGo using HTML frontend (no JS/API key required).
     Robust fallback for failing MCP servers.
@@ -66,9 +77,6 @@ def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, str]]:
         soup = BeautifulSoup(response.text, "html.parser")
 
         # Parse results
-        # DDG HTML structure: .result -> .result__title -> a.result__a (link)
-        # .result__snippet (snippet)
-
         for result in soup.select(".result"):
             if len(results) >= max_results:
                 break
@@ -82,9 +90,8 @@ def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, str]]:
             snippet_tag = result.select_one(".result__snippet")
             snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
 
-            # Filter internal DDG links (ads or related searches)
+            # Filter internal DDG links
             if "duckduckgo.com" in link and "uddg=" in link:
-                # Decode actual URL
                 parsed = urllib.parse.parse_qs(urllib.parse.urlparse(link).query)
                 if "uddg" in parsed:
                     link = parsed["uddg"][0]

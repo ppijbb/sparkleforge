@@ -12,6 +12,10 @@ import time
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
+from src.core.llm_manager import MultiModelOrchestrator, TaskType, ModelResult
+from src.core.mcp_integration import get_mcp_hub
+from src.core.prompt_builder import get_system_prompt, AgentIdentity
+
 from src.core.harness_state import HarnessState, create_initial_harness_state
 from src.core.task_router import TaskRouter, RoutePath
 
@@ -361,12 +365,63 @@ class AgentHarness:
             
         return "execute_parallel"
 
-    async def execute(self, session_id: str, request: str, max_iterations: int = 10) -> Dict[str, Any]:
-        """하네스 실행 (오케스트레이터의 주 진입점)"""
+    async def execute(
+        self, 
+        session_id: str, 
+        request: str, 
+        max_iterations: int = 10,
+        mode: str = "autonomous"
+    ) -> Dict[str, Any]:
+        """하네스 실행 (오케스트레이터의 주 진입점)
+        
+        Args:
+            session_id: 세션 ID
+            request: 사용자 요청
+            max_iterations: 최대 루프 반복 횟수
+            mode: 'autonomous' (Hermes-style loop) 또는 'research' (Original LangGraph)
+        """
         
         start_time = time.time()
-        logger.info(f"🚀 Harness starting session {session_id} for request: '{request[:20]}...'")
+        logger.info(f"🚀 Harness starting session {session_id} in {mode} mode for request: '{request[:20]}...'")
         
+        if mode == "autonomous":
+            try:
+                from src.core.agent_loop import AgentLoop
+                loop = AgentLoop(self.orchestrator)
+                
+                # 대화 형식으로 변환 (시스템 메시지 포함 가능)
+                messages = [{"role": "user", "content": request}]
+                
+                # Phase 5: Standardized system prompt
+                sys_prompt = get_system_prompt("researcher")
+                
+                result = await loop.run_conversation(
+                    messages=messages,
+                    max_iterations=max_iterations,
+                    task_type=TaskType.RESEARCH,
+                    system_message=sys_prompt
+                )
+                
+                logger.info(f"✅ Autonomous Harness completed in {time.time() - start_time:.2f}s")
+                
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "mode": "autonomous",
+                    "results": result.get("content", ""),
+                    "metadata": result.get("metadata", {}),
+                    "iterations": result.get("iterations", 0),
+                    "execution_time": time.time() - start_time
+                }
+            except Exception as e:
+                logger.error(f"❌ Autonomous Harness failed: {e}")
+                return {
+                    "success": False,
+                    "session_id": session_id,
+                    "error": str(e)
+                }
+        
+        # Original LangGraph Research Mode
         # 1. 초기 상태 생성
         initial_state = create_initial_harness_state(session_id, request, max_iterations)
         
@@ -376,18 +431,19 @@ class AgentHarness:
         # 3. 그래프 실행
         try:
             final_state = await self.graph.ainvoke(initial_state, config)
-            logger.info(f"✅ Harness completed in {time.time() - start_time:.2f}s")
+            logger.info(f"✅ Research Harness completed in {time.time() - start_time:.2f}s")
             
             # API 호환을 위해 결과 반환 (HIL 데이터는 output에 포함하지 않음)
             return {
                 "success": True,
                 "session_id": session_id,
+                "mode": "research",
                 "plan": final_state["workflow"].get("plan", ""),
                 "tasks": final_state["workflow"].get("tasks", []),
                 "results": final_state["workflow"].get("final_output", ""),
             }
         except Exception as e:
-            logger.error(f"❌ Harness execution failed: {e}")
+            logger.error(f"❌ Research Harness failed: {e}")
             return {
                 "success": False,
                 "session_id": session_id,
