@@ -19,8 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 1단계: 코드 변경점 리뷰 (GitHub Copilot / Models - 무료)
-  # 목적: 가벼운 리뷰, Diff 추출 (Gemini 토큰 낭비 방지)
+  # 1단계: 코드 변경점 리뷰 (OpenRouter / Groq 등 무료 API 직접 호출)
   code-review:
     if: >-
       github.event_name == 'pull_request' || 
@@ -36,15 +35,38 @@ jobs:
       - name: Extract Git Diff
         run: git diff HEAD~1 HEAD > diff.txt || echo "" > diff.txt
         
-      - name: Copilot / GitHub Models Review Placeholder
+      - name: OpenRouter Diff Review
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          echo "Copilot이나 GitHub Models API를 통해 diff.txt를 분석하고 리뷰 코멘트를 남깁니다."
-          # 실제 구현 시: gh copilot CLI 또는 curl 호출
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "No OpenRouter key found, skipping."
+            echo "Skipped" > review_result.txt
+            exit 0
+          fi
           
-  # 2단계: 리뷰 분석 및 작업 분할/이슈 생성 (Groq / Cerebras / OpenRouter)
-  # 목적: 텍스트 뭉치를 분석하여 액션 가능한 이슈 단위로 분할 (초고속/저비용 오픈 모델 사용)
+          # jq를 사용하여 안전하게 JSON 페이로드 생성 (따옴표 이스케이프 문제 방지)
+          jq -n --arg diff "$(cat diff.txt)" '{
+            model: "google/gemini-flash-1.5-8b", 
+            messages: [
+              {role: "system", content: "You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly."},
+              {role: "user", content: $diff}
+            ]
+          }' > payload.json
+          
+          # curl을 통해 직접 API 찌르기
+          curl -s -X POST "https://openrouter.ai/api/v1/chat/completions" \
+            -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload.json | jq -r '.choices[0].message.content' > review_result.txt
+            
+      - name: Upload Review Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-result
+          path: review_result.txt
+
+  # 2단계: 리뷰 분석 및 작업 분할/이슈 생성 (Groq / Cerebras API 직접 호출)
   issue-triage:
     needs: code-review
     if: always()
@@ -53,18 +75,42 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@v4
-      - name: LLM Router Triage (Groq/OpenRouter)
+      
+      - name: Download Review Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: review-result
+          
+      - name: Groq API Triage & Issue Create
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "오픈 모델(Groq 등)을 호출하여 코드 리뷰 결과를 바탕으로 GitHub Issue를 생성합니다."
-          # 실제 구현 시: 파이썬 스크립트 등으로 API를 찌르고 `gh issue create` 실행
+          if [ ! -f review_result.txt ] || [ -z "$GROQ_API_KEY" ]; then
+            echo "No review result or Groq key found."
+            exit 0
+          fi
+          
+          # Groq 무료 티어(Llama 3)를 통해 이슈 내용(Actionable tasks) 생성
+          jq -n --arg review "$(cat review_result.txt)" '{
+            model: "llama3-8b-8192",
+            messages: [
+              {role: "system", content: "Extract actionable TODOs from this review and format them as a GitHub Issue body."},
+              {role: "user", content: $review}
+            ]
+          }' > groq_payload.json
+          
+          ISSUE_BODY=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @groq_payload.json | jq -r '.choices[0].message.content')
+            
+          # 만들어진 텍스트를 바로 gh CLI로 넘겨서 GitHub 이슈 자동 생성
+          if [ "$ISSUE_BODY" != "null" ] && [ -n "$ISSUE_BODY" ]; then
+            gh issue create --title "🤖 AI Automated Triage Tasks" --body "$ISSUE_BODY" --label "automated-issue"
+          fi
 
   # 3단계: 코드 수정 및 PR 반영 (Gemini CLI YOLO Mode)
-  # 목적: 터미널 제어 및 실제 파일 수정 (강력한 추론과 툴링 필요 시에만 발동)
   gemini-harness:
     needs: issue-triage
     if: >-
@@ -91,7 +137,7 @@ jobs:
       - name: Run Gemini CLI Assistant (Tool Caller)
         uses: google-github-actions/run-gemini-cli@v0
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Action 제어를 위한 권한 추가
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           model: gemini-3.1-flash-lite-preview
