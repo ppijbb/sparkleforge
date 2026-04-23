@@ -11,11 +11,14 @@ All code changes and commits you make must be attributed to the **USER's account
 ## 📋 Automation Rules
 
 ### 1. Issue Triage & Creation
-- **Trigger:** Review comments containing `TODO:`, `BUG:`, or `@gemini create issue`.
+- **Trigger:** 
+  - Review comments containing `TODO:`, `BUG:`, or `@gemini create issue`.
+  - Completion of a Pull Request Review (Aggregate mode).
+  - Mentioning `@gemini-cli summarize`.
 - **Action:** 
-  - Parse the comment for context.
-  - Create a new GitHub Issue using the `Bug Report` or `Feature Request` template.
-  - Cross-link the original PR and comment in the issue description.
+  - **Single Comment mode:** Parse the specific comment and create an issue.
+  - **Aggregate mode:** Scan ALL comments and review findings in the PR. Group related findings and create structured issues for each logical task.
+  - Cross-link the original PR and specific comments in the issue descriptions.
   - Assign labels: `automated-issue`, `triage-needed`.
   - Automatically assign the issue to the relevant owner defined in `CODEOWNERS`.
 
