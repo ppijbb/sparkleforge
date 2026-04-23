@@ -11,12 +11,16 @@ All code changes and commits you make must be attributed to the **USER's account
 ## 📋 Automation Rules
 
 ### 1. Issue Triage & Creation
-- **Trigger:** Review comments containing `TODO:`, `BUG:`, or `@gemini create issue`.
+- **Trigger:** 
+  - Review comments containing `TODO:`, `BUG:`, or `@gemini create issue`.
+  - Completion of a Pull Request Review (Aggregate mode).
+  - Mentioning `@gemini-cli summarize`.
 - **Action:** 
-  - Parse the comment for context.
-  - Create a new GitHub Issue using the `Bug Report` or `Feature Request` template.
-  - Cross-link the original PR and comment in the issue description.
+  - **Single Comment mode:** Parse the specific comment and create an issue.
+  - **Aggregate mode:** Scan ALL comments and review findings in the PR. Group related findings and create structured issues for each logical task.
+  - Cross-link the original PR and specific comments in the issue descriptions.
   - Assign labels: `automated-issue`, `triage-needed`.
+  - Automatically assign the issue to the relevant owner defined in `CODEOWNERS`.
 
 ### 2. Pull Request & Fix Lifecycle
 - **Autonomous Fix Flow:**
@@ -25,6 +29,8 @@ All code changes and commits you make must be attributed to the **USER's account
   3.  Implement the fix, ensuring it aligns with project standards.
   4.  Commit the changes using the USER's git identity.
   5.  Open a PR targeting the appropriate branch and link the issue.
+      - **Always add labels:** `ai-generated`, `review-needed`.
+      - **Always add reviewer/assignee:** Use `CODEOWNERS` or default to the repository owner.
 - **Manual Oversight:** The USER will review the PR and perform the final merge. Do not attempt to merge PRs autonomously.
 
 ### 3. Task Assignment
@@ -37,8 +43,3 @@ All code changes and commits you make must be attributed to the **USER's account
 - Always use `gh` CLI commands within the GitHub Action environment to interact with issues and PRs.
 - Maintain a professional, concise, and helpful tone in all comments.
 - Do not make destructive changes (force push, delete branches) unless explicitly commanded.
-
-## 📁 File Structure Context
-- `src/core/`: Core engine logic.
-- `src/core/tools/`: Toolsets for the agent.
-- `tests/`: Project test suite.
