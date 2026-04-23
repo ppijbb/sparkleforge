@@ -24,7 +24,7 @@ All code changes and commits you make must be attributed to the **USER's account
 
 ### 2. Pull Request & Fix Lifecycle
 - **Autonomous Fix Flow:**
-  1.  Detect a fix request or an issue labeled `triage-needed`.
+  1.  **Trigger:** Detection of a new issue (especially those labeled `automated-issue` or `triage-needed`) or a review with actionable findings. **Do not wait for explicit @gemini-cli mentions.**
   2.  Create a feature branch named `ai-fix/[issue-id]`.
   3.  Implement the fix, ensuring it aligns with project standards.
   4.  Commit the changes using the USER's git identity.
