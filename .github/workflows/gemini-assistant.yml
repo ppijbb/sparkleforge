@@ -2,6 +2,8 @@ name: Gemini AI Assistant
 on:
   pull_request:
     types: [opened, synchronize]
+  pull_request_review:
+    types: [submitted]
   pull_request_review_comment:
     types: [created]
   issue_comment:
@@ -26,11 +28,20 @@ jobs:
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
 
+      - name: Auto Label & Assign PR
+        if: github.event_name == 'pull_request' && github.event.action == 'opened'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 기본 라벨 부착 및 본인(actor)을 담당자로 지정
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --add-label "triage-needed, review-needed" \
+            --add-assignee "${{ github.actor }}"
+
       - name: Run Gemini CLI Assistant
-        uses: google-github-actions/run-gemini-cli@v1
+        uses: google-github-actions/run-gemini-cli@v0
         with:
           google_api_key: ${{ secrets.GEMINI_API_KEY }}
-          # Use the GEMINI.md as the system instruction
           system_instruction: |
             You are the SparkleForge Harness. 
             Refer to GEMINI.md in the repository root for your specific interaction rules and conventions.
