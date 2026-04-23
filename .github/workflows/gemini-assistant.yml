@@ -2,7 +2,7 @@ name: Gemini AI Assistant
 on:
   push:
     branches:
-      - chore
+      - 'chore/**'
       - main
   workflow_dispatch:
   pull_request:
