@@ -45,9 +45,8 @@ jobs:
 
       - name: Run Gemini CLI Assistant
         uses: google-github-actions/run-gemini-cli@v0
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           system_instruction: |
             You are the SparkleForge Harness. 
             Refer to GEMINI.md in the repository root for your specific interaction rules and conventions.
