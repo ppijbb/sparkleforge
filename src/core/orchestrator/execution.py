@@ -272,7 +272,7 @@ class ExecutionNode(BaseNode):
             ToolCategory.ACADEMIC: ["semantic_scholar::papers-search-basic", "arxiv::arxiv_search"],
             ToolCategory.DATA: ["fetch::fetch_url", "fetch::extract_elements"],
             ToolCategory.CODE: ["python_coder", "code_interpreter"],
-            ToolCategory.BROWSER: [],  # PlaywrightController에서 직접 처리
+            ToolCategory.BROWSER: ["cdp_navigate", "cdp_click", "cdp_type_text", "cdp_screenshot", "cdp_extract_text", "cdp_js", "cdp_page_info"],
         }
         tools = mapping.get(category)
         if tools is None:
@@ -286,10 +286,17 @@ class ExecutionNode(BaseNode):
         task_url = task.get("url", "")
         task_actions = task.get("actions", [])
 
+        # 동적으로 컨트롤러 종류 확인
+        is_cdp = hasattr(controller, "cdp")
+        
         try:
-            await controller.initialize()
+            # 컨트롤러 초기화 시도
+            init_success = await controller.initialize()
+            if not init_success:
+                raise RuntimeError(f"Browser backend initialization failed.")
 
             # URL이 있으면 navigate
+            page_state = None
             if task_url:
                 page_state = await controller.navigate(task_url)
             elif "http" in task_desc:
@@ -319,19 +326,21 @@ class ExecutionNode(BaseNode):
             return {
                 "task_id": task.get("id"),
                 "task_name": task.get("name"),
-                "tool_used": "playwright",
+                "tool_used": "cdp" if is_cdp else "playwright",
                 "result": extracted,
                 "status": "completed",
             }
 
         except Exception as e:
             logger.error(f"Browser task execution failed: {e}")
+            # Do NOT make fallback throughpasses. Return as failed state.
             return {
                 "task_id": task.get("id"),
                 "task_name": task.get("name"),
-                "tool_used": "playwright",
+                "tool_used": "cdp" if hasattr(controller, "cdp") else "playwright",
                 "status": "failed",
                 "error": str(e),
+                "is_fallback_failure": True,
             }
 
     def _generate_tool_parameters(self, task: Dict[str, Any], tool_name: str) -> Dict[str, Any]:
