@@ -15,8 +15,10 @@ import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import markdownify
 
@@ -560,15 +562,38 @@ def get_playwright_controller() -> PlaywrightController:
     return _controller_instance
 
 
-# ===== 하위 호환: BrowserManager 래퍼 =====
+# ===== 하위 호환: BrowserManager 래퍼 및 Backend Router =====
+class BrowserBackend(Enum):
+    PLAYWRIGHT = "playwright"
+    CDP = "cdp"
+    AUTO = "auto"
+
+def get_browser_backend(preference: BrowserBackend = BrowserBackend.AUTO) -> Any:
+    """Returns the appropriate browser controller instance."""
+    if preference == BrowserBackend.PLAYWRIGHT:
+        return get_playwright_controller()
+    elif preference == BrowserBackend.CDP:
+        from src.automation.cdp_browser_controller import get_cdp_controller
+        return get_cdp_controller()
+    else:
+        # AUTO logic: try CDP first, fallback to Playwright
+        try:
+            from src.automation.cdp_browser_controller import get_cdp_controller
+            cdp_ctrl = get_cdp_controller()
+            if cdp_ctrl.is_available:
+                return cdp_ctrl
+        except ImportError:
+            pass
+        return get_playwright_controller()
+
 class BrowserManager:
     """하위 호환을 위한 BrowserManager 래퍼.
 
-    내부적으로 PlaywrightController를 사용합니다.
+    내부적으로 PlaywrightController 또는 CDPBrowserController를 사용합니다.
     """
 
-    def __init__(self, config_path: str | None = None):
-        self._controller = get_playwright_controller()
+    def __init__(self, config_path: str | None = None, backend: BrowserBackend = BrowserBackend.AUTO):
+        self._controller = get_browser_backend(backend)
         self.config_path = config_path
 
         # 환경 감지 (legacy 호환)
@@ -589,6 +614,8 @@ class BrowserManager:
         """URL로 이동하여 콘텐츠를 추출합니다."""
         try:
             page_state = await self._controller.navigate(url)
+            
+            # Use universal extract format which both controllers support
             extracted = await self._controller.extract({"full_text": True, "metadata": True})
 
             # LLM이 제공되면 콘텐츠 처리
