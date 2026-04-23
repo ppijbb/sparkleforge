@@ -1,0 +1,15 @@
+# SparkleForge Code Owners
+# Automated tasks will be assigned based on these rules.
+
+# Global owners
+* @user
+
+# Core Engine
+/src/core/ @user
+
+# Tools
+/src/core/tools/ @user
+
+# GitHub Automation
+/.github/ @user
+/GEMINI.md @user
