@@ -1,0 +1,36 @@
+name: Gemini AI Assistant
+on:
+  pull_request:
+    types: [opened, synchronize]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+  issues:
+    types: [opened]
+
+jobs:
+  gemini-harness:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+
+      - name: Run Gemini CLI Assistant
+        uses: google-github-actions/run-gemini-cli@v1
+        with:
+          google_api_key: ${{ secrets.GEMINI_API_KEY }}
+          system_instruction: |
+            You are the SparkleForge Harness. 
+            Refer to GEMINI.md in the repository root for your specific interaction rules and conventions.
+            Your goal is to automate issue creation, code fixes, and task assignment based on feedback from other AIs or humans.
