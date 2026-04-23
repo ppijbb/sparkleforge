@@ -47,7 +47,7 @@ jobs:
           
           # jq를 사용하여 안전하게 JSON 페이로드 생성 (따옴표 이스케이프 문제 방지)
           jq -n --arg diff "$(cat diff.txt)" '{
-            model: "google/gemini-flash-1.5-8b", 
+            model: "meta-llama/llama-3.3-70b-instruct:free", 
             messages: [
               {role: "system", content: "You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly."},
               {role: "user", content: $diff}
@@ -60,11 +60,36 @@ jobs:
             -H "Content-Type: application/json" \
             -d @payload.json | jq -r '.choices[0].message.content' > review_result.txt
             
-      - name: Upload Review Artifact
+      - name: Cerebras Diff Review
+        env:
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+        run: |
+          if [ -z "$CEREBRAS_API_KEY" ]; then
+            echo "No Cerebras key found, skipping."
+            echo "Skipped" > cerebras_result.txt
+            exit 0
+          fi
+          
+          jq -n --arg diff "$(cat diff.txt)" '{
+            model: "llama3.1-70b",
+            messages: [
+              {role: "system", content: "You are a security and architecture reviewer. Read this diff and point out critical logical or security flaws only."},
+              {role: "user", content: $diff}
+            ]
+          }' > cerebras_payload.json
+          
+          curl -s -X POST "https://api.cerebras.ai/v1/chat/completions" \
+            -H "Authorization: Bearer $CEREBRAS_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @cerebras_payload.json | jq -r '.choices[0].message.content' > cerebras_result.txt
+            
+      - name: Upload Review Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: review-result
-          path: review_result.txt
+          name: review-results
+          path: |
+            review_result.txt
+            cerebras_result.txt
 
   # 2단계: 리뷰 분석 및 작업 분할/이슈 생성 (Groq / Cerebras API 직접 호출)
   issue-triage:
@@ -79,7 +104,7 @@ jobs:
       - name: Download Review Artifact
         uses: actions/download-artifact@v4
         with:
-          name: review-result
+          name: review-results
           
       - name: Groq API Triage & Issue Create
         env:
@@ -91,11 +116,14 @@ jobs:
             exit 0
           fi
           
-          # Groq 무료 티어(Llama 3)를 통해 이슈 내용(Actionable tasks) 생성
-          jq -n --arg review "$(cat review_result.txt)" '{
-            model: "llama3-8b-8192",
+          # 두 리뷰를 하나로 합침
+          COMBINED_REVIEW="OpenRouter Review:\n$(cat review_result.txt)\n\nCerebras Review:\n$(cat cerebras_result.txt 2>/dev/null || echo '')"
+          
+          # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용(Actionable tasks) 생성
+          jq -n --arg review "$COMBINED_REVIEW" '{
+            model: "llama-3.3-70b-versatile",
             messages: [
-              {role: "system", content: "Extract actionable TODOs from this review and format them as a GitHub Issue body."},
+              {role: "system", content: "Extract actionable TODOs from these combined reviews and format them as a GitHub Issue body."},
               {role: "user", content: $review}
             ]
           }' > groq_payload.json
