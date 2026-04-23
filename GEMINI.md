@@ -17,6 +17,7 @@ All code changes and commits you make must be attributed to the **USER's account
   - Create a new GitHub Issue using the `Bug Report` or `Feature Request` template.
   - Cross-link the original PR and comment in the issue description.
   - Assign labels: `automated-issue`, `triage-needed`.
+  - Automatically assign the issue to the relevant owner defined in `CODEOWNERS`.
 
 ### 2. Pull Request & Fix Lifecycle
 - **Autonomous Fix Flow:**
@@ -25,6 +26,8 @@ All code changes and commits you make must be attributed to the **USER's account
   3.  Implement the fix, ensuring it aligns with project standards.
   4.  Commit the changes using the USER's git identity.
   5.  Open a PR targeting the appropriate branch and link the issue.
+      - **Always add labels:** `ai-generated`, `review-needed`.
+      - **Always add reviewer/assignee:** Use `CODEOWNERS` or default to the repository owner.
 - **Manual Oversight:** The USER will review the PR and perform the final merge. Do not attempt to merge PRs autonomously.
 
 ### 3. Task Assignment
