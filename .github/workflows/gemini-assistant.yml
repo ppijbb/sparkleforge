@@ -26,6 +26,16 @@ jobs:
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
 
+      - name: Auto Label & Assign PR
+        if: github.event_name == 'pull_request' && github.event.action == 'opened'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 기본 라벨 부착 및 본인(actor)을 담당자로 지정
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --add-label "triage-needed, review-needed" \
+            --add-assignee "${{ github.actor }}"
+
       - name: Run Gemini CLI Assistant
         uses: google-github-actions/run-gemini-cli@v0
         with:
