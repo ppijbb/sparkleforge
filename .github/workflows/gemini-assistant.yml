@@ -122,7 +122,7 @@ jobs:
           jq -n --arg review "$COMBINED_REVIEW" '{
             model: "llama-3.3-70b-versatile",
             messages: [
-              {role: "system", content: "You are a professional QA engineer. Based on the provided code reviews, create a detailed GitHub Issue body following this structure: 1. Bug Description, 2. Suggested Fix (with code snippets if possible), 3. Priority. Be specific and technical."},
+              {role: "system", content: "You are a senior developer talking to a teammate. Look at the reviews and write a natural, concise issue. Don't use robotic headers or formal structures. Just say what's wrong and how to fix it with code if possible. Keep it short and clear, exactly how a developer would write an issue."},
               {role: "user", content: $review}
             ]
           }' > groq_payload.json
@@ -134,7 +134,7 @@ jobs:
             
           # 만들어진 텍스트를 바로 gh CLI로 넘겨서 GitHub 이슈 생성
           if [ "$ISSUE_BODY" != "null" ] && [ -n "$ISSUE_BODY" ]; then
-            gh issue create --title "🤖 AI Triage Tasks" --body "$ISSUE_BODY"
+            gh issue create --title "Fix: Issue identified in review" --body "$ISSUE_BODY"
           fi
 
   # 3단계: 코드 수정 및 PR 반영 (Gemini CLI YOLO Mode)
