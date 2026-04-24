@@ -22,7 +22,8 @@ jobs:
   # 1단계: 코드 변경점 리뷰 (OpenRouter / Groq 등 무료 API 직접 호출)
   code-review:
     if: >-
-      github.event_name == 'pull_request'
+      github.event_name == 'pull_request' ||
+      github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
