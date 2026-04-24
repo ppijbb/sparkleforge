@@ -1,4 +1,4 @@
-name: AI Autonomous Harness (Distributed)
+name: AI Harness (Distributed)
 on:
   push:
     branches:
@@ -133,9 +133,9 @@ jobs:
             -H "Content-Type: application/json" \
             -d @groq_payload.json | jq -r '.choices[0].message.content')
             
-          # 만들어진 텍스트를 바로 gh CLI로 넘겨서 GitHub 이슈 자동 생성
+          # 만들어진 텍스트를 바로 gh CLI로 넘겨서 GitHub 이슈 생성
           if [ "$ISSUE_BODY" != "null" ] && [ -n "$ISSUE_BODY" ]; then
-            gh issue create --title "🤖 AI Automated Triage Tasks" --body "$ISSUE_BODY" --label "automated-issue"
+            gh issue create --title "🤖 AI Triage Tasks" --body "$ISSUE_BODY"
           fi
 
   # 3단계: 코드 수정 및 PR 반영 (Gemini CLI YOLO Mode)
@@ -167,9 +167,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          model: gemini-3.1-flash-lite-preview
-          system_instruction: |
+          google_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: gemini-1.5-flash
+          prompt: |
             You are the SparkleForge Harness. 
             Refer to GEMINI.md in the repository root for your specific interaction rules and conventions.
             IMPORTANT: Do not read the entire codebase unless requested. Focus only on the specific issue or file mentioned.
