@@ -22,8 +22,7 @@ jobs:
   # 1단계: 코드 변경점 리뷰 (OpenRouter / Groq 등 무료 API 직접 호출)
   code-review:
     if: >-
-      github.event_name == 'pull_request' || 
-      github.event_name == 'push'
+      github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -123,7 +122,7 @@ jobs:
           jq -n --arg review "$COMBINED_REVIEW" '{
             model: "llama-3.3-70b-versatile",
             messages: [
-              {role: "system", content: "Extract actionable TODOs from these combined reviews and format them as a GitHub Issue body."},
+              {role: "system", content: "You are a professional QA engineer. Based on the provided code reviews, create a detailed GitHub Issue body following this structure: 1. Bug Description, 2. Suggested Fix (with code snippets if possible), 3. Priority. Be specific and technical."},
               {role: "user", content: $review}
             ]
           }' > groq_payload.json
