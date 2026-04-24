@@ -1,18 +1,152 @@
-name: Gemini AI Assistant
+name: AI Autonomous Harness (Distributed)
 on:
+  push:
+    branches:
+      - 'chore/**'
+      - main
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize]
   pull_request_review:
     types: [submitted]
-  pull_request_review_comment:
-    types: [created]
   issue_comment:
     types: [created]
   issues:
     types: [opened]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # 1단계: 코드 변경점 리뷰 (OpenRouter / Groq 등 무료 API 직접 호출)
+  code-review:
+    if: >-
+      github.event_name == 'pull_request' || 
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      
+      - name: Extract Git Diff
+        run: git diff HEAD~1 HEAD > diff.txt || echo "" > diff.txt
+        
+      - name: OpenRouter Diff Review
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "No OpenRouter key found, skipping."
+            echo "Skipped" > review_result.txt
+            exit 0
+          fi
+          
+          # jq를 사용하여 안전하게 JSON 페이로드 생성 (따옴표 이스케이프 문제 방지)
+          jq -n --arg diff "$(cat diff.txt)" '{
+            model: "meta-llama/llama-3.3-70b-instruct:free", 
+            messages: [
+              {role: "system", content: "You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly."},
+              {role: "user", content: $diff}
+            ]
+          }' > payload.json
+          
+          # curl을 통해 직접 API 찌르기
+          curl -s -X POST "https://openrouter.ai/api/v1/chat/completions" \
+            -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload.json | jq -r '.choices[0].message.content' > review_result.txt
+            
+      - name: Cerebras Diff Review
+        env:
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+        run: |
+          if [ -z "$CEREBRAS_API_KEY" ]; then
+            echo "No Cerebras key found, skipping."
+            echo "Skipped" > cerebras_result.txt
+            exit 0
+          fi
+          
+          jq -n --arg diff "$(cat diff.txt)" '{
+            model: "llama3.1-70b",
+            messages: [
+              {role: "system", content: "You are a security and architecture reviewer. Read this diff and point out critical logical or security flaws only."},
+              {role: "user", content: $diff}
+            ]
+          }' > cerebras_payload.json
+          
+          curl -s -X POST "https://api.cerebras.ai/v1/chat/completions" \
+            -H "Authorization: Bearer $CEREBRAS_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @cerebras_payload.json | jq -r '.choices[0].message.content' > cerebras_result.txt
+            
+      - name: Upload Review Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-results
+          path: |
+            review_result.txt
+            cerebras_result.txt
+
+  # 2단계: 리뷰 분석 및 작업 분할/이슈 생성 (Groq / Cerebras API 직접 호출)
+  issue-triage:
+    needs: code-review
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download Review Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: review-results
+          
+      - name: Groq API Triage & Issue Create
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f review_result.txt ] || [ -z "$GROQ_API_KEY" ]; then
+            echo "No review result or Groq key found."
+            exit 0
+          fi
+          
+          # 두 리뷰를 하나로 합침
+          COMBINED_REVIEW="OpenRouter Review:\n$(cat review_result.txt)\n\nCerebras Review:\n$(cat cerebras_result.txt 2>/dev/null || echo '')"
+          
+          # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용(Actionable tasks) 생성
+          jq -n --arg review "$COMBINED_REVIEW" '{
+            model: "llama-3.3-70b-versatile",
+            messages: [
+              {role: "system", content: "Extract actionable TODOs from these combined reviews and format them as a GitHub Issue body."},
+              {role: "user", content: $review}
+            ]
+          }' > groq_payload.json
+          
+          ISSUE_BODY=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @groq_payload.json | jq -r '.choices[0].message.content')
+            
+          # 만들어진 텍스트를 바로 gh CLI로 넘겨서 GitHub 이슈 자동 생성
+          if [ "$ISSUE_BODY" != "null" ] && [ -n "$ISSUE_BODY" ]; then
+            gh issue create --title "🤖 AI Automated Triage Tasks" --body "$ISSUE_BODY" --label "automated-issue"
+          fi
+
+  # 3단계: 코드 수정 및 PR 반영 (Gemini CLI YOLO Mode)
   gemini-harness:
+    needs: issue-triage
+    if: >-
+      always() &&
+      github.actor != 'github-actions[bot]' &&
+      ((github.event_name == 'issues' && github.event.action == 'opened') ||
+      contains(github.event.comment.body, '@gemini') ||
+      github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -28,21 +162,15 @@ jobs:
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
 
-      - name: Auto Label & Assign PR
-        if: github.event_name == 'pull_request' && github.event.action == 'opened'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 기본 담당자 지정 (라벨링 생략)
-          gh pr edit ${{ github.event.pull_request.number }} \
-            --add-assignee "${{ github.actor }}"
-
-      - name: Run Gemini CLI Assistant
+      - name: Run Gemini CLI Assistant (Tool Caller)
         uses: google-github-actions/run-gemini-cli@v0
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          model: gemini-3.1-flash-lite-preview
           system_instruction: |
             You are the SparkleForge Harness. 
             Refer to GEMINI.md in the repository root for your specific interaction rules and conventions.
-            Your goal is to automate issue creation, code fixes, and task assignment based on feedback from other AIs or humans.
+            IMPORTANT: Do not read the entire codebase unless requested. Focus only on the specific issue or file mentioned.
+            Use YOLO mode to edit files, commit changes, and push. You have GH_TOKEN in your env to run `gh` commands.
