@@ -120,13 +120,15 @@ jobs:
           COMBINED_REVIEW="OpenRouter Review:\n$(cat review_result.txt)\n\nCerebras Review:\n$(cat cerebras_result.txt 2>/dev/null || echo '')"
           
           # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용 생성
-          jq -n --arg review "$COMBINED_REVIEW" '{
-            model: "deepseek-v4-flash",
-            messages: [
-              {role: "system", content: "You are a senior developer talking to a teammate. Look at the reviews and write a natural, concise issue. Don't use robotic headers or formal structures. Just say what's wrong and how to fix it with code if possible. Keep it short and clear, exactly how a developer would write an issue."},
-              {role: "user", content: $review}
-            ]
-          }' > groq_payload.json
+          jq -n --arg review "$COMBINED_REVIEW" \
+            --arg system_msg "You are a senior developer talking to a teammate. Look at the reviews and write a natural, concise issue. Don'\''t use robotic headers or formal structures. Just say what'\''s wrong and how to fix it with code if possible. Keep it short and clear, exactly how a developer would write an issue." \
+            '{
+              model: "deepseek-v4-flash",
+              messages: [
+                {role: "system", content: $system_msg},
+                {role: "user", content: $review}
+              ]
+            }' > groq_payload.json
           
           ISSUE_BODY=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
             -H "Authorization: Bearer $GROQ_API_KEY" \
