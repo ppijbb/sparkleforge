@@ -46,7 +46,7 @@ jobs:
           
           # jq를 사용하여 안전하게 JSON 페이로드 생성 (따옴표 이스케이프 문제 방지)
           jq -n --arg diff "$(cat diff.txt)" '{
-            model: "google/gemma-4-31b:free", 
+            model: "qwen/qwen3.6-35b-instruct:free", 
             messages: [
               {role: "system", content: "You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly."},
               {role: "user", content: $diff}
