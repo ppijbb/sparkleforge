@@ -19,7 +19,7 @@ All code changes and commits you make must be attributed to the **USER's account
   - **Single Comment mode:** Parse the specific comment and create an issue.
   - **Aggregate mode:** Scan ALL comments and review findings in the PR. Group related findings and create structured issues for each logical task.
   - Cross-link the original PR and specific comments in the issue descriptions.
-  - Assign labels: `triage-needed`.
+  - Assign labels: `automated-issue`, `triage-needed`.
   - Automatically assign the issue to the relevant owner defined in `CODEOWNERS`.
 
 ### 2. Pull Request & Fix Lifecycle
@@ -29,7 +29,7 @@ All code changes and commits you make must be attributed to the **USER's account
   3.  Implement the fix, ensuring it aligns with project standards.
   4.  Commit the changes using the USER's git identity.
   5.  Open a PR targeting the appropriate branch and link the issue.
-      - **Always add labels:** `review-needed`.
+      - **Always add labels:** `ai-generated`, `review-needed`.
       - **Always add reviewer/assignee:** Use `CODEOWNERS` or default to the repository owner.
 - **Manual Oversight:** The USER will review the PR and perform the final merge. Do not attempt to merge PRs autonomously.
 
