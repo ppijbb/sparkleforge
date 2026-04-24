@@ -46,7 +46,7 @@ jobs:
           
           # jq를 사용하여 안전하게 JSON 페이로드 생성 (따옴표 이스케이프 문제 방지)
           jq -n --arg diff "$(cat diff.txt)" '{
-            model: "meta-llama/llama-3.3-70b-instruct:free", 
+            model: "google/gemma-4-27b-it:free", 
             messages: [
               {role: "system", content: "You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly."},
               {role: "user", content: $diff}
@@ -70,7 +70,7 @@ jobs:
           fi
           
           jq -n --arg diff "$(cat diff.txt)" '{
-            model: "llama3.1-70b",
+            model: "llama-4-8b",
             messages: [
               {role: "system", content: "You are a security and architecture reviewer. Read this diff and point out critical logical or security flaws only."},
               {role: "user", content: $diff}
@@ -120,7 +120,7 @@ jobs:
           
           # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용(Actionable tasks) 생성
           jq -n --arg review "$COMBINED_REVIEW" '{
-            model: "llama-3.3-70b-versatile",
+            model: "deepseek-v4-70b",
             messages: [
               {role: "system", content: "You are a senior developer talking to a teammate. Look at the reviews and write a natural, concise issue. Don't use robotic headers or formal structures. Just say what's wrong and how to fix it with code if possible. Keep it short and clear, exactly how a developer would write an issue."},
               {role: "user", content: $review}
