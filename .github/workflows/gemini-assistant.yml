@@ -33,9 +33,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 기본 라벨 부착 및 본인(actor)을 담당자로 지정
+          # 기본 담당자 지정 (라벨링 생략)
           gh pr edit ${{ github.event.pull_request.number }} \
-            --add-label "triage-needed, review-needed" \
             --add-assignee "${{ github.actor }}"
 
       - name: Run Gemini CLI Assistant
