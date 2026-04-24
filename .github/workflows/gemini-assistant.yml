@@ -121,23 +121,28 @@ jobs:
           
           # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용 생성
           jq -n --arg review "$COMBINED_REVIEW" \
-            --arg system_msg "You are a senior developer talking to a teammate. Look at the reviews and write a natural, concise issue. Don'\''t use robotic headers or formal structures. Just say what'\''s wrong and how to fix it with code if possible. Keep it short and clear, exactly how a developer would write an issue." \
+            --arg system_msg "You are a senior developer talking to a teammate. Based on the review, generate a JSON object with 'title' and 'body' keys. The title should be a short, natural developer-style summary (e.g., 'Fix: Missing error handling in auth flow'), and the body should naturally explain what's wrong and how to fix it with code. No robotic headers. Just clear, peer-to-peer communication." \
             '{
               model: "deepseek-v4-flash",
               messages: [
                 {role: "system", content: $system_msg},
                 {role: "user", content: $review}
-              ]
+              ],
+              response_format: { type: "json_object" }
             }' > groq_payload.json
           
-          ISSUE_BODY=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+          # 만들어진 텍스트에서 제목과 본문 추출
+          RAW_RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
             -H "Authorization: Bearer $GROQ_API_KEY" \
             -H "Content-Type: application/json" \
-            -d @groq_payload.json | jq -r '.choices[0].message.content')
+            -d @groq_payload.json)
+          
+          ISSUE_TITLE=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content | fromjson.title')
+          ISSUE_BODY=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content | fromjson.body')
             
-          # 만들어진 텍스트를 바로 gh CLI로 넘겨서 GitHub 이슈 생성
-          if [ "$ISSUE_BODY" != "null" ] && [ -n "$ISSUE_BODY" ]; then
-            gh issue create --title "Fix: Issue identified in review" --body "$ISSUE_BODY"
+          # 이슈 생성
+          if [ "$ISSUE_TITLE" != "null" ] && [ -n "$ISSUE_TITLE" ]; then
+            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
           fi
 
   # 3단계: 코드 수정 및 PR 반영 (Gemini CLI YOLO Mode)
