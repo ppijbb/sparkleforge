@@ -131,18 +131,28 @@ jobs:
               response_format: { type: "json_object" }
             }' > groq_payload.json
           
-          # 만들어진 텍스트에서 제목과 본문 추출
+          # 만들어진 텍스트에서 제목과 본문 추출 (마크다운 백틱 제거 로직 포함)
           RAW_RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
             -H "Authorization: Bearer $GROQ_API_KEY" \
             -H "Content-Type: application/json" \
             -d @groq_payload.json)
           
-          ISSUE_TITLE=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content | fromjson.title')
-          ISSUE_BODY=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content | fromjson.body')
+          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty')
+          
+          if [ -n "$CONTENT" ]; then
+            # 마크다운 백틱(```json ... ```) 제거 후 순수 JSON만 추출
+            CLEAN_JSON=$(echo "$CONTENT" | sed -n '/{/,/}/p')
             
-          # 이슈 생성
-          if [ "$ISSUE_TITLE" != "null" ] && [ -n "$ISSUE_TITLE" ]; then
-            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
+            ISSUE_TITLE=$(echo "$CLEAN_JSON" | jq -r '.title // "Fix: Issue identified in review"')
+            ISSUE_BODY=$(echo "$CLEAN_JSON" | jq -r '.body // empty')
+            
+            # 이슈 생성
+            if [ -n "$ISSUE_TITLE" ] && [ "$ISSUE_TITLE" != "null" ]; then
+              gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
+            fi
+          else
+            echo "Error: AI response content is empty."
+            echo "Raw response: $RAW_RESPONSE"
           fi
 
   # 3단계: 코드 수정 및 PR 반영 (Gemini CLI YOLO Mode)
