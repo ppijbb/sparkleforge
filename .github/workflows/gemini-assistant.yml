@@ -118,9 +118,9 @@ jobs:
           # 두 리뷰를 하나로 합침
           COMBINED_REVIEW="OpenRouter Review:\n$(cat review_result.txt)\n\nCerebras Review:\n$(cat cerebras_result.txt 2>/dev/null || echo '')"
           
-          # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용(Actionable tasks) 생성
+          # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용 생성
           jq -n --arg review "$COMBINED_REVIEW" '{
-            model: "deepseek-v4-70b",
+            model: "deepseek-v4-flash",
             messages: [
               {role: "system", content: "You are a senior developer talking to a teammate. Look at the reviews and write a natural, concise issue. Don't use robotic headers or formal structures. Just say what's wrong and how to fix it with code if possible. Keep it short and clear, exactly how a developer would write an issue."},
               {role: "user", content: $review}
