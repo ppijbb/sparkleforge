@@ -1,0 +1,293 @@
+name: Claude Auto Fix PR
+
+on:
+  push:
+    branches:
+      - 'chore/**'
+      - main
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Existing issue number to fix. Leave empty to analyze the latest pushed diff.'
+        required: false
+        type: string
+  issues:
+    types: [opened, labeled]
+
+concurrency:
+  group: claude-auto-fix-${{ github.event_name }}-${{ github.ref || github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  analyze-push:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number == '')
+    runs-on: ubuntu-latest
+    outputs:
+      should_fix: ${{ steps.read_task.outputs.should_fix }}
+      issue_title: ${{ steps.read_task.outputs.issue_title }}
+      issue_body_path: ${{ steps.read_task.outputs.issue_body_path }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Capture pushed diff
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            git diff --unified=80 "${{ github.event.before }}" "${{ github.sha }}" > pushed.diff || true
+          else
+            git diff --unified=80 HEAD~1 HEAD > pushed.diff || true
+          fi
+          if [ ! -s pushed.diff ]; then
+            echo "No diff found." > pushed.diff
+          fi
+
+      - name: Analyze diff with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Analyze the pushed diff in pushed.diff.
+
+            Create a file named claude-task.json with this exact JSON shape:
+            {
+              "should_fix": true or false,
+              "title": "short GitHub issue title",
+              "body": "GitHub issue body with the concrete problem, affected files, and expected fix"
+            }
+
+            Set should_fix to true only for a concrete correctness, security, test, packaging, or workflow issue that should be fixed by code.
+            Set should_fix to false for style-only feedback, vague suggestions, empty diffs, or already-correct code.
+            Keep the body concise and actionable.
+          claude_args: |
+            --max-turns 6
+            --allowedTools Read,Write,Grep,Glob
+
+      - name: Read analysis result
+        id: read_task
+        run: |
+          if [ ! -f claude-task.json ]; then
+            echo "should_fix=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SHOULD_FIX=$(jq -r '.should_fix // false' claude-task.json)
+          TITLE=$(jq -r '.title // "AI fix: issue found in pushed diff"' claude-task.json)
+          BODY=$(jq -r '.body // empty' claude-task.json)
+
+          {
+            echo "$BODY"
+            echo
+            echo "Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "Source commit: ${{ github.sha }}"
+          } > claude-issue-body.md
+
+          echo "should_fix=$SHOULD_FIX" >> "$GITHUB_OUTPUT"
+          echo "issue_title=$TITLE" >> "$GITHUB_OUTPUT"
+          echo "issue_body_path=claude-issue-body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-analysis
+          path: |
+            claude-task.json
+            claude-issue-body.md
+
+  create-issue:
+    needs: analyze-push
+    if: needs.analyze-push.outputs.should_fix == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      issue_number: ${{ steps.create.outputs.issue_number }}
+      issue_url: ${{ steps.create.outputs.issue_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: claude-analysis
+
+      - name: Create issue
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create automated-issue \
+            --repo "${{ github.repository }}" \
+            --description "Created by repository automation" \
+            --color 5319e7 || true
+          gh label create triage-needed \
+            --repo "${{ github.repository }}" \
+            --description "Needs human triage" \
+            --color fbca04 || true
+
+          ISSUE_URL=$(gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "${{ needs.analyze-push.outputs.issue_title }}" \
+            --body-file claude-issue-body.md \
+            --label automated-issue \
+            --label triage-needed)
+          ISSUE_NUMBER=${ISSUE_URL##*/}
+          echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
+  resolve-issue:
+    if: >-
+      github.event_name == 'issues' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number != '')
+    runs-on: ubuntu-latest
+    outputs:
+      issue_number: ${{ steps.issue.outputs.issue_number }}
+      issue_url: ${{ steps.issue.outputs.issue_url }}
+      issue_title: ${{ steps.issue.outputs.issue_title }}
+      issue_body_path: ${{ steps.issue.outputs.issue_body_path }}
+    steps:
+      - name: Resolve issue context
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "issues" ]; then
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          else
+            ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
+          fi
+
+          gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json title,body,url \
+            --jq '.body // ""' > issue-body.md
+
+          ISSUE_TITLE=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json title \
+            --jq '.title')
+          ISSUE_URL=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json url \
+            --jq '.url')
+
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+          echo "issue_title=$ISSUE_TITLE" >> "$GITHUB_OUTPUT"
+          echo "issue_body_path=issue-body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Upload issue artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-issue-context
+          path: issue-body.md
+
+  fix-issue:
+    if: >-
+      always() &&
+      ((needs.create-issue.outputs.issue_number != '') ||
+      (needs.resolve-issue.outputs.issue_number != ''))
+    needs: [create-issue, resolve-issue]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine issue
+        id: issue
+        run: |
+          ISSUE_NUMBER="${{ needs.create-issue.outputs.issue_number || needs.resolve-issue.outputs.issue_number }}"
+          ISSUE_URL="${{ needs.create-issue.outputs.issue_url || needs.resolve-issue.outputs.issue_url }}"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+          echo "branch=ai-fix/$ISSUE_NUMBER-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
+      - name: Download issue context
+        if: needs.resolve-issue.outputs.issue_number != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: claude-issue-context
+
+      - name: Fetch created issue context
+        if: needs.create-issue.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue view "${{ steps.issue.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --json body \
+            --jq '.body // ""' > issue-body.md
+
+      - name: Create fix branch
+        id: branch
+        run: |
+          git checkout -B "${{ steps.issue.outputs.branch }}"
+          echo "start_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Fix issue with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Fix GitHub issue #${{ steps.issue.outputs.issue_number }}.
+
+            Issue URL: ${{ steps.issue.outputs.issue_url }}
+            Issue body is in issue-body.md.
+
+            Implement a small, focused fix. Run relevant lightweight checks if practical.
+            Do not commit, push, or create a pull request yourself; the workflow will do that after your edits.
+          claude_args: |
+            --max-turns 12
+            --allowedTools Read,Edit,Write,Grep,Glob,Bash(git diff),Bash(git status),Bash(uv run pytest),Bash(pytest)
+
+      - name: Commit and push fix branch
+        id: commit
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A \
+              ':!issue-body.md' \
+              ':!pushed.diff' \
+              ':!claude-task.json' \
+              ':!claude-issue-body.md'
+            git commit -m "fix: address issue #${{ steps.issue.outputs.issue_number }}"
+          fi
+
+          if [ "$(git rev-parse HEAD)" = "${{ steps.branch.outputs.start_sha }}" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git push --set-upstream origin "${{ steps.issue.outputs.branch }}"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request
+        if: steps.commit.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create ai-generated \
+            --repo "${{ github.repository }}" \
+            --description "Generated by AI automation" \
+            --color 1d76db || true
+          gh label create review-needed \
+            --repo "${{ github.repository }}" \
+            --description "Needs human review" \
+            --color d93f0b || true
+
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --base main \
+            --head "${{ steps.issue.outputs.branch }}" \
+            --title "fix: address issue #${{ steps.issue.outputs.issue_number }}" \
+            --body "Automated fix for ${{ steps.issue.outputs.issue_url }}.
+
+          Closes #${{ steps.issue.outputs.issue_number }}
+
+          Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --label ai-generated \
+            --label review-needed
