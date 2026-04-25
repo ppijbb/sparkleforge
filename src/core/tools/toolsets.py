@@ -2,6 +2,14 @@ import logging
 from typing import List, Dict, Any, Optional
 from src.core.tools.registry import registry, ToolCategory
 
+# Register browser tools when importing toolsets
+try:
+    from src.core.tools.browser_tools import register_browser_tools
+    register_browser_tools()
+except ImportError as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Failed to register browser tools: {e}")
+
 logger = logging.getLogger(__name__)
 
 class ToolSet:
