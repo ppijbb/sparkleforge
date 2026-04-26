@@ -1,14 +1,10 @@
 name: Claude Auto Fix PR
 
 on:
-  push:
-    branches:
-      - 'chore/**'
-      - main
   workflow_dispatch:
     inputs:
       issue_number:
-        description: 'Existing issue number to fix. Leave empty to analyze the latest pushed diff.'
+        description: 'Deprecated. Use AI Harness (Distributed) OpenCode flow instead.'
         required: false
         type: string
 
@@ -280,6 +276,9 @@ jobs:
     needs: open-pr-and-fix
     if: needs.open-pr-and-fix.outputs.pr_number != ''
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Enable auto-merge when repository rules allow it
         env:
@@ -288,4 +287,4 @@ jobs:
           gh pr merge "${{ needs.open-pr-and-fix.outputs.pr_number }}" \
             --repo "${{ github.repository }}" \
             --auto \
-            --squash || true
+            --squash
