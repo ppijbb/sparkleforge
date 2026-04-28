@@ -80,7 +80,7 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
-          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'moonshotai/kimi-k2.5' }}
+          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax-m2.5-free' }}
         run: python scripts/opencode_github_worker.py fix-issue --issue-context issue-context.md
 
       - name: Commit and push OpenCode changes
