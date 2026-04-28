@@ -1706,6 +1706,10 @@ EXAMPLES:
         for line in bootstrap_result.render_lines():
             print(line)
     if not bootstrap_result.ok:
+        if not args.debug_bootstrap:
+            print("Bootstrap failed:", file=sys.stderr)
+            for line in bootstrap_result.render_lines():
+                print(line, file=sys.stderr)
         return 1
     if args.debug_bootstrap and args.command == "repl" and not getattr(args, "prompt", None):
         return 0
