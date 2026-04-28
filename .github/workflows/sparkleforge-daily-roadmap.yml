@@ -81,6 +81,7 @@ jobs:
           echo "today=$TODAY" >> "$GITHUB_OUTPUT"
 
       - name: Run SparkleForge research
+        id: research
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
@@ -88,9 +89,45 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           SPARKLEFORGE_CLI_INTERACTIVE: 'false'
         run: |
+          set +e
           sparkleforge run "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
-            --format markdown
+            --format markdown \
+            > sparkleforge-roadmap-console.log \
+            2> sparkleforge-roadmap-error.log
+          RC=$?
+          set -e
+
+          if [ "$RC" -ne 0 ] || [ ! -s sparkleforge-roadmap.md ]; then
+            {
+              echo "# Daily roadmap generation failure"
+              echo
+              echo "SparkleForge failed while generating the daily improvement roadmap."
+              echo "Create a focused fix that restores this workflow and the runtime path it exercises."
+              echo
+              echo "## Failure"
+              echo "- Exit code: $RC"
+              echo "- Workflow: SparkleForge Daily Roadmap Issue"
+              echo
+              echo "## Console output"
+              echo '```text'
+              tail -n 120 sparkleforge-roadmap-console.log 2>/dev/null || true
+              echo '```'
+              echo
+              echo "## Error output"
+              echo '```text'
+              tail -n 180 sparkleforge-roadmap-error.log 2>/dev/null || true
+              echo '```'
+              echo
+              echo "## Acceptance criteria"
+              echo "- The daily roadmap workflow can run SparkleForge without failing before issue creation."
+              echo "- Runtime compatibility errors in the failing path are fixed rather than hidden."
+              echo "- Static checks for edited Python files pass."
+            } > sparkleforge-roadmap.md
+            echo "status=fallback" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=generated" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create GitHub issue
         id: create_issue
