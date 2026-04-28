@@ -52,8 +52,11 @@ def extract_diff(text: str) -> str:
     return ""
 
 
-async def fix_issue(issue_context_path: Path) -> int:
+async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
+    extra_context = ""
+    if extra_context_path and extra_context_path.exists():
+        extra_context = extra_context_path.read_text(encoding="utf-8").strip()
     snapshot = repo_snapshot()
     status = run(["git", "status", "--short"]).stdout
 
@@ -76,6 +79,9 @@ Current git status:
 
 Issue context:
 {issue_context}
+
+Additional review or verification context:
+{extra_context or "None"}
 """.strip()
 
     agent = OpenCodeAgent()
@@ -116,10 +122,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["fix-issue"])
     parser.add_argument("--issue-context", default="issue-context.md")
+    parser.add_argument("--extra-context", default=None)
     args = parser.parse_args()
 
     if args.command == "fix-issue":
-        return asyncio.run(fix_issue(Path(args.issue_context)))
+        extra_context = Path(args.extra_context) if args.extra_context else None
+        return asyncio.run(fix_issue(Path(args.issue_context), extra_context))
 
     return 2
 

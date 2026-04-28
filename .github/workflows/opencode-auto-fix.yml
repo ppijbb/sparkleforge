@@ -7,6 +7,11 @@ on:
         description: 'GitHub issue number to fix with OpenCode'
         required: true
         type: string
+      max_iterations:
+        description: 'Maximum OpenCode repair attempts before opening the PR'
+        required: false
+        default: '3'
+        type: string
   issues:
     types: [opened]
   issue_comment:
@@ -24,10 +29,10 @@ permissions:
 jobs:
   open-pr-and-fix:
     if: >-
-      github.actor != 'github-actions[bot]' &&
-      (github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'issues' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode')))
+      github.event_name == 'workflow_dispatch' ||
+      (github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'issues' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode'))))
     runs-on: ubuntu-latest
     outputs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
@@ -75,24 +80,69 @@ jobs:
           echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
-      - name: OpenCode generate and apply patch
+      - name: OpenCode repair loop
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
           OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax-m2.5-free' }}
-        run: python scripts/opencode_github_worker.py fix-issue --issue-context issue-context.md
+          OPENCODE_VERIFY_COMMAND: ${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall src scripts' }}
+        run: |
+          MAX_ITERATIONS="${{ github.event.inputs.max_iterations || '3' }}"
+          case "$MAX_ITERATIONS" in
+            ''|*[!0-9]*) MAX_ITERATIONS=3 ;;
+          esac
+          if [ "$MAX_ITERATIONS" -lt 1 ]; then
+            MAX_ITERATIONS=1
+          fi
+          if [ "$MAX_ITERATIONS" -gt 5 ]; then
+            MAX_ITERATIONS=5
+          fi
 
-      - name: Commit and push OpenCode changes
+          : > opencode-extra-context.md
+          for attempt in $(seq 1 "$MAX_ITERATIONS"); do
+            echo "OpenCode attempt $attempt of $MAX_ITERATIONS"
+            python scripts/opencode_github_worker.py fix-issue \
+              --issue-context issue-context.md \
+              --extra-context opencode-extra-context.md
+
+            if git diff --quiet; then
+              echo "OpenCode produced no repository changes on attempt $attempt."
+              break
+            fi
+
+            git add -A ':!issue-context.md' ':!opencode.patch' ':!opencode-extra-context.md' ':!opencode-verify.log'
+            git commit -m "fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
+
+            if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
+              echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
+              break
+            fi
+
+            {
+              echo "Previous attempt did not pass verification."
+              echo
+              echo "Command:"
+              echo "$OPENCODE_VERIFY_COMMAND"
+              echo
+              echo "Output:"
+              tail -n 160 opencode-verify.log
+            } > opencode-extra-context.md
+
+            if [ "$attempt" -eq "$MAX_ITERATIONS" ]; then
+              echo "Verification still failed after $MAX_ITERATIONS attempts."
+              cat opencode-verify.log
+            fi
+          done
+
+      - name: Push OpenCode changes
         id: commit
         run: |
-          if git diff --quiet; then
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1 || [ -z "$(git log --oneline origin/main..HEAD)" ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          git add -A ':!issue-context.md' ':!opencode.patch'
-          git commit -m "fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
           git push --set-upstream origin "${{ steps.context.outputs.branch }}"
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
 
