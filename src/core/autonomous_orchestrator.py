@@ -83,6 +83,14 @@ class AutonomousOrchestrator:
             logger.error(f"❌ Orchestrator execution failed: {e}")
             return {"error": str(e), "success": False}
 
+    async def run_research(
+        self,
+        user_request: str,
+        context: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        """Legacy alias for execute()."""
+        return await self.execute(user_request, context)
+
     def ensure_legacy_langgraph_workflow(self) -> None:
         """Backward compatibility helper."""
         pass

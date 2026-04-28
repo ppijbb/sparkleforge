@@ -311,22 +311,6 @@ from src.core.tools.registry import (
 SEP986ToolResult = ToolResult
 
 
-    def get_all_tool_names(self) -> List[str]:
-        """등록된 모든 Tool 이름 반환."""
-        return list(self.tools.keys())
-
-    def remove_tool(self, tool_name: str):
-        """Tool 제거."""
-        if tool_name in self.tools:
-            del self.tools[tool_name]
-        if tool_name in self.langchain_tools:
-            del self.langchain_tools[tool_name]
-        if tool_name in self.tool_sources:
-            del self.tool_sources[tool_name]
-        if tool_name in self.mcp_tool_mapping:
-            del self.mcp_tool_mapping[tool_name]
-
-
 class OpenRouterClient:
     """(비활성화) OpenRouter 경유는 사용하지 않습니다."""
 

@@ -147,6 +147,15 @@ class ToolRegistry:
     def get_all_langchain_tools(self) -> List[Any]:
         return list(self.langchain_tools.values())
 
+    def get_all_tool_names(self) -> List[str]:
+        return list(self.tools.keys())
+
+    def remove_tool(self, tool_name: str) -> None:
+        self.tools.pop(tool_name, None)
+        self.executors.pop(tool_name, None)
+        self.langchain_tools.pop(tool_name, None)
+        self.mcp_tool_mapping.pop(tool_name, None)
+
     def is_mcp_tool(self, tool_name: str) -> bool:
         meta = self.tools.get(tool_name)
         return meta.source == "mcp" if meta else False
