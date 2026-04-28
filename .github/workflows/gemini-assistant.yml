@@ -47,7 +47,7 @@ jobs:
           
           # jq를 사용하여 안전하게 JSON 페이로드 생성 (따옴표 이스케이프 문제 방지)
           jq -n --arg diff "$(cat diff.txt)" '{
-            model: "qwen/qwen3.6-35b-instruct:free", 
+            model: "nvidia/nemotron-3-super-120b-a12b:free", 
             messages: [
               {role: "system", content: "You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly."},
               {role: "user", content: $diff}
@@ -71,7 +71,7 @@ jobs:
           fi
           
           jq -n --arg diff "$(cat diff.txt)" '{
-            model: "llama-4-8b",
+            model: "zai-glm-4.7",
             messages: [
               {role: "system", content: "You are a security and architecture reviewer. Read this diff and point out critical logical or security flaws only."},
               {role: "user", content: $diff}
@@ -151,7 +151,7 @@ jobs:
           jq -n --arg review "$COMBINED_REVIEW" \
             --arg system_msg "You are a senior developer talking to a teammate. Based on the review, generate a JSON object with 'title' and 'body' keys. The title should be a short, natural developer-style summary (e.g., 'Fix: Missing error handling in auth flow'), and the body should naturally explain what's wrong and how to fix it with code. No robotic headers. Just clear, peer-to-peer communication." \
             '{
-              model: "deepseek-v4-flash",
+              model: "openai/gpt-oss-120b",
               messages: [
                 {role: "system", content: $system_msg},
                 {role: "user", content: $review}
@@ -249,7 +249,7 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'openrouter' }}
-          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'moonshotai/kimi-k2.5' }}
+          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax-m2.5-free' }}
         run: python scripts/opencode_github_worker.py fix-issue --issue-context issue-context.md
 
       - name: Commit, push, and open PR
