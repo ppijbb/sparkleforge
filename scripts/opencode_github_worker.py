@@ -52,6 +52,67 @@ def extract_diff(text: str) -> str:
     return ""
 
 
+def _line_snippet(path: str, content: str, start: int, end: int) -> str:
+    lines = content.splitlines()
+    start = max(start, 1)
+    end = min(end, len(lines))
+    if start > end:
+        return ""
+    numbered = [
+        f"{line_no:5d}: {lines[line_no - 1]}"
+        for line_no in range(start, end + 1)
+    ]
+    return f"--- {path}:{start}-{end} ---\n" + "\n".join(numbered)
+
+
+def file_context_for_issue(path: str, issue_context: str) -> str:
+    file_path = Path(path)
+    if not file_path.is_file():
+        return ""
+
+    content = file_path.read_text(encoding="utf-8")
+    snippets: list[str] = []
+    seen: set[tuple[int, int]] = set()
+
+    referenced_lines = [
+        int(match.group(1))
+        for match in re.finditer(rf"{re.escape(path)}:(\d+)", issue_context)
+    ]
+    for line_no in referenced_lines:
+        start = max(1, line_no - 40)
+        end = line_no + 40
+        key = (start, end)
+        if key not in seen:
+            seen.add(key)
+            snippets.append(_line_snippet(path, content, start, end))
+
+    tokens = {
+        token
+        for token in re.findall(r"[A-Za-z_][A-Za-z0-9_.]{7,}", issue_context)
+        if token not in {"github", "actions", "workflow", "unified"}
+    }
+    for token in sorted(tokens, key=len, reverse=True)[:20]:
+        idx = content.find(token)
+        if idx < 0:
+            continue
+        line_no = content[:idx].count("\n") + 1
+        start = max(1, line_no - 25)
+        end = line_no + 25
+        key = (start, end)
+        if key not in seen:
+            seen.add(key)
+            snippets.append(_line_snippet(path, content, start, end))
+        if len(snippets) >= 8:
+            break
+
+    if snippets:
+        return "\n\n".join(snippets)
+
+    if len(content) > 20000:
+        return f"--- {path} ---\n{content[:20000]}\n...[truncated]"
+    return f"--- {path} ---\n{content}"
+
+
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -65,10 +126,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     for f in all_files:
         if f in issue_context and Path(f).is_file():
             try:
-                content = Path(f).read_text(encoding="utf-8")
-                if len(content) > 15000:
-                    content = content[:15000] + "\n...[truncated]"
-                relevant_contents.append(f"--- {f} ---\n{content}")
+                relevant_contents.append(file_context_for_issue(f, issue_context))
             except Exception:
                 pass
     
