@@ -60,6 +60,22 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     snapshot = repo_snapshot()
     status = run(["git", "status", "--short"]).stdout
 
+    all_files = snapshot.splitlines()
+    relevant_contents = []
+    for f in all_files:
+        if f in issue_context and Path(f).is_file():
+            try:
+                content = Path(f).read_text(encoding="utf-8")
+                if len(content) > 15000:
+                    content = content[:15000] + "\n...[truncated]"
+                relevant_contents.append(f"--- {f} ---\n{content}")
+            except Exception:
+                pass
+    
+    file_contents_str = "\n\n".join(relevant_contents[:5])
+    if file_contents_str:
+        file_contents_str = f"Relevant File Contents:\n{file_contents_str}\n"
+
     prompt = f"""
 You are editing the SparkleForge repository in GitHub Actions.
 
@@ -80,6 +96,7 @@ Current git status:
 Issue context:
 {issue_context}
 
+{file_contents_str}
 Additional review or verification context:
 {extra_context or "None"}
 """.strip()
