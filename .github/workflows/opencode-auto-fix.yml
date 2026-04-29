@@ -102,9 +102,29 @@ jobs:
           : > opencode-extra-context.md
           for attempt in $(seq 1 "$MAX_ITERATIONS"); do
             echo "OpenCode attempt $attempt of $MAX_ITERATIONS"
-            python scripts/opencode_github_worker.py fix-issue \
+            if ! python scripts/opencode_github_worker.py fix-issue \
               --issue-context issue-context.md \
-              --extra-context opencode-extra-context.md
+              --extra-context opencode-extra-context.md 2> opencode-worker-error.log; then
+              {
+                echo "Previous OpenCode attempt produced a patch that did not apply."
+                echo
+                echo "git apply or worker error:"
+                cat opencode-worker-error.log
+                if [ -f opencode.patch ]; then
+                  echo
+                  echo "Rejected patch:"
+                  head -n 220 opencode.patch
+                fi
+                echo
+                echo "Regenerate the patch against the current repository contents."
+              } > opencode-extra-context.md
+
+              if [ "$attempt" -eq "$MAX_ITERATIONS" ]; then
+                cat opencode-worker-error.log
+                exit 1
+              fi
+              continue
+            fi
 
             if git diff --quiet; then
               echo "OpenCode produced no repository changes on attempt $attempt."
