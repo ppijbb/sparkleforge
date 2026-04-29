@@ -25,11 +25,11 @@ All code changes and commits you make must be attributed to the **USER's account
 ### 2. Pull Request & Fix Lifecycle
 - **Autonomous Fix Flow:**
   1.  **Trigger:** Detection of a new issue (especially those labeled `automated-issue` or `triage-needed`) or a review with actionable findings. **Do not wait for explicit @gemini-cli mentions.**
-  2.  Create a feature branch named `ai-fix/[issue-id]`.
+  2.  Create a feature branch named `fix/[issue-id]`.
   3.  Implement the fix, ensuring it aligns with project standards.
   4.  Commit the changes using the USER's git identity.
   5.  Open a PR targeting the appropriate branch and link the issue.
-      - **Always add labels:** `ai-generated`, `review-needed`.
+      - **Always add labels:** `review-needed`.
       - **Always add reviewer/assignee:** Use `CODEOWNERS` or default to the repository owner.
 - **Manual Oversight:** The USER will review the PR and perform the final merge. Do not attempt to merge PRs autonomously.
 
