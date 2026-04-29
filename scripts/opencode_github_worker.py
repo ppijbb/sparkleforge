@@ -52,6 +52,15 @@ def extract_diff(text: str) -> str:
     return ""
 
 
+def requested_read_paths(text: str) -> list[str]:
+    paths = re.findall(
+        r"<parameter\s+name=[\"']file_path[\"']>\s*([^<]+?)\s*</parameter>",
+        text,
+        re.IGNORECASE,
+    )
+    return [path.strip() for path in paths if path.strip()]
+
+
 def _line_snippet(path: str, content: str, start: int, end: int) -> str:
     lines = content.splitlines()
     start = max(start, 1)
@@ -113,6 +122,45 @@ def file_context_for_issue(path: str, issue_context: str) -> str:
     return f"--- {path} ---\n{content}"
 
 
+def build_prompt(
+    *,
+    snapshot: str,
+    status: str,
+    issue_context: str,
+    file_contents_str: str,
+    extra_context: str,
+    tool_context: str = "",
+) -> str:
+    return f"""
+You are editing the SparkleForge repository in GitHub Actions.
+
+Create a small, focused unified git diff that fixes the issue below.
+
+Rules:
+- Output only a unified diff. No prose.
+- Do not request tools, emit XML, or describe what you would inspect.
+- You cannot call read, grep, shell, or any external tool.
+- Use the repository snapshot and file contents already provided in this prompt.
+- Prefer editing existing files listed in the repository snapshot.
+- Do not change generated artifacts, lockfiles, or unrelated documentation.
+- Keep the patch minimal and directly tied to the issue.
+
+Repository snapshot:
+{snapshot}
+
+Current git status:
+{status}
+
+Issue context:
+{issue_context}
+
+{file_contents_str}
+{tool_context}
+Additional review or verification context:
+{extra_context or "None"}
+""".strip()
+
+
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -129,50 +177,57 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
                 relevant_contents.append(file_context_for_issue(f, issue_context))
             except Exception:
                 pass
-    
+
     file_contents_str = "\n\n".join(relevant_contents[:5])
     if file_contents_str:
         file_contents_str = f"Relevant File Contents:\n{file_contents_str}\n"
 
-    prompt = f"""
-You are editing the SparkleForge repository in GitHub Actions.
-
-Create a small, focused unified git diff that fixes the issue below.
-
-Rules:
-- Output only a unified diff. No prose.
-- Prefer editing existing files listed in the repository snapshot.
-- Do not change generated artifacts, lockfiles, or unrelated documentation.
-- Keep the patch minimal and directly tied to the issue.
-
-Repository snapshot:
-{snapshot}
-
-Current git status:
-{status}
-
-Issue context:
-{issue_context}
-
-{file_contents_str}
-Additional review or verification context:
-{extra_context or "None"}
-""".strip()
-
     agent = OpenCodeAgent()
-    result = await agent.execute_query(
-        prompt,
-        system_message=(
-            "You are a careful coding agent. Return only a git-apply compatible "
-            "unified diff for the requested fix."
-        ),
+    tool_context = ""
+    response = ""
+    diff = ""
+    system_message = (
+        "You are a careful coding agent. Return only a git-apply compatible "
+        "unified diff for the requested fix. Do not use tools, XML tags, markdown "
+        "narration, or prose."
     )
-    if not result.get("success"):
-        print(result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr)
-        return 1
+    for llm_attempt in range(2):
+        prompt = build_prompt(
+            snapshot=snapshot,
+            status=status,
+            issue_context=issue_context,
+            file_contents_str=file_contents_str,
+            extra_context=extra_context,
+            tool_context=tool_context,
+        )
+        result = await agent.execute_query(prompt, system_message=system_message)
+        if not result.get("success"):
+            print(result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr)
+            return 1
 
-    response = result.get("response", "")
-    diff = extract_diff(response)
+        response = result.get("response", "")
+        diff = extract_diff(response)
+        if diff:
+            break
+
+        paths = requested_read_paths(response)
+        if not paths or llm_attempt == 1:
+            break
+
+        requested_context = []
+        for path in paths[:3]:
+            if path in all_files and Path(path).is_file():
+                requested_context.append(file_context_for_issue(path, issue_context + "\n" + response))
+        if not requested_context:
+            break
+
+        tool_context = (
+            "Requested file contents are provided below. You must now return only "
+            "a unified diff, with no tool calls or prose.\n"
+            + "\n\n".join(requested_context)
+            + "\n"
+        )
+
     if not diff:
         print("OpenCode did not return an applicable diff.", file=sys.stderr)
         print(response[:4000], file=sys.stderr)
