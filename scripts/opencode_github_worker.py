@@ -117,8 +117,8 @@ def file_context_for_issue(path: str, issue_context: str) -> str:
     if snippets:
         return "\n\n".join(snippets)
 
-    if len(content) > 20000:
-        return f"--- {path} ---\n{content[:20000]}\n...[truncated]"
+    if len(content) > 100000:
+        return f"--- {path} ---\n{content[:100000]}\n...[truncated]"
     return f"--- {path} ---\n{content}"
 
 
