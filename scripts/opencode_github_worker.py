@@ -2,6 +2,11 @@
 
 This worker reads a GitHub issue context file, asks the local OpenCode agent for
 a unified diff, and applies it to the checked-out branch.
+
+Robust patch application strategy:
+  1. git apply --3way --ignore-whitespace  (main path)
+  2. patch --fuzz=3 -p1                   (fallback: tolerates ±3 lines of offset)
+  3. fail with full diagnostics
 """
 
 from __future__ import annotations
@@ -61,63 +66,49 @@ def requested_read_paths(text: str) -> list[str]:
     return [path.strip() for path in paths if path.strip()]
 
 
-def _line_snippet(path: str, content: str, start: int, end: int) -> str:
-    lines = content.splitlines()
-    start = max(start, 1)
-    end = min(end, len(lines))
-    if start > end:
-        return ""
-    numbered = [
-        f"{line_no:5d}: {lines[line_no - 1]}"
-        for line_no in range(start, end + 1)
-    ]
-    return f"--- {path}:{start}-{end} ---\n" + "\n".join(numbered)
-
-
-def file_context_for_issue(path: str, issue_context: str, limit: int = 10000) -> str:
+def read_full_file(path: str, limit: int = 200_000) -> str:
+    """Return full file contents with line numbers, truncated to limit chars."""
     file_path = Path(path)
     if not file_path.is_file():
         return ""
-
     content = file_path.read_text(encoding="utf-8")
-    snippets: list[str] = []
-    seen: set[tuple[int, int]] = set()
+    if len(content) > limit:
+        lines = content[:limit].splitlines()
+        numbered = [f"{i+1:5d}: {line}" for i, line in enumerate(lines)]
+        return f"--- {path} (truncated to {limit} chars) ---\n" + "\n".join(numbered) + "\n...[truncated]\n"
+    lines = content.splitlines()
+    numbered = [f"{i+1:5d}: {line}" for i, line in enumerate(lines)]
+    return f"--- {path} ---\n" + "\n".join(numbered) + "\n"
 
-    referenced_lines = [
-        int(match.group(1))
-        for match in re.finditer(rf"{re.escape(path)}:(\d+)", issue_context)
-    ]
-    for line_no in referenced_lines:
-        start = max(1, line_no - 40)
-        end = line_no + 40
-        key = (start, end)
-        if key not in seen:
-            seen.add(key)
-            snippets.append(_line_snippet(path, content, start, end))
 
+def _infer_relevant_files(issue_context: str, all_files: list[str]) -> list[str]:
+    """Heuristically find files most relevant to the issue text."""
+    relevant: list[str] = []
+    # 1. Exact filename mentions
+    for f in all_files:
+        basename = Path(f).name
+        if basename in issue_context or f in issue_context:
+            relevant.append(f)
+    # 2. Token-based match (function/class names)
     tokens = {
         token
         for token in re.findall(r"[A-Za-z_][A-Za-z0-9_.]{7,}", issue_context)
-        if token not in {"github", "actions", "workflow", "unified"}
+        if token not in {"github", "actions", "workflow", "unified", "repository"}
     }
-    for token in sorted(tokens, key=len, reverse=True)[:20]:
-        idx = content.find(token)
-        if idx < 0:
+    for f in all_files:
+        if f in relevant:
             continue
-        line_no = content[:idx].count("\n") + 1
-        start = max(1, line_no - 25)
-        end = line_no + 25
-        key = (start, end)
-        if key not in seen:
-            seen.add(key)
-            snippets.append(_line_snippet(path, content, start, end))
-        if len(snippets) >= 8:
+        if not Path(f).is_file():
+            continue
+        try:
+            content = Path(f).read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        if any(tok in content for tok in sorted(tokens, key=len, reverse=True)[:15]):
+            relevant.append(f)
+        if len(relevant) >= 8:
             break
-
-    if len(content) > limit:
-        # Provide a snippet or truncated view based on the limit
-        return f"--- {path} (truncated to {limit} chars) ---\n{content[:limit]}\n...[truncated, request more if needed]"
-    return f"--- {path} ---\n{content}"
+    return relevant[:8]
 
 
 def build_prompt(
@@ -132,7 +123,7 @@ def build_prompt(
     return f"""
 You are an autonomous coding agent editing the SparkleForge repository.
 
-Your goal is to fix the issue described below. 
+Your goal is to fix the issue described below.
 
 Step-by-step process:
 1. Review the issue context and the repository snapshot.
@@ -144,6 +135,9 @@ Rules:
 - Output ONLY the unified diff or a file request. No prose.
 - Do not change generated artifacts or lockfiles.
 - Keep the patch minimal.
+- IMPORTANT: The file contents below include EXACT line numbers. Your diff MUST use
+  the correct line numbers as shown. The context lines in the diff must match the
+  actual file content exactly, character-for-character.
 
 Repository snapshot:
 {snapshot}
@@ -161,6 +155,39 @@ Additional review or verification context:
 """.strip()
 
 
+def _apply_patch(patch_path: Path) -> tuple[bool, str]:
+    """Try multiple strategies to apply a patch. Returns (success, stderr)."""
+
+    # Strategy 1: git apply --3way --ignore-whitespace
+    proc = run([
+        "git", "apply",
+        "--3way",
+        "--ignore-whitespace",
+        str(patch_path),
+    ])
+    if proc.returncode == 0:
+        return True, ""
+
+    git_err = proc.stderr.strip()
+    print(f"[git apply --3way] failed:\n{git_err}", file=sys.stderr)
+
+    # Strategy 2: patch --fuzz=3 -p1 (tolerates line number drift up to 3)
+    patch_bin = run(["which", "patch"]).stdout.strip()
+    if patch_bin:
+        proc2 = run(
+            ["patch", "--fuzz=3", "-p1", "--batch", "--forward"],
+            input_text=patch_path.read_text(encoding="utf-8"),
+        )
+        if proc2.returncode == 0:
+            print("[patch --fuzz=3] succeeded as fallback.", file=sys.stderr)
+            return True, ""
+        fuzz_err = proc2.stderr.strip() or proc2.stdout.strip()
+        print(f"[patch --fuzz=3] also failed:\n{fuzz_err}", file=sys.stderr)
+        return False, f"git apply error:\n{git_err}\n\npatch --fuzz=3 error:\n{fuzz_err}"
+
+    return False, git_err
+
+
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -170,17 +197,21 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     status = run(["git", "status", "--short"]).stdout
 
     all_files = snapshot.splitlines()
+
+    # Always provide full file contents for relevant files (not just snippets)
+    relevant_files = _infer_relevant_files(issue_context, all_files)
     relevant_contents = []
-    for f in all_files:
-        if f in issue_context and Path(f).is_file():
-            try:
-                relevant_contents.append(file_context_for_issue(f, issue_context))
-            except Exception:
-                pass
+    for f in relevant_files:
+        try:
+            content = read_full_file(f)
+            if content:
+                relevant_contents.append(content)
+        except Exception:
+            pass
 
     file_contents_str = "\n\n".join(relevant_contents[:5])
     if file_contents_str:
-        file_contents_str = f"Relevant File Contents:\n{file_contents_str}\n"
+        file_contents_str = f"Relevant File Contents (with exact line numbers):\n{file_contents_str}\n"
 
     agent = OpenCodeAgent()
     tool_context = ""
@@ -189,7 +220,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     system_message = (
         "You are a careful coding agent. Return only a git-apply compatible "
         "unified diff for the requested fix. Do not use tools, XML tags, markdown "
-        "narration, or prose."
+        "narration, or prose. The diff context lines must match the file exactly."
     )
     for llm_attempt in range(2):
         prompt = build_prompt(
@@ -217,13 +248,14 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         requested_context = []
         for path in paths[:3]:
             if path in all_files and Path(path).is_file():
-                requested_context.append(file_context_for_issue(path, issue_context + "\n" + response, limit=200000))
+                requested_context.append(read_full_file(path))
         if not requested_context:
             break
 
         tool_context = (
-            "Requested file contents are provided below. You must now return only "
-            "a unified diff, with no tool calls or prose.\n"
+            "Requested file contents are provided below (with exact line numbers). "
+            "You must now return only a unified diff, with no tool calls or prose. "
+            "Use the exact line numbers shown when writing the diff hunk headers.\n"
             + "\n\n".join(requested_context)
             + "\n"
         )
@@ -233,15 +265,15 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         print(response[:4000], file=sys.stderr)
         return 1
 
-    Path("opencode.patch").write_text(diff, encoding="utf-8")
-    # Use git apply strictly as requested.
-    # --ignore-whitespace helps with minor LLM formatting issues without using the 'patch' fallback.
-    apply_proc = run(["git", "apply", "--ignore-whitespace", "opencode.patch"])
-    if apply_proc.returncode != 0:
-        print(apply_proc.stderr, file=sys.stderr)
+    patch_path = Path("opencode.patch")
+    patch_path.write_text(diff, encoding="utf-8")
+
+    success, err = _apply_patch(patch_path)
+    if not success:
+        print(err, file=sys.stderr)
         print("--- Failed Patch ---", file=sys.stderr)
         print(diff[:4000], file=sys.stderr)
-        return apply_proc.returncode
+        return 1
 
     return 0
 
