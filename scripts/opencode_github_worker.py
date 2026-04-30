@@ -234,19 +234,12 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         return 1
 
     Path("opencode.patch").write_text(diff, encoding="utf-8")
-    # Try git apply first (strict)
-    apply_proc = run(["git", "apply", "--check", "opencode.patch"])
-    if apply_proc.returncode == 0:
-        run(["git", "apply", "opencode.patch"])
-        return 0
-
-    # Fallback to patch(1) which is much more lenient with LLM diffs (fuzz, offsets)
-    print("git apply failed, falling back to patch...", file=sys.stderr)
-    apply_proc = run(["patch", "-p1", "--no-backup-if-mismatch", "--forward", "-i", "opencode.patch"])
+    # Use git apply strictly as requested.
+    # --ignore-whitespace helps with minor LLM formatting issues without using the 'patch' fallback.
+    apply_proc = run(["git", "apply", "--ignore-whitespace", "opencode.patch"])
     if apply_proc.returncode != 0:
-        print(apply_proc.stdout, file=sys.stderr)
         print(apply_proc.stderr, file=sys.stderr)
-        print("--- Rejected Patch ---", file=sys.stderr)
+        print("--- Failed Patch ---", file=sys.stderr)
         print(diff[:4000], file=sys.stderr)
         return apply_proc.returncode
 
