@@ -19,12 +19,12 @@ All code changes and commits you make must be attributed to the **USER's account
   - **Single Comment mode:** Parse the specific comment and create an issue.
   - **Aggregate mode:** Scan ALL comments and review findings in the PR. Group related findings and create structured issues for each logical task.
   - Cross-link the original PR and specific comments in the issue descriptions.
-  - Assign labels: `automated-issue`, `triage-needed`.
+  - Assign labels: `triage-needed`.
   - Automatically assign the issue to the relevant owner defined in `CODEOWNERS`.
 
 ### 2. Pull Request & Fix Lifecycle
 - **Autonomous Fix Flow:**
-  1.  **Trigger:** Detection of a new issue (especially those labeled `automated-issue` or `triage-needed`) or a review with actionable findings. **Do not wait for explicit @gemini-cli mentions.**
+  1.  **Trigger:** Detection of a new issue (especially those labeled `triage-needed`) or a review with actionable findings. **Do not wait for explicit @gemini-cli mentions.**
   2.  Create a feature branch named `fix/[issue-id]`.
   3.  Implement the fix, ensuring it aligns with project standards.
   4.  Commit the changes using the USER's git identity.

@@ -196,7 +196,7 @@ jobs:
               --repo "${{ github.repository }}" \
               --title "$ISSUE_TITLE" \
               --body "$ISSUE_BODY" \
-              --label "automated-issue,triage-needed" \
+              --label "triage-needed" \
               --assignee "ppijbb")
             echo "Created issue: $ISSUE_URL"
             echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
