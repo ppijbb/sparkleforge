@@ -74,7 +74,7 @@ def _line_snippet(path: str, content: str, start: int, end: int) -> str:
     return f"--- {path}:{start}-{end} ---\n" + "\n".join(numbered)
 
 
-def file_context_for_issue(path: str, issue_context: str) -> str:
+def file_context_for_issue(path: str, issue_context: str, limit: int = 10000) -> str:
     file_path = Path(path)
     if not file_path.is_file():
         return ""
@@ -114,11 +114,9 @@ def file_context_for_issue(path: str, issue_context: str) -> str:
         if len(snippets) >= 8:
             break
 
-    if snippets:
-        return "\n\n".join(snippets)
-
-    if len(content) > 100000:
-        return f"--- {path} ---\n{content[:100000]}\n...[truncated]"
+    if len(content) > limit:
+        # Provide a snippet or truncated view based on the limit
+        return f"--- {path} (truncated to {limit} chars) ---\n{content[:limit]}\n...[truncated, request more if needed]"
     return f"--- {path} ---\n{content}"
 
 
@@ -132,18 +130,20 @@ def build_prompt(
     tool_context: str = "",
 ) -> str:
     return f"""
-You are editing the SparkleForge repository in GitHub Actions.
+You are an autonomous coding agent editing the SparkleForge repository.
 
-Create a small, focused unified git diff that fixes the issue below.
+Your goal is to fix the issue described below. 
+
+Step-by-step process:
+1. Review the issue context and the repository snapshot.
+2. If you need to see the contents of a file, request it using this format:
+   <parameter name="file_path">path/to/file.py</parameter>
+3. Once you have enough information, output a single unified git diff.
 
 Rules:
-- Output only a unified diff. No prose.
-- Do not request tools, emit XML, or describe what you would inspect.
-- You cannot call read, grep, shell, or any external tool.
-- Use the repository snapshot and file contents already provided in this prompt.
-- Prefer editing existing files listed in the repository snapshot.
-- Do not change generated artifacts, lockfiles, or unrelated documentation.
-- Keep the patch minimal and directly tied to the issue.
+- Output ONLY the unified diff or a file request. No prose.
+- Do not change generated artifacts or lockfiles.
+- Keep the patch minimal.
 
 Repository snapshot:
 {snapshot}
@@ -217,7 +217,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         requested_context = []
         for path in paths[:3]:
             if path in all_files and Path(path).is_file():
-                requested_context.append(file_context_for_issue(path, issue_context + "\n" + response))
+                requested_context.append(file_context_for_issue(path, issue_context + "\n" + response, limit=200000))
         if not requested_context:
             break
 
