@@ -172,11 +172,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh label create review-needed \
-            --repo "${{ github.repository }}" \
-            --description "Needs human review" \
-            --color d93f0b || true
-
           EXISTING_PR=$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${{ steps.context.outputs.branch }}" \
@@ -198,8 +193,7 @@ jobs:
 
           Closes #${{ steps.context.outputs.issue_number }}
 
-          Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              --label review-needed)
+          Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
             PR_NUMBER=${PR_URL##*/}
           fi
 

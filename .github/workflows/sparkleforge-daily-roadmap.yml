@@ -135,19 +135,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TODAY: ${{ steps.prompt.outputs.today }}
         run: |
-          gh label create sparkleforge-roadmap \
-            --repo "${{ github.repository }}" \
-            --description "Daily SparkleForge improvement proposal" \
-            --color 5319e7 || true
-          gh label create daily-improvement \
-            --repo "${{ github.repository }}" \
-            --description "Daily autonomous improvement item" \
-            --color 0e8a16 || true
-
           EXISTING=$(gh issue list \
             --repo "${{ github.repository }}" \
             --state all \
-            --label sparkleforge-roadmap \
             --search "$TODAY in:title" \
             --json number \
             --jq '.[0].number // empty')
@@ -176,9 +166,7 @@ jobs:
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
             --title "feat: $TODAY - $TITLE" \
-            --body-file issue-body.md \
-            --label sparkleforge-roadmap \
-            --label daily-improvement)
+            --body-file issue-body.md)
 
           ISSUE_NUMBER="${ISSUE_URL##*/}"
           echo "Created issue: $ISSUE_URL"
