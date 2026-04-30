@@ -1694,6 +1694,11 @@ class UniversalMCPHub:
                         or "not found" in error_str
                         or "not in this registry" in error_str
                     )
+                    is_server_error = "server error detected" in error_str
+                    is_npm_404 = is_npm_404 or (
+                        "not found" in error_str
+                        and "server error" in error_str
+                    )
 
                     # npm 오류 감지
                     is_npm_enotempty = "enotempty" in error_str or (
@@ -1715,7 +1720,7 @@ class UniversalMCPHub:
                     # npm 캐시 손상 오류 해결: 캐시 정리 후 재시도
                     if (
                         is_npm_enotempty or is_npm_tar_error or is_module_not_found
-                    ) and command == "npx":
+                    ) and command == "npx" and not is_server_error:
                         try:
                             import shutil
                             import subprocess
@@ -1833,7 +1838,7 @@ class UniversalMCPHub:
                     # 조용히 처리할 오류들 (WARNING 레벨로만 로깅)
                     if is_npm_404:
                         logger.warning(
-                            f"[MCP][stdio.connect] Package not found for {server_name} (npm 404), skipping"
+                            f"[MCP][stdio.connect] Package/Server error for {server_name} (npm 404/Server Error), skipping"
                         )
                     elif is_connection_closed:
                         logger.warning(
@@ -1856,8 +1861,8 @@ class UniversalMCPHub:
                         }
                     )
 
-                    # npm 404, Connection closed는 재시도 불필요
-                    if is_npm_404 or is_connection_closed:
+                    # npm 404, Connection closed, Server Error는 재시도 불필요
+                    if is_npm_404 or is_connection_closed or is_server_error:
                         return False
 
                     return False
