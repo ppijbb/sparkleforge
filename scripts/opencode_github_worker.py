@@ -234,16 +234,21 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         return 1
 
     Path("opencode.patch").write_text(diff, encoding="utf-8")
-    check = run(["git", "apply", "--check", "opencode.patch"])
-    if check.returncode != 0:
-        print(check.stderr, file=sys.stderr)
-        print(diff[:4000], file=sys.stderr)
-        return check.returncode
+    # Try git apply first (strict)
+    apply_proc = run(["git", "apply", "--check", "opencode.patch"])
+    if apply_proc.returncode == 0:
+        run(["git", "apply", "opencode.patch"])
+        return 0
 
-    apply = run(["git", "apply", "opencode.patch"])
-    if apply.returncode != 0:
-        print(apply.stderr, file=sys.stderr)
-        return apply.returncode
+    # Fallback to patch(1) which is much more lenient with LLM diffs (fuzz, offsets)
+    print("git apply failed, falling back to patch...", file=sys.stderr)
+    apply_proc = run(["patch", "-p1", "--no-backup-if-mismatch", "--forward", "-i", "opencode.patch"])
+    if apply_proc.returncode != 0:
+        print(apply_proc.stdout, file=sys.stderr)
+        print(apply_proc.stderr, file=sys.stderr)
+        print("--- Rejected Patch ---", file=sys.stderr)
+        print(diff[:4000], file=sys.stderr)
+        return apply_proc.returncode
 
     return 0
 
