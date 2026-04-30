@@ -91,11 +91,6 @@ jobs:
           git commit -m "fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
           git push --set-upstream origin "${{ steps.context.outputs.branch }}"
 
-          gh label create review-needed \
-            --repo "${{ github.repository }}" \
-            --description "Needs human review" \
-            --color d93f0b || true
-
           gh pr create \
             --repo "${{ github.repository }}" \
             --base main \
@@ -105,5 +100,4 @@ jobs:
 
           Closes #${{ steps.context.outputs.issue_number }}
 
-          Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --label review-needed
+          Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
