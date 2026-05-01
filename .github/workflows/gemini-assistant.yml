@@ -112,11 +112,12 @@ jobs:
       (github.event_name == 'pull_request' || github.event_name == 'push')
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
       issues: write
     outputs:
       issue_url: ${{ steps.create_issue.outputs.issue_url }}
+      issue_number: ${{ steps.create_issue.outputs.issue_number }}
     steps:
       - uses: actions/checkout@v4
       
@@ -151,7 +152,7 @@ jobs:
           jq -n --arg review "$COMBINED_REVIEW" \
             --arg system_msg "You are a senior developer talking to a teammate. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys. Set should_create_issue to true only when the review identifies a concrete correctness, security, packaging, workflow, or test failure that needs a code change. Set should_create_issue to false for skipped reviews, empty reviews, no-issue findings, praise, style-only feedback, vague suggestions, or uncertain problems. If should_create_issue is false, title and body must be empty strings. If true, the title should be a short, natural developer-style summary (e.g., 'Fix: Missing error handling in auth flow'), and the body should naturally explain what's wrong and how to fix it with code. No robotic headers. Just clear, peer-to-peer communication." \
             '{
-              model: "openai/gpt-oss-120b",
+              model: "llama-3.3-70b-versatile",
               messages: [
                 {role: "system", content: $system_msg},
                 {role: "user", content: $review}
@@ -191,14 +192,28 @@ jobs:
                 ;;
             esac
             
-            # 이슈 생성 (PAT를 사용해 ppijbb 계정으로 생성되도록 하고, 라벨과 담당자 지정)
+            # 이슈 생성
+            # PAT 사용 시 해당 계정으로 생성 → issues 이벤트가 다른 workflow를 트리거 가능
+            # PAT 없을 경우 github.token(bot) → issues 이벤트로 다른 workflow 트리거 불가
+            # 따라서 이슈 번호를 추출해 opencode-auto-fix.yml을 직접 gh workflow run으로 트리거함
             ISSUE_URL=$(gh issue create \
               --repo "${{ github.repository }}" \
               --title "$ISSUE_TITLE" \
               --body "$ISSUE_BODY" \
               --assignee "ppijbb")
             echo "Created issue: $ISSUE_URL"
+            ISSUE_NUMBER="${ISSUE_URL##*/}"
             echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+            echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
+            # GitHub Actions bot이 생성한 이슈는 issues: opened 이벤트가
+            # 다른 워크플로우를 트리거하지 않으므로 직접 workflow_dispatch로 호출
+            GH_TRIGGER_TOKEN="${{ secrets.PAT || github.token }}"
+            echo "Triggering opencode-auto-fix.yml for issue #$ISSUE_NUMBER ..."
+            gh workflow run opencode-auto-fix.yml \
+              --repo "${{ github.repository }}" \
+              --field issue_number="$ISSUE_NUMBER" \
+              --field max_iterations="3" || echo "Warning: workflow trigger failed (check PAT/permissions)"
           else
             echo "Error: AI response content is empty."
             echo "Raw response: $RAW_RESPONSE"
