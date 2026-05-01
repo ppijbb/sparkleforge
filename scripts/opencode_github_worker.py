@@ -135,9 +135,13 @@ Rules:
 - Output ONLY the unified diff or a file request. No prose.
 - Do not change generated artifacts or lockfiles.
 - Keep the patch minimal.
-- IMPORTANT: The file contents below include EXACT line numbers. Your diff MUST use
-  the correct line numbers as shown. The context lines in the diff must match the
-  actual file content exactly, character-for-character.
+- CRITICAL: Always emit diffs in `git diff` format:
+    diff --git a/path/to/file b/path/to/file
+    --- a/path/to/file
+    +++ b/path/to/file
+  The `a/` and `b/` prefixes are MANDATORY. Never omit them.
+- The file contents below include EXACT line numbers. Your diff MUST use
+  the correct line numbers as shown. The context lines must match exactly.
 
 Repository snapshot:
 {snapshot}
@@ -155,37 +159,104 @@ Additional review or verification context:
 """.strip()
 
 
+def _detect_strip_level(diff_text: str) -> int:
+    """Return the -p strip level implied by the diff path headers.
+
+    1 → paths have 'a/' / 'b/' prefix  (standard git diff)
+    0 → bare paths, no prefix
+    """
+    if re.search(r"^--- a/", diff_text, re.MULTILINE):
+        return 1
+    if re.search(r"^diff --git a/", diff_text, re.MULTILINE):
+        return 1
+    return 0
+
+
+def _normalize_diff_paths(diff_text: str) -> str:
+    """Rewrite bare path headers to standard 'a/' 'b/' prefix format.
+
+    LLMs sometimes emit:
+        --- .github/workflows/foo.yml
+        +++ .github/workflows/foo.yml
+    but git apply -p1 strips the first path component, turning
+    '.github' into the prefix that gets removed, leaving 'workflows/...'
+    which does not exist in the index.
+
+    This function rewrites such headers to:
+        --- a/.github/workflows/foo.yml
+        +++ b/.github/workflows/foo.yml
+    so that git apply -p1 correctly resolves the path.
+    """
+    if re.search(r"^--- a/", diff_text, re.MULTILINE):
+        return diff_text  # already in standard format
+
+    def _add_prefix(m: re.Match) -> str:
+        sign = m.group(1)          # '---' or '+++'
+        prefix = "a" if sign == "---" else "b"
+        path = m.group(2)
+        rest = m.group(3) or ""
+        return f"{sign} {prefix}/{path}{rest}"
+
+    return re.sub(
+        r"^(---|\+\+\+) (?!a/|b/|/dev/null)(\S+)(.*)",
+        _add_prefix,
+        diff_text,
+        flags=re.MULTILINE,
+    )
+
+
 def _apply_patch(patch_path: Path) -> tuple[bool, str]:
     """Try multiple strategies to apply a patch. Returns (success, stderr)."""
+    diff_text = patch_path.read_text(encoding="utf-8")
 
-    # Strategy 1: git apply --3way --ignore-whitespace
-    proc = run([
-        "git", "apply",
-        "--3way",
-        "--ignore-whitespace",
-        str(patch_path),
-    ])
-    if proc.returncode == 0:
-        return True, ""
+    # ── Step 1: normalise bare paths → a/b prefix ──────────────────────────
+    normalised = _normalize_diff_paths(diff_text)
+    if normalised != diff_text:
+        print(
+            "[patch] Normalised diff paths from bare → a/b prefix format.",
+            file=sys.stderr,
+        )
+        patch_path.write_text(normalised, encoding="utf-8")
+        diff_text = normalised
 
-    git_err = proc.stderr.strip()
-    print(f"[git apply --3way] failed:\n{git_err}", file=sys.stderr)
+    strip = _detect_strip_level(diff_text)
+    errors: list[str] = []
 
-    # Strategy 2: patch --fuzz=3 -p1 (tolerates line number drift up to 3)
+    # ── Step 2: git apply with detected strip level, then the other ────────
+    for p in sorted({strip, 1 - strip}):  # try detected level first
+        proc = run([
+            "git", "apply",
+            f"-p{p}",
+            "--3way",
+            "--ignore-whitespace",
+            str(patch_path),
+        ])
+        if proc.returncode == 0:
+            return True, ""
+        err = proc.stderr.strip()
+        errors.append(f"git apply -p{p} --3way: {err}")
+        print(f"[git apply -p{p} --3way] failed:\n{err}", file=sys.stderr)
+
+    # ── Step 3: patch --fuzz=3 with both strip levels ──────────────────────
     patch_bin = run(["which", "patch"]).stdout.strip()
     if patch_bin:
-        proc2 = run(
-            ["patch", "--fuzz=3", "-p1", "--batch", "--forward"],
-            input_text=patch_path.read_text(encoding="utf-8"),
-        )
-        if proc2.returncode == 0:
-            print("[patch --fuzz=3] succeeded as fallback.", file=sys.stderr)
-            return True, ""
-        fuzz_err = proc2.stderr.strip() or proc2.stdout.strip()
-        print(f"[patch --fuzz=3] also failed:\n{fuzz_err}", file=sys.stderr)
-        return False, f"git apply error:\n{git_err}\n\npatch --fuzz=3 error:\n{fuzz_err}"
+        for p in sorted({strip, 1 - strip}):
+            proc2 = run(
+                ["patch", f"--strip={p}", "--fuzz=3", "--batch", "--forward"],
+                input_text=diff_text,
+            )
+            if proc2.returncode == 0:
+                print(
+                    f"[patch --strip={p} --fuzz=3] succeeded as fallback.",
+                    file=sys.stderr,
+                )
+                return True, ""
+            fuzz_err = (proc2.stderr.strip() or proc2.stdout.strip())[:400]
+            errors.append(f"patch --strip={p} --fuzz=3: {fuzz_err}")
+            print(f"[patch --strip={p} --fuzz=3] also failed:\n{fuzz_err}", file=sys.stderr)
 
-    return False, git_err
+    return False, "\n\n".join(errors)
+
 
 
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
