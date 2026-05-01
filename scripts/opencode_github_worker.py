@@ -205,39 +205,54 @@ def _normalize_diff_paths(diff_text: str) -> str:
     )
 
 
-def _apply_patch(patch_path: Path) -> tuple[bool, str]:
-    """Try multiple strategies to apply a patch. Returns (success, stderr)."""
-    diff_text = patch_path.read_text(encoding="utf-8")
+def _split_multifile_patch(diff_text: str) -> list[tuple[str, str]]:
+    """Split a multi-file diff into (filepath, patch_segment) pairs.
 
-    # ── Step 1: normalise bare paths → a/b prefix ──────────────────────────
-    normalised = _normalize_diff_paths(diff_text)
-    if normalised != diff_text:
-        print(
-            "[patch] Normalised diff paths from bare → a/b prefix format.",
-            file=sys.stderr,
-        )
-        patch_path.write_text(normalised, encoding="utf-8")
-        diff_text = normalised
+    GNU patch can't handle 'diff --git' headers inside a multi-file stream;
+    it reports 'malformed patch at line N: diff --git ...'.  Splitting and
+    applying each file's hunk individually avoids that problem entirely.
+    """
+    segments: list[tuple[str, str]] = []
+    # Each segment starts at a 'diff --git' header
+    parts = re.split(r"(?=^diff --git )", diff_text, flags=re.MULTILINE)
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^diff --git a/(\S+) b/(\S+)", part)
+        if m:
+            filepath = m.group(2)  # use b/ path (destination)
+            segments.append((filepath, part + "\n"))
+    return segments
 
+
+def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
+    """Apply a single-file patch using all available strategies.
+
+    Returns (success, error_summary).
+    """
+    # Write to a temp file
+    tmp = Path("opencode-single.patch")
+    diff_text = _normalize_diff_paths(diff_text)
+    tmp.write_text(diff_text, encoding="utf-8")
     strip = _detect_strip_level(diff_text)
     errors: list[str] = []
 
-    # ── Step 2: git apply with detected strip level, then the other ────────
-    for p in sorted({strip, 1 - strip}):  # try detected level first
+    for p in sorted({strip, 1 - strip}):
         proc = run([
             "git", "apply",
             f"-p{p}",
             "--3way",
             "--ignore-whitespace",
-            str(patch_path),
+            str(tmp),
         ])
         if proc.returncode == 0:
+            tmp.unlink(missing_ok=True)
             return True, ""
         err = proc.stderr.strip()
-        errors.append(f"git apply -p{p} --3way: {err}")
-        print(f"[git apply -p{p} --3way] failed:\n{err}", file=sys.stderr)
+        errors.append(f"git apply -p{p}: {err}")
+        print(f"[{label}][git apply -p{p}] failed: {err[:120]}", file=sys.stderr)
 
-    # ── Step 3: patch --fuzz=3 with both strip levels ──────────────────────
     patch_bin = run(["which", "patch"]).stdout.strip()
     if patch_bin:
         for p in sorted({strip, 1 - strip}):
@@ -246,17 +261,86 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
                 input_text=diff_text,
             )
             if proc2.returncode == 0:
-                print(
-                    f"[patch --strip={p} --fuzz=3] succeeded as fallback.",
-                    file=sys.stderr,
-                )
+                print(f"[{label}][patch --strip={p}] succeeded.", file=sys.stderr)
+                tmp.unlink(missing_ok=True)
                 return True, ""
-            fuzz_err = (proc2.stderr.strip() or proc2.stdout.strip())[:400]
-            errors.append(f"patch --strip={p} --fuzz=3: {fuzz_err}")
-            print(f"[patch --strip={p} --fuzz=3] also failed:\n{fuzz_err}", file=sys.stderr)
+            fuzz_err = (proc2.stderr.strip() or proc2.stdout.strip())[:300]
+            errors.append(f"patch --strip={p}: {fuzz_err}")
+            print(f"[{label}][patch --strip={p}] failed: {fuzz_err[:120]}", file=sys.stderr)
 
-    return False, "\n\n".join(errors)
+    tmp.unlink(missing_ok=True)
+    return False, "\n".join(errors)
 
+
+def _apply_patch(patch_path: Path) -> tuple[bool, str]:
+    """Apply a (possibly multi-file) patch robustly.
+
+    Strategy:
+    1. Normalise bare paths → a/b prefix.
+    2. Try the whole patch at once with git apply (fast path).
+    3. If that fails, split into per-file segments and apply each independently.
+       - At least one file must succeed; partial success is reported.
+    4. Return (success, error_summary).
+    """
+    diff_text = patch_path.read_text(encoding="utf-8")
+
+    # ── Step 1: normalise paths ────────────────────────────────────────────
+    normalised = _normalize_diff_paths(diff_text)
+    if normalised != diff_text:
+        print("[patch] Normalised bare paths → a/b prefix.", file=sys.stderr)
+        patch_path.write_text(normalised, encoding="utf-8")
+        diff_text = normalised
+
+    strip = _detect_strip_level(diff_text)
+
+    # ── Step 2: try whole patch at once (fast path) ────────────────────────
+    for p in sorted({strip, 1 - strip}):
+        proc = run([
+            "git", "apply",
+            f"-p{p}",
+            "--3way",
+            "--ignore-whitespace",
+            str(patch_path),
+        ])
+        if proc.returncode == 0:
+            print("[patch] Whole-patch git apply succeeded.", file=sys.stderr)
+            return True, ""
+        err = proc.stderr.strip()
+        print(f"[git apply -p{p} --3way] failed: {err[:200]}", file=sys.stderr)
+
+    # ── Step 3: split into per-file patches and apply individually ─────────
+    segments = _split_multifile_patch(diff_text)
+    if len(segments) <= 1:
+        # Single file — surface all errors clearly
+        ok, errs = _apply_single_patch(diff_text, label="single")
+        return ok, errs
+
+    print(
+        f"[patch] Whole-patch failed; splitting into {len(segments)} per-file patches.",
+        file=sys.stderr,
+    )
+    succeeded: list[str] = []
+    failed: list[str] = []
+    all_errors: list[str] = []
+
+    for filepath, seg in segments:
+        ok, errs = _apply_single_patch(seg, label=filepath)
+        if ok:
+            succeeded.append(filepath)
+            print(f"  ✅ {filepath}", file=sys.stderr)
+        else:
+            failed.append(filepath)
+            all_errors.append(f"FAILED {filepath}:\n{errs}")
+            print(f"  ❌ {filepath}", file=sys.stderr)
+
+    if succeeded:
+        summary = f"Applied {len(succeeded)}/{len(segments)} file(s): {succeeded}"
+        if failed:
+            summary += f"  Skipped: {failed}"
+        print(f"[patch] Partial success: {summary}", file=sys.stderr)
+        return True, ""
+
+    return False, "\n\n".join(all_errors)
 
 
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
