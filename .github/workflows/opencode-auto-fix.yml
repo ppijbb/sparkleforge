@@ -54,7 +54,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: dev
           fetch-depth: 0
           token: ${{ secrets.PAT }}
 
@@ -175,7 +175,7 @@ jobs:
       - name: Push OpenCode changes
         id: commit
         run: |
-          if ! git rev-parse --verify HEAD >/dev/null 2>&1 || [ -z "$(git log --oneline origin/main..HEAD)" ]; then
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1 || [ -z "$(git log --oneline origin/dev..HEAD)" ]; then
             {
               echo "has_changes=false"
             } >> "$GITHUB_OUTPUT"
@@ -196,7 +196,7 @@ jobs:
           EXISTING_PR=$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${{ steps.context.outputs.branch }}" \
-            --base main \
+            --base dev \
             --state open \
             --json number,url \
             --jq '.[0] // empty')
@@ -207,7 +207,7 @@ jobs:
           else
             PR_URL=$(gh pr create \
               --repo "${{ github.repository }}" \
-              --base main \
+              --base dev \
               --head "${{ steps.context.outputs.branch }}" \
               --title "fix: address issue #${{ steps.context.outputs.issue_number }}" \
               --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.

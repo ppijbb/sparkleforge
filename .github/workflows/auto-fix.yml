@@ -34,6 +34,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
+          ref: dev
           fetch-depth: 0
           token: ${{ secrets.PAT }}
 
@@ -94,7 +95,7 @@ jobs:
 
           gh pr create \
             --repo "${{ github.repository }}" \
-            --base main \
+            --base dev \
             --head "${{ steps.context.outputs.branch }}" \
             --title "fix: address issue #${{ steps.context.outputs.issue_number }}" \
             --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
