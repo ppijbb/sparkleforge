@@ -1,0 +1,10 @@
+Google Gemini primary failed (Google Gemini 429: You exceeded your current quota, please c), trying OpenRouter...
+Model minimax/minimax-m2.5:free unavailable (OpenRouter 429: Provider returned error), trying fallback...
+[git apply -p0 --3way] failed: error: corrupt patch at line 21
+[git apply -p1 --3way] failed: error: corrupt patch at line 21
+[single][git apply -p0] failed: error: corrupt patch at line 21
+[single][git apply -p1] failed: error: corrupt patch at line 21
+[single][patch --strip=0] failed: can't find file to patch at input line 5
+Perhaps you used the wrong -p or --strip option?
+The text leading up to this wa
+[single][patch --strip=1] succeeded.
