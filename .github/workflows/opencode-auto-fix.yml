@@ -1,0 +1,224 @@
+name: OpenCode Auto Fix PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'GitHub issue number to fix with OpenCode'
+        required: true
+        type: string
+      max_iterations:
+        description: 'Maximum OpenCode repair attempts before opening the PR'
+        required: false
+        default: '3'
+        type: string
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: opencode-auto-fix-${{ github.event.issue.number || github.event.inputs.issue_number || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  open-pr-and-fix:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'issues' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode'))))
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      pr_url: ${{ steps.pr.outputs.pr_url }}
+    steps:
+      - name: Validate automation PAT
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required for automatic issue-to-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
+            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
+            exit 1
+          fi
+          gh auth status
+          gh api "repos/${{ github.repository }}" --jq '.full_name'
+
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install OpenCode worker dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install aiohttp
+
+      - name: Resolve issue and branch
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
+          else
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          fi
+
+          ISSUE_URL=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json url \
+            --jq '.url')
+          BRANCH="fix/$ISSUE_NUMBER-${{ github.run_id }}"
+
+          git checkout -B "$BRANCH"
+          gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json title,body,url \
+            --jq '"# " + .title + "\n\n" + (.body // "") + "\n\n" + .url' > issue-context.md
+
+          {
+            echo "issue_number=$ISSUE_NUMBER"
+            echo "issue_url=$ISSUE_URL"
+            echo "branch=$BRANCH"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: OpenCode repair loop
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
+          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
+          OPENCODE_VERIFY_COMMAND: ${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall src scripts' }}
+        run: |
+          MAX_ITERATIONS="${{ github.event.inputs.max_iterations || '3' }}"
+          case "$MAX_ITERATIONS" in
+            ''|*[!0-9]*) MAX_ITERATIONS=3 ;;
+          esac
+          if [ "$MAX_ITERATIONS" -lt 1 ]; then
+            MAX_ITERATIONS=1
+          fi
+          if [ "$MAX_ITERATIONS" -gt 5 ]; then
+            MAX_ITERATIONS=5
+          fi
+
+          : > opencode-extra-context.md
+          for attempt in $(seq 1 "$MAX_ITERATIONS"); do
+            echo "OpenCode attempt $attempt of $MAX_ITERATIONS"
+            if ! python scripts/opencode_github_worker.py fix-issue \
+              --issue-context issue-context.md \
+              --extra-context opencode-extra-context.md 2> opencode-worker-error.log; then
+              {
+                echo "Previous OpenCode attempt produced a patch that did not apply."
+                echo
+                echo "git apply or worker error:"
+                cat opencode-worker-error.log
+                if [ -f opencode.patch ]; then
+                  echo
+                  echo "Rejected patch:"
+                  head -n 220 opencode.patch
+                fi
+                echo
+                echo "Regenerate the patch against the current repository contents."
+              } > opencode-extra-context.md
+
+              if [ "$attempt" -eq "$MAX_ITERATIONS" ]; then
+                cat opencode-worker-error.log
+                exit 1
+              fi
+              continue
+            fi
+
+            if git diff --quiet; then
+              echo "OpenCode produced no repository changes on attempt $attempt."
+              break
+            fi
+
+            git add -A ':!issue-context.md' ':!opencode.patch' ':!opencode-extra-context.md' ':!opencode-verify.log'
+            git commit -m "fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
+
+            if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
+              echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
+              break
+            fi
+
+            {
+              echo "Previous attempt did not pass verification."
+              echo
+              echo "Command:"
+              echo "$OPENCODE_VERIFY_COMMAND"
+              echo
+              echo "Output:"
+              tail -n 160 opencode-verify.log
+            } > opencode-extra-context.md
+
+            if [ "$attempt" -eq "$MAX_ITERATIONS" ]; then
+              echo "Verification still failed after $MAX_ITERATIONS attempts."
+              cat opencode-verify.log
+            fi
+          done
+
+      - name: Push OpenCode changes
+        id: commit
+        run: |
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1 || [ -z "$(git log --oneline origin/dev..HEAD)" ]; then
+            {
+              echo "has_changes=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git push --set-upstream origin "${{ steps.context.outputs.branch }}"
+          {
+            echo "has_changes=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or find pull request
+        id: pr
+        if: steps.commit.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          EXISTING_PR=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "${{ steps.context.outputs.branch }}" \
+            --base dev \
+            --state open \
+            --json number,url \
+            --jq '.[0] // empty')
+
+          if [ -n "$EXISTING_PR" ]; then
+            PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
+            PR_URL=$(echo "$EXISTING_PR" | jq -r '.url')
+          else
+            PR_URL=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base dev \
+              --head "${{ steps.context.outputs.branch }}" \
+              --title "fix: address issue #${{ steps.context.outputs.issue_number }}" \
+              --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
+
+          Closes #${{ steps.context.outputs.issue_number }}
+
+          Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+            PR_NUMBER=${PR_URL##*/}
+          fi
+
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "pr_url=$PR_URL"
+          } >> "$GITHUB_OUTPUT"
