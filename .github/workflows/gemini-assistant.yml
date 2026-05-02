@@ -204,7 +204,7 @@ jobs:
               exit 0
             fi
             case "$NORMALIZED_TITLE" in
-              *"no issue"*|*"no issues"*|*"nothing to fix"*|*"no actionable"*|*"no problem"*)
+              *"no issues"*|*"no issue"*|*"nothing to fix"*|*"no actionable"*|*"no problem"*)
                 echo "Blocked non-actionable issue title: $ISSUE_TITLE"
                 exit 0
                 ;;
@@ -226,7 +226,6 @@ jobs:
 
             # GitHub Actions bot이 생성한 이슈는 issues: opened 이벤트가
             # 다른 워크플로우를 트리거하지 않으므로 직접 workflow_dispatch로 호출
-            GH_TOKEN="${{ secrets.PAT }}"
             echo "Triggering opencode-auto-fix.yml for issue #$ISSUE_NUMBER ..."
             gh workflow run opencode-auto-fix.yml \
               --repo "${{ github.repository }}" \
