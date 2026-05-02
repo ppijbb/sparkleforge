@@ -136,11 +136,15 @@ class MemoryLearner:
             
             # Reasoning Memory 추출 백그라운드 태스크 (비동기 처리)
             import asyncio
-            asyncio.create_task(self._induce_reasoning_memory_from_session(
-                session_id=session_id,
-                context_combination=context_combination,
-                success=success
-            ))
+            try:
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(self._induce_reasoning_memory_from_session(
+                    session_id=session_id,
+                    context_combination=context_combination,
+                    success=success
+                ))
+            except RuntimeError:
+                pass
             
             return True
 
