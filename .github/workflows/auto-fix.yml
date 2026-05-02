@@ -55,6 +55,18 @@ jobs:
         run: |
           ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
           ISSUE_URL="${{ github.server_url }}/${{ github.repository }}/issues/$ISSUE_NUMBER"
+          ISSUE_TITLE=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json title \
+            --jq '.title')
+          case "$ISSUE_TITLE" in
+            "🔧 fix:"*|"✨ feature:"*|"♻️ refactor:"*|"🧹 chore:"*)
+              PR_TITLE="$ISSUE_TITLE"
+              ;;
+            *)
+              PR_TITLE="🔧 fix: $ISSUE_TITLE"
+              ;;
+          esac
           BRANCH="fix/${ISSUE_NUMBER}-${{ github.run_id }}"
           git checkout -B "$BRANCH"
           
@@ -67,6 +79,9 @@ jobs:
           {
             echo "issue_number=$ISSUE_NUMBER"
             echo "issue_url=$ISSUE_URL"
+            echo "pr_title<<EOF"
+            echo "$PR_TITLE"
+            echo "EOF"
             echo "branch=$BRANCH"
           } >> "$GITHUB_OUTPUT"
 
@@ -90,14 +105,14 @@ jobs:
           fi
 
           git add -A ':!issue-context.md' ':!opencode.patch'
-          git commit -m "🔧 fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
+          git commit -m "${{ steps.context.outputs.pr_title }} via OpenCode"
           git push --set-upstream origin "${{ steps.context.outputs.branch }}"
 
           gh pr create \
             --repo "${{ github.repository }}" \
             --base dev \
             --head "${{ steps.context.outputs.branch }}" \
-            --title "🔧 fix: address issue #${{ steps.context.outputs.issue_number }}" \
+            --title "${{ steps.context.outputs.pr_title }}" \
             --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
 
           Closes #${{ steps.context.outputs.issue_number }}
