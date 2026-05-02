@@ -91,9 +91,11 @@ jobs:
             --json title,body,url \
             --jq '"# " + .title + "\n\n" + (.body // "") + "\n\n" + .url' > issue-context.md
 
-          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          {
+            echo "issue_number=$ISSUE_NUMBER"
+            echo "issue_url=$ISSUE_URL"
+            echo "branch=$BRANCH"
+          } >> "$GITHUB_OUTPUT"
 
       - name: OpenCode repair loop
         env:
