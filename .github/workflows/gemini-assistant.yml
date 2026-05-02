@@ -130,8 +130,15 @@ jobs:
         id: create_issue
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required to create issues and dispatch opencode-auto-fix.yml as part of the automatic issue-to-PR flow."
+            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
+            exit 1
+          fi
+
           if [ ! -f review_result.txt ] || [ -z "$GROQ_API_KEY" ]; then
             echo "No review result or Groq key found."
             exit 0
@@ -166,15 +173,26 @@ jobs:
             -H "Content-Type: application/json" \
             -d @groq_payload.json)
           
+          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null; then
+            echo "Groq API returned an error:"
+            echo "$RAW_RESPONSE" | jq -r '.error.message // .error'
+            exit 1
+          fi
+
           CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty')
           
           if [ -n "$CONTENT" ]; then
-            # 마크다운 백틱(```json ... ```) 제거 후 순수 JSON만 추출
-            CLEAN_JSON=$(echo "$CONTENT" | sed -n '/{/,/}/p')
+            if ! echo "$CONTENT" | jq -e . >/dev/null; then
+              echo "Groq response content was not valid JSON; skipping issue creation."
+              echo "Content preview:"
+              echo "$CONTENT" | head -c 1000
+              echo
+              exit 0
+            fi
             
-            SHOULD_CREATE=$(echo "$CLEAN_JSON" | jq -r '.should_create_issue // false')
-            ISSUE_TITLE=$(echo "$CLEAN_JSON" | jq -r '.title // "Fix: Issue identified in review"')
-            ISSUE_BODY=$(echo "$CLEAN_JSON" | jq -r '.body // empty')
+            SHOULD_CREATE=$(echo "$CONTENT" | jq -r '.should_create_issue // false')
+            ISSUE_TITLE=$(echo "$CONTENT" | jq -r '.title // "Fix: Issue identified in review"')
+            ISSUE_BODY=$(echo "$CONTENT" | jq -r '.body // empty')
 
             NORMALIZED_TITLE=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]')
             if [ "$SHOULD_CREATE" != "true" ]; then
@@ -185,12 +203,13 @@ jobs:
               echo "Triage did not provide an actionable issue title/body."
               exit 0
             fi
-            case "$NORMALIZED_TITLE" in
-              *"no issue"*|*"no issues"*|*"nothing to fix"*|*"no actionable"*|*"no problem"*)
-                echo "Blocked non-actionable issue title: $ISSUE_TITLE"
-                exit 0
-                ;;
-            esac
+            if [[ "$NORMALIZED_TITLE" == *"no issue"* ]] ||
+               [[ "$NORMALIZED_TITLE" == *"nothing to fix"* ]] ||
+               [[ "$NORMALIZED_TITLE" == *"no actionable"* ]] ||
+               [[ "$NORMALIZED_TITLE" == *"no problem"* ]]; then
+              echo "Blocked non-actionable issue title: $ISSUE_TITLE"
+              exit 0
+            fi
             
             # 이슈 생성
             # PAT 사용 시 해당 계정으로 생성 → issues 이벤트가 다른 workflow를 트리거 가능
@@ -203,20 +222,19 @@ jobs:
               --assignee "ppijbb")
             echo "Created issue: $ISSUE_URL"
             ISSUE_NUMBER="${ISSUE_URL##*/}"
-            echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
-            echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+            {
+              echo "issue_url=$ISSUE_URL"
+              echo "issue_number=$ISSUE_NUMBER"
+            } >> "$GITHUB_OUTPUT"
 
             # GitHub Actions bot이 생성한 이슈는 issues: opened 이벤트가
             # 다른 워크플로우를 트리거하지 않으므로 직접 workflow_dispatch로 호출
-            GH_TOKEN="${{ secrets.PAT || github.token }}"
             echo "Triggering opencode-auto-fix.yml for issue #$ISSUE_NUMBER ..."
             gh workflow run opencode-auto-fix.yml \
               --repo "${{ github.repository }}" \
               --field issue_number="$ISSUE_NUMBER" \
-              --field max_iterations="3" || echo "Warning: workflow trigger failed (check PAT/permissions)"
+              --field max_iterations="3"
           else
             echo "Error: AI response content is empty."
             echo "Raw response: $RAW_RESPONSE"
           fi
-
-
