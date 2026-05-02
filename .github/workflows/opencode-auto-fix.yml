@@ -83,6 +83,18 @@ jobs:
             --repo "${{ github.repository }}" \
             --json url \
             --jq '.url')
+          ISSUE_TITLE=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json title \
+            --jq '.title')
+          case "$ISSUE_TITLE" in
+            "🔧 fix:"*|"✨ feature:"*|"♻️ refactor:"*|"🧹 chore:"*)
+              PR_TITLE="$ISSUE_TITLE"
+              ;;
+            *)
+              PR_TITLE="🔧 fix: $ISSUE_TITLE"
+              ;;
+          esac
           BRANCH="fix/$ISSUE_NUMBER-${{ github.run_id }}"
 
           git checkout -B "$BRANCH"
@@ -94,6 +106,9 @@ jobs:
           {
             echo "issue_number=$ISSUE_NUMBER"
             echo "issue_url=$ISSUE_URL"
+            echo "pr_title<<EOF"
+            echo "$PR_TITLE"
+            echo "EOF"
             echo "branch=$BRANCH"
           } >> "$GITHUB_OUTPUT"
 
@@ -149,7 +164,7 @@ jobs:
             fi
 
             git add -A ':!issue-context.md' ':!opencode.patch' ':!opencode-extra-context.md' ':!opencode-verify.log'
-            git commit -m "🔧 fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
+            git commit -m "${{ steps.context.outputs.pr_title }} via OpenCode"
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
               echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
@@ -209,7 +224,7 @@ jobs:
               --repo "${{ github.repository }}" \
               --base dev \
               --head "${{ steps.context.outputs.branch }}" \
-              --title "🔧 fix: address issue #${{ steps.context.outputs.issue_number }}" \
+              --title "${{ steps.context.outputs.pr_title }}" \
               --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
 
           Closes #${{ steps.context.outputs.issue_number }}
