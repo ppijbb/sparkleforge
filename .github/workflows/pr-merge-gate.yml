@@ -2,9 +2,9 @@ name: PR Merge Gate
 
 on:
   pull_request:
-    branches: [main]
+    branches: [dev]
   push:
-    branches: [main]
+    branches: [dev]
 
 permissions:
   contents: read
