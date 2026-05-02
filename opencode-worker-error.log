@@ -1,0 +1,16 @@
+[git apply -p0 --3way] failed: error: corrupt patch at line 33
+[git apply -p1 --3way] failed: error: corrupt patch at line 33
+[patch] Whole-patch failed; splitting into 2 per-file patches.
+[.github/workflows/gemini-assistant.yml][git apply -p0] failed: error: corrupt patch at line 33
+[.github/workflows/gemini-assistant.yml][git apply -p1] failed: error: corrupt patch at line 33
+[.github/workflows/gemini-assistant.yml][patch --strip=0] failed: patch: **** malformed patch at line 32:
+[.github/workflows/gemini-assistant.yml][patch --strip=1] failed: patch: **** malformed patch at line 32:
+  ❌ .github/workflows/gemini-assistant.yml
+[src/core/reasoning_memory.py][git apply -p0] failed: error: patch fragment without header at line 24: @@ -118,7 +122,8 @@ class ReasoningMemoryBank:
+[src/core/reasoning_memory.py][git apply -p1] failed: error: patch fragment without header at line 24: @@ -118,7 +122,8 @@ class ReasoningMemoryBank:
+[src/core/reasoning_memory.py][patch --strip=0] failed: can't find file to patch at input line 5
+Perhaps you used the wrong -p or --strip option?
+The text leading up to this wa
+[src/core/reasoning_memory.py][patch --strip=1] succeeded.
+  ✅ src/core/reasoning_memory.py
+[patch] Partial success: Applied 1/2 file(s): ['src/core/reasoning_memory.py']  Skipped: ['.github/workflows/gemini-assistant.yml']

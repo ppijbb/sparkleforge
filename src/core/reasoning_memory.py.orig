@@ -100,15 +100,11 @@ class ReasoningMemoryBank:
     def _save_memory(self, item: ReasoningMemoryItem):
         """단일 메모리를 JSONL 파일에 추가(Append)합니다."""
         try:
-            self._flush_all()
+            with open(self.file_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
+            self.memories.append(item)
         except Exception as e:
             logger.error(f"Failed to save reasoning memory: {e}")
-
-    def _flush_all(self):
-        """전체 메모리 상태를 파일에 동기화합니다."""
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            for m in self.memories:
-                f.write(json.dumps(asdict(m), ensure_ascii=False) + "\n")
 
     async def store_memory(self, item: ReasoningMemoryItem) -> bool:
         """새로운 추론 메모리를 저장합니다. 필요시 임베딩을 자동 생성합니다."""
