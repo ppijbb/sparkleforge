@@ -73,7 +73,12 @@ class GreedyOverseerAgent:
         self.require_cross_validation = require_cross_validation
         self.enable_human_loop = enable_human_loop
 
-        self.llm_config = get_llm_config()
+        try:
+            self.llm_config = get_llm_config()
+        except RuntimeError:
+            from src.core.researcher_config import load_config_from_env
+
+            self.llm_config = load_config_from_env().llm
         self.shared_memory = get_shared_memory()
 
         logger.info(
@@ -81,6 +86,35 @@ class GreedyOverseerAgent:
             f"completeness={completeness_threshold}, quality={quality_threshold}, "
             f"academic_sources={min_academic_sources}"
         )
+
+    async def define_requirements(
+        self, user_request: str, analyzed_objectives: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Compatibility wrapper used by the orchestrator verification node."""
+        state = {
+            "user_request": user_request,
+            "analyzed_objectives": analyzed_objectives,
+            "planned_tasks": [],
+        }
+        updated = await self.review_planning_output(state)
+        return {"requirements": updated.get("overseer_requirements", [])}
+
+    async def evaluate_results(
+        self, user_request: str, execution_results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Compatibility wrapper used by the orchestrator verification node."""
+        state = {
+            "user_request": user_request,
+            "execution_results": execution_results,
+            "verified_results": execution_results,
+            "planned_tasks": [],
+            "quality_assessments": {},
+            "overseer_requirements": [],
+            "overseer_iterations": 0,
+            "completeness_scores": {},
+        }
+        updated = await self.evaluate_execution_results(state)
+        return {"decision": updated.get("overseer_decision", "proceed")}
 
     async def review_planning_output(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Review planning output and define requirements.

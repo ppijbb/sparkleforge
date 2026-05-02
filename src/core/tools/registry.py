@@ -47,6 +47,28 @@ class ToolResult:
     success: bool
     data: Any = None
     error: str | None = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_time: float = 0.0
+    confidence: float = 0.0
+    tool_name: str | None = None
+    source: str | None = None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Dictionary-style accessor for legacy call sites."""
+        return self.to_dict().get(key, default)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a plain dict representation used by older MCP paths."""
+        return {
+            "success": self.success,
+            "data": self.data,
+            "error": self.error,
+            "metadata": self.metadata,
+            "execution_time": self.execution_time,
+            "confidence": self.confidence,
+            "tool_name": self.tool_name,
+            "source": self.source,
+        }
 
 class ToolRegistry:
     """Centralized Tool Registry for SparkleForge (Phase 2).
@@ -64,6 +86,7 @@ class ToolRegistry:
             cls._instance.executors: Dict[str, Any] = {}
             cls._instance.langchain_tools: Dict[str, Any] = {}
             cls._instance.mcp_tool_mapping: Dict[str, Tuple[str, str]] = {}
+            cls._instance.tool_sources: Dict[str, str] = {}
         return cls._instance
     
     def register(
@@ -75,6 +98,7 @@ class ToolRegistry:
         """Registers a tool with its executor."""
         self.tools[metadata.name] = metadata
         self.executors[metadata.name] = executor
+        self.tool_sources[metadata.name] = metadata.source
         if langchain_tool:
             self.langchain_tools[metadata.name] = langchain_tool
         
@@ -147,6 +171,16 @@ class ToolRegistry:
     def get_all_langchain_tools(self) -> List[Any]:
         return list(self.langchain_tools.values())
 
+    def get_all_tool_names(self) -> List[str]:
+        return list(self.tools.keys())
+
+    def remove_tool(self, tool_name: str) -> None:
+        self.tools.pop(tool_name, None)
+        self.executors.pop(tool_name, None)
+        self.langchain_tools.pop(tool_name, None)
+        self.mcp_tool_mapping.pop(tool_name, None)
+        self.tool_sources.pop(tool_name, None)
+
     def is_mcp_tool(self, tool_name: str) -> bool:
         meta = self.tools.get(tool_name)
         return meta.source == "mcp" if meta else False
@@ -177,3 +211,28 @@ class ToolRegistry:
 
 # Global registry instance
 registry = ToolRegistry()
+
+
+def tool(
+    *,
+    name: str | None = None,
+    description: str = "",
+    parameters: Dict[str, Any] | None = None,
+    category: ToolCategory | str = ToolCategory.UTILITY,
+    tags: List[str] | None = None,
+):
+    """Register a native callable while preserving the original function."""
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        tool_name = name or func.__name__
+        metadata = ToolMetadata(
+            name=tool_name,
+            description=description or (func.__doc__ or "").strip() or tool_name,
+            parameters=parameters or {},
+            category=category,
+            tags=tags or [],
+            source="local",
+        )
+        registry.register(metadata, func, func)
+        return func
+
+    return decorator

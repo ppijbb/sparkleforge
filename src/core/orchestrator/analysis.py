@@ -100,10 +100,10 @@ class AnalysisNode(BaseNode):
         Use production-level analysis with specific, actionable insights.
         Return the result in JSON format with the following structure:
         {{
-            "objectives": [{"id": "obj_1", "description": "Research objective", "priority": "high"}],
-            "intent": {"primary": "research", "secondary": "analysis"},
-            "domain": {"fields": ["technology", "research"], "expertise": "general"},
-            "scope": {"breadth": "comprehensive", "depth": "detailed"},
+            "objectives": [{{"id": "obj_1", "description": "Research objective", "priority": "high"}}],
+            "intent": {{"primary": "research", "secondary": "analysis"}},
+            "domain": {{"fields": ["technology", "research"], "expertise": "general"}},
+            "scope": {{"breadth": "comprehensive", "depth": "detailed"}},
             "complexity": 7.0
         }}
         """

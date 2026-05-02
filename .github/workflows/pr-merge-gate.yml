@@ -1,0 +1,41 @@
+name: PR Merge Gate
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Python syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check Python syntax
+        run: python scripts/check_syntax.py
+
+  workflow-lint:
+    name: GitHub Actions syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: "1.7.7"
+        run: |
+          curl -sSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" -o actionlint.tar.gz
+          tar -xzf actionlint.tar.gz actionlint
+          sudo mv actionlint /usr/local/bin/actionlint
+
+      - name: Lint workflows
+        run: actionlint

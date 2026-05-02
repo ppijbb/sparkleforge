@@ -296,6 +296,89 @@ def _format_query_string(tool_name: str, parameters: Dict[str, Any]) -> str:
     return json.dumps(parameters, ensure_ascii=False)[:200]
 
 
+def _structured_tool_description(tool_config: Dict[str, Any], tool_name: str) -> str:
+    """Build a stable LangChain tool description from loose config data."""
+    description = str(tool_config.get("description") or tool_name).strip()
+    category = tool_config.get("category")
+    parameters = tool_config.get("parameters") or {}
+    if not parameters:
+        return description
+
+    param_bits = []
+    if isinstance(parameters, dict):
+        for key, spec in parameters.items():
+            if isinstance(spec, dict):
+                type_name = spec.get("type", "any")
+                required = "required" if spec.get("required") else "optional"
+                param_bits.append(f"{key}: {type_name} ({required})")
+            else:
+                param_bits.append(str(key))
+
+    suffix = "; ".join(param_bits[:8])
+    category_text = f"Category: {category}. " if category else ""
+    return f"{description}\n\n{category_text}Parameters: {suffix}".strip()
+
+
+def _actionable_error_message(tool_name: str, error: Any) -> str:
+    """Normalize tool errors so callers do not crash while formatting them."""
+    raw = str(error or "Unknown error").strip()
+    if not raw:
+        raw = "Unknown error"
+    raw = raw.replace("\n", " ")
+    if len(raw) > 500:
+        raw = raw[:497] + "..."
+    return f"{tool_name} failed: {raw}"
+
+
+def _cap_tool_result_for_context(
+    result: Dict[str, Any], tool_name: str, max_chars: int | None = None
+) -> Dict[str, Any]:
+    """Cap very large successful tool payloads while preserving result shape."""
+    if not isinstance(result, dict):
+        return {
+            "success": False,
+            "data": None,
+            "error": f"{tool_name} returned non-dict result",
+        }
+
+    limit = max_chars or int(os.getenv("MCP_TOOL_RESULT_MAX_CHARS", "12000"))
+    try:
+        data = result.get("data")
+        rendered = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+        if rendered and len(rendered) > limit:
+            capped = rendered[:limit] + "\n...[truncated]"
+            return {
+                **result,
+                "data": {
+                    "preview": capped,
+                    "truncated": True,
+                    "original_type": type(data).__name__,
+                },
+            }
+    except Exception as e:
+        logger.debug("Tool result capping skipped for %s: %s", tool_name, e)
+    return result
+
+
+def _normalize_mcp_call_params(tool_def: Any, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Wrap params for FastMCP tools whose schema exposes a single input model."""
+    if isinstance(tool_def, dict):
+        schema = tool_def.get("inputSchema") or tool_def.get("input_schema")
+    else:
+        schema = getattr(tool_def, "inputSchema", None) or getattr(tool_def, "input_schema", None)
+    if not isinstance(schema, dict):
+        return params
+
+    properties = schema.get("properties") or {}
+    required = schema.get("required") or []
+    if (
+        set(properties.keys()) == {"input"}
+        and "input" in required
+        and "input" not in params
+    ):
+        return {"input": params}
+    return params
+
 
 # Centralized Tool Registry imports
 from src.core.tools.registry import (
@@ -309,22 +392,6 @@ from src.core.tools.registry import (
 
 # Alias for backward compatibility
 SEP986ToolResult = ToolResult
-
-
-    def get_all_tool_names(self) -> List[str]:
-        """등록된 모든 Tool 이름 반환."""
-        return list(self.tools.keys())
-
-    def remove_tool(self, tool_name: str):
-        """Tool 제거."""
-        if tool_name in self.tools:
-            del self.tools[tool_name]
-        if tool_name in self.langchain_tools:
-            del self.langchain_tools[tool_name]
-        if tool_name in self.tool_sources:
-            del self.tool_sources[tool_name]
-        if tool_name in self.mcp_tool_mapping:
-            del self.mcp_tool_mapping[tool_name]
 
 
 class OpenRouterClient:
@@ -1627,6 +1694,11 @@ class UniversalMCPHub:
                         or "not found" in error_str
                         or "not in this registry" in error_str
                     )
+                    is_server_error = "server error detected" in error_str
+                    is_npm_404 = is_npm_404 or (
+                        "not found" in error_str
+                        and "server error" in error_str
+                    )
 
                     # npm 오류 감지
                     is_npm_enotempty = "enotempty" in error_str or (
@@ -1648,7 +1720,7 @@ class UniversalMCPHub:
                     # npm 캐시 손상 오류 해결: 캐시 정리 후 재시도
                     if (
                         is_npm_enotempty or is_npm_tar_error or is_module_not_found
-                    ) and command == "npx":
+                    ) and command == "npx" and not is_server_error:
                         try:
                             import shutil
                             import subprocess
@@ -1766,7 +1838,7 @@ class UniversalMCPHub:
                     # 조용히 처리할 오류들 (WARNING 레벨로만 로깅)
                     if is_npm_404:
                         logger.warning(
-                            f"[MCP][stdio.connect] Package not found for {server_name} (npm 404), skipping"
+                            f"[MCP][stdio.connect] Package/Server error for {server_name} (npm 404/Server Error), skipping"
                         )
                     elif is_connection_closed:
                         logger.warning(
@@ -1789,8 +1861,8 @@ class UniversalMCPHub:
                         }
                     )
 
-                    # npm 404, Connection closed는 재시도 불필요
-                    if is_npm_404 or is_connection_closed:
+                    # npm 404, Connection closed, Server Error는 재시도 불필요
+                    if is_npm_404 or is_connection_closed or is_server_error:
                         return False
 
                     return False
@@ -2688,8 +2760,11 @@ class UniversalMCPHub:
                         )
                         return None
 
+                    tool_def = self.mcp_tools_map.get(server_name, {}).get(tool_name)
+                    call_params = _normalize_mcp_call_params(tool_def, params)
+
                     # 기존 ClientSession 방식
-                    result = await session.call_tool(tool_name, params)
+                    result = await session.call_tool(tool_name, call_params)
 
                     # 결과를 TextContent에서 추출 (ClientSession 방식)
                     if result and hasattr(result, "content") and result.content:
@@ -5168,6 +5243,8 @@ async def _fallback_to_ddg_search(query: str, max_results: int) -> ToolResult:
 
         logger.info(f"[MCP][fallback] Using DDG search fallback for query: {query}")
         result = search_duckduckgo_json(query, max_results)
+        if isinstance(result, str):
+            result = json.loads(result)
 
         if result and isinstance(result, dict):
             results = result.get("results", [])
@@ -5178,6 +5255,13 @@ async def _fallback_to_ddg_search(query: str, max_results: int) -> ToolResult:
                     tool_name="ddg_search",
                     source="native_ddg_fallback",
                 )
+        elif result and isinstance(result, list):
+            return ToolResult(
+                success=True,
+                data={"results": result, "total_results": len(result)},
+                tool_name="ddg_search",
+                source="native_ddg_fallback",
+            )
 
         # 결과가 없거나 형식이 잘못된 경우
         return ToolResult(
