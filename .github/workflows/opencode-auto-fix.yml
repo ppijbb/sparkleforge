@@ -195,6 +195,25 @@ jobs:
             PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
             PR_URL=$(echo "$EXISTING_PR" | jq -r '.url')
           else
+            if [ "$HAS_PAT" != "true" ]; then
+              COMPARE_URL="${{ github.server_url }}/${{ github.repository }}/compare/main...${{ steps.context.outputs.branch }}?quick_pull=1"
+              echo "::warning::Cannot create a pull request with GITHUB_TOKEN because this repository blocks Actions-created PRs. Add a PAT secret with contents/pull-requests write access, or enable 'Allow GitHub Actions to create and approve pull requests'."
+              {
+                echo "OpenCode pushed changes to \`${{ steps.context.outputs.branch }}\`, but this repository currently blocks GitHub Actions from creating pull requests with \`GITHUB_TOKEN\`."
+                echo
+                echo "Create the PR manually from:"
+                echo "$COMPARE_URL"
+                echo
+                echo "To restore automatic PR creation, add a \`PAT\` repository secret with contents and pull-requests write access, or enable GitHub Actions-created pull requests in repository settings."
+              } > pr-blocked-comment.md
+              gh issue comment "${{ steps.context.outputs.issue_number }}" \
+                --repo "${{ github.repository }}" \
+                --body-file pr-blocked-comment.md
+              echo "pr_number=" >> "$GITHUB_OUTPUT"
+              echo "pr_url=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
             PR_URL=$(gh pr create \
               --repo "${{ github.repository }}" \
               --base main \
