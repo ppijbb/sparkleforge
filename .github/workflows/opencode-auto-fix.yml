@@ -149,7 +149,7 @@ jobs:
             fi
 
             git add -A ':!issue-context.md' ':!opencode.patch' ':!opencode-extra-context.md' ':!opencode-verify.log'
-            git commit -m "fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
+            git commit -m "🔧 fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
               echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
@@ -209,7 +209,7 @@ jobs:
               --repo "${{ github.repository }}" \
               --base dev \
               --head "${{ steps.context.outputs.branch }}" \
-              --title "fix: address issue #${{ steps.context.outputs.issue_number }}" \
+              --title "🔧 fix: address issue #${{ steps.context.outputs.issue_number }}" \
               --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
 
           Closes #${{ steps.context.outputs.issue_number }}
