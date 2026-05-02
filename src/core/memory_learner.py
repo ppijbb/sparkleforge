@@ -133,11 +133,54 @@ class MemoryLearner:
             logger.debug(
                 f"Learned from session {session_id}: pattern={pattern_id}, success={success}"
             )
+            
+            # Reasoning Memory 추출 백그라운드 태스크 (비동기 처리)
+            import asyncio
+            asyncio.create_task(self._induce_reasoning_memory_from_session(
+                session_id=session_id,
+                context_combination=context_combination,
+                success=success
+            ))
+            
             return True
 
         except Exception as e:
             logger.error(f"Failed to learn from session {session_id}: {e}")
             return False
+
+    async def _induce_reasoning_memory_from_session(self, session_id: str, context_combination: ContextCombination, success: bool):
+        """세션으로부터 추론 메모리를 추출합니다."""
+        try:
+            from src.core.reasoning_memory_inducer import get_reasoning_memory_inducer, TrajectoryRecord
+            from src.core.reasoning_memory import get_reasoning_memory_bank
+            
+            inducer = get_reasoning_memory_inducer()
+            bank = get_reasoning_memory_bank()
+            
+            # 세션에서 수행된 작업을 TrajectoryRecord로 재구성
+            # (실제 구현에서는 세션 로그에서 추출해야 함)
+            # 여기서는 ContextCombination을 바탕으로 가상의 궤적 생성
+            query = f"Task using contexts: {', '.join(context_combination.context_types)}"
+            traj = TrajectoryRecord(query=query, domain="session")
+            
+            think_str = f"Decided to use context priority: {context_combination.priority_order}"
+            action_str = f"Allocated tokens: {context_combination.token_allocation}"
+            obs_str = f"Execution resulted in {'success' if success else 'failure'}."
+            
+            traj.add_step(think=think_str, action=action_str, observation=obs_str)
+            traj.status = "success" if success else "fail"
+            
+            if success:
+                new_memories = await inducer.induce_from_success(traj)
+            else:
+                new_memories = await inducer.induce_from_failure(traj)
+                
+            if new_memories:
+                await bank.store_batch(new_memories)
+                logger.info(f"Learned {len(new_memories)} reasoning memories from session {session_id}.")
+                
+        except Exception as e:
+            logger.warning(f"Failed to induce reasoning memory from session {session_id}: {e}")
 
     def record_feedback(
         self,

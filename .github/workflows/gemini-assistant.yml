@@ -2,7 +2,7 @@ name: AI Harness (Distributed)
 on:
   push:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:
@@ -237,4 +237,117 @@ jobs:
           else
             echo "Error: AI response content is empty."
             echo "Raw response: $RAW_RESPONSE"
+          fi
+
+  merge-decision:
+    needs: code-review
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'dev' &&
+      github.event.pull_request.draft == false &&
+      needs.code-review.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Download Review Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: review-results
+
+      - name: Decide and merge to dev
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required to auto-merge reviewed PRs into dev."
+            exit 1
+          fi
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "No Groq key found, skipping merge decision."
+            exit 0
+          fi
+
+          OPENROUTER_REVIEW=$(cat review_result.txt 2>/dev/null || echo 'Missing OpenRouter review')
+          CEREBRAS_REVIEW=$(cat cerebras_result.txt 2>/dev/null || echo 'Missing Cerebras review')
+          PR_META=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName)
+
+          jq -n \
+            --arg meta "$PR_META" \
+            --arg openrouter "$OPENROUTER_REVIEW" \
+            --arg cerebras "$CEREBRAS_REVIEW" \
+            --arg system_msg "You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, missing review content, or any concrete issue. Keep reason concise." \
+            '{
+              model: "llama-3.3-70b-versatile",
+              messages: [
+                {role: "system", content: $system_msg},
+                {role: "user", content: ("PR metadata:\n" + $meta + "\n\nOpenRouter review:\n" + $openrouter + "\n\nCerebras review:\n" + $cerebras)}
+              ],
+              response_format: { type: "json_object" }
+            }' > merge_decision_payload.json
+
+          RAW_RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @merge_decision_payload.json)
+
+          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null; then
+            echo "Groq API returned an error:"
+            echo "$RAW_RESPONSE" | jq -r '.error.message // .error'
+            exit 1
+          fi
+
+          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty')
+          if ! echo "$CONTENT" | jq -e . >/dev/null; then
+            echo "Merge decision content was not valid JSON; skipping auto-merge."
+            echo "$CONTENT" | head -c 1000
+            echo
+            exit 0
+          fi
+
+          SHOULD_MERGE=$(echo "$CONTENT" | jq -r '.should_merge // false')
+          REASON=$(echo "$CONTENT" | jq -r '.reason // "No reason provided."')
+          MERGE_STATE=$(echo "$PR_META" | jq -r '.mergeStateStatus // "UNKNOWN"')
+
+          {
+            echo "## Auto Merge Decision"
+            echo
+            echo "**Decision:** $SHOULD_MERGE"
+            echo
+            echo "**Merge state:** $MERGE_STATE"
+            echo
+            echo "**Reason:** $REASON"
+          } > merge-decision-comment.md
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body-file merge-decision-comment.md
+
+          if [ "$SHOULD_MERGE" != "true" ]; then
+            echo "Merge decision blocked auto-merge: $REASON"
+            exit 0
+          fi
+
+          if [ "$MERGE_STATE" = "DIRTY" ] || [ "$MERGE_STATE" = "BLOCKED" ] || [ "$MERGE_STATE" = "DRAFT" ]; then
+            echo "PR is not currently mergeable: $MERGE_STATE"
+            exit 0
+          fi
+
+          if [ "$MERGE_STATE" = "CLEAN" ]; then
+            gh pr merge "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --squash \
+              --delete-branch
+          else
+            gh pr merge "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --squash \
+              --auto \
+              --delete-branch
           fi
