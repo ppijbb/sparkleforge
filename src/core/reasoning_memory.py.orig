@@ -101,7 +101,7 @@ class ReasoningMemoryBank:
         """단일 메모리를 JSONL 파일에 추가(Append)합니다."""
         try:
             with open(self.file_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(asdict(item), ensure_ascii=False) + '\n')
+                f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
             self.memories.append(item)
         except Exception as e:
             logger.error(f"Failed to save reasoning memory: {e}")

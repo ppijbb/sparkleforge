@@ -1,0 +1,8 @@
+[git apply -p0 --3way] failed: error: corrupt patch at line 13
+[git apply -p1 --3way] failed: error: corrupt patch at line 13
+[single][git apply -p0] failed: error: corrupt patch at line 13
+[single][git apply -p1] failed: error: corrupt patch at line 13
+[single][patch --strip=0] failed: can't find file to patch at input line 5
+Perhaps you used the wrong -p or --strip option?
+The text leading up to this wa
+[single][patch --strip=1] succeeded.
