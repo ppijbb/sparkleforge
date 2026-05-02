@@ -58,7 +58,12 @@ jobs:
         id: context
         env:
           GH_TOKEN: ${{ secrets.PAT || github.token }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::warning::No PAT secret is configured. PR creation will use GITHUB_TOKEN, which only works when Settings > Actions > General allows GitHub Actions to create pull requests."
+          fi
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
           else
@@ -172,7 +177,12 @@ jobs:
         if: steps.commit.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.PAT || github.token }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::warning::Using GITHUB_TOKEN for PR creation. If this step fails with createPullRequest, enable 'Allow GitHub Actions to create and approve pull requests' or add a PAT secret with contents/pull-requests write access."
+          fi
+
           EXISTING_PR=$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${{ steps.context.outputs.branch }}" \
