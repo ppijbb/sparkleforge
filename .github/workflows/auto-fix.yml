@@ -1,10 +1,11 @@
 name: Auto Fix Harness
 on:
-  issues:
-    types: [opened]
-  issue_comment:
-    types: [created]
   workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'GitHub issue number to fix with OpenCode'
+        required: true
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,19 +13,29 @@ concurrency:
 
 jobs:
   opencode-harness:
-    if: >-
-      (github.event_name == 'issues' && github.event.action == 'opened') ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode')) ||
-      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       issues: write
     steps:
+      - name: Validate automation PAT
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required for automatic issue-to-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
+            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
+            exit 1
+          fi
+          gh auth status
+          gh api "repos/${{ github.repository }}" --jq '.full_name'
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.PAT }}
 
       - name: Configure Git Identity
         run: |
@@ -39,27 +50,10 @@ jobs:
       - name: Resolve issue context
         id: context
         env:
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
-          HAS_PAT: ${{ secrets.PAT != '' }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          if [ "$HAS_PAT" != "true" ]; then
-            echo "::warning::No PAT secret is configured. PR creation will use GITHUB_TOKEN, which only works when Settings > Actions > General allows GitHub Actions to create pull requests."
-          fi
-
-          ISSUE_URL=""
-          if [ "${{ github.event_name }}" = "issues" ]; then
-            ISSUE_URL="${{ github.event.issue.html_url }}"
-          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
-            ISSUE_URL="${{ github.event.issue.html_url }}"
-          fi
-          
-          if [ -z "$ISSUE_URL" ]; then
-            echo "No issue URL available for OpenCode worker."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          ISSUE_NUMBER="${ISSUE_URL##*/}"
+          ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
+          ISSUE_URL="${{ github.server_url }}/${{ github.repository }}/issues/$ISSUE_NUMBER"
           BRANCH="fix/${ISSUE_NUMBER}-${{ github.run_id }}"
           git checkout -B "$BRANCH"
           
@@ -69,9 +63,11 @@ jobs:
             --json title,body,url \
             --jq '"# " + .title + "\n\n" + (.body // "") + "\n\n" + .url' > issue-context.md
 
-          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          {
+            echo "issue_number=$ISSUE_NUMBER"
+            echo "issue_url=$ISSUE_URL"
+            echo "branch=$BRANCH"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate and apply patch with OpenCode
         if: steps.context.outputs.skip != 'true'
@@ -85,8 +81,7 @@ jobs:
       - name: Commit, push, and open PR
         if: steps.context.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
-          HAS_PAT: ${{ secrets.PAT != '' }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           if git diff --quiet; then
             echo "OpenCode produced no repository changes."
@@ -96,10 +91,6 @@ jobs:
           git add -A ':!issue-context.md' ':!opencode.patch'
           git commit -m "fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
           git push --set-upstream origin "${{ steps.context.outputs.branch }}"
-
-          if [ "$HAS_PAT" != "true" ]; then
-            echo "::warning::Using GITHUB_TOKEN for PR creation. If this step fails with createPullRequest, enable 'Allow GitHub Actions to create and approve pull requests' or add a PAT secret with contents/pull-requests write access."
-          fi
 
           gh pr create \
             --repo "${{ github.repository }}" \
