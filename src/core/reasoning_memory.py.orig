@@ -10,7 +10,6 @@ import os
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-import asyncio
 from typing import List, Dict, Any
 
 import numpy as np
@@ -195,10 +194,6 @@ _reasoning_memory_bank = None
 def get_reasoning_memory_bank(storage_dir: str = ".data/reasoning_memory") -> ReasoningMemoryBank:
     """전역 Reasoning Memory Bank 인스턴스 반환."""
     global _reasoning_memory_bank
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        logger.debug("No event loop; skipping memory induction")
     if _reasoning_memory_bank is None:
         _reasoning_memory_bank = ReasoningMemoryBank(storage_dir=storage_dir)
     return _reasoning_memory_bank
