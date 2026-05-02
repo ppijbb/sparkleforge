@@ -2,7 +2,7 @@ name: AI Harness (Distributed)
 on:
   push:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:
