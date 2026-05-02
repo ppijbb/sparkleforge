@@ -262,7 +262,6 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
-          OVERRIDE_LABEL: "human-merge-override"
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
@@ -270,9 +269,6 @@ jobs:
             exit 1
           fi
           if [ -z "$GROQ_API_KEY" ]; then
-            echo "::error::GROQ_API_KEY is required for merge-gate PRs."
-            exit 1
-          fi
             echo "No Groq key found, skipping merge decision."
             exit 0
           fi
