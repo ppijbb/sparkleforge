@@ -203,12 +203,13 @@ jobs:
               echo "Triage did not provide an actionable issue title/body."
               exit 0
             fi
-            case "$NORMALIZED_TITLE" in
-              *"no issues"*|*"no issue"*|*"nothing to fix"*|*"no actionable"*|*"no problem"*)
-                echo "Blocked non-actionable issue title: $ISSUE_TITLE"
-                exit 0
-                ;;
-            esac
+            if [[ "$NORMALIZED_TITLE" == *"no issue"* ]] ||
+               [[ "$NORMALIZED_TITLE" == *"nothing to fix"* ]] ||
+               [[ "$NORMALIZED_TITLE" == *"no actionable"* ]] ||
+               [[ "$NORMALIZED_TITLE" == *"no problem"* ]]; then
+              echo "Blocked non-actionable issue title: $ISSUE_TITLE"
+              exit 0
+            fi
             
             # 이슈 생성
             # PAT 사용 시 해당 계정으로 생성 → issues 이벤트가 다른 workflow를 트리거 가능
@@ -221,8 +222,10 @@ jobs:
               --assignee "ppijbb")
             echo "Created issue: $ISSUE_URL"
             ISSUE_NUMBER="${ISSUE_URL##*/}"
-            echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
-            echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+            {
+              echo "issue_url=$ISSUE_URL"
+              echo "issue_number=$ISSUE_NUMBER"
+            } >> "$GITHUB_OUTPUT"
 
             # GitHub Actions bot이 생성한 이슈는 issues: opened 이벤트가
             # 다른 워크플로우를 트리거하지 않으므로 직접 workflow_dispatch로 호출
