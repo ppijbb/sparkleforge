@@ -193,9 +193,7 @@ _reasoning_memory_bank = None
 
 def get_reasoning_memory_bank(storage_dir: str = ".data/reasoning_memory") -> ReasoningMemoryBank:
     """전역 Reasoning Memory Bank 인스턴스 반환."""
-    import asyncio
     global _reasoning_memory_bank
     if _reasoning_memory_bank is None:
         _reasoning_memory_bank = ReasoningMemoryBank(storage_dir=storage_dir)
-        # Ensure async initialization if needed
     return _reasoning_memory_bank
