@@ -130,8 +130,15 @@ jobs:
         id: create_issue
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required to create issues and dispatch opencode-auto-fix.yml as part of the automatic issue-to-PR flow."
+            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
+            exit 1
+          fi
+
           if [ ! -f review_result.txt ] || [ -z "$GROQ_API_KEY" ]; then
             echo "No review result or Groq key found."
             exit 0
@@ -208,15 +215,14 @@ jobs:
 
             # GitHub Actions bot이 생성한 이슈는 issues: opened 이벤트가
             # 다른 워크플로우를 트리거하지 않으므로 직접 workflow_dispatch로 호출
-            GH_TOKEN="${{ secrets.PAT || github.token }}"
+            GH_TOKEN="${{ secrets.PAT }}"
             echo "Triggering opencode-auto-fix.yml for issue #$ISSUE_NUMBER ..."
             gh workflow run opencode-auto-fix.yml \
               --repo "${{ github.repository }}" \
               --field issue_number="$ISSUE_NUMBER" \
-              --field max_iterations="3" || echo "Warning: workflow trigger failed (check PAT/permissions)"
+              --field max_iterations="3"
           else
             echo "Error: AI response content is empty."
             echo "Raw response: $RAW_RESPONSE"
           fi
-
 

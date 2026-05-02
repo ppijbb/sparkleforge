@@ -1,9 +1,5 @@
 name: Auto Fix Harness
 on:
-  issues:
-    types: [opened]
-  issue_comment:
-    types: [created]
   workflow_dispatch:
 
 concurrency:
@@ -12,19 +8,29 @@ concurrency:
 
 jobs:
   opencode-harness:
-    if: >-
-      (github.event_name == 'issues' && github.event.action == 'opened') ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode')) ||
-      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       issues: write
     steps:
+      - name: Validate automation PAT
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required for automatic issue-to-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
+            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
+            exit 1
+          fi
+          gh auth status
+          gh api "repos/${{ github.repository }}" --jq '.full_name'
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.PAT }}
 
       - name: Configure Git Identity
         run: |
@@ -39,13 +45,8 @@ jobs:
       - name: Resolve issue context
         id: context
         env:
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
-          HAS_PAT: ${{ secrets.PAT != '' }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          if [ "$HAS_PAT" != "true" ]; then
-            echo "::warning::No PAT secret is configured. PR creation will use GITHUB_TOKEN, which only works when Settings > Actions > General allows GitHub Actions to create pull requests."
-          fi
-
           ISSUE_URL=""
           if [ "${{ github.event_name }}" = "issues" ]; then
             ISSUE_URL="${{ github.event.issue.html_url }}"
@@ -85,8 +86,7 @@ jobs:
       - name: Commit, push, and open PR
         if: steps.context.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
-          HAS_PAT: ${{ secrets.PAT != '' }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           if git diff --quiet; then
             echo "OpenCode produced no repository changes."
@@ -96,24 +96,6 @@ jobs:
           git add -A ':!issue-context.md' ':!opencode.patch'
           git commit -m "fix: address issue #${{ steps.context.outputs.issue_number }} via OpenCode"
           git push --set-upstream origin "${{ steps.context.outputs.branch }}"
-
-          if [ "$HAS_PAT" != "true" ]; then
-            echo "::warning::Using GITHUB_TOKEN for PR creation. If this step fails with createPullRequest, enable 'Allow GitHub Actions to create and approve pull requests' or add a PAT secret with contents/pull-requests write access."
-            COMPARE_URL="${{ github.server_url }}/${{ github.repository }}/compare/main...${{ steps.context.outputs.branch }}?quick_pull=1"
-            echo "::warning::Cannot create a pull request with GITHUB_TOKEN because this repository blocks Actions-created PRs. Add a PAT secret with contents/pull-requests write access, or enable 'Allow GitHub Actions to create and approve pull requests'."
-            {
-              echo "OpenCode pushed changes to \`${{ steps.context.outputs.branch }}\`, but this repository currently blocks GitHub Actions from creating pull requests with \`GITHUB_TOKEN\`."
-              echo
-              echo "Create the PR manually from:"
-              echo "$COMPARE_URL"
-              echo
-              echo "To restore automatic PR creation, add a \`PAT\` repository secret with contents and pull-requests write access, or enable GitHub Actions-created pull requests in repository settings."
-            } > pr-blocked-comment.md
-            gh issue comment "${{ steps.context.outputs.issue_number }}" \
-              --repo "${{ github.repository }}" \
-              --body-file pr-blocked-comment.md
-            exit 0
-          fi
 
           gh pr create \
             --repo "${{ github.repository }}" \

@@ -39,10 +39,24 @@ jobs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
       pr_url: ${{ steps.pr.outputs.pr_url }}
     steps:
+      - name: Validate automation PAT
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required for automatic issue-to-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
+            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
+            exit 1
+          fi
+          gh auth status
+          gh api "repos/${{ github.repository }}" --jq '.full_name'
+
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ secrets.PAT }}
 
       - name: Configure git identity
         run: |
@@ -57,13 +71,8 @@ jobs:
       - name: Resolve issue and branch
         id: context
         env:
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
-          HAS_PAT: ${{ secrets.PAT != '' }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          if [ "$HAS_PAT" != "true" ]; then
-            echo "::warning::No PAT secret is configured. PR creation will use GITHUB_TOKEN, which only works when Settings > Actions > General allows GitHub Actions to create pull requests."
-          fi
-
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
           else
@@ -176,13 +185,8 @@ jobs:
         id: pr
         if: steps.commit.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.PAT || github.token }}
-          HAS_PAT: ${{ secrets.PAT != '' }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          if [ "$HAS_PAT" != "true" ]; then
-            echo "::warning::Using GITHUB_TOKEN for PR creation. If this step fails with createPullRequest, enable 'Allow GitHub Actions to create and approve pull requests' or add a PAT secret with contents/pull-requests write access."
-          fi
-
           EXISTING_PR=$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${{ steps.context.outputs.branch }}" \
@@ -195,25 +199,6 @@ jobs:
             PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
             PR_URL=$(echo "$EXISTING_PR" | jq -r '.url')
           else
-            if [ "$HAS_PAT" != "true" ]; then
-              COMPARE_URL="${{ github.server_url }}/${{ github.repository }}/compare/main...${{ steps.context.outputs.branch }}?quick_pull=1"
-              echo "::warning::Cannot create a pull request with GITHUB_TOKEN because this repository blocks Actions-created PRs. Add a PAT secret with contents/pull-requests write access, or enable 'Allow GitHub Actions to create and approve pull requests'."
-              {
-                echo "OpenCode pushed changes to \`${{ steps.context.outputs.branch }}\`, but this repository currently blocks GitHub Actions from creating pull requests with \`GITHUB_TOKEN\`."
-                echo
-                echo "Create the PR manually from:"
-                echo "$COMPARE_URL"
-                echo
-                echo "To restore automatic PR creation, add a \`PAT\` repository secret with contents and pull-requests write access, or enable GitHub Actions-created pull requests in repository settings."
-              } > pr-blocked-comment.md
-              gh issue comment "${{ steps.context.outputs.issue_number }}" \
-                --repo "${{ github.repository }}" \
-                --body-file pr-blocked-comment.md
-              echo "pr_number=" >> "$GITHUB_OUTPUT"
-              echo "pr_url=" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
             PR_URL=$(gh pr create \
               --repo "${{ github.repository }}" \
               --base main \
