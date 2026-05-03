@@ -623,10 +623,7 @@ class FusionAgent:
 
 
 class TestTimeScaler:
-    """테스트 타임 스케일링 시스템.
-
-    병렬 rollout + 융합을 통합 관리.
-    """
+    """High-level test-time scaling coordinator."""
 
     def __init__(
         self,
@@ -637,17 +634,8 @@ class TestTimeScaler:
         self.executor = ParallelRolloutExecutor(
             num_rollouts=num_rollouts,
             timeout_seconds=timeout_seconds,
-            diversity_strategy="temperature_variation",
         )
-        self.fuser = FusionAgent(default_strategy=fusion_strategy)
-
-        self.num_rollouts = num_rollouts
-        self.fusion_strategy = fusion_strategy
-
-        logger.info(
-            f"TestTimeScaler initialized: "
-            f"rollouts={num_rollouts}, strategy={fusion_strategy.value}"
-        )
+        self.fusion_agent = FusionAgent(default_strategy=fusion_strategy)
 
     async def scale(
         self,
@@ -656,54 +644,129 @@ class TestTimeScaler:
         llm_fuser: Callable | None = None,
         context: Dict[str, Any] | None = None,
     ) -> Tuple[FusionResult, List[RolloutResult]]:
-        """테스트 타임 스케일링 실행.
-
-        Args:
-            prompt: 실행할 프롬프트
-            executor_fn: 단일 실행 함수
-            llm_fuser: LLM 융합 함수
-            context: 추가 컨텍스트
-
-        Returns:
-            (융합 결과, 개별 rollout 결과들)
-        """
-        logger.info(f"Starting test-time scaling with {self.num_rollouts} rollouts")
-
-        # 병렬 실행
+        """Run parallel rollouts and fuse the results."""
         rollout_results = await self.executor.execute(
-            prompt=prompt, executor_fn=executor_fn, context=context
+            prompt=prompt,
+            executor_fn=executor_fn,
+            context=context,
         )
-
-        # 융합
-        fusion_result = await self.fuser.fuse(
-            results=rollout_results,
-            strategy=self.fusion_strategy,
-            k=min(3, len(rollout_results)),
+        fusion_result = await self.fusion_agent.fuse(
+            rollout_results,
             llm_fuser=llm_fuser,
         )
+        return fusion_result, rollout_results
 
-        logger.info(
-            f"Scaling complete: {fusion_result.num_rollouts_used} results fused, "
-            f"confidence={fusion_result.confidence:.2f}"
+
+class MemoryAwareTestTimeScaler(TestTimeScaler):
+    """메모리 인식 테스트 타임 스케일링.
+    
+    ReasoningBank의 핵심 혁신:
+    - 실행 전: 관련 추론 메모리를 검색하여 프롬프트에 주입
+    - 실행 후: 병렬 궤적(rollouts)을 대조하여 새로운 추론 메모리 학습
+    """
+    
+    def __init__(
+        self,
+        num_rollouts: int = 3,
+        fusion_strategy: FusionStrategy = FusionStrategy.LAST_K_FUSION,
+        timeout_seconds: float = 120.0,
+        domain: str = "general"
+    ):
+        super().__init__(num_rollouts, fusion_strategy, timeout_seconds)
+        self.domain = domain
+        
+    async def scale_with_memory(
+        self,
+        prompt: str,
+        executor_fn: Callable,
+        llm_fuser: Callable | None = None,
+        context: Dict[str, Any] | None = None,
+    ) -> Tuple[FusionResult, List[RolloutResult]]:
+        """메모리 인식 스케일링을 수행합니다."""
+        from src.core.reasoning_memory import get_reasoning_memory_bank
+        from src.core.reasoning_memory_inducer import get_reasoning_memory_inducer, TrajectoryRecord
+        from src.core.prompts.reasoning_memory_prompts import MEMORY_INJECTION_TEMPLATE
+        
+        memory_bank = get_reasoning_memory_bank()
+        inducer = get_reasoning_memory_inducer()
+        
+        # 1. 관련된 과거 메모리 검색
+        memories = await memory_bank.select_reasoning_memory(query=prompt, n=3, domain_filter=self.domain)
+        
+        # 2. 프롬프트 강화
+        enhanced_prompt = prompt
+        if memories:
+            memory_text = "\n\n".join(
+                [f"### {m.title}\n{m.content}" for m in memories]
+            )
+            injection = MEMORY_INJECTION_TEMPLATE.format(memories=memory_text)
+            enhanced_prompt = f"{prompt}\n\n{injection}"
+            logger.info(f"Injected {len(memories)} reasoning memories into prompt.")
+            
+        # 3. 기존 병렬 스케일링 실행
+        fusion_result, rollout_results = await self.scale(
+            prompt=enhanced_prompt,
+            executor_fn=executor_fn,
+            llm_fuser=llm_fuser,
+            context=context
         )
-
+        
+        # 4. 결과로부터 새로운 메모리 학습 (비동기 백그라운드 태스크로 던질 수도 있음)
+        try:
+            trajectories = []
+            for r in rollout_results:
+                traj = TrajectoryRecord(query=prompt, domain=self.domain)
+                # 실제 구현에서는 executor_fn이 남긴 상세 로그를 활용해야 함.
+                # 여기서는 rollout_result의 output을 observation으로 간주
+                traj.add_step(think="Rollout execution", action="Execution", observation=r.output)
+                traj.final_result = r.output
+                
+                # Confidence로 대략적인 성공/실패 판단
+                if r.status == RolloutStatus.COMPLETED:
+                    traj.status = "success" if r.confidence >= 0.7 else "fail"
+                else:
+                    traj.status = "fail"
+                    
+                trajectories.append(traj)
+                
+            # 병렬 궤적 대조로 메모리 추출
+            new_memories = await inducer.induce_from_parallel(trajectories, prompt, self.domain)
+            
+            # 저장
+            if new_memories:
+                await memory_bank.store_batch(new_memories)
+                logger.info(f"Learned {len(new_memories)} new reasoning memories from test-time scaling.")
+                
+        except Exception as e:
+            logger.error(f"Failed to induce memory after test-time scaling: {e}")
+            
         return fusion_result, rollout_results
 
 
 # Singleton instance
 _test_time_scaler: TestTimeScaler | None = None
+_memory_aware_scaler: MemoryAwareTestTimeScaler | None = None
 
 
 def get_test_time_scaler(
     num_rollouts: int = 3,
     fusion_strategy: FusionStrategy = FusionStrategy.LAST_K_FUSION,
+    use_memory: bool = False,
+    domain: str = "general"
 ) -> TestTimeScaler:
     """TestTimeScaler 싱글톤 인스턴스 반환."""
     global _test_time_scaler
+    global _memory_aware_scaler
 
-    if _test_time_scaler is None:
-        _test_time_scaler = TestTimeScaler(
-            num_rollouts=num_rollouts, fusion_strategy=fusion_strategy
-        )
-
-    return _test_time_scaler
+    if use_memory:
+        if _memory_aware_scaler is None:
+            _memory_aware_scaler = MemoryAwareTestTimeScaler(
+                num_rollouts=num_rollouts, fusion_strategy=fusion_strategy, domain=domain
+            )
+        return _memory_aware_scaler
+    else:
+        if _test_time_scaler is None:
+            _test_time_scaler = TestTimeScaler(
+                num_rollouts=num_rollouts, fusion_strategy=fusion_strategy
+            )
+        return _test_time_scaler

@@ -92,5 +92,9 @@ class AutonomousOrchestrator:
         return await self.execute(user_request, context)
 
     def ensure_legacy_langgraph_workflow(self) -> None:
-        """Backward compatibility helper."""
+        """Backward compatibility helper.
+
+        The current orchestrator builds its graph during initialization, so this
+        method intentionally has no side effects.
+        """
         pass
