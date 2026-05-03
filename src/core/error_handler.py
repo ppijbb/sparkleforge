@@ -1,5 +1,6 @@
 """구조화된 에러 처리 시스템
 
+from typing import Optional, Any
 에러 분류, 상세한 에러 메시지 및 스택 트레이스, 복구 제안,
 에러 로깅 및 리포트를 제공하는 통합 에러 처리 시스템
 """
@@ -195,6 +196,7 @@ class ErrorHandler:
         self.error_counts: Dict[str, int] = {}
         self.recovery_strategies: Dict[ErrorCategory, List[Callable]] = {}
         self.logger = self._setup_error_logger()
+        self.npm_error_metrics: Dict[str, int] = {"total": 0, "404": 0, "5xx": 0}
 
         # 기본 복구 전략 등록
         self._register_default_recovery_strategies()
@@ -257,6 +259,25 @@ class ErrorHandler:
             self._increase_timeout,
             self._retry_with_backoff,
         ]
+
+    def is_npm_error(self, error: Exception, tool_name: str | None = None) -> bool:
+        """NPM 관련 에러인지 확인 (상태 코드 및 컨텍스트 기반)."""
+        if tool_name and "npm" not in tool_name.lower():
+            return False
+
+        status = getattr(error, "status_code", getattr(error, "status", None))
+        if isinstance(status, int):
+            self.npm_error_metrics["total"] += 1
+            if status == 404:
+                self.npm_error_metrics["404"] += 1
+                return True
+            if 500 <= status < 600:
+                self.npm_error_metrics["5xx"] += 1
+                return True
+
+        # 기존 휴리스틱 (fallback)
+        err_str = str(error).lower()
+        return any(k in err_str for k in ["npm", "node_modules", "package.json"])
 
     async def handle_error(
         self,
