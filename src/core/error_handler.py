@@ -1,6 +1,5 @@
 """구조화된 에러 처리 시스템
 
-from typing import Optional, Any
 에러 분류, 상세한 에러 메시지 및 스택 트레이스, 복구 제안,
 에러 로깅 및 리포트를 제공하는 통합 에러 처리 시스템
 """
@@ -261,23 +260,29 @@ class ErrorHandler:
         ]
 
     def is_npm_error(self, error: Exception, tool_name: str | None = None) -> bool:
-        """NPM 관련 에러인지 확인 (상태 코드 및 컨텍스트 기반)."""
-        if tool_name and "npm" not in tool_name.lower():
+        """Return whether an exception looks like an npm-related failure."""
+        tool_mentions_npm = bool(tool_name and "npm" in tool_name.lower())
+        if tool_name and not tool_mentions_npm:
             return False
 
-        status = getattr(error, "status_code", getattr(error, "status", None))
-        if isinstance(status, int):
-            self.npm_error_metrics["total"] += 1
-            if status == 404:
-                self.npm_error_metrics["404"] += 1
-                return True
-            if 500 <= status < 600:
-                self.npm_error_metrics["5xx"] += 1
-                return True
-
-        # 기존 휴리스틱 (fallback)
         err_str = str(error).lower()
-        return any(k in err_str for k in ["npm", "node_modules", "package.json"])
+        text_mentions_npm = any(k in err_str for k in ["npm", "node_modules", "package.json"])
+        status = getattr(error, "status_code", getattr(error, "status", None))
+
+        if isinstance(status, int) and (tool_mentions_npm or text_mentions_npm):
+            is_npm = status == 404 or 500 <= status < 600
+        else:
+            is_npm = text_mentions_npm
+
+        if not is_npm:
+            return False
+
+        self.npm_error_metrics["total"] += 1
+        if status == 404:
+            self.npm_error_metrics["404"] += 1
+        elif isinstance(status, int) and 500 <= status < 600:
+            self.npm_error_metrics["5xx"] += 1
+        return True
 
     async def handle_error(
         self,

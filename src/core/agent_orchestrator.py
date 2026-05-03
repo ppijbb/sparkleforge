@@ -30,6 +30,7 @@ class AgentOrchestrator:
     def __init__(self, config=None):
         self.harness = AgentHarness()
         self.config = config
+        self.recursion_limit = getattr(config, "recursion_limit", 20000)
         logger.info("AgentOrchestrator initialized with AgentHarness")
 
     async def execute(self, request: str, session_id: str = "default_session", max_iterations: int = 10, **kwargs) -> Dict[str, Any]:

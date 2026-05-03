@@ -225,6 +225,27 @@ jobs:
             SHOULD_CREATE=$(echo "$CONTENT" | jq -r '.should_create_issue // false')
             ISSUE_TITLE=$(echo "$CONTENT" | jq -r '.title // "🔧 fix: issue identified in review"')
             ISSUE_BODY=$(echo "$CONTENT" | jq -r '.body // empty')
+            ISSUE_TITLE=$(echo "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+            case "$ISSUE_TITLE" in
+              "🔧 fix:"*|"✨ feature:"*|"♻️ refactor:"*|"🧹 chore:"*)
+                ;;
+              "fix:"*|"Fix:"*)
+                ISSUE_TITLE="🔧 fix:${ISSUE_TITLE#*:}"
+                ;;
+              "feat:"*|"Feat:"*|"feature:"*|"Feature:"*)
+                ISSUE_TITLE="✨ feature:${ISSUE_TITLE#*:}"
+                ;;
+              "refactor:"*|"Refactor:"*)
+                ISSUE_TITLE="♻️ refactor:${ISSUE_TITLE#*:}"
+                ;;
+              "chore:"*|"Chore:"*)
+                ISSUE_TITLE="🧹 chore:${ISSUE_TITLE#*:}"
+                ;;
+              *)
+                ISSUE_TITLE="🔧 fix: $ISSUE_TITLE"
+                ;;
+            esac
+            ISSUE_TITLE=$(echo "$ISSUE_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
 
             NORMALIZED_TITLE=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]')
             if [ "$SHOULD_CREATE" != "true" ]; then
@@ -305,9 +326,18 @@ jobs:
           CEREBRAS_REVIEW=$(cat cerebras_result.txt 2>/dev/null || echo 'Missing Cerebras review')
           PR_META=$(gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
-            --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName)
+            --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName,statusCheckRollup)
           MERGE_STATE=$(echo "$PR_META" | jq -r '.mergeStateStatus // "UNKNOWN"')
           BASE_BRANCH=$(echo "$PR_META" | jq -r '.baseRefName // "UNKNOWN"')
+          NOT_READY_CHECKS=$(echo "$PR_META" | jq -r '
+            [.statusCheckRollup[]? |
+              select(
+                (.status != "COMPLETED") or
+                (.conclusion != null and
+                 .conclusion != "SUCCESS" and
+                 .conclusion != "SKIPPED")
+              )] | length
+          ')
 
           SHOULD_MERGE=false
           REASON="No merge decision was made."
@@ -393,6 +423,10 @@ jobs:
 
           if [ "$MERGE_STATE" = "DIRTY" ] || [ "$MERGE_STATE" = "BLOCKED" ] || [ "$MERGE_STATE" = "DRAFT" ]; then
             echo "PR is not currently mergeable: $MERGE_STATE"
+            exit 0
+          fi
+          if [ "$NOT_READY_CHECKS" != "0" ]; then
+            echo "PR checks are not all successful."
             exit 0
           fi
 
