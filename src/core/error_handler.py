@@ -195,6 +195,7 @@ class ErrorHandler:
         self.error_counts: Dict[str, int] = {}
         self.recovery_strategies: Dict[ErrorCategory, List[Callable]] = {}
         self.logger = self._setup_error_logger()
+        self.npm_error_metrics: Dict[str, int] = {"total": 0, "404": 0, "5xx": 0}
 
         # 기본 복구 전략 등록
         self._register_default_recovery_strategies()
@@ -257,6 +258,31 @@ class ErrorHandler:
             self._increase_timeout,
             self._retry_with_backoff,
         ]
+
+    def is_npm_error(self, error: Exception, tool_name: str | None = None) -> bool:
+        """Return whether an exception looks like an npm-related failure."""
+        tool_mentions_npm = bool(tool_name and "npm" in tool_name.lower())
+        if tool_name and not tool_mentions_npm:
+            return False
+
+        err_str = str(error).lower()
+        text_mentions_npm = any(k in err_str for k in ["npm", "node_modules", "package.json"])
+        status = getattr(error, "status_code", getattr(error, "status", None))
+
+        if isinstance(status, int) and (tool_mentions_npm or text_mentions_npm):
+            is_npm = status == 404 or 500 <= status < 600
+        else:
+            is_npm = text_mentions_npm
+
+        if not is_npm:
+            return False
+
+        self.npm_error_metrics["total"] += 1
+        if status == 404:
+            self.npm_error_metrics["404"] += 1
+        elif isinstance(status, int) and 500 <= status < 600:
+            self.npm_error_metrics["5xx"] += 1
+        return True
 
     async def handle_error(
         self,
