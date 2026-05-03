@@ -47,10 +47,25 @@ jobs:
           }' > payload.json
           
           # curl을 통해 직접 API 찌르기
-          curl -s -X POST "https://openrouter.ai/api/v1/chat/completions" \
+          RAW_RESPONSE=$(curl -s -X POST "https://openrouter.ai/api/v1/chat/completions" \
             -H "Authorization: Bearer $OPENROUTER_API_KEY" \
             -H "Content-Type: application/json" \
-            -d @payload.json | jq -r '.choices[0].message.content' > review_result.txt
+            -d @payload.json || true)
+          if [ -z "$RAW_RESPONSE" ]; then
+            echo "Skipped: OpenRouter returned an empty response." > review_result.txt
+            exit 0
+          fi
+          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
+            ERROR_MESSAGE=$(echo "$RAW_RESPONSE" | jq -r '.error.message // .error')
+            echo "Skipped: OpenRouter API error: $ERROR_MESSAGE" > review_result.txt
+            exit 0
+          fi
+          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || true)
+          if [ -z "$CONTENT" ] || [ "$CONTENT" = "null" ]; then
+            echo "Skipped: OpenRouter returned no review content." > review_result.txt
+            exit 0
+          fi
+          printf '%s\n' "$CONTENT" > review_result.txt
             
       - name: Cerebras Diff Review
         env:
@@ -70,10 +85,25 @@ jobs:
             ]
           }' > cerebras_payload.json
           
-          curl -s -X POST "https://api.cerebras.ai/v1/chat/completions" \
+          RAW_RESPONSE=$(curl -s -X POST "https://api.cerebras.ai/v1/chat/completions" \
             -H "Authorization: Bearer $CEREBRAS_API_KEY" \
             -H "Content-Type: application/json" \
-            -d @cerebras_payload.json | jq -r '.choices[0].message.content' > cerebras_result.txt
+            -d @cerebras_payload.json || true)
+          if [ -z "$RAW_RESPONSE" ]; then
+            echo "Skipped: Cerebras returned an empty response." > cerebras_result.txt
+            exit 0
+          fi
+          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
+            ERROR_MESSAGE=$(echo "$RAW_RESPONSE" | jq -r '.error.message // .error')
+            echo "Skipped: Cerebras API error: $ERROR_MESSAGE" > cerebras_result.txt
+            exit 0
+          fi
+          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || true)
+          if [ -z "$CONTENT" ] || [ "$CONTENT" = "null" ]; then
+            echo "Skipped: Cerebras returned no review content." > cerebras_result.txt
+            exit 0
+          fi
+          printf '%s\n' "$CONTENT" > cerebras_result.txt
 
       - name: Leave PR review summary
         if: github.event_name == 'pull_request'
@@ -147,7 +177,7 @@ jobs:
           OPENROUTER_REVIEW=$(cat review_result.txt)
           CEREBRAS_REVIEW=$(cat cerebras_result.txt 2>/dev/null || echo '')
 
-          if [ "$OPENROUTER_REVIEW" = "Skipped" ] && { [ -z "$CEREBRAS_REVIEW" ] || [ "$CEREBRAS_REVIEW" = "Skipped" ]; }; then
+          if [[ "$OPENROUTER_REVIEW" == Skipped* ]] && { [ -z "$CEREBRAS_REVIEW" ] || [[ "$CEREBRAS_REVIEW" == Skipped* ]]; }; then
             echo "All AI reviews were skipped; not creating an issue."
             exit 0
           fi
@@ -268,53 +298,74 @@ jobs:
             echo "::error::PAT repository secret is required to auto-merge reviewed PRs into dev."
             exit 1
           fi
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "No Groq key found, skipping merge decision."
-            exit 0
-          fi
-
           OPENROUTER_REVIEW=$(cat review_result.txt 2>/dev/null || echo 'Missing OpenRouter review')
           CEREBRAS_REVIEW=$(cat cerebras_result.txt 2>/dev/null || echo 'Missing Cerebras review')
           PR_META=$(gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName)
-
-          jq -n \
-            --arg meta "$PR_META" \
-            --arg openrouter "$OPENROUTER_REVIEW" \
-            --arg cerebras "$CEREBRAS_REVIEW" \
-            --arg system_msg "You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, missing review content, or any concrete issue. Keep reason concise." \
-            '{
-              model: "llama-3.3-70b-versatile",
-              messages: [
-                {role: "system", content: $system_msg},
-                {role: "user", content: ("PR metadata:\n" + $meta + "\n\nOpenRouter review:\n" + $openrouter + "\n\nCerebras review:\n" + $cerebras)}
-              ],
-              response_format: { type: "json_object" }
-            }' > merge_decision_payload.json
-
-          RAW_RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
-            -H "Authorization: Bearer $GROQ_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @merge_decision_payload.json)
-
-          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null; then
-            echo "Groq API returned an error:"
-            echo "$RAW_RESPONSE" | jq -r '.error.message // .error'
-            exit 1
-          fi
-
-          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty')
-          if ! echo "$CONTENT" | jq -e . >/dev/null; then
-            echo "Merge decision content was not valid JSON; skipping auto-merge."
-            echo "$CONTENT" | head -c 1000
-            echo
-            exit 0
-          fi
-
-          SHOULD_MERGE=$(echo "$CONTENT" | jq -r '.should_merge // false')
-          REASON=$(echo "$CONTENT" | jq -r '.reason // "No reason provided."')
           MERGE_STATE=$(echo "$PR_META" | jq -r '.mergeStateStatus // "UNKNOWN"')
+
+          SHOULD_MERGE=false
+          REASON="No merge decision was made."
+          HAS_OPENROUTER_REVIEW=true
+          HAS_CEREBRAS_REVIEW=true
+          if [ -z "$OPENROUTER_REVIEW" ] ||
+             [ "$OPENROUTER_REVIEW" = "null" ] ||
+             [[ "$OPENROUTER_REVIEW" == Missing* ]] ||
+             [[ "$OPENROUTER_REVIEW" == Skipped* ]]; then
+            HAS_OPENROUTER_REVIEW=false
+          fi
+          if [ -z "$CEREBRAS_REVIEW" ] ||
+             [ "$CEREBRAS_REVIEW" = "null" ] ||
+             [[ "$CEREBRAS_REVIEW" == Missing* ]] ||
+             [[ "$CEREBRAS_REVIEW" == Skipped* ]]; then
+            HAS_CEREBRAS_REVIEW=false
+          fi
+
+          if [ "$HAS_OPENROUTER_REVIEW" != "true" ] && [ "$HAS_CEREBRAS_REVIEW" != "true" ]; then
+            SHOULD_MERGE=true
+            REASON="AI review providers returned no actionable review content; relying on GitHub mergeability and required checks."
+          elif [ -z "$GROQ_API_KEY" ]; then
+            SHOULD_MERGE=true
+            REASON="No Groq key found for final AI gate; relying on available review comments, GitHub mergeability, and required checks."
+          else
+
+            jq -n \
+              --arg meta "$PR_META" \
+              --arg openrouter "$OPENROUTER_REVIEW" \
+              --arg cerebras "$CEREBRAS_REVIEW" \
+              --arg system_msg "You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, or any concrete issue. Do not block solely because one provider skipped or returned no content if another review is available. Keep reason concise." \
+              '{
+                model: "llama-3.3-70b-versatile",
+                messages: [
+                  {role: "system", content: $system_msg},
+                  {role: "user", content: ("PR metadata:\n" + $meta + "\n\nOpenRouter review:\n" + $openrouter + "\n\nCerebras review:\n" + $cerebras)}
+                ],
+                response_format: { type: "json_object" }
+              }' > merge_decision_payload.json
+
+            RAW_RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+              -H "Authorization: Bearer $GROQ_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @merge_decision_payload.json)
+
+            if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null; then
+              echo "Groq API returned an error:"
+              echo "$RAW_RESPONSE" | jq -r '.error.message // .error'
+              exit 1
+            fi
+
+            CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty')
+            if ! echo "$CONTENT" | jq -e . >/dev/null; then
+              echo "Merge decision content was not valid JSON; skipping auto-merge."
+              echo "$CONTENT" | head -c 1000
+              echo
+              exit 0
+            fi
+
+            SHOULD_MERGE=$(echo "$CONTENT" | jq -r '.should_merge // false')
+            REASON=$(echo "$CONTENT" | jq -r '.reason // "No reason provided."')
+          fi
 
           {
             echo "## Auto Merge Decision"
