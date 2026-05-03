@@ -87,14 +87,28 @@ jobs:
             --repo "${{ github.repository }}" \
             --json title \
             --jq '.title')
-          case "$ISSUE_TITLE" in
+          NORMALIZED_TITLE=$(echo "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+          case "$NORMALIZED_TITLE" in
             "🔧 fix:"*|"✨ feature:"*|"♻️ refactor:"*|"🧹 chore:"*)
-              PR_TITLE="$ISSUE_TITLE"
+              PR_TITLE="$NORMALIZED_TITLE"
+              ;;
+            "fix:"*|"Fix:"*)
+              PR_TITLE="🔧 fix:${NORMALIZED_TITLE#*:}"
+              ;;
+            "feat:"*|"Feat:"*|"feature:"*|"Feature:"*)
+              PR_TITLE="✨ feature:${NORMALIZED_TITLE#*:}"
+              ;;
+            "refactor:"*|"Refactor:"*)
+              PR_TITLE="♻️ refactor:${NORMALIZED_TITLE#*:}"
+              ;;
+            "chore:"*|"Chore:"*)
+              PR_TITLE="🧹 chore:${NORMALIZED_TITLE#*:}"
               ;;
             *)
-              PR_TITLE="🔧 fix: $ISSUE_TITLE"
+              PR_TITLE="🔧 fix: $NORMALIZED_TITLE"
               ;;
           esac
+          PR_TITLE=$(echo "$PR_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
           BRANCH="fix/$ISSUE_NUMBER-${{ github.run_id }}"
 
           git checkout -B "$BRANCH"
@@ -163,8 +177,15 @@ jobs:
               break
             fi
 
-            git add -A ':!issue-context.md' ':!opencode.patch' ':!opencode-extra-context.md' ':!opencode-verify.log'
-            git commit -m "${{ steps.context.outputs.pr_title }} via OpenCode"
+            git add -A \
+              ':!issue-context.md' \
+              ':!opencode.patch' \
+              ':!opencode-extra-context.md' \
+              ':!opencode-verify.log' \
+              ':!opencode-worker-error.log' \
+              ':!*.orig' \
+              ':!*.rej'
+            git commit -m "${{ steps.context.outputs.pr_title }}"
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
               echo "Verification passed: $OPENCODE_VERIFY_COMMAND"

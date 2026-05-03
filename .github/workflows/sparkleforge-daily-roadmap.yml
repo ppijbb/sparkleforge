@@ -165,7 +165,7 @@ jobs:
 
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
-            --title "feat: $TODAY - $TITLE" \
+            --title "✨ feature: $TODAY - $TITLE" \
             --body-file issue-body.md)
 
           ISSUE_NUMBER="${ISSUE_URL##*/}"
