@@ -373,9 +373,9 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     response = ""
     diff = ""
     system_message = (
-        "You are a careful coding agent. Return only a git-apply compatible unified diff "
-        "for the requested fix. Do not use tools, XML tags, markdown narration, or prose. "
-        "The diff context lines must match the file exactly."
+        "You are a careful coding agent. Return only a git-apply compatible "
+        "unified diff for the requested fix. Do not use tools, XML tags, markdown "
+        "narration, or prose. The diff context lines must match the file exactly."
     )
     for llm_attempt in range(2):
         prompt = build_prompt(
