@@ -94,3 +94,4 @@ class AutonomousOrchestrator:
     def ensure_legacy_langgraph_workflow(self) -> None:
         """Backward compatibility helper."""
         pass
+        self.app.recursion_limit = 20000
