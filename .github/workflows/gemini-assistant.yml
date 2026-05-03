@@ -3,6 +3,8 @@ on:
   push:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -273,7 +275,8 @@ jobs:
     needs: code-review
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.pull_request.base.ref == 'dev' &&
+      (github.event.pull_request.base.ref == 'dev' ||
+      github.event.pull_request.base.ref == 'main') &&
       github.event.pull_request.draft == false &&
       needs.code-review.result == 'success'
     runs-on: ubuntu-latest
@@ -287,7 +290,7 @@ jobs:
         with:
           name: review-results
 
-      - name: Decide and merge to dev
+      - name: Decide and merge PR
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GH_TOKEN: ${{ secrets.PAT }}
@@ -304,6 +307,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName)
           MERGE_STATE=$(echo "$PR_META" | jq -r '.mergeStateStatus // "UNKNOWN"')
+          BASE_BRANCH=$(echo "$PR_META" | jq -r '.baseRefName // "UNKNOWN"')
 
           SHOULD_MERGE=false
           REASON="No merge decision was made."
@@ -372,6 +376,8 @@ jobs:
             echo
             echo "**Decision:** $SHOULD_MERGE"
             echo
+            echo "**Base branch:** $BASE_BRANCH"
+            echo
             echo "**Merge state:** $MERGE_STATE"
             echo
             echo "**Reason:** $REASON"
@@ -402,3 +408,82 @@ jobs:
               --auto \
               --delete-branch
           fi
+
+  auto-merge-ready-fix-prs:
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Merge ready fix PRs
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required to auto-merge ready fix PRs."
+            exit 1
+          fi
+
+          DEFAULT_BRANCH=$(gh repo view "${{ github.repository }}" \
+            --json defaultBranchRef \
+            --jq '.defaultBranchRef.name')
+
+          gh pr list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --limit 100 \
+            --json number,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,statusCheckRollup,body \
+            --jq '.[] | select(.headRefName | startswith("fix/")) | @base64' |
+          while read -r encoded; do
+            [ -n "$encoded" ] || continue
+            PR=$(echo "$encoded" | base64 -d)
+            NUMBER=$(echo "$PR" | jq -r '.number')
+            BASE_BRANCH=$(echo "$PR" | jq -r '.baseRefName')
+            IS_DRAFT=$(echo "$PR" | jq -r '.isDraft')
+            MERGEABLE=$(echo "$PR" | jq -r '.mergeable')
+            MERGE_STATE=$(echo "$PR" | jq -r '.mergeStateStatus')
+
+            if [ "$IS_DRAFT" = "true" ]; then
+              echo "Skipping #$NUMBER: draft PR."
+              continue
+            fi
+            if [ "$MERGEABLE" != "MERGEABLE" ] || [ "$MERGE_STATE" != "CLEAN" ]; then
+              echo "Skipping #$NUMBER: mergeable=$MERGEABLE mergeState=$MERGE_STATE."
+              continue
+            fi
+
+            NOT_READY=$(echo "$PR" | jq -r '
+              [.statusCheckRollup[]? |
+                select(
+                  (.status != "COMPLETED") or
+                  (.conclusion != null and
+                   .conclusion != "SUCCESS" and
+                   .conclusion != "SKIPPED")
+                )] | length
+            ')
+            if [ "$NOT_READY" != "0" ]; then
+              echo "Skipping #$NUMBER: checks are not all successful."
+              continue
+            fi
+
+            echo "Merging #$NUMBER into $BASE_BRANCH."
+            gh pr merge "$NUMBER" \
+              --repo "${{ github.repository }}" \
+              --squash \
+              --delete-branch
+
+            if [ "$BASE_BRANCH" != "$DEFAULT_BRANCH" ]; then
+              BODY=$(echo "$PR" | jq -r '.body // ""')
+              ISSUES=$(echo "$BODY" | grep -Eio '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' | grep -Eo '#[0-9]+' | tr -d '#' | sort -u || true)
+              for ISSUE in $ISSUES; do
+                gh issue comment "$ISSUE" \
+                  --repo "${{ github.repository }}" \
+                  --body "Fix PR #$NUMBER was merged into \`$BASE_BRANCH\`. This issue will close automatically when \`$BASE_BRANCH\` is promoted into \`$DEFAULT_BRANCH\`."
+              done
+            fi
+          done
