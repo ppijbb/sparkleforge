@@ -622,6 +622,41 @@ class FusionAgent:
 """
 
 
+class TestTimeScaler:
+    """High-level test-time scaling coordinator."""
+
+    def __init__(
+        self,
+        num_rollouts: int = 3,
+        fusion_strategy: FusionStrategy = FusionStrategy.LAST_K_FUSION,
+        timeout_seconds: float = 120.0,
+    ):
+        self.executor = ParallelRolloutExecutor(
+            num_rollouts=num_rollouts,
+            timeout_seconds=timeout_seconds,
+        )
+        self.fusion_agent = FusionAgent(default_strategy=fusion_strategy)
+
+    async def scale(
+        self,
+        prompt: str,
+        executor_fn: Callable,
+        llm_fuser: Callable | None = None,
+        context: Dict[str, Any] | None = None,
+    ) -> Tuple[FusionResult, List[RolloutResult]]:
+        """Run parallel rollouts and fuse the results."""
+        rollout_results = await self.executor.execute(
+            prompt=prompt,
+            executor_fn=executor_fn,
+            context=context,
+        )
+        fusion_result = await self.fusion_agent.fuse(
+            rollout_results,
+            llm_fuser=llm_fuser,
+        )
+        return fusion_result, rollout_results
+
+
 class MemoryAwareTestTimeScaler(TestTimeScaler):
     """메모리 인식 테스트 타임 스케일링.
     

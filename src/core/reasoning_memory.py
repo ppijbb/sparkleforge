@@ -102,9 +102,21 @@ class ReasoningMemoryBank:
         try:
             with open(self.file_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
             self.memories.append(item)
         except Exception as e:
             logger.error(f"Failed to save reasoning memory: {e}")
+
+    def _flush_all(self):
+        """현재 인메모리 상태를 JSONL 파일에 원자적으로 동기화합니다."""
+        temp_path = f"{self.file_path}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            for item in self.memories:
+                f.write(json.dumps(asdict(item), ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, self.file_path)
 
     async def store_memory(self, item: ReasoningMemoryItem) -> bool:
         """새로운 추론 메모리를 저장합니다. 필요시 임베딩을 자동 생성합니다."""
@@ -164,8 +176,9 @@ class ReasoningMemoryBank:
             results = []
             for idx in indices:
                 mem = valid_memories[idx]
-                mem.usage_count += 1 # 사용 횟수 증가 (인메모리만 업데이트됨, 영구 저장은 별도 구현 필요)
+                mem.usage_count += 1
                 results.append(mem)
+            self._flush_all()
                 
             return results
             

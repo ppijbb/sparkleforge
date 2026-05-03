@@ -25,3 +25,10 @@ temp
 .benchmarks
 .sparkleforge
 test_results
+*.orig
+*.rej
+opencode-worker-error.log
+opencode.patch
+opencode-extra-context.md
+opencode-verify.log
+issue-context.md
