@@ -202,6 +202,16 @@ class MCPStabilityService:
                 }
         except Exception as e:
             logger.error(f"MCP stability service error: {e}")
+            error_str = str(e).lower()
+            is_npm_not_found = "not found" in error_str or "not in this registry" in error_str
+            is_npm_server_error = "server error" in error_str
+
+            if is_npm_not_found:
+                logger.warning("Package not found (npm 404)")
+                return {"success": False, "error": "npm 404", "data": None}
+            elif is_npm_server_error:
+                logger.warning("npm registry server error detected")
+
             # 에러 발생 시 기존 방식으로 fallback
             if hasattr(mcp_hub, "execute_tool"):
                 return await mcp_hub.execute_tool(tool_name, params)
