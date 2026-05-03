@@ -171,6 +171,7 @@ class WorkspaceContext:
     remaining_questions: List[str]
     quality_score: float
     round_number: int
+    reasoning_memories: List[Any] = field(default_factory=list) # 추가: 검색된 추론 메모리
 
 
 class WorkspaceReconstructor:
@@ -314,7 +315,7 @@ class IterativeResearchEngine:
             state.current_round_state = RoundState(round_number=state.current_round)
 
             # Workspace context 준비
-            workspace = self._prepare_workspace(state)
+            workspace = await self._prepare_workspace_async(state, query)
 
             try:
                 # 1. THINK 단계
@@ -425,8 +426,12 @@ class IterativeResearchEngine:
                 state.current_round_state.phase = ResearchPhase.COMPLETE
                 state.current_round_state.completed_at = datetime.now()
 
+                # 라운드 완료 콜백
                 if self.on_round_complete:
                     await self._safe_callback(self.on_round_complete, state)
+
+                # 학습: 라운드가 종료될 때 성공/실패 여부를 바탕으로 추론 메모리 추출
+                await self._induce_reasoning_memory_async(state, query, current_quality)
 
                 round_duration = (datetime.now() - round_start).total_seconds()
                 logger.info(
@@ -468,7 +473,62 @@ class IterativeResearchEngine:
             if last_report
             else 0.0,
             round_number=state.current_round,
+            reasoning_memories=[]
         )
+
+    async def _prepare_workspace_async(self, state: IterativeResearchState, query: str) -> WorkspaceContext:
+        """비동기로 workspace context 준비 (메모리 검색 포함)."""
+        workspace = self._prepare_workspace(state)
+        
+        try:
+            from src.core.reasoning_memory import get_reasoning_memory_bank
+            bank = get_reasoning_memory_bank()
+            memories = await bank.select_reasoning_memory(query=query, n=3, domain_filter="research")
+            workspace.reasoning_memories = memories
+        except Exception as e:
+            logger.warning(f"Failed to fetch reasoning memories: {e}")
+            
+        return workspace
+
+    async def _induce_reasoning_memory_async(self, state: IterativeResearchState, query: str, quality_score: float):
+        """라운드 완료 후 궤적으로부터 추론 메모리 추출."""
+        try:
+            from src.core.reasoning_memory_inducer import get_reasoning_memory_inducer, TrajectoryRecord
+            from src.core.reasoning_memory import get_reasoning_memory_bank
+            
+            inducer = get_reasoning_memory_inducer()
+            bank = get_reasoning_memory_bank()
+            
+            traj = TrajectoryRecord(query=query, domain="research")
+            
+            # 현재 라운드의 기록을 trajectory에 추가
+            if state.current_round_state and state.current_round_state.think_output:
+                think_str = state.current_round_state.think_output.current_understanding
+                
+                action_str = ""
+                if state.current_round_state.action_output:
+                    action_str = str(state.current_round_state.action_output.actions_taken)
+                    
+                obs_str = ""
+                if state.current_round_state.report_output:
+                    obs_str = state.current_round_state.report_output.executive_summary
+                    
+                traj.add_step(think=think_str, action=action_str, observation=obs_str)
+                
+            # 품질 점수로 성공/실패 판단
+            traj.status = "success" if quality_score >= self.quality_threshold else "fail"
+            
+            if traj.status == "success":
+                new_memories = await inducer.induce_from_success(traj)
+            else:
+                new_memories = await inducer.induce_from_failure(traj)
+                
+            if new_memories:
+                await bank.store_batch(new_memories)
+                logger.info(f"Learned {len(new_memories)} reasoning memories from research round {state.current_round}.")
+                
+        except Exception as e:
+            logger.warning(f"Failed to induce reasoning memory: {e}")
 
     async def _safe_callback(self, callback: Callable, *args, **kwargs):
         """안전한 콜백 실행."""
@@ -570,7 +630,7 @@ class IterativeResearchNode:
         """Think 단계 프롬프트 생성."""
         context_section = ""
         if workspace.evolving_summary:
-            context_section = f"""
+            context_section += f"""
 ## Previous Research Summary
 {workspace.evolving_summary}
 
@@ -579,6 +639,12 @@ class IterativeResearchNode:
 
 ## Current Quality Score: {workspace.quality_score:.2f}
 """
+
+        # 검색된 추론 메모리 주입
+        if hasattr(workspace, "reasoning_memories") and workspace.reasoning_memories:
+            from src.core.prompts.reasoning_memory_prompts import MEMORY_INJECTION_TEMPLATE
+            memory_text = "\n\n".join([f"### {m.title}\n{m.content}" for m in workspace.reasoning_memories])
+            context_section += f"\n{MEMORY_INJECTION_TEMPLATE.format(memories=memory_text)}\n"
 
         return f"""# Deep Research Think Phase (Round {round_number})
 
