@@ -280,13 +280,7 @@ jobs:
               echo "issue_number=$ISSUE_NUMBER"
             } >> "$GITHUB_OUTPUT"
 
-            # GitHub Actions bot이 생성한 이슈는 issues: opened 이벤트가
-            # 다른 워크플로우를 트리거하지 않으므로 직접 workflow_dispatch로 호출
-            echo "Triggering opencode-auto-fix.yml for issue #$ISSUE_NUMBER ..."
-            gh workflow run opencode-auto-fix.yml \
-              --repo "${{ github.repository }}" \
-              --field issue_number="$ISSUE_NUMBER" \
-              --field max_iterations="3"
+            echo "Created issue #$ISSUE_NUMBER. opencode-auto-fix.yml will pick it up from the issues event or scheduled backlog scan."
           else
             echo "Error: AI response content is empty."
             echo "Raw response: $RAW_RESPONSE"

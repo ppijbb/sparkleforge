@@ -30,10 +30,100 @@ info() {
     echo -e "${YELLOW}ℹ️  $1${NC}"
 }
 
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+detect_os() {
+    OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    DISTRO=""
+
+    if [ "$OS" = "linux" ] && [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO="${ID:-}"
+    fi
+}
+
+install_with_apt() {
+    sudo apt-get update
+    sudo apt-get install -y "$@"
+}
+
+apt_package_exists() {
+    apt-cache show "$1" >/dev/null 2>&1
+}
+
+install_era_runtime_dependencies() {
+    info "Installing ERA runtime dependencies (krunvm, buildah)..."
+
+    missing=()
+    command_exists krunvm || missing+=("krunvm")
+    command_exists buildah || missing+=("buildah")
+
+    if [ ${#missing[@]} -eq 0 ]; then
+        success "ERA runtime dependencies are already installed"
+        return
+    fi
+
+    case "$OS" in
+        darwin)
+            if ! command_exists brew; then
+                error "Homebrew is required to install krunvm/buildah on macOS. Install Homebrew first: https://brew.sh/"
+            fi
+            brew tap slp/krun || true
+            brew install "${missing[@]}"
+            ;;
+        linux)
+            case "$DISTRO" in
+                ubuntu|debian)
+                    sudo apt-get update
+                    command_exists buildah || sudo apt-get install -y buildah
+                    if ! command_exists krunvm; then
+                        if apt_package_exists krunvm; then
+                            sudo apt-get install -y krunvm
+                        else
+                            error "krunvm is not available from this Ubuntu/Debian apt repository. Install krunvm from the upstream containers/krunvm instructions, then rerun ./install.sh."
+                        fi
+                    fi
+                    ;;
+                fedora)
+                    sudo dnf install -y dnf-plugins-core buildah
+                    sudo dnf copr enable -y slp/libkrunfw
+                    sudo dnf copr enable -y slp/libkrun
+                    sudo dnf copr enable -y slp/krunvm
+                    sudo dnf install -y krunvm
+                    ;;
+                rhel|centos)
+                    if command_exists dnf; then
+                        sudo dnf install -y "${missing[@]}"
+                    else
+                        sudo yum install -y "${missing[@]}"
+                    fi
+                    ;;
+                arch|manjaro)
+                    sudo pacman -S --noconfirm "${missing[@]}"
+                    ;;
+                *)
+                    error "Unsupported Linux distro for automatic krunvm/buildah install: ${DISTRO:-unknown}"
+                    ;;
+            esac
+            ;;
+        *)
+            error "Unsupported OS for automatic krunvm/buildah install: $OS"
+            ;;
+    esac
+
+    command_exists krunvm || error "krunvm installation finished but krunvm is still not in PATH"
+    command_exists buildah || error "buildah installation finished but buildah is still not in PATH"
+
+    success "ERA runtime dependencies installed"
+}
+
 # 프로젝트 루트 확인
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 ERA_AGENT_DIR="$PROJECT_ROOT/../open_researcher/ERA/era-agent"
+detect_os
 
 # ERA Agent 디렉토리 확인
 if [ ! -d "$ERA_AGENT_DIR" ]; then
@@ -51,32 +141,36 @@ if command -v go &> /dev/null; then
     success "Go is already installed: $GO_VERSION"
 else
     info "Go is not installed. Installing Go..."
-    
-    # Linux 배포판 확인
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        OS=$ID
-    else
-        error "Cannot detect OS. Please install Go manually."
-    fi
-    
-    case $OS in
-        ubuntu|debian)
-            info "Installing Go via apt..."
-            sudo apt update
-            sudo apt install -y golang-go
-            ;;
-        fedora|rhel|centos)
-            info "Installing Go via dnf/yum..."
-            if command -v dnf &> /dev/null; then
-                sudo dnf install -y golang
-            else
-                sudo yum install -y golang
+
+    case "$OS" in
+        darwin)
+            if ! command_exists brew; then
+                error "Homebrew is required to install Go on macOS. Install Homebrew first: https://brew.sh/"
             fi
+            brew install go
             ;;
-        arch|manjaro)
-            info "Installing Go via pacman..."
-            sudo pacman -S --noconfirm go
+        linux)
+            case "$DISTRO" in
+                ubuntu|debian)
+                    info "Installing Go via apt..."
+                    install_with_apt golang-go
+                    ;;
+                fedora|rhel|centos)
+                    info "Installing Go via dnf/yum..."
+                    if command_exists dnf; then
+                        sudo dnf install -y golang
+                    else
+                        sudo yum install -y golang
+                    fi
+                    ;;
+                arch|manjaro)
+                    info "Installing Go via pacman..."
+                    sudo pacman -S --noconfirm go
+                    ;;
+                *)
+                    error "Unsupported Linux distro: ${DISTRO:-unknown}. Please install Go manually from https://go.dev/dl/"
+                    ;;
+            esac
             ;;
         *)
             error "Unsupported OS: $OS. Please install Go manually from https://go.dev/dl/"
@@ -100,7 +194,12 @@ fi
 
 echo ""
 
-# 2. ERA Agent 빌드
+# 2. ERA 런타임 의존성 설치
+install_era_runtime_dependencies
+
+echo ""
+
+# 3. ERA Agent 빌드
 info "Building ERA Agent..."
 cd "$ERA_AGENT_DIR"
 
@@ -127,7 +226,7 @@ fi
 
 echo ""
 
-# 3. ERA Agent 테스트
+# 4. ERA Agent 테스트
 info "Testing ERA Agent..."
 if "$ERA_AGENT_DIR/agent" --help &> /dev/null; then
     success "ERA Agent is working correctly"
@@ -137,59 +236,6 @@ fi
 
 echo ""
 
-# 4. 선택적 의존성 안내 (krunvm, buildah)
-info "Checking optional dependencies for full ERA functionality..."
-
-MISSING_DEPS=()
-
-if ! command -v krunvm &> /dev/null; then
-    MISSING_DEPS+=("krunvm")
-fi
-
-if ! command -v buildah &> /dev/null; then
-    MISSING_DEPS+=("buildah")
-fi
-
-if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
-    echo ""
-    info "Optional dependencies not found: ${MISSING_DEPS[*]}"
-    info "These are optional but recommended for full ERA functionality."
-    echo ""
-    read -p "Install optional dependencies? (y/N): " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        case $OS in
-            ubuntu|debian)
-                if [[ " ${MISSING_DEPS[@]} " =~ " krunvm " ]]; then
-                    info "Installing krunvm..."
-                    # krunvm 설치 방법은 배포판마다 다를 수 있음
-                    sudo apt install -y krunvm || info "krunvm installation failed. Please install manually."
-                fi
-                if [[ " ${MISSING_DEPS[@]} " =~ " buildah " ]]; then
-                    info "Installing buildah..."
-                    sudo apt install -y buildah || info "buildah installation failed. Please install manually."
-                fi
-                ;;
-            fedora|rhel|centos)
-                if [[ " ${MISSING_DEPS[@]} " =~ " krunvm " ]]; then
-                    info "Installing krunvm..."
-                    sudo dnf install -y krunvm || sudo yum install -y krunvm || info "krunvm installation failed. Please install manually."
-                fi
-                if [[ " ${MISSING_DEPS[@]} " =~ " buildah " ]]; then
-                    info "Installing buildah..."
-                    sudo dnf install -y buildah || sudo yum install -y buildah || info "buildah installation failed. Please install manually."
-                fi
-                ;;
-            *)
-                info "Please install ${MISSING_DEPS[*]} manually for your OS"
-                ;;
-        esac
-    fi
-else
-    success "All optional dependencies are installed"
-fi
-
-echo ""
 echo "===================================="
 success "Installation completed successfully!"
 echo ""
@@ -207,4 +253,3 @@ echo "  uv run sparkleforge query \"연구 쿼리\"   # 또는: sparkleforge run
 echo "  uv run sparkleforge web                 # 웹 대시보드"
 echo "  uv run sparkleforge --help              # 전체 도움말"
 echo ""
-

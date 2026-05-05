@@ -1,4 +1,5 @@
 name: Auto Fix Harness
+
 on:
   workflow_dispatch:
     inputs:
@@ -6,18 +7,19 @@ on:
         description: 'GitHub issue number to fix with OpenCode'
         required: true
         type: string
+      max_iterations:
+        description: 'Maximum OpenCode repair attempts before opening the PR'
+        required: false
+        default: '3'
+        type: string
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  actions: write
+  contents: read
 
 jobs:
-  opencode-harness:
+  dispatch-opencode-auto-fix:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
     steps:
       - name: Validate automation PAT
         env:
@@ -25,115 +27,16 @@ jobs:
           HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
-            echo "::error::PAT repository secret is required for automatic issue-to-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
-            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
+            echo "::error::PAT repository secret is required to dispatch opencode-auto-fix.yml."
             exit 1
           fi
           gh auth status
-          gh api "repos/${{ github.repository }}" --jq '.full_name'
 
-      - uses: actions/checkout@v4
-        with:
-          ref: dev
-          fetch-depth: 0
-          token: ${{ secrets.PAT }}
-
-      - name: Configure Git Identity
-        run: |
-          git config --global user.name "${{ github.actor }}"
-          git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install aiohttp
-
-      - name: Resolve issue context
-        id: context
+      - name: Dispatch OpenCode Auto Fix PR workflow
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
-          ISSUE_URL="${{ github.server_url }}/${{ github.repository }}/issues/$ISSUE_NUMBER"
-          ISSUE_TITLE=$(gh issue view "$ISSUE_NUMBER" \
+          gh workflow run opencode-auto-fix.yml \
             --repo "${{ github.repository }}" \
-            --json title \
-            --jq '.title')
-          NORMALIZED_TITLE=$(echo "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-          case "$NORMALIZED_TITLE" in
-            "🔧 fix:"*|"✨ feature:"*|"♻️ refactor:"*|"🧹 chore:"*)
-              PR_TITLE="$NORMALIZED_TITLE"
-              ;;
-            "fix:"*|"Fix:"*)
-              PR_TITLE="🔧 fix:${NORMALIZED_TITLE#*:}"
-              ;;
-            "feat:"*|"Feat:"*|"feature:"*|"Feature:"*)
-              PR_TITLE="✨ feature:${NORMALIZED_TITLE#*:}"
-              ;;
-            "refactor:"*|"Refactor:"*)
-              PR_TITLE="♻️ refactor:${NORMALIZED_TITLE#*:}"
-              ;;
-            "chore:"*|"Chore:"*)
-              PR_TITLE="🧹 chore:${NORMALIZED_TITLE#*:}"
-              ;;
-            *)
-              PR_TITLE="🔧 fix: $NORMALIZED_TITLE"
-              ;;
-          esac
-          PR_TITLE=$(echo "$PR_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
-          BRANCH="fix/${ISSUE_NUMBER}-${{ github.run_id }}"
-          git checkout -B "$BRANCH"
-          
-          # Fetch issue details
-          gh issue view "$ISSUE_NUMBER" \
-            --repo "${{ github.repository }}" \
-            --json title,body,url \
-            --jq '"# " + .title + "\n\n" + (.body // "") + "\n\n" + .url' > issue-context.md
-
-          {
-            echo "issue_number=$ISSUE_NUMBER"
-            echo "issue_url=$ISSUE_URL"
-            echo "pr_title<<EOF"
-            echo "$PR_TITLE"
-            echo "EOF"
-            echo "branch=$BRANCH"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Generate and apply patch with OpenCode
-        if: steps.context.outputs.skip != 'true'
-        env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'openrouter' }}
-          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
-        run: python scripts/opencode_github_worker.py fix-issue --issue-context issue-context.md
-
-      - name: Commit, push, and open PR
-        if: steps.context.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.PAT }}
-        run: |
-          if git diff --quiet; then
-            echo "OpenCode produced no repository changes."
-            exit 0
-          fi
-
-          git add -A \
-            ':!issue-context.md' \
-            ':!opencode.patch' \
-            ':!opencode-worker-error.log' \
-            ':!*.orig' \
-            ':!*.rej'
-          git commit -m "${{ steps.context.outputs.pr_title }}"
-          git push --set-upstream origin "${{ steps.context.outputs.branch }}"
-
-          gh pr create \
-            --repo "${{ github.repository }}" \
-            --base dev \
-            --head "${{ steps.context.outputs.branch }}" \
-            --title "${{ steps.context.outputs.pr_title }}" \
-            --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
-
-          Closes #${{ steps.context.outputs.issue_number }}
-
-          Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --field issue_number="${{ github.event.inputs.issue_number }}" \
+            --field max_iterations="${{ github.event.inputs.max_iterations }}"
