@@ -84,8 +84,8 @@ jobs:
               --repo "${{ github.repository }}" \
               --state open \
               --limit 50 \
-              --json number \
-              --jq '.[].number'); do
+              --json number,labels \
+              --jq '.[] | select(([.labels[].name] | index("auto-fix-failed") | not) and ([.labels[].name] | index("auto-fix-pr-opened") | not)) | .number'); do
               HAS_PR=$(gh pr list \
                 --repo "${{ github.repository }}" \
                 --state open \
@@ -292,11 +292,31 @@ jobs:
             echo "pr_url=$PR_URL"
           } >> "$GITHUB_OUTPUT"
 
+          gh issue comment "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --body "OpenCode auto-fix PR: $PR_URL"
+          gh label create auto-fix-pr-opened \
+            --repo "${{ github.repository }}" \
+            --color 0E8A16 \
+            --description "An automated fix PR has been opened for this issue." \
+            --force >/dev/null 2>&1 || true
+          gh issue edit "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --add-label auto-fix-pr-opened || true
+
       - name: Report auto-fix failure on issue
         if: failure() && steps.context.outputs.issue_number != ''
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
+          gh label create auto-fix-failed \
+            --repo "${{ github.repository }}" \
+            --color B60205 \
+            --description "Automated OpenCode fix failed before PR creation." \
+            --force >/dev/null 2>&1 || true
+          gh issue edit "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --add-label auto-fix-failed || true
           {
             echo "OpenCode auto-fix failed before a PR could be created."
             echo

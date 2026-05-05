@@ -42,7 +42,6 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -e .
-          python -c "import aiosqlite" || python -m pip install aiosqlite
 
       - name: Prepare daily research prompt
         id: prompt
@@ -173,13 +172,8 @@ jobs:
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           echo "created=true" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch OpenCode auto-fix workflow
+      - name: Report follow-up automation
         if: steps.create_issue.outputs.created == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run opencode-auto-fix.yml \
-            --repo "${{ github.repository }}" \
-            --ref main \
-            -f issue_number="${{ steps.create_issue.outputs.issue_number }}" \
-            -f max_iterations="${{ github.event.inputs.max_iterations || '3' }}"
+          echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created."
+          echo "opencode-auto-fix.yml will process it via its scheduled backlog scan."
