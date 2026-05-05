@@ -2407,6 +2407,7 @@ async def handle_mcp_command(args):
     """MCP 관리 커맨드 처리"""
     if args.mcp_command == "status":
         logger.info("🔍 Checking MCP server status...")
+        mcp_hub = None
 
         try:
             # MCP Hub 초기화 및 상태 확인
@@ -2423,6 +2424,9 @@ async def handle_mcp_command(args):
         except Exception as e:
             logger.error(f"❌ MCP status check failed: {e}")
             return 1
+        finally:
+            if mcp_hub is not None:
+                await mcp_hub.cleanup()
 
     elif args.mcp_command == "server":
         logger.info("🚀 Starting MCP server...")
@@ -2472,8 +2476,21 @@ async def handle_health_command(args):
 
 async def handle_tools_command(args):
     """도구 관리 커맨드 처리"""
+
+    def _default_tool_test_parameters(tool_name: str) -> Dict[str, Any]:
+        """Return minimal non-destructive parameters for CLI tool smoke tests."""
+        name = tool_name.lower()
+        if "fetch" in name:
+            return {"url": "https://example.com"}
+        if "arxiv" in name or "scholar" in name:
+            return {"query": "machine learning", "max_results": 1}
+        if "search" in name or name in {"ddg_search", "g-search", "exa", "tavily"}:
+            return {"query": "SparkleForge MCP", "num_results": 1, "max_results": 1}
+        return {}
+
     if args.tools_command == "list":
         logger.info("🔧 Listing available tools...")
+        mcp_hub = None
 
         try:
             from src.core.mcp_integration import get_mcp_hub
@@ -2521,9 +2538,13 @@ async def handle_tools_command(args):
         except Exception as e:
             logger.error(f"❌ Failed to list tools: {e}")
             return 1
+        finally:
+            if mcp_hub is not None:
+                await mcp_hub.cleanup()
 
     elif args.tools_command == "test":
         logger.info(f"🧪 Testing tool: {args.tool_name}")
+        mcp_hub = None
 
         try:
             from src.core.mcp_integration import get_mcp_hub
@@ -2532,7 +2553,10 @@ async def handle_tools_command(args):
             await asyncio.wait_for(mcp_hub.initialize_mcp(), timeout=25.0)
 
             # 도구 테스트
-            result = await mcp_hub.test_tool(args.tool_name)
+            result = await mcp_hub.execute_tool(
+                args.tool_name,
+                _default_tool_test_parameters(args.tool_name),
+            )
             if result.get("success"):
                 print(f"✅ Tool {args.tool_name} is working")
             else:
@@ -2542,6 +2566,9 @@ async def handle_tools_command(args):
         except Exception as e:
             logger.error(f"❌ Tool test failed: {e}")
             return 1
+        finally:
+            if mcp_hub is not None:
+                await mcp_hub.cleanup()
 
     return 0
 

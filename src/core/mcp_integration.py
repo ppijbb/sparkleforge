@@ -362,10 +362,20 @@ def _cap_tool_result_for_context(
 
 def _normalize_mcp_call_params(tool_def: Any, params: Dict[str, Any]) -> Dict[str, Any]:
     """Wrap params for FastMCP tools whose schema exposes a single input model."""
+    def _normalize_aliases(raw: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize common caller aliases to embedded MCP server field names."""
+        normalized = dict(raw or {})
+        if "max_results" in normalized and "num_results" not in normalized:
+            normalized["num_results"] = normalized.pop("max_results")
+        return normalized
+
     if isinstance(tool_def, dict):
         schema = tool_def.get("inputSchema") or tool_def.get("input_schema")
     else:
-        schema = getattr(tool_def, "inputSchema", None) or getattr(tool_def, "input_schema", None)
+        schema = getattr(tool_def, "inputSchema", None) or getattr(
+            tool_def, "input_schema", None
+        )
+    params = _normalize_aliases(params)
     if not isinstance(schema, dict):
         return params
 
@@ -377,6 +387,8 @@ def _normalize_mcp_call_params(tool_def: Any, params: Dict[str, Any]) -> Dict[st
         and "input" not in params
     ):
         return {"input": params}
+    if "input" in params and isinstance(params["input"], dict):
+        return {"input": _normalize_aliases(params["input"])}
     return params
 
 
@@ -1640,7 +1652,7 @@ class UniversalMCPHub:
                             "Stopping flag is set, skipping initialize"
                         )
 
-                    await session.initialize()
+                    await asyncio.wait_for(session.initialize(), timeout=timeout)
                     response = await asyncio.wait_for(
                         session.list_tools(), timeout=timeout
                     )
@@ -2006,7 +2018,11 @@ class UniversalMCPHub:
                             tools_dict[tool.name] = {
                                 "name": tool.name,
                                 "description": getattr(tool, "description", "") or "",
-                                "inputSchema": getattr(tool, "inputSchema", {}) or {},
+                                "inputSchema": (
+                                    getattr(tool, "inputSchema", None)
+                                    or getattr(tool, "input_schema", None)
+                                    or {}
+                                ),
                             }
 
                     self.mcp_tools_map[server_name] = tools_dict
@@ -2764,7 +2780,27 @@ class UniversalMCPHub:
                     call_params = _normalize_mcp_call_params(tool_def, params)
 
                     # 기존 ClientSession 방식
-                    result = await session.call_tool(tool_name, call_params)
+                    try:
+                        result = await session.call_tool(tool_name, call_params)
+                    except McpError as e:
+                        error_msg = str(e) if e else ""
+                        should_retry_wrapped = (
+                            "Missing required argument" in error_msg
+                            and "input" in error_msg
+                            and "Unexpected keyword argument" in error_msg
+                            and "input" not in call_params
+                        )
+                        if not should_retry_wrapped:
+                            raise
+                        wrapped_params = {
+                            "input": _normalize_mcp_call_params(tool_def, params)
+                        }
+                        logger.debug(
+                            "[MCP][exec.retry] Retrying %s/%s with FastMCP input wrapper",
+                            server_name,
+                            tool_name,
+                        )
+                        result = await session.call_tool(tool_name, wrapped_params)
 
                     # 결과를 TextContent에서 추출 (ClientSession 방식)
                     if result and hasattr(result, "content") and result.content:
@@ -4711,17 +4747,11 @@ class UniversalMCPHub:
 
             # 연결 상태 확인
             if server_name in self.mcp_sessions:
-                session = self.mcp_sessions[server_name]
-                # 세션이 유효한지 확인
-                try:
-                    if hasattr(session, "_transport") and session._transport:
-                        server_info["connected"] = True
-                    else:
-                        server_info["connected"] = False
-                        server_info["error"] = "Session transport not available"
-                except:
-                    server_info["connected"] = False
-                    server_info["error"] = "Session check failed"
+                server_info["connected"] = await self._check_connection_health(
+                    server_name
+                )
+                if not server_info["connected"]:
+                    server_info["error"] = "Session health check failed"
 
                 # 제공하는 Tool 목록 확인
                 if server_name in self.mcp_tools_map:

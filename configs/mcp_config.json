@@ -152,49 +152,56 @@
       "command": "python",
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/semanticscholar/server.py"
-      ]
+      ],
+      "disabled": true
     },
     "semantic_scholar": {
       "type": "stdio",
       "command": "python",
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/semantic_scholar/server.py"
-      ]
+      ],
+      "disabled": true
     },
     "fetch_service": {
       "type": "stdio",
       "command": "python",
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/fetch_service/server.py"
-      ]
+      ],
+      "disabled": true
     },
     "element_extractor": {
       "type": "stdio",
       "command": "python",
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/element_extractor/server.py"
-      ]
+      ],
+      "disabled": true
     },
     "web_fetcher": {
       "type": "stdio",
       "command": "python",
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/web_fetcher/server.py"
-      ]
+      ],
+      "disabled": true
     },
     "duckduckgo_search": {
       "type": "stdio",
       "command": "python",
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/duckduckgo_search/server.py"
-      ]
+      ],
+      "disabled": true
     },
     "financial-analysis-server": {
       "type": "stdio",
       "command": "python",
       "args": [
         "/home/user/workspace/mcp_agent/primary/SparkleForge/temp/mcp_servers/financial-analysis-server/server.py"
-      ]
+      ],
+      "disabled": true
     }
   },
   "_metadata": {
