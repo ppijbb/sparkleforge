@@ -342,8 +342,34 @@ def parse_search_results(html: str, num_results: int = 10) -> List[Dict[str, str
     return results
 
 
+def _search_input_from_args(
+    input: SearchInput | None = None,
+    query: str | None = None,
+    num_results: int | None = None,
+    max_results: int | None = None,
+    timeout: int = 30,
+    safe_search: bool = True,
+) -> SearchInput:
+    """Accept both FastMCP wrapped input and flat MCP arguments."""
+    if input is not None:
+        return input
+    return SearchInput(
+        query=query or "",
+        num_results=num_results or max_results or 10,
+        timeout=timeout,
+        safe_search=safe_search,
+    )
+
+
 @mcp.tool()
-async def search(input: SearchInput) -> str:
+async def search(
+    input: SearchInput | None = None,
+    query: str | None = None,
+    num_results: int | None = None,
+    max_results: int | None = None,
+    timeout: int = 30,
+    safe_search: bool = True,
+) -> str:
     """Perform web search using DuckDuckGo (primary) or fallback providers.
 
     Returns JSON with:
@@ -352,12 +378,22 @@ async def search(input: SearchInput) -> str:
     - count: number of results returned
     - provider: which search provider was used
     """
-    result = await search_duckduckgo(input.query, input.num_results, input.timeout)
+    request = _search_input_from_args(
+        input, query, num_results, max_results, timeout, safe_search
+    )
+    result = await search_duckduckgo(request.query, request.num_results, request.timeout)
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
-async def search_all(input: SearchInput) -> str:
+async def search_all(
+    input: SearchInput | None = None,
+    query: str | None = None,
+    num_results: int | None = None,
+    max_results: int | None = None,
+    timeout: int = 30,
+    safe_search: bool = True,
+) -> str:
     """Search across all available providers and aggregate results.
 
     Returns JSON with:
@@ -366,7 +402,10 @@ async def search_all(input: SearchInput) -> str:
     - count: total results
     - providers_searched: number of providers queried
     """
-    result = await search_all_providers(input.query, input.num_results)
+    request = _search_input_from_args(
+        input, query, num_results, max_results, timeout, safe_search
+    )
+    result = await search_all_providers(request.query, request.num_results)
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 

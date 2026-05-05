@@ -279,7 +279,12 @@ async def fetch(input: FetchInput) -> str:
 
 
 @mcp.tool()
-async def search(input: SearchInput) -> str:
+async def search(
+    input: SearchInput | None = None,
+    query: str | None = None,
+    num_results: int | None = None,
+    max_results: int | None = None,
+) -> str:
     """Perform a simple web search.
 
     Returns JSON with:
@@ -288,7 +293,11 @@ async def search(input: SearchInput) -> str:
     - count: number of results returned
     - query: the original search query
     """
-    result = await simple_search(input.query, input.num_results)
+    request = input or SearchInput(
+        query=query or "",
+        num_results=num_results or max_results or 10,
+    )
+    result = await simple_search(request.query, request.num_results)
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
