@@ -34,6 +34,92 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+detect_os() {
+    OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    DISTRO=""
+
+    if [ "$OS" = "linux" ] && [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO="${ID:-}"
+    fi
+}
+
+install_era_runtime_dependencies() {
+    print_status "Installing ERA runtime dependencies..."
+
+    local missing=()
+    command_exists krunvm || missing+=("krunvm")
+    command_exists buildah || missing+=("buildah")
+
+    if [ ${#missing[@]} -eq 0 ]; then
+        print_success "ERA runtime dependencies are already installed"
+        return
+    fi
+
+    case "$OS" in
+        darwin)
+            if ! command_exists brew; then
+                print_error "Homebrew is required to install krunvm/buildah on macOS. Install Homebrew first: https://brew.sh/"
+                exit 1
+            fi
+            brew tap slp/krun || true
+            brew install "${missing[@]}"
+            ;;
+        linux)
+            case "$DISTRO" in
+                ubuntu|debian)
+                    sudo apt-get update
+                    command_exists buildah || sudo apt-get install -y buildah
+                    if ! command_exists krunvm; then
+                        if apt-cache show krunvm >/dev/null 2>&1; then
+                            sudo apt-get install -y krunvm
+                        else
+                            print_error "krunvm is not available from this Ubuntu/Debian apt repository. Install krunvm from the upstream containers/krunvm instructions, then rerun scripts/setup.sh."
+                            exit 1
+                        fi
+                    fi
+                    ;;
+                fedora)
+                    sudo dnf install -y dnf-plugins-core buildah
+                    sudo dnf copr enable -y slp/libkrunfw
+                    sudo dnf copr enable -y slp/libkrun
+                    sudo dnf copr enable -y slp/krunvm
+                    sudo dnf install -y krunvm
+                    ;;
+                rhel|centos)
+                    if command_exists dnf; then
+                        sudo dnf install -y "${missing[@]}"
+                    else
+                        sudo yum install -y "${missing[@]}"
+                    fi
+                    ;;
+                arch|manjaro)
+                    sudo pacman -S --noconfirm "${missing[@]}"
+                    ;;
+                *)
+                    print_error "Unsupported Linux distro for automatic krunvm/buildah install: ${DISTRO:-unknown}"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        *)
+            print_error "Unsupported OS for automatic krunvm/buildah install: $OS"
+            exit 1
+            ;;
+    esac
+
+    if ! command_exists krunvm; then
+        print_error "krunvm installation finished but krunvm is still not in PATH"
+        exit 1
+    fi
+    if ! command_exists buildah; then
+        print_error "buildah installation finished but buildah is still not in PATH"
+        exit 1
+    fi
+
+    print_success "ERA runtime dependencies installed"
+}
+
 # Function to check version
 check_version() {
     local cmd="$1"
@@ -299,6 +385,7 @@ main() {
     echo "    Local Researcher Setup Script"
     echo "=========================================="
     echo ""
+    detect_os
     
     # Parse command line arguments
     CHECK_ONLY=false
@@ -349,6 +436,7 @@ main() {
     
     # Install dependencies
     if [ "$INSTALL_DEPS" = true ] || [ "$CHECK_ONLY" = false ]; then
+        install_era_runtime_dependencies
         install_node_dependencies
         setup_python_venv
         install_python_dependencies

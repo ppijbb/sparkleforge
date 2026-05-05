@@ -43,13 +43,18 @@ cd sparkleforge
 # Run the installation script
 ./install.sh
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Install Python dependencies in the uv environment
+uv sync
 
 # Set up environment
 cp env.example .env
 # Edit .env with your OpenRouter API key
 ```
+
+`./install.sh` installs and verifies the ERA runtime dependencies `krunvm` and
+`buildah` before building the ERA agent. ERA code execution is considered
+available only when `krunvm` is present on `PATH` and the ERA API health check
+passes.
 
 ### Basic Usage
 
