@@ -5,7 +5,7 @@ on:
     inputs:
       issue_number:
         description: 'GitHub issue number to fix with OpenCode'
-        required: true
+        required: false
         type: string
       max_iterations:
         description: 'Maximum OpenCode repair attempts before opening the PR'
@@ -13,13 +13,15 @@ on:
         default: '3'
         type: string
   issues:
-    types: [opened]
+    types: [opened, reopened]
   issue_comment:
     types: [created]
+  schedule:
+    - cron: "*/30 * * * *"
 
 concurrency:
   group: opencode-auto-fix-${{ github.event.issue.number || github.event.inputs.issue_number || github.run_id }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   actions: write
@@ -31,9 +33,9 @@ jobs:
   open-pr-and-fix:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.actor != 'github-actions[bot]' &&
-      (github.event_name == 'issues' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode'))))
+      github.event_name == 'schedule' ||
+      github.event_name == 'issues' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode'))
     runs-on: ubuntu-latest
     outputs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
@@ -54,7 +56,6 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: dev
           fetch-depth: 0
           token: ${{ secrets.PAT }}
 
@@ -73,10 +74,35 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
-          else
+          elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
             ISSUE_NUMBER="${{ github.event.issue.number }}"
+          else
+            ISSUE_NUMBER=""
+            for candidate in $(gh issue list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --limit 50 \
+              --json number \
+              --jq '.[].number'); do
+              HAS_PR=$(gh pr list \
+                --repo "${{ github.repository }}" \
+                --state open \
+                --limit 100 \
+                --json number,headRefName,body \
+                --jq '[.[] | select((.headRefName | startswith("fix/'"$candidate"'-")) or ((.body // "") | test("(?i)(close[sd]?|fix(e[sd])?|resolve[sd]?) #'"$candidate"'")))] | length')
+              if [ "$HAS_PR" = "0" ]; then
+                ISSUE_NUMBER="$candidate"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "No open issue without an open fix PR was found."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           ISSUE_URL=$(gh issue view "$ISSUE_NUMBER" \
@@ -109,9 +135,16 @@ jobs:
               ;;
           esac
           PR_TITLE=$(echo "$PR_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
+          BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"
+          if [ -z "$BASE_BRANCH" ]; then
+            BASE_BRANCH=$(gh repo view "${{ github.repository }}" \
+              --json defaultBranchRef \
+              --jq '.defaultBranchRef.name')
+          fi
           BRANCH="fix/$ISSUE_NUMBER-${{ github.run_id }}"
 
-          git checkout -B "$BRANCH"
+          git fetch origin "$BASE_BRANCH" --depth=1
+          git checkout -B "$BRANCH" "origin/$BASE_BRANCH"
           gh issue view "$ISSUE_NUMBER" \
             --repo "${{ github.repository }}" \
             --json title,body,url \
@@ -123,10 +156,12 @@ jobs:
             echo "pr_title<<EOF"
             echo "$PR_TITLE"
             echo "EOF"
+            echo "base_branch=$BASE_BRANCH"
             echo "branch=$BRANCH"
           } >> "$GITHUB_OUTPUT"
 
       - name: OpenCode repair loop
+        if: steps.context.outputs.skip != 'true'
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -173,8 +208,8 @@ jobs:
             fi
 
             if git diff --quiet; then
-              echo "OpenCode produced no repository changes on attempt $attempt."
-              break
+              echo "OpenCode produced no repository changes on attempt $attempt." | tee opencode-worker-error.log
+              exit 1
             fi
 
             git add -A \
@@ -210,18 +245,16 @@ jobs:
 
       - name: Push OpenCode changes
         id: commit
+        if: steps.context.outputs.skip != 'true'
         run: |
-          if ! git rev-parse --verify HEAD >/dev/null 2>&1 || [ -z "$(git log --oneline origin/dev..HEAD)" ]; then
-            {
-              echo "has_changes=false"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1 ||
+             [ -z "$(git log --oneline origin/${{ steps.context.outputs.base_branch }}..HEAD)" ]; then
+            echo "::error::OpenCode completed without commits for issue #${{ steps.context.outputs.issue_number }}."
+            exit 1
           fi
 
           git push --set-upstream origin "${{ steps.context.outputs.branch }}"
-          {
-            echo "has_changes=true"
-          } >> "$GITHUB_OUTPUT"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
 
       - name: Open or find pull request
         id: pr
@@ -232,7 +265,7 @@ jobs:
           EXISTING_PR=$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${{ steps.context.outputs.branch }}" \
-            --base dev \
+            --base "${{ steps.context.outputs.base_branch }}" \
             --state open \
             --json number,url \
             --jq '.[0] // empty')
@@ -243,7 +276,7 @@ jobs:
           else
             PR_URL=$(gh pr create \
               --repo "${{ github.repository }}" \
-              --base dev \
+              --base "${{ steps.context.outputs.base_branch }}" \
               --head "${{ steps.context.outputs.branch }}" \
               --title "${{ steps.context.outputs.pr_title }}" \
               --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
@@ -258,3 +291,33 @@ jobs:
             echo "pr_number=$PR_NUMBER"
             echo "pr_url=$PR_URL"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Report auto-fix failure on issue
+        if: failure() && steps.context.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          {
+            echo "OpenCode auto-fix failed before a PR could be created."
+            echo
+            echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Workflow: ${{ github.workflow }}"
+            echo "- Issue: #${{ steps.context.outputs.issue_number }}"
+            echo
+            if [ -f opencode-worker-error.log ]; then
+              echo "Worker error:"
+              echo '```text'
+              tail -n 120 opencode-worker-error.log
+              echo '```'
+            fi
+            if [ -f opencode-verify.log ]; then
+              echo
+              echo "Verification output:"
+              echo '```text'
+              tail -n 120 opencode-verify.log
+              echo '```'
+            fi
+          } > auto-fix-failure-comment.md
+          gh issue comment "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file auto-fix-failure-comment.md

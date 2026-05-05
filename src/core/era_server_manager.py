@@ -12,7 +12,7 @@ import shutil
 import signal
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
@@ -244,12 +244,21 @@ class ERAServerManager:
         Returns:
             서버가 실행 중이면 True
         """
+        healthy, _ = self._check_server_health()
+        return healthy
+
+    def _check_server_health(self) -> Tuple[bool, str | None]:
+        """Check whether the configured ERA API is healthy."""
         try:
-            # HTTP 요청으로 확인
             response = httpx.get(f"{self.server_url}/api/vm/list", timeout=2.0)
-            return response.status_code == 200
-        except Exception:
-            return False
+            if response.status_code == 200:
+                return True, None
+            return (
+                False,
+                f"HTTP {response.status_code}: {response.text[:300]}",
+            )
+        except Exception as e:
+            return False, str(e)
 
     def _check_port_available(self, port: int) -> bool:
         """포트가 사용 가능한지 확인
@@ -289,10 +298,15 @@ class ERAServerManager:
         try:
             port = int(self.server_addr.split(":")[-1])
             if not self._check_port_available(port):
+                healthy, health_error = self._check_server_health()
+                if healthy:
+                    logger.info("ERA server is already running")
+                    return True
                 logger.warning(
-                    f"Port {port} is already in use. Assuming ERA server is running externally."
+                    f"Port {port} is already in use, but ERA health check failed at "
+                    f"{self.server_url}/api/vm/list: {health_error}"
                 )
-                return True
+                return False
         except (ValueError, IndexError):
             pass
 
