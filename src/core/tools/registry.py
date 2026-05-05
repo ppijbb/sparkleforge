@@ -122,7 +122,11 @@ class ToolRegistry:
         input_schema = {}
         if tool_def:
             description = getattr(tool_def, "description", description)
-            input_schema = getattr(tool_def, "inputSchema", {})
+            input_schema = (
+                getattr(tool_def, "inputSchema", None)
+                or getattr(tool_def, "input_schema", None)
+                or {}
+            )
 
         # Simple category inference
         category = ToolCategory.UTILITY

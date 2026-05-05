@@ -390,8 +390,21 @@ ARXIV_CATEGORIES = {
 
 
 @mcp.tool()
-async def search(input: SearchInput) -> str:
+async def search(
+    input: SearchInput | None = None,
+    query: str | None = None,
+    max_results: int = 10,
+    num_results: int | None = None,
+    sort_by: str = "relevance",
+    sort_order: str = "descending",
+) -> str:
     """Search arXiv for academic papers."""
+    input = input or SearchInput(
+        query=query or "",
+        max_results=num_results or max_results,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
     result = await search_arxiv(
         input.query, input.max_results, input.sort_by, input.sort_order
     )
