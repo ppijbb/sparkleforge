@@ -60,9 +60,13 @@ jobs:
           token: ${{ secrets.PAT }}
 
       - name: Configure git identity
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ACTOR_LOGIN=$(gh api user --jq '.login')
+          ACTOR_ID=$(gh api user --jq '.id')
+          git config user.name "$ACTOR_LOGIN"
+          git config user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
 
       - name: Install OpenCode worker dependencies
         run: |
@@ -159,6 +163,18 @@ jobs:
             echo "base_branch=$BASE_BRANCH"
             echo "branch=$BRANCH"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Clear explicit retry labels
+        if: >-
+          steps.context.outputs.skip != 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode')))
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh issue edit "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --remove-label auto-fix-failed,auto-fix-pr-opened || true
 
       - name: OpenCode repair loop
         if: steps.context.outputs.skip != 'true'

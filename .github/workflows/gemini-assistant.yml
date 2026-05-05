@@ -110,8 +110,13 @@ jobs:
       - name: Leave PR review summary
         if: github.event_name == 'pull_request'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required so automation comments are authored by the PAT owner instead of github-actions[bot]."
+            exit 1
+          fi
           {
             echo "## OpenCode review seed"
             echo
@@ -419,23 +424,21 @@ jobs:
             echo "PR is not currently mergeable: $MERGE_STATE"
             exit 0
           fi
-          if [ "$NOT_READY_CHECKS" != "0" ]; then
-            echo "PR checks are not all successful."
-            exit 0
-          fi
 
-          if [ "$MERGE_STATE" = "CLEAN" ]; then
-            gh pr merge "$PR_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --squash \
-              --delete-branch
-          else
+          if [ "$NOT_READY_CHECKS" != "0" ] || [ "$MERGE_STATE" != "CLEAN" ]; then
+            echo "Checks are still settling or merge state is $MERGE_STATE; enabling auto-merge."
             gh pr merge "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
               --squash \
               --auto \
               --delete-branch
+            exit 0
           fi
+
+          gh pr merge "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --squash \
+            --delete-branch
 
   auto-merge-ready-fix-prs:
     if: >-
@@ -466,7 +469,7 @@ jobs:
             --state open \
             --limit 100 \
             --json number,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,statusCheckRollup,body \
-            --jq '.[] | select(.headRefName | startswith("fix/")) | @base64' |
+            --jq '.[] | select((.headRefName | startswith("fix/")) or (.headRefName | startswith("chore/"))) | @base64' |
           while read -r encoded; do
             [ -n "$encoded" ] || continue
             PR=$(echo "$encoded" | base64 -d)
