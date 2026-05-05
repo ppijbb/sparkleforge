@@ -110,8 +110,13 @@ jobs:
       - name: Leave PR review summary
         if: github.event_name == 'pull_request'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required so automation comments are authored by the PAT owner instead of github-actions[bot]."
+            exit 1
+          fi
           {
             echo "## OpenCode review seed"
             echo

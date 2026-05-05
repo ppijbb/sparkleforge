@@ -131,9 +131,15 @@ jobs:
       - name: Create GitHub issue
         id: create_issue
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
           TODAY: ${{ steps.prompt.outputs.today }}
         run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required so roadmap issues are authored by the PAT owner instead of github-actions[bot]."
+            exit 1
+          fi
+
           EXISTING=$(gh issue list \
             --repo "${{ github.repository }}" \
             --state all \
