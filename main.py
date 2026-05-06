@@ -2405,6 +2405,8 @@ async def handle_web_command(args):
 
 async def handle_mcp_command(args):
     """MCP 관리 커맨드 처리"""
+    os.environ.setdefault("SPARKLEFORGE_SKIP_ERA_FOR_MCP", "true")
+
     if args.mcp_command == "status":
         logger.info("🔍 Checking MCP server status...")
         mcp_hub = None
@@ -2476,6 +2478,7 @@ async def handle_health_command(args):
 
 async def handle_tools_command(args):
     """도구 관리 커맨드 처리"""
+    os.environ.setdefault("SPARKLEFORGE_SKIP_ERA_FOR_MCP", "true")
 
     def _default_tool_test_parameters(tool_name: str) -> Dict[str, Any]:
         """Return minimal non-destructive parameters for CLI tool smoke tests."""

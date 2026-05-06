@@ -88,7 +88,9 @@ jobs:
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           SPARKLEFORGE_CLI_INTERACTIVE: 'false'
           MCP_BUILDER_ENABLED: 'false'
-          SPARKLEFORGE_ALLOWED_MCP_SERVERS: 'arxiv,fetch,sparkleforge-skills'
+          MCP_ALLOWED_SERVERS: 'local-search,search,web-fetch,arxiv,sparkleforge-skills'
+          SPARKLEFORGE_ALLOWED_MCP_SERVERS: 'local-search,search,web-fetch,arxiv,sparkleforge-skills'
+          SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
         run: |
           set +e
           uv run sparkleforge run "$(cat daily-roadmap-prompt.md)" \
