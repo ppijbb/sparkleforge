@@ -256,17 +256,19 @@ class PlanningNode(BaseNode):
                 logger.warning(f"⚠️ {tool_name} search error: {e}")
 
         academic_results = []
-        try:
-            result = await execute_tool(
-                tool_name="semantic_scholar::papers-search-basic",
-                parameters={"query": " ".join(keywords[:2]), "max_results": 3},
-            )
-            if result.get("success", False):
-                result_data = result.get("data", {})
-                data_list = result_data.get("results", []) if isinstance(result_data, dict) else (result_data if isinstance(result_data, list) else [])
-                academic_results.append({"tool": "semantic_scholar", "data": data_list, "sources_count": len(data_list)})
-        except Exception as e:
-            logger.warning(f"⚠️ academic search error: {e}")
+        academic_query = " ".join(keywords[:2])
+        if academic_query:
+            try:
+                result = await execute_tool(
+                    tool_name="arxiv",
+                    parameters={"query": academic_query, "max_results": 3},
+                )
+                if result.get("success", False):
+                    result_data = result.get("data", {})
+                    data_list = result_data.get("results", []) if isinstance(result_data, dict) else (result_data if isinstance(result_data, list) else [])
+                    academic_results.append({"tool": "arxiv", "data": data_list, "sources_count": len(data_list)})
+            except Exception as e:
+                logger.warning(f"⚠️ academic search error: {e}")
 
         return {
             "keywords": keywords,
