@@ -45,6 +45,24 @@ def repo_snapshot() -> str:
     return "\n".join(keep[:600])
 
 
+def repository_change_signature() -> tuple[str, ...]:
+    """Return meaningful git status lines, excluding worker runtime files."""
+    ignored_runtime_files = {
+        "issue-context.md",
+        "opencode.patch",
+        "opencode-extra-context.md",
+        "opencode-verify.log",
+        "opencode-worker-error.log",
+    }
+    status_lines = []
+    for line in run(["git", "status", "--porcelain", "--untracked-files=all"]).stdout.splitlines():
+        path = line[3:] if len(line) > 3 else ""
+        if path in ignored_runtime_files or path.endswith((".orig", ".rej")):
+            continue
+        status_lines.append(line)
+    return tuple(sorted(status_lines))
+
+
 def extract_diff(text: str) -> str:
     fenced = re.search(r"```(?:diff|patch)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
     candidate = fenced.group(1).strip() if fenced else text.strip()
@@ -421,12 +439,18 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         return 1
 
     patch_path = Path("opencode.patch")
+    before_signature = repository_change_signature()
     patch_path.write_text(diff, encoding="utf-8")
 
     success, err = _apply_patch(patch_path)
     if not success:
         print(err, file=sys.stderr)
         print("--- Failed Patch ---", file=sys.stderr)
+        print(diff[:4000], file=sys.stderr)
+        return 1
+    if repository_change_signature() == before_signature:
+        print("OpenCode patch applied cleanly but produced no repository changes.", file=sys.stderr)
+        print("--- No-op Patch ---", file=sys.stderr)
         print(diff[:4000], file=sys.stderr)
         return 1
 
