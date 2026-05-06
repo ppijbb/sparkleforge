@@ -31,7 +31,6 @@ class TimeoutConfig:
     fetch_timeout: float = 10.0  # HTTP fetch operations
     command_timeout: float = 30.0  # Inline command execution
     agent_timeout: float = 0.0  # Agent execution (0 = no timeout)
-    era_start_timeout: float = 30.0  # ERA server start timeout
 
 
 @dataclass
@@ -77,9 +76,6 @@ class ProcessManager:
             fetch_timeout=float(os.getenv("SPARKLEFORGE_FETCH_TIMEOUT", "10.0")),
             command_timeout=float(os.getenv("SPARKLEFORGE_COMMAND_TIMEOUT", "30.0")),
             agent_timeout=float(os.getenv("SPARKLEFORGE_AGENT_TIMEOUT", "0.0")),
-            era_start_timeout=float(
-                os.getenv("SPARKLEFORGE_ERA_START_TIMEOUT", "30.0")
-            ),
         )
 
         # Cleanup callbacks

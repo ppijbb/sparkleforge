@@ -1,6 +1,6 @@
 """Skill Auto-Discovery and Hot-Reload System
 
-ERA 영감을 받은 자동 스킬 발견 및 핫 리로드 시스템.
+자동 스킬 발견 및 핫 리로드 시스템.
 SKILL.md 파일을 자동으로 발견하고 런타임에 동적으로 로드/리로드.
 
 핵심 특징:
@@ -230,7 +230,7 @@ class FileWatcher:
 class SkillContextLoader:
     """스킬 컨텍스트 로더.
 
-    ERA 스타일로 스킬 실행 시 전체 컨텍스트 주입.
+    스킬 실행 시 전체 컨텍스트 주입.
     """
 
     def __init__(self):
