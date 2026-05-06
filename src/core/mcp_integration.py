@@ -498,35 +498,6 @@ class UniversalMCPHub:
         self.auto_discovered_tools: Dict[str, BaseTool] = {}  # 자동 발견된 도구들
         self.auto_discovered_tool_infos: Dict[str, MCPToolInfo] = {}  # 도구 메타데이터
 
-        # ERA 서버 관리자 (안전한 코드 실행)
-        self.era_server_manager: Any | None = None
-        try:
-            from src.core.era_server_manager import ERAServerManager
-            from src.core.researcher_config import get_era_config
-
-            era_config = get_era_config()
-            if era_config.enabled:
-                # 서버 주소 파싱
-                server_addr = ":8080"  # 기본값
-                if ":" in era_config.server_url:
-                    try:
-                        port = era_config.server_url.split(":")[-1]
-                        server_addr = f":{port}"
-                    except:
-                        pass
-
-                self.era_server_manager = ERAServerManager(
-                    agent_binary_path=era_config.agent_binary_path,
-                    server_url=era_config.server_url,
-                    server_addr=server_addr,
-                    auto_start=era_config.auto_start,
-                )
-                logger.info("ERA server manager initialized")
-        except ImportError:
-            logger.debug("ERA modules not available")
-        except Exception as e:
-            logger.warning(f"Failed to initialize ERA server manager: {e}")
-
         self._load_tools_config()
         self._initialize_tools()
         self._initialize_clients()
@@ -2351,29 +2322,6 @@ class UniversalMCPHub:
             )
             return
 
-        # ERA 서버 시작 (코드 실행을 위해)
-        skip_era_for_mcp = os.getenv("SPARKLEFORGE_SKIP_ERA_FOR_MCP", "").lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-        if self.era_server_manager and not skip_era_for_mcp:
-            try:
-                if await self.era_server_manager.ensure_server_running():
-                    logger.info(
-                        "✅ ERA server is running (safe code execution enabled)"
-                    )
-                else:
-                    logger.warning(
-                        "⚠️ ERA server is not available (code execution will use fallback)"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"⚠️ Failed to start ERA server: {e} (code execution will use fallback)"
-                )
-        elif skip_era_for_mcp:
-            logger.info("[MCP][init] Skipping ERA startup for MCP-only command")
-
         try:
             logger.info("Initializing MCP Hub with MCP servers (no OpenRouter)...")
 
@@ -3031,14 +2979,6 @@ class UniversalMCPHub:
         logger.info("Cleaning up MCP Hub...")
         # 신규 연결 차단
         self.stopping = True
-
-        # ERA 서버 정리
-        if self.era_server_manager:
-            try:
-                self.era_server_manager.cleanup()
-                logger.info("✅ ERA server cleaned up")
-            except Exception as e:
-                logger.warning(f"Error cleaning up ERA server: {e}")
 
         # OpenRouter 클라이언트 사용 안 함
         self.openrouter_client = None
@@ -6888,11 +6828,11 @@ async def _execute_data_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
 
 
 async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
-    """실제 코드 도구 실행 - ERA 또는 Docker 샌드박스 선택."""
+    """실제 코드 도구 실행 - Docker/gVisor 샌드박스 우선."""
     start_time = time.time()
     code = parameters.get("code", "")
     language = parameters.get("language", "python")
-    sandbox_type = parameters.get("sandbox", "era")  # "era" or "docker"
+    sandbox_type = str(parameters.get("sandbox", "docker")).lower()
 
     # 1. 리소스 제한 체크
     try:
@@ -6945,8 +6885,8 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
         except Exception as e:
             logger.debug("Remote sandbox (%s) failed, falling back: %s", backend_name, e)
 
-    # 3. 샌드박스 타입에 따른 실행
-    if sandbox_type == "docker":
+    # 3. Docker/gVisor 샌드박스 사용 (기본값)
+    if sandbox_type in ("docker", "gvisor", "runsc", "container"):
         # Docker 샌드박스 사용
         try:
             from src.core.sandbox.docker_sandbox import get_sandbox
@@ -6967,6 +6907,7 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                     "sandbox_type": "docker",
                     "container_id": result.container_id,
                 },
+                error=result.error if not result.success else None,
                 execution_time=execution_time,
                 confidence=0.9 if result.success else 0.5,
             )
@@ -6982,179 +6923,14 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 confidence=0.0,
             )
 
-    # 4. ERA 설정 확인 (기본값)
-    try:
-        from src.core.era_client import ERAClient
-        from src.core.era_server_manager import get_era_server_manager
-        from src.core.researcher_config import get_era_config
-
-        era_config = get_era_config()
-
-        # ERA가 비활성화되어 있으면 에러 반환
-        if not era_config.enabled:
-            error_msg = "ERA is disabled. Code execution requires ERA to be enabled for security."
-            logger.error(error_msg)
-            return ToolResult(
-                success=False,
-                data=None,
-                error=error_msg,
-                execution_time=time.time() - start_time,
-                confidence=0.0,
-            )
-
-        # 싱글톤 ERA 서버 관리자 사용
-        server_manager = get_era_server_manager()
-
-        # 강화된 서버 시작 (재시도 포함)
-        if not await server_manager.ensure_server_running_with_retry():
-            error_msg = (
-                f"ERA server is not available after {server_manager.max_retries} retries. "
-                f"Please ensure ERA Agent is installed and running. "
-                f"Binary path: {server_manager.agent_binary_path or 'not found'}"
-            )
-            logger.error(error_msg)
-            return ToolResult(
-                success=False,
-                data=None,
-                error=error_msg,
-                execution_time=time.time() - start_time,
-                confidence=0.0,
-            )
-
-        # ERA 클라이언트 생성
-        era_client = ERAClient(
-            base_url=era_config.server_url,
-            api_key=era_config.api_key,
-            timeout=float(era_config.default_timeout) + 10.0,  # 여유 시간 추가
-        )
-
-        try:
-            # 언어별 명령 생성
-            # Cloudflare Worker 방식: 코드를 base64로 인코딩하여 command에 포함
-            # 이 방식이 가장 안전하고 확실함 (이스케이프 문제 없음)
-            import base64
-            import uuid
-
-            # 코드를 base64로 인코딩
-            code_bytes = code.encode("utf-8")
-            code_base64 = base64.b64encode(code_bytes).decode("ascii")
-
-            # 언어별 실행 명령 생성
-            unique_id = uuid.uuid4().hex[:8]
-
-            if language.lower() in ["python", "py"]:
-                # Python: base64 디코딩 후 파이프로 전달
-                # 긴 코드나 멀티라인 코드는 임시 파일 사용
-                if len(code) > 1000 or code.count("\n") > 10:
-                    # 긴 코드는 임시 파일로 실행
-                    tmp_file = f"/tmp/code_{unique_id}.py"
-                    # base64 문자열을 안전하게 전달 (single quote 사용)
-                    command = f"sh -c \"echo '{code_base64}' | base64 -d > {tmp_file} && python {tmp_file} && rm -f {tmp_file}\""
-                else:
-                    # 짧은 코드는 파이프로 실행
-                    command = f"sh -c \"echo '{code_base64}' | base64 -d | python\""
-
-                result = await era_client.run_temp(
-                    language="python",
-                    command=command,
-                    cpu=era_config.default_cpu,
-                    memory=era_config.default_memory,
-                    network=era_config.network_mode,
-                    timeout=era_config.default_timeout,
-                )
-            elif language.lower() in ["javascript", "js", "node", "nodejs"]:
-                # JavaScript/Node: base64 디코딩 후 파이프로 전달
-                if len(code) > 1000 or code.count("\n") > 10:
-                    # 긴 코드는 임시 파일로 실행
-                    tmp_file = f"/tmp/code_{unique_id}.js"
-                    command = f"sh -c \"echo '{code_base64}' | base64 -d > {tmp_file} && node {tmp_file} && rm -f {tmp_file}\""
-                else:
-                    # 짧은 코드는 파이프로 실행
-                    command = f"sh -c \"echo '{code_base64}' | base64 -d | node\""
-
-                result = await era_client.run_temp(
-                    language="javascript",
-                    command=command,
-                    cpu=era_config.default_cpu,
-                    memory=era_config.default_memory,
-                    network=era_config.network_mode,
-                    timeout=era_config.default_timeout,
-                )
-            else:
-                error_msg = f"Unsupported language for ERA: {language}"
-                logger.error(error_msg)
-                return ToolResult(
-                    success=False,
-                    data=None,
-                    error=error_msg,
-                    execution_time=time.time() - start_time,
-                    confidence=0.0,
-                )
-
-            # ERA 실행 결과를 ToolResult로 변환
-            execution_time = time.time() - start_time
-
-            return ToolResult(
-                success=result.exit_code == 0,
-                data={
-                    "code": code,
-                    "language": language,
-                    "output": result.stdout,
-                    "error": result.stderr,
-                    "return_code": result.exit_code,
-                    "vm_id": result.vm_id,
-                    "duration": result.duration,
-                    "sandbox_type": "era",
-                },
-                execution_time=execution_time,
-                confidence=0.9 if result.exit_code == 0 else 0.5,
-            )
-        finally:
-            await era_client.close()
-
-    except ImportError as e:
-        # ERA 모듈이 없으면 에러 반환
-        error_msg = (
-            f"ERA modules not available: {e}. Please install ERA Agent dependencies."
-        )
-        logger.error(error_msg)
+    if sandbox_type not in ("docker", "gvisor", "runsc", "container"):
         return ToolResult(
             success=False,
             data=None,
-            error=error_msg,
-            execution_time=time.time() - start_time,
-            confidence=0.0,
-        )
-    except ConnectionError as e:
-        # ERA 연결 실패 - 에러 반환
-        error_msg = f"ERA connection failed: {e}. Please ensure ERA server is running."
-        logger.error(error_msg)
-        return ToolResult(
-            success=False,
-            data=None,
-            error=error_msg,
-            execution_time=time.time() - start_time,
-            confidence=0.0,
-        )
-    except ValueError as e:
-        # ERA 설정 오류 - 에러 반환
-        error_msg = f"ERA configuration error: {e}"
-        logger.error(error_msg)
-        return ToolResult(
-            success=False,
-            data=None,
-            error=error_msg,
-            execution_time=time.time() - start_time,
-            confidence=0.0,
-        )
-    except Exception as e:
-        # 기타 ERA 오류 - 에러 반환
-        error_msg = f"ERA execution error: {e}"
-        logger.error(error_msg, exc_info=True)
-        return ToolResult(
-            success=False,
-            data=None,
-            error=error_msg,
+            error=(
+                f"Unsupported sandbox '{sandbox_type}'. "
+                "Use 'docker' or 'runsc'."
+            ),
             execution_time=time.time() - start_time,
             confidence=0.0,
         )

@@ -700,58 +700,6 @@ class AgentToolConfig(BaseModel):
     )
 
 
-class ERAConfig(BaseModel):
-    """ERA Agent Configuration - Safe Code Execution."""
-
-    model_config = ConfigDict(validate_assignment=True, extra="forbid")
-
-    enabled: bool = Field(
-        default=True, description="Enable ERA for safe code execution"
-    )
-    server_url: str = Field(
-        default="http://localhost:8080", description="ERA server URL"
-    )
-    auto_start: bool = Field(
-        default=True, description="Auto-start ERA server if not running"
-    )
-    agent_binary_path: str | None = Field(
-        default=None, description="ERA Agent binary path (auto-detect if None)"
-    )
-    default_cpu: int = Field(default=1, ge=1, description="Default CPU count")
-    default_memory: int = Field(default=256, ge=128, description="Default memory in MB")
-    default_timeout: int = Field(
-        default=30, gt=0, description="Default timeout in seconds"
-    )
-    network_mode: str = Field(
-        default="none", description="Network policy (none, allow_all)"
-    )
-    api_key: str | None = Field(default=None, description="ERA API key (optional)")
-    start_timeout: int = Field(default=30, gt=0, description="서버 시작 타임아웃 (초)")
-    max_retries: int = Field(default=3, ge=1, le=10, description="최대 재시도 횟수")
-    retry_backoff: float = Field(
-        default=2.0, gt=1.0, le=10.0, description="재시도 백오프 배수"
-    )
-
-    @classmethod
-    def from_env(cls) -> "ERAConfig":
-        """Create ERAConfig from environment variables."""
-        return cls(
-            enabled=os.getenv("ERA_ENABLED", "true").lower() in ("true", "1", "yes"),
-            server_url=os.getenv("ERA_SERVER_URL", "http://localhost:8080"),
-            auto_start=os.getenv("ERA_AUTO_START", "true").lower()
-            in ("true", "1", "yes"),
-            agent_binary_path=os.getenv("ERA_AGENT_BINARY") or None,
-            default_cpu=int(os.getenv("ERA_DEFAULT_CPU", "1")),
-            default_memory=int(os.getenv("ERA_DEFAULT_MEMORY", "256")),
-            default_timeout=int(os.getenv("ERA_DEFAULT_TIMEOUT", "30")),
-            network_mode=os.getenv("ERA_NETWORK_MODE", "none"),
-            api_key=os.getenv("ERA_API_KEY") or None,
-            start_timeout=int(os.getenv("ERA_START_TIMEOUT", "30")),
-            max_retries=int(os.getenv("ERA_MAX_RETRIES", "3")),
-            retry_backoff=float(os.getenv("ERA_RETRY_BACKOFF", "2.0")),
-        )
-
-
 class ResearcherSystemConfig(BaseModel):
     """Overall system configuration with 8 core innovations."""
 
@@ -1015,11 +963,6 @@ def get_council_config() -> CouncilConfig:
             "Configuration not loaded. Call load_config_from_env() first."
         )
     return config.council
-
-
-def get_era_config() -> ERAConfig:
-    """Get ERA configuration."""
-    return ERAConfig.from_env()
 
 
 def get_prompt_refiner_config() -> PromptRefinerConfig:
