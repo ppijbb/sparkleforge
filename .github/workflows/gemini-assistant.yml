@@ -18,6 +18,7 @@ jobs:
       github.event_name == 'pull_request' ||
       github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     permissions:
       contents: read
       pull-requests: write
@@ -49,7 +50,7 @@ jobs:
           }' > payload.json
           
           # curl을 통해 직접 API 찌르기
-          RAW_RESPONSE=$(curl -s -X POST "https://openrouter.ai/api/v1/chat/completions" \
+          RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://openrouter.ai/api/v1/chat/completions" \
             -H "Authorization: Bearer $OPENROUTER_API_KEY" \
             -H "Content-Type: application/json" \
             -d @payload.json || true)
@@ -87,7 +88,7 @@ jobs:
             ]
           }' > cerebras_payload.json
           
-          RAW_RESPONSE=$(curl -s -X POST "https://api.cerebras.ai/v1/chat/completions" \
+          RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://api.cerebras.ai/v1/chat/completions" \
             -H "Authorization: Bearer $CEREBRAS_API_KEY" \
             -H "Content-Type: application/json" \
             -d @cerebras_payload.json || true)
@@ -148,6 +149,7 @@ jobs:
       needs.code-review.result == 'success' &&
       (github.event_name == 'pull_request' || github.event_name == 'push')
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     permissions:
       actions: write
       contents: read
@@ -205,7 +207,7 @@ jobs:
             }' > groq_payload.json
           
           # 만들어진 텍스트에서 제목과 본문 추출 (마크다운 백틱 제거 로직 포함)
-          RAW_RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+          RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://api.groq.com/openai/v1/chat/completions" \
             -H "Authorization: Bearer $GROQ_API_KEY" \
             -H "Content-Type: application/json" \
             -d @groq_payload.json)
@@ -300,6 +302,7 @@ jobs:
       github.event.pull_request.draft == false &&
       needs.code-review.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     permissions:
       contents: write
       pull-requests: write
@@ -377,7 +380,7 @@ jobs:
                 response_format: { type: "json_object" }
               }' > merge_decision_payload.json
 
-            RAW_RESPONSE=$(curl -s -X POST "https://api.groq.com/openai/v1/chat/completions" \
+            RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://api.groq.com/openai/v1/chat/completions" \
               -H "Authorization: Bearer $GROQ_API_KEY" \
               -H "Content-Type: application/json" \
               -d @merge_decision_payload.json)
