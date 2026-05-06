@@ -2352,7 +2352,12 @@ class UniversalMCPHub:
             return
 
         # ERA 서버 시작 (코드 실행을 위해)
-        if self.era_server_manager:
+        skip_era_for_mcp = os.getenv("SPARKLEFORGE_SKIP_ERA_FOR_MCP", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        if self.era_server_manager and not skip_era_for_mcp:
             try:
                 if await self.era_server_manager.ensure_server_running():
                     logger.info(
@@ -2366,6 +2371,8 @@ class UniversalMCPHub:
                 logger.warning(
                     f"⚠️ Failed to start ERA server: {e} (code execution will use fallback)"
                 )
+        elif skip_era_for_mcp:
+            logger.info("[MCP][init] Skipping ERA startup for MCP-only command")
 
         try:
             logger.info("Initializing MCP Hub with MCP servers (no OpenRouter)...")
@@ -3298,6 +3305,29 @@ class UniversalMCPHub:
             parts = tool_name.split("::", 1)
             mcp_server = parts[0]
             mcp_tool_name = parts[1] if len(parts) > 1 else tool_name
+
+        semantic_scholar_aliases = (
+            "semantic_scholar::",
+            "semanticscholar::",
+            "semantic-scholar-mcp::",
+        )
+        if tool_name.startswith(semantic_scholar_aliases):
+            logger.warning(
+                "[MCP][semantic_scholar.disabled] Routing %s through arxiv fallback",
+                tool_name,
+            )
+            fallback_result = await self.execute_tool(
+                "arxiv",
+                parameters,
+                citation_id,
+                _skip_builder_retry=True,
+            )
+            fallback_result["source"] = "semantic_scholar_arxiv_fallback"
+            fallback_result.setdefault("metadata", {})
+            if isinstance(fallback_result["metadata"], dict):
+                fallback_result["metadata"]["requested_tool"] = tool_name
+                fallback_result["metadata"]["fallback_tool"] = "arxiv"
+            return fallback_result
 
         # Citation ID가 없으면 생성 (임시)
         if not citation_id:
