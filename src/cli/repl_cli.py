@@ -44,7 +44,6 @@ class REPLCLI:
             "__main__",
             "src",
             "src.core",
-            "src.core.era_server_manager",
             "src.core.agent_orchestrator",
             "src.core.mcp_integration",
             "src.core.shared_memory",

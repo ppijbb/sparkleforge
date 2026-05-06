@@ -1759,7 +1759,7 @@ EXAMPLES:
     if cmd in ("run", "query") and getattr(args, "query", None):
         return _exit_code(cli_rc)
 
-    # 한 번만 실행하고 AutonomousResearchSystem/ERA 등 무거운 초기화로 넘어가면 안 되는 명령
+    # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
         {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "actions", "approve", "deny"}
     )
@@ -1785,7 +1785,6 @@ EXAMPLES:
             "__main__",
             "src",
             "src.core",
-            "src.core.era_server_manager",
             "src.core.agent_orchestrator",
             "src.core.mcp_integration",
             "src.core.shared_memory",
@@ -1881,24 +1880,6 @@ EXAMPLES:
     # 시스템 초기화 (REPL 모드가 아닐 때만 전체 초기화)
     system = None
     if not is_repl_mode:
-        # ERA 서버 초기화 및 시작
-        try:
-            from src.core.era_server_manager import get_era_server_manager
-            from src.core.researcher_config import get_era_config
-
-            era_config = get_era_config()
-            if era_config.enabled:
-                # ERA server 초기화
-                era_manager = get_era_server_manager()
-                await era_manager.ensure_server_running_with_retry()
-            else:
-                logger.debug("ERA is disabled in configuration")
-        except ImportError as e:
-            logger.debug(f"ERA modules not available: {e}")
-        except Exception as e:
-            logger.warning(f"⚠️ ERA initialization failed: {e}")
-            logger.debug("Code execution features may be limited", exc_info=True)
-
         # Initialize system
         system = AutonomousResearchSystem()
 
@@ -2405,7 +2386,6 @@ async def handle_web_command(args):
 
 async def handle_mcp_command(args):
     """MCP 관리 커맨드 처리"""
-    os.environ.setdefault("SPARKLEFORGE_SKIP_ERA_FOR_MCP", "true")
 
     if args.mcp_command == "status":
         logger.info("🔍 Checking MCP server status...")
@@ -2478,7 +2458,6 @@ async def handle_health_command(args):
 
 async def handle_tools_command(args):
     """도구 관리 커맨드 처리"""
-    os.environ.setdefault("SPARKLEFORGE_SKIP_ERA_FOR_MCP", "true")
 
     def _default_tool_test_parameters(tool_name: str) -> Dict[str, Any]:
         """Return minimal non-destructive parameters for CLI tool smoke tests."""

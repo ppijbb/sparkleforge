@@ -51,10 +51,9 @@ cp env.example .env
 # Edit .env with your OpenRouter API key
 ```
 
-`./install.sh` installs and verifies the ERA runtime dependencies `krunvm` and
-`buildah` before building the ERA agent. ERA code execution is considered
-available only when `krunvm` is present on `PATH` and the ERA API health check
-passes.
+`./install.sh` installs Docker and registers the gVisor `runsc` runtime used by
+SparkleForge's safe code execution path. Code execution runs in short-lived
+containers with network, memory, CPU, PID, privilege, and filesystem limits.
 
 ### Basic Usage
 

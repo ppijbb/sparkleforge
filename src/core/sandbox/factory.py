@@ -1,4 +1,4 @@
-"""Sandbox backend factory: select local, docker, era, runloop, daytona, or modal from env."""
+"""Sandbox backend factory: select local, docker/gVisor, runloop, daytona, or modal."""
 
 from __future__ import annotations
 
@@ -18,16 +18,15 @@ _SANDBOX_BACKEND: Optional[BaseSandboxBackend] = None
 def get_sandbox_backend(project_root: Optional[Path] = None) -> Optional[BaseSandboxBackend]:
     """Return the configured sandbox backend for code execution.
 
-    Env SANDBOX_BACKEND: local | docker | era | runloop | daytona | modal.
+    Env SANDBOX_BACKEND: local | docker | runloop | daytona | modal.
     - local: subprocess via context_mode SandboxedExecutor (default).
-    - docker: existing DockerSandbox (handled in _execute_code_tool).
-    - era: existing ERA client (handled in _execute_code_tool).
+    - docker: DockerSandbox/gVisor path handled in _execute_code_tool.
     - runloop: optional langchain_runloop devbox (if installed and RUNLOOP_* set).
     - daytona: optional langchain_daytona (if installed and DAYTONA_* set).
     - modal: optional langchain_modal (if installed and MODAL_* set).
 
     When SANDBOX_BACKEND is runloop/daytona/modal and the optional package
-    is not installed, returns None and caller falls back to era/docker.
+    is not installed, returns None and caller falls back to Docker/gVisor.
     """
     global _SANDBOX_BACKEND
     backend_name = (os.getenv("SANDBOX_BACKEND") or "local").strip().lower()
@@ -67,5 +66,5 @@ def get_sandbox_backend(project_root: Optional[Path] = None) -> Optional[BaseSan
             logger.debug("Modal sandbox not available: %s", e)
             return None
 
-    # docker and era are handled in _execute_code_tool by existing logic
+    # docker is handled in _execute_code_tool by existing logic
     return None

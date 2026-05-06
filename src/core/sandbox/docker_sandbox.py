@@ -6,12 +6,11 @@
 
 import logging
 import os
-import tempfile
 from dataclasses import dataclass
-from typing import Tuple
 
 try:
     import docker
+    from docker.errors import APIError, ImageNotFound
 
     DOCKER_AVAILABLE = True
 except ImportError:
@@ -26,12 +25,17 @@ class SandboxConfig:
     """샌드박스 설정"""
 
     image: str = "python:3.11-slim"
+    node_image: str = "node:20-slim"
+    bash_image: str = "debian:bookworm-slim"
     timeout: int = 30
     memory_limit: str = "512m"
     cpu_limit: float = 0.5
     network_disabled: bool = True
-    read_only: bool = False
+    read_only: bool = True
     tmpfs_size: str = "100m"
+    runtime: str | None = "runsc"
+    allow_default_runtime_fallback: bool = False
+    pids_limit: int = 128
 
 
 @dataclass
@@ -58,10 +62,6 @@ class DockerSandbox:
         self.config = config or SandboxConfig()
         self.docker_client = docker.from_env()
 
-        # 컨테이너 풀 관리
-        self.container_pool = []
-        self.max_pool_size = 3
-
     async def execute_code(
         self, code: str, language: str = "python", input_data: str | None = None
     ) -> ExecutionResult:
@@ -78,49 +78,53 @@ class DockerSandbox:
         import time
 
         start_time = time.time()
+        container = None
 
         try:
-            # 컨테이너 풀에서 컨테이너 가져오기 또는 생성
-            container = await self._get_container()
+            image, cmd = self._prepare_execution(code, language)
+            kwargs = self._container_kwargs(image, cmd, input_data)
 
-            # 언어별 실행 명령 생성
-            cmd, file_path = self._prepare_execution(code, language)
+            try:
+                container = self.docker_client.containers.create(**kwargs)
+            except APIError as e:
+                if not self._should_retry_without_runtime(e):
+                    raise
+                kwargs.pop("runtime", None)
+                logger.warning(
+                    "Docker runtime '%s' unavailable; retrying with Docker default runtime",
+                    self.config.runtime,
+                )
+                container = self.docker_client.containers.create(**kwargs)
 
-            # 파일을 컨테이너에 복사
-            if file_path:
-                with open(file_path, "rb") as f:
-                    container.put_archive("/tmp", f.read())
-
-            # 실행
-            exec_result = container.exec_run(
-                cmd=cmd,
-                stdin=input_data.encode() if input_data else None,
-                timeout=self.config.timeout,
-                demux=True,
+            container.start()
+            wait_result = container.wait(timeout=self.config.timeout)
+            exit_code = int(wait_result.get("StatusCode", -1))
+            stdout = container.logs(stdout=True, stderr=False).decode(
+                "utf-8", errors="replace"
             )
-
-            stdout, stderr = exec_result.output
-            exit_code = exec_result.exit_code
-
-            # 결과 정리
-            output = stdout.decode("utf-8") if stdout else ""
-            error = stderr.decode("utf-8") if stderr else ""
-
-            # 임시 파일 정리
-            if file_path and os.path.exists(file_path):
-                os.unlink(file_path)
-
+            stderr = container.logs(stdout=False, stderr=True).decode(
+                "utf-8", errors="replace"
+            )
             execution_time = time.time() - start_time
 
             return ExecutionResult(
                 success=exit_code == 0,
-                output=output,
-                error=error,
+                output=stdout,
+                error=stderr,
                 exit_code=exit_code,
                 execution_time=execution_time,
                 container_id=container.id,
             )
 
+        except ImageNotFound as e:
+            execution_time = time.time() - start_time
+            return ExecutionResult(
+                success=False,
+                output="",
+                error=f"Docker image not found: {e}",
+                exit_code=-1,
+                execution_time=execution_time,
+            )
         except Exception as e:
             execution_time = time.time() - start_time
             logger.error(f"Sandbox execution failed: {e}")
@@ -132,9 +136,11 @@ class DockerSandbox:
                 execution_time=execution_time,
             )
         finally:
-            # 컨테이너 풀로 반환
-            if "container" in locals():
-                await self._return_container(container)
+            if container is not None:
+                try:
+                    container.remove(force=True)
+                except Exception:
+                    pass
 
     async def execute_file(
         self, file_path: str, language: str = "python", input_data: str | None = None
@@ -162,108 +168,50 @@ class DockerSandbox:
                 execution_time=0.0,
             )
 
-    def _prepare_execution(self, code: str, language: str) -> Tuple[str, str | None]:
-        """언어별 실행 준비
-
-        Returns:
-            Tuple[str, Optional[str]]: (실행 명령, 임시 파일 경로)
-        """
+    def _prepare_execution(self, code: str, language: str) -> tuple[str, list[str]]:
+        """언어별 이미지와 실행 명령 생성."""
         if language.lower() in ["python", "py"]:
-            # 긴 코드는 임시 파일로 실행
-            if len(code) > 1000 or code.count("\n") > 10:
-                file_path = self._create_temp_file(code, ".py")
-                cmd = f"python {file_path}"
-                return cmd, file_path
-            else:
-                # 짧은 코드는 stdin으로 실행
-                return ["python", "-c", code], None
+            return self.config.image, ["python", "-c", code]
 
         elif language.lower() in ["javascript", "js", "node", "nodejs"]:
-            if len(code) > 1000 or code.count("\n") > 10:
-                file_path = self._create_temp_file(code, ".js")
-                cmd = f"node {file_path}"
-                return cmd, file_path
-            else:
-                return ["node", "-e", code], None
+            return self.config.node_image, ["node", "-e", code]
 
         elif language.lower() in ["bash", "sh"]:
-            # 쉘 스크립트는 항상 파일로 실행
-            file_path = self._create_temp_file(code, ".sh")
-            cmd = f"bash {file_path}"
-            return cmd, file_path
+            return self.config.bash_image, ["bash", "-lc", code]
 
         else:
             raise ValueError(f"Unsupported language: {language}")
 
-    def _create_temp_file(self, content: str, extension: str) -> str:
-        """임시 파일 생성"""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=extension, delete=False) as f:
-            f.write(content)
-            return f.name
+    def _container_kwargs(
+        self, image: str, command: list[str], input_data: str | None
+    ) -> dict:
+        kwargs = {
+            "image": image,
+            "command": command,
+            "detach": True,
+            "stdin_open": input_data is not None,
+            "mem_limit": self.config.memory_limit,
+            "cpu_quota": int(self.config.cpu_limit * 100000),
+            "network_mode": "none" if self.config.network_disabled else "bridge",
+            "read_only": self.config.read_only,
+            "tmpfs": {"/tmp": f"rw,noexec,nosuid,size={self.config.tmpfs_size}"},
+            "cap_drop": ["ALL"],
+            "security_opt": ["no-new-privileges:true"],
+            "pids_limit": self.config.pids_limit,
+        }
+        if self.config.runtime:
+            kwargs["runtime"] = self.config.runtime
+        return kwargs
 
-    async def _get_container(self):
-        """컨테이너 풀에서 컨테이너 가져오기"""
-        # 풀에서 사용 가능한 컨테이너 찾기
-        for container in self.container_pool:
-            if container.status == "running":
-                return container
-
-        # 새 컨테이너 생성
-        if len(self.container_pool) < self.max_pool_size:
-            container = self.docker_client.containers.run(
-                self.config.image,
-                command="tail -f /dev/null",  # 무한 실행
-                detach=True,
-                mem_limit=self.config.memory_limit,
-                cpu_quota=int(self.config.cpu_limit * 100000),
-                network_mode="none" if self.config.network_disabled else "bridge",
-                read_only=self.config.read_only,
-                tmpfs={"/tmp": f"size={self.config.tmpfs_size}"}
-                if not self.config.read_only
-                else None,
-            )
-            self.container_pool.append(container)
-            return container
-
-        # 풀에서 가장 오래된 컨테이너 재사용
-        container = self.container_pool.pop(0)
-        try:
-            container.restart()
-        except:
-            # 재시작 실패 시 새 컨테이너 생성
-            container = self.docker_client.containers.run(
-                self.config.image,
-                command="tail -f /dev/null",
-                detach=True,
-                mem_limit=self.config.memory_limit,
-                cpu_quota=int(self.config.cpu_limit * 100000),
-                network_mode="none" if self.config.network_disabled else "bridge",
-                read_only=self.config.read_only,
-            )
-        self.container_pool.append(container)
-        return container
-
-    async def _return_container(self, container):
-        """컨테이너를 풀로 반환"""
-        # 컨테이너 정리 (임시 파일 삭제 등)
-        try:
-            container.exec_run("rm -rf /tmp/*")
-        except:
-            pass  # 정리 실패는 무시
-
-        # 풀에 추가 (이미 있다면 무시)
-        if container not in self.container_pool:
-            self.container_pool.append(container)
+    def _should_retry_without_runtime(self, error: Exception) -> bool:
+        if not self.config.runtime or not self.config.allow_default_runtime_fallback:
+            return False
+        message = str(error).lower()
+        return "unknown or invalid runtime" in message or self.config.runtime in message
 
     async def cleanup(self):
         """샌드박스 정리"""
-        for container in self.container_pool:
-            try:
-                container.stop()
-                container.remove()
-            except:
-                pass
-        self.container_pool.clear()
+        return None
 
     async def health_check(self) -> bool:
         """샌드박스 상태 확인"""
@@ -283,6 +231,18 @@ def get_sandbox() -> DockerSandbox:
     """전역 샌드박스 인스턴스 가져오기"""
     global _sandbox_instance
     if _sandbox_instance is None:
-        config = SandboxConfig()
+        runtime = os.getenv("SPARKLEFORGE_DOCKER_RUNTIME", "runsc").strip() or None
+        allow_fallback = os.getenv(
+            "SPARKLEFORGE_ALLOW_DOCKER_DEFAULT_RUNTIME_FALLBACK", "false"
+        ).lower() in ("true", "1", "yes")
+        config = SandboxConfig(
+            image=os.getenv("SPARKLEFORGE_SANDBOX_PYTHON_IMAGE", "python:3.11-slim"),
+            node_image=os.getenv("SPARKLEFORGE_SANDBOX_NODE_IMAGE", "node:20-slim"),
+            bash_image=os.getenv(
+                "SPARKLEFORGE_SANDBOX_BASH_IMAGE", "debian:bookworm-slim"
+            ),
+            runtime=runtime,
+            allow_default_runtime_fallback=allow_fallback,
+        )
         _sandbox_instance = DockerSandbox(config)
     return _sandbox_instance
