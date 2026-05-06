@@ -10,7 +10,7 @@ async def test_preliminary_research_uses_resilient_academic_tool(monkeypatch):
     async def fake_execute_tool(tool_name, parameters):
         calls.append((tool_name, parameters))
         if tool_name == "arxiv":
-            return {"success": True, "data": {"results": [{"title": "paper"}]}}
+            return {"success": True, "data": {"result": {"title": "paper"}}}
         return {"success": True, "data": {"results": []}}
 
     monkeypatch.setattr(

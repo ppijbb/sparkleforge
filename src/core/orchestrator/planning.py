@@ -13,6 +13,26 @@ from src.core.streaming_manager import EventType
 
 logger = logging.getLogger(__name__)
 
+def _extract_tool_result_items(result_data: Any) -> List[Any]:
+    """Return result items from common local/MCP tool payload shapes."""
+    if isinstance(result_data, list):
+        return result_data
+    if not isinstance(result_data, dict):
+        return []
+
+    for key in ("results", "items", "data"):
+        value = result_data.get(key)
+        if isinstance(value, list):
+            return value
+
+    value = result_data.get("result")
+    if isinstance(value, list):
+        return value
+    if value:
+        return [value]
+
+    return []
+
 class PlanningNode(BaseNode):
     """Handler for research planning and task decomposition."""
 
@@ -250,7 +270,7 @@ class PlanningNode(BaseNode):
                 )
                 if result.get("success", False):
                     result_data = result.get("data", {})
-                    data_list = result_data.get("results", []) if isinstance(result_data, dict) else (result_data if isinstance(result_data, list) else [])
+                    data_list = _extract_tool_result_items(result_data)
                     search_results.append({"keyword": keyword, "tool": tool_name, "data": data_list, "sources_count": len(data_list)})
             except Exception as e:
                 logger.warning(f"⚠️ {tool_name} search error: {e}")
@@ -265,7 +285,7 @@ class PlanningNode(BaseNode):
                 )
                 if result.get("success", False):
                     result_data = result.get("data", {})
-                    data_list = result_data.get("results", []) if isinstance(result_data, dict) else (result_data if isinstance(result_data, list) else [])
+                    data_list = _extract_tool_result_items(result_data)
                     academic_results.append({"tool": "arxiv", "data": data_list, "sources_count": len(data_list)})
             except Exception as e:
                 logger.warning(f"⚠️ academic search error: {e}")
