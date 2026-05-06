@@ -35,13 +35,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: pip
+
+      - uses: astral-sh/setup-uv@v5
 
       - name: Install SparkleForge
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e .
+          uv sync
 
       - name: Prepare daily research prompt
         id: prompt
@@ -87,9 +87,11 @@ jobs:
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           SPARKLEFORGE_CLI_INTERACTIVE: 'false'
+          MCP_BUILDER_ENABLED: 'false'
+          SPARKLEFORGE_ALLOWED_MCP_SERVERS: 'arxiv,fetch,sparkleforge-skills'
         run: |
           set +e
-          sparkleforge run "$(cat daily-roadmap-prompt.md)" \
+          uv run sparkleforge run "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
             --format markdown \
             > sparkleforge-roadmap-console.log \
