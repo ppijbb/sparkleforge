@@ -247,15 +247,8 @@ jobs:
               continue
             fi
 
-            git add -A -- \
-              . \
-              ':!issue-context.md' \
-              ':!opencode.patch' \
-              ':!opencode-extra-context.md' \
-              ':!opencode-verify.log' \
-              ':!opencode-worker-error.log' \
-              ':!*.orig' \
-              ':!*.rej'
+            git add -u .
+            git ls-files --others --exclude-standard -z | xargs -0 -r git add --
             git commit -m "${{ steps.context.outputs.pr_title }}"
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
