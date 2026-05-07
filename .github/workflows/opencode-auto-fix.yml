@@ -224,8 +224,15 @@ jobs:
             fi
 
             git add .
-            git reset -- issue-context.md opencode.patch opencode-extra-context.md opencode-verify.log opencode-worker-error.log '*.orig' '*.rej'
-            REPOSITORY_CHANGES=$(git status --porcelain)
+            REPOSITORY_CHANGES=$(git status --porcelain --untracked-files=all \
+              . \
+              ':!issue-context.md' \
+              ':!opencode.patch' \
+              ':!opencode-extra-context.md' \
+              ':!opencode-verify.log' \
+              ':!opencode-worker-error.log' \
+              ':!*.orig' \
+              ':!*.rej')
             if [ -z "$REPOSITORY_CHANGES" ]; then
               echo "OpenCode produced no repository changes on attempt $attempt." | tee opencode-worker-error.log
               {
@@ -241,7 +248,11 @@ jobs:
               continue
             fi
 
-            git commit -m "${{ steps.context.outputs.pr_title }}"
+            if ! git diff --cached --quiet; then
+              git commit -m "${{ steps.context.outputs.pr_title }}"
+            else
+              echo "No staged changes to commit."
+            fi
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
               echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
