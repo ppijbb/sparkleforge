@@ -139,6 +139,7 @@ jobs:
               ;;
           esac
           PR_TITLE=$(echo "$PR_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
+          COMMIT_TITLE="🧹 chore: apply OpenCode changes for issue #$ISSUE_NUMBER"
           BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"
           if [ -z "$BASE_BRANCH" ]; then
             BASE_BRANCH=$(gh repo view "${{ github.repository }}" \
@@ -160,6 +161,7 @@ jobs:
             echo "pr_title<<EOF"
             echo "$PR_TITLE"
             echo "EOF"
+            echo "commit_title=$COMMIT_TITLE"
             echo "base_branch=$BASE_BRANCH"
             echo "branch=$BRANCH"
           } >> "$GITHUB_OUTPUT"
@@ -249,7 +251,7 @@ jobs:
 
             git add -u .
             git ls-files --others --exclude-standard -z | xargs -0 -r git add --
-            git commit -m "${{ steps.context.outputs.pr_title }}"
+            git commit -m "${{ steps.context.outputs.commit_title }}"
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
               echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
