@@ -247,7 +247,8 @@ jobs:
               continue
             fi
 
-            git add -A \
+            git add -A -- \
+              . \
               ':!issue-context.md' \
               ':!opencode.patch' \
               ':!opencode-extra-context.md' \
