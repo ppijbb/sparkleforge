@@ -251,7 +251,12 @@ jobs:
 
             git add -u .
             git ls-files --others --exclude-standard -z | xargs -0 -r git add --
-            git commit -m "${{ steps.context.outputs.commit_title }}"
+            if ! git diff --cached --quiet; then
+              git commit -m "${{ steps.context.outputs.commit_title }}"
+            else
+              echo "::error::Repository changes were detected but no non-ignored files were staged."
+              exit 1
+            fi
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
               echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
