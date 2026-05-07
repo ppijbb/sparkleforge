@@ -223,6 +223,73 @@ def _normalize_diff_paths(diff_text: str) -> str:
     )
 
 
+def _format_hunk_range(start: str, count: int) -> str:
+    if count == 1:
+        return start
+    return f"{start},{count}"
+
+
+def _repair_hunk_headers(diff_text: str) -> str:
+    """Recalculate unified-diff hunk line counts from the hunk body."""
+    lines = diff_text.splitlines(keepends=True)
+    repaired: list[str] = []
+    i = 0
+    hunk_header = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*?)(\r?\n)?$")
+
+    while i < len(lines):
+        match = hunk_header.match(lines[i])
+        if not match:
+            repaired.append(lines[i])
+            i += 1
+            continue
+
+        header_index = len(repaired)
+        repaired.append(lines[i])
+        old_count = 0
+        new_count = 0
+        i += 1
+
+        while i < len(lines):
+            line = lines[i]
+            if line.startswith("@@ ") or line.startswith("diff --git "):
+                break
+            if line.startswith(("--- ", "+++ ")):
+                break
+            if line in {"\n", "\r\n"}:
+                old_count += 1
+                new_count += 1
+                repaired.append(" " + line)
+                i += 1
+                continue
+            if line.startswith("\\ No newline at end of file"):
+                repaired.append(line)
+                i += 1
+                continue
+
+            marker = line[:1]
+            if marker == " ":
+                old_count += 1
+                new_count += 1
+            elif marker == "-":
+                old_count += 1
+            elif marker == "+":
+                new_count += 1
+            repaired.append(line)
+            i += 1
+
+        newline = match.group(4) or ""
+        repaired[header_index] = (
+            f"@@ -{_format_hunk_range(match.group(1), old_count)} "
+            f"+{_format_hunk_range(match.group(2), new_count)} @@{match.group(3)}{newline}"
+        )
+
+    return "".join(repaired)
+
+
+def _normalize_diff(diff_text: str) -> str:
+    return _repair_hunk_headers(_normalize_diff_paths(diff_text))
+
+
 def _split_multifile_patch(diff_text: str) -> list[tuple[str, str]]:
     """Split a multi-file diff into (filepath, patch_segment) pairs.
 
@@ -251,7 +318,7 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
     """
     # Write to a temp file
     tmp = Path("opencode-single.patch")
-    diff_text = _normalize_diff_paths(diff_text)
+    diff_text = _normalize_diff(diff_text)
     tmp.write_text(diff_text, encoding="utf-8")
     strip = _detect_strip_level(diff_text)
     errors: list[str] = []
@@ -302,10 +369,10 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
     """
     diff_text = patch_path.read_text(encoding="utf-8")
 
-    # ── Step 1: normalise paths ────────────────────────────────────────────
-    normalised = _normalize_diff_paths(diff_text)
+    # ── Step 1: normalise paths and hunk counts ────────────────────────────
+    normalised = _normalize_diff(diff_text)
     if normalised != diff_text:
-        print("[patch] Normalised bare paths → a/b prefix.", file=sys.stderr)
+        print("[patch] Normalised diff paths and hunk headers.", file=sys.stderr)
         patch_path.write_text(normalised, encoding="utf-8")
         diff_text = normalised
 
