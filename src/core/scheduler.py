@@ -504,7 +504,10 @@ class Scheduler:
                     # 실행 시간 체크
                     if schedule.next_run and schedule.next_run <= now:
                         # 실행
-                        self.running_tasks[schedule.schedule_id] = asyncio.create_task(self._execute_schedule(schedule))
+                        task = asyncio.create_task(self._execute_schedule(schedule))
+                        self.running_tasks[schedule.schedule_id] = task
+                        task.add_done_callback(
+                            lambda t: self.running_tasks.pop(schedule.schedule_id, None))
 
                 # 1분마다 체크
                 await asyncio.sleep(60)
@@ -517,10 +520,6 @@ class Scheduler:
 
     async def _execute_schedule(self, schedule: ScheduleConfig):
         """스케줄 실행."""
-        if schedule.schedule_id in self.running_tasks:
-            logger.warning(f"Schedule already running: {schedule.schedule_id}")
-            return None
-
         execution_id = (
             f"exec_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
         )
@@ -539,6 +538,8 @@ class Scheduler:
         async def run_with_timeout():
             try:
                 if self.execution_callback:
+                    # Ensure we handle potential CancelledError here if needed
+                    # or let it propagate to the caller
                     result = await self.execution_callback(
                         schedule.user_query, session_id
                     )
@@ -548,6 +549,9 @@ class Scheduler:
                     logger.warning("No execution callback set")
                     execution.status = "failed"
                     execution.error = "No execution callback"
+            except asyncio.CancelledError:
+                execution.status = "cancelled"
+                raise
             except TimeoutError:
                 execution.status = "failed"
                 execution.error = "Timeout"
@@ -576,9 +580,6 @@ class Scheduler:
                 self._save_schedules()
                 self._save_executions()
 
-                if schedule.schedule_id in self.running_tasks:
-                    del self.running_tasks[schedule.schedule_id]
-
         # 타임아웃 설정
         if schedule.timeout_seconds:
             task = asyncio.create_task(
@@ -595,6 +596,8 @@ class Scheduler:
             self._save_executions()
         except Exception as e:
             logger.error(f"Error executing schedule: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Error executing schedule: {e}", exc_info=True)
 
         return execution
 
@@ -604,9 +607,10 @@ class Scheduler:
         if not schedule:
             raise ValueError(f"Schedule not found: {schedule_id}")
 
-        execution = await self._execute_schedule(schedule)
-        if execution is None:
+        if schedule_id in self.running_tasks:
             raise RuntimeError(f"Schedule already running: {schedule_id}")
+
+        execution = await self._execute_schedule(schedule)
         return execution
 
     def get_execution_history(
