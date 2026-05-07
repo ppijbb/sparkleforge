@@ -504,7 +504,7 @@ class Scheduler:
                     # 실행 시간 체크
                     if schedule.next_run and schedule.next_run <= now:
                         # 실행
-                        asyncio.create_task(self._execute_schedule(schedule))
+                        self.running_tasks[schedule.schedule_id] = asyncio.create_task(self._execute_schedule(schedule))
 
                 # 1분마다 체크
                 await asyncio.sleep(60)
@@ -586,8 +586,6 @@ class Scheduler:
             )
         else:
             task = asyncio.create_task(run_with_timeout())
-
-        self.running_tasks[schedule.schedule_id] = task
 
         try:
             await task
