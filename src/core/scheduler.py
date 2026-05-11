@@ -591,6 +591,7 @@ class Scheduler:
         try:
             await task
         except asyncio.CancelledError:
+            self._save_executions()
             execution.status = "cancelled"
             execution.completed_at = datetime.now()
         except Exception as e:
