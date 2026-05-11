@@ -97,6 +97,13 @@ class AgentLoop:
                 # Success - reset retry count
                 retry_count = 0
                 
+            except asyncio.CancelledError:
+                try:
+                    await self._save_executions()
+                except Exception as e:
+                    logger.error(f"Failed to save executions during cancellation: {e}")
+                raise
+
             except Exception as e:
                 category = ErrorClassifier.classify(e)
                 logger.warning(f"[AgentLoop] Error detected: {category.value} - {e}")
