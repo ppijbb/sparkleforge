@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from src.core.sandbox.backends.base import BaseSandboxBackend
 from src.core.sandbox.backends.local import LocalSandboxBackend

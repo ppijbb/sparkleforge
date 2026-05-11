@@ -15,9 +15,7 @@ sys.path.insert(0, str(project_root))
 
 def check_file_usage(file_path: Path) -> Dict:
     """파일이 실제로 사용되는지 확인."""
-    module_name = str(file_path.relative_to(project_root).with_suffix("")).replace(
-        "/", "."
-    )
+    module_name = str(file_path.relative_to(project_root).with_suffix("")).replace("/", ".")
 
     # Check imports
     imports = []
@@ -32,10 +30,7 @@ def check_file_usage(file_path: Path) -> Dict:
                 # Check various import patterns
                 if module_name in content or file_path.stem in content:
                     # More precise check
-                    if (
-                        f"from {module_name}" in content
-                        or f"import {module_name}" in content
-                    ):
+                    if f"from {module_name}" in content or f"import {module_name}" in content:
                         imports.append(str(py_file.relative_to(project_root)))
         except:
             pass

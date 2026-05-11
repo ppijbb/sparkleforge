@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -108,9 +108,7 @@ class HookRunner:
         parts = [p.strip() for p in matcher.split("|") if p.strip()]
         return any(tool_name == p or (p in tool_name) for p in parts)
 
-    async def run_pre_task_run(
-        self, session_id: str, task_description: str | None = None
-    ) -> None:
+    async def run_pre_task_run(self, session_id: str, task_description: str | None = None) -> None:
         """Run all PreTaskRun hooks."""
         context = {
             "session_id": session_id,

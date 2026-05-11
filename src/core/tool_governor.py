@@ -89,8 +89,7 @@ class ToolGovernor:
     async def execute_tool(
         self, tool_name: str, parameters: Dict[str, Any], agent_id: str = "system"
     ) -> Dict[str, Any]:
-        """거버넌스 정책이 적용된 도구 실행
-        """
+        """거버넌스 정책이 적용된 도구 실행"""
         # 1. Circuit Breaker 확인
         if self.circuit_breaker.is_open(tool_name):
             logger.warning(f"ToolGovernor: Circuit breaker open for {tool_name}. Blocked.")

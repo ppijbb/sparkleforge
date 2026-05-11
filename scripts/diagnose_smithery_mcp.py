@@ -29,7 +29,6 @@ try:
     from mcp.client.stdio import stdio_client
     from mcp.client.streamable_http import streamablehttp_client
     from mcp.shared.exceptions import McpError
-    from mcp.types import ListToolsResult, TextContent
 
     MCP_AVAILABLE = True
 except ImportError:
@@ -220,9 +219,7 @@ class SmitheryDiagnostic:
             server_params = StdioServerParameters(command=config["command"], args=args)
             logger.info("  ✅ 파라미터 생성 성공")
             logger.info(f"    Command: {server_params.command}")
-            logger.info(
-                f"    Args: {server_params.args[:3]}... (총 {len(server_params.args)}개)"
-            )
+            logger.info(f"    Args: {server_params.args[:3]}... (총 {len(server_params.args)}개)")
             result["stages"]["params_creation"] = {"success": True}
         except Exception as e:
             logger.error(f"  ❌ 파라미터 생성 실패: {e}")
@@ -264,11 +261,7 @@ class SmitheryDiagnostic:
                             )
                             tools_time = (datetime.now() - tools_start).total_seconds()
 
-                            tools = (
-                                tools_result.tools
-                                if hasattr(tools_result, "tools")
-                                else []
-                            )
+                            tools = tools_result.tools if hasattr(tools_result, "tools") else []
                             logger.info(
                                 f"  ✅ 도구 목록 조회 성공 ({tools_time:.2f}s, {len(tools)}개 도구)"
                             )
@@ -343,11 +336,7 @@ class SmitheryDiagnostic:
 
             url_params = {}
             for key, value in params.items():
-                if (
-                    isinstance(value, str)
-                    and value.startswith("${")
-                    and value.endswith("}")
-                ):
+                if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
                     env_var = value[2:-1]
                     env_value = os.getenv(env_var, "")
                     url_params[key] = env_value
@@ -415,11 +404,7 @@ class SmitheryDiagnostic:
                             )
                             tools_time = (datetime.now() - tools_start).total_seconds()
 
-                            tools = (
-                                tools_result.tools
-                                if hasattr(tools_result, "tools")
-                                else []
-                            )
+                            tools = tools_result.tools if hasattr(tools_result, "tools") else []
                             logger.info(
                                 f"  ✅ 도구 목록 조회 성공 ({tools_time:.2f}s, {len(tools)}개 도구)"
                             )
@@ -446,9 +431,7 @@ class SmitheryDiagnostic:
                             }
                             result["error"] = str(e)
                 except McpError as e:
-                    error_code = (
-                        getattr(e.error, "code", None) if hasattr(e, "error") else None
-                    )
+                    error_code = getattr(e.error, "code", None) if hasattr(e, "error") else None
                     logger.error(f"  ❌ 세션 초기화 MCP 에러: {e} (code: {error_code})")
                     result["stages"]["session_init"] = {
                         "success": False,
@@ -547,7 +530,9 @@ class SmitheryDiagnostic:
         from datetime import datetime
 
         if output_file is None:
-            output_file = f"smithery_mcp_diagnosis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            output_file = (
+                f"smithery_mcp_diagnosis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            )
 
         successful = []
         failed = []
@@ -590,9 +575,7 @@ class SmitheryDiagnostic:
                 if isinstance(stage_result, dict):
                     status = "✅ 성공" if stage_result.get("success") else "❌ 실패"
                     time_info = (
-                        f" ({stage_result.get('time', 0):.2f}s)"
-                        if stage_result.get("time")
-                        else ""
+                        f" ({stage_result.get('time', 0):.2f}s)" if stage_result.get("time") else ""
                     )
                     report += f"- {stage_name}: {status}{time_info}\n"
 
@@ -616,8 +599,7 @@ class SmitheryDiagnostic:
                         status = "✅ 성공" if stage_result.get("success") else "❌ 실패"
                         error_info = (
                             f" - {stage_result.get('error', '')}"
-                            if not stage_result.get("success")
-                            and stage_result.get("error")
+                            if not stage_result.get("success") and stage_result.get("error")
                             else ""
                         )
                         time_info = (
@@ -661,8 +643,7 @@ class SmitheryDiagnostic:
         error_401_servers = [
             name
             for name, r in failed
-            if "401" in str(r.get("error", ""))
-            or "invalid_token" in str(r.get("error", ""))
+            if "401" in str(r.get("error", "")) or "invalid_token" in str(r.get("error", ""))
         ]
         if error_401_servers:
             report += f"""### 2. HTTP 401 인증 실패
@@ -683,9 +664,7 @@ class SmitheryDiagnostic:
 """
 
         # 520 에러
-        error_520_servers = [
-            name for name, r in failed if "520" in str(r.get("error", ""))
-        ]
+        error_520_servers = [name for name, r in failed if "520" in str(r.get("error", ""))]
         if error_520_servers:
             report += f"""### 3. HTTP 520 에러 (Cloudflare-Origin 서버 연결 문제)
 
@@ -751,9 +730,7 @@ async def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Smithery MCP 서버 상세 진단")
-    parser.add_argument(
-        "--server", type=str, help="특정 서버만 진단 (예: fetch, docfork)"
-    )
+    parser.add_argument("--server", type=str, help="특정 서버만 진단 (예: fetch, docfork)")
 
     args = parser.parse_args()
 
@@ -763,9 +740,7 @@ async def main():
         # 특정 서버만 진단
         if args.server not in diagnostic.smithery_servers:
             logger.error(f"서버 '{args.server}'를 찾을 수 없습니다")
-            logger.info(
-                f"사용 가능한 서버: {', '.join(diagnostic.smithery_servers.keys())}"
-            )
+            logger.info(f"사용 가능한 서버: {', '.join(diagnostic.smithery_servers.keys())}")
             return
 
         config = diagnostic.smithery_servers[args.server]

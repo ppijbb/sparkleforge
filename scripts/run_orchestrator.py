@@ -36,9 +36,7 @@ async def run_with_trace():
         "Climate change research findings from last week",
         scope=MemoryScope.GLOBAL,
     )
-    memory.write(
-        "user_preference", "Detailed analysis preferred", scope=MemoryScope.GLOBAL
-    )
+    memory.write("user_preference", "Detailed analysis preferred", scope=MemoryScope.GLOBAL)
     print("   ✓ Previous research stored")
     print("   ✓ User preference stored")
     print()

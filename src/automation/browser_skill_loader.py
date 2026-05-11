@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
