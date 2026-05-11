@@ -384,11 +384,20 @@ class AdaptiveResearchDepth:
         return None
 
     async def run_depth_adjustment(self, *args, **kwargs):
+        """비동기적으로 연구 깊이를 점진적으로 조정합니다.
+
+        Args:
+            *args: adjust_depth_progressively에 전달할 위치 인자
+            **kwargs: adjust_depth_progressively에 전달할 키워드 인자
+
+        Returns:
+            조정된 DepthConfig 또는 None
+        """
         try:
-            return self.adjust_depth_progressively(*args, **kwargs)
+            return await asyncio.to_thread(self.adjust_depth_progressively, *args, **kwargs)
         except asyncio.CancelledError:
             logger.warning("Depth adjustment task was cancelled")
             raise
         except Exception as e:
-            logger.error(f"Error during depth adjustment: {e}")
-            return None
+            logger.error(f"Error during depth adjustment: {e}", exc_info=True)
+            raise e
