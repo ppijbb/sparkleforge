@@ -176,6 +176,9 @@ class ExecutionNode(BaseNode):
                         })
                 except Exception as e:
                     logger.error(f"Task execution error: {e}")
+                except asyncio.CancelledError:
+                    self._save_executions()
+                    raise
 
         # Depth Adjustment (Progressive Deepening)
         self._adjust_depth_if_needed(state, tasks, execution_results)
