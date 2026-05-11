@@ -7,9 +7,10 @@ Preset Modes (quick/medium/deep/auto), Progressive Deepening, Self-Adjusting, Dy
 
 import logging
 import asyncio
+import threading
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class AdaptiveResearchDepth:
         self.config = config
         # Cache preset configurations for better performance
         self._preset_configs: Dict[str, Any] | None = None
+        self._lock = threading.Lock()
         logger.info("AdaptiveResearchDepth initialized")
 
     def _load_preset_configs(self) -> Dict[str, Dict[str, Any]]:
@@ -61,77 +63,76 @@ class AdaptiveResearchDepth:
         if self._preset_configs is not None:
             return self._preset_configs
 
-        if isinstance(self.config, dict):
-            presets = self.config.get("presets", {})
-        else:
-            # AdaptiveResearchDepthConfig 객체인 경우
-            presets = self.config.presets if hasattr(self.config, "presets") else {}
+        with self._lock:
+            if self._preset_configs is not None:
+                return self._preset_configs
 
-        # 기본 프리셋 설정
-        default_presets = {
-            "quick": {
-                "description": "빠른 연구, 최소 깊이",
-                "planning": {
-                    "decompose": {
-                        "mode": "manual",
-                        "initial_subtopics": 1,
-                        "auto_max_subtopics": 2,
-                    }
-                },
-                "researching": {"max_iterations": 1, "iteration_mode": "fixed"},
-                "reporting": {"min_section_length": 300},
-            },
-            "medium": {
-                "description": "균형잡힌 연구",
-                "planning": {
-                    "decompose": {
-                        "mode": "manual",
-                        "initial_subtopics": 5,
-                        "auto_max_subtopics": 5,
-                    }
-                },
-                "researching": {"max_iterations": 4, "iteration_mode": "fixed"},
-                "reporting": {"min_section_length": 500},
-            },
-            "deep": {
-                "description": "깊이 있는 연구",
-                "planning": {
-                    "decompose": {
-                        "mode": "manual",
-                        "initial_subtopics": 8,
-                        "auto_max_subtopics": 8,
-                    }
-                },
-                "researching": {"max_iterations": 7, "iteration_mode": "fixed"},
-                "reporting": {"min_section_length": 800},
-            },
-            "auto": {
-                "description": "자율 결정 (에이전트가 최적 깊이 선택)",
-                "planning": {"decompose": {"mode": "auto", "auto_max_subtopics": 8}},
-                "researching": {"max_iterations": 6, "iteration_mode": "flexible"},
-                "reporting": {"min_section_length": 500},
-            },
-        }
+            if isinstance(self.config, dict):
+                presets = self.config.get("presets", {})
+            else:
+                presets = self.config.presets if hasattr(self.config, "presets") else {}
 
-        # 사용자 설정으로 기본값 병합
-        for preset_name, default_config in default_presets.items():
-            if preset_name in presets:
-                user_config = presets[preset_name]
-                if isinstance(user_config, dict):
-                    # 딥 머지
-                    merged = self._deep_merge(default_config, user_config)
-                    default_presets[preset_name] = merged
-                elif hasattr(user_config, "planning"):  # ResearchPresetConfig 객체
-                    default_presets[preset_name] = {
-                        "description": user_config.description,
-                        "planning": user_config.planning,
-                        "researching": user_config.researching,
-                        "reporting": user_config.reporting,
-                    }
+            default_presets = {
+                "quick": {
+                    "description": "빠른 연구, 최소 깊이",
+                    "planning": {
+                        "decompose": {
+                            "mode": "manual",
+                            "initial_subtopics": 1,
+                            "auto_max_subtopics": 2,
+                        }
+                    },
+                    "researching": {"max_iterations": 1, "iteration_mode": "fixed"},
+                    "reporting": {"min_section_length": 300},
+                },
+                "medium": {
+                    "description": "균형잡힌 연구",
+                    "planning": {
+                        "decompose": {
+                            "mode": "manual",
+                            "initial_subtopics": 5,
+                            "auto_max_subtopics": 5,
+                        }
+                    },
+                    "researching": {"max_iterations": 4, "iteration_mode": "fixed"},
+                    "reporting": {"min_section_length": 500},
+                },
+                "deep": {
+                    "description": "깊이 있는 연구",
+                    "planning": {
+                        "decompose": {
+                            "mode": "manual",
+                            "initial_subtopics": 8,
+                            "auto_max_subtopics": 8,
+                        }
+                    },
+                    "researching": {"max_iterations": 7, "iteration_mode": "fixed"},
+                    "reporting": {"min_section_length": 800},
+                },
+                "auto": {
+                    "description": "자율 결정 (에이전트가 최적 깊이 선택)",
+                    "planning": {"decompose": {"mode": "auto", "auto_max_subtopics": 8}},
+                    "researching": {"max_iterations": 6, "iteration_mode": "flexible"},
+                    "reporting": {"min_section_length": 500},
+                },
+            }
 
-        # Cache the result before returning
-        self._preset_configs = default_presets
-        return default_presets
+            for preset_name, default_config in default_presets.items():
+                if preset_name in presets:
+                    user_config = presets[preset_name]
+                    if isinstance(user_config, dict):
+                        merged = self._deep_merge(default_config, user_config)
+                        default_presets[preset_name] = merged
+                    elif hasattr(user_config, "planning"):
+                        default_presets[preset_name] = {
+                            "description": user_config.description,
+                            "planning": user_config.planning,
+                            "researching": user_config.researching,
+                            "reporting": user_config.reporting,
+                        }
+
+            self._preset_configs = default_presets
+            return default_presets
 
     def _deep_merge(
         self, base: Dict[str, Any], override: Dict[str, Any]
@@ -333,7 +334,7 @@ class AdaptiveResearchDepth:
         current_depth: DepthConfig,
         progress: Dict[str, Any],
         goals_achieved: bool = False,
-    ) -> DepthConfig | None:
+    ) -> Optional[DepthConfig]:
         """Progressive Deepening: 연구 진행에 따라 깊이를 점진적으로 증가.
 
         Args:
@@ -344,44 +345,55 @@ class AdaptiveResearchDepth:
         Returns:
             조정된 DepthConfig (조정 불필요 시 None)
         """
-        # 목표 달성 시 조기 종료
-        if (
-            goals_achieved
-            and current_depth.researching.get("iteration_mode") == "flexible"
-        ):
-            logger.info("Goals achieved, no depth adjustment needed")
+        try:
+            # 목표 달성 시 조기 종료
+            if (
+                goals_achieved
+                and current_depth.researching.get("iteration_mode") == "flexible"
+            ):
+                logger.info("Goals achieved, no depth adjustment needed")
+                return None
+
+            # 진행 상황 분석
+            iteration_count = progress.get("iteration_count", 0)
+            max_iterations = current_depth.researching.get("max_iterations", 5)
+            completion_rate = progress.get("completion_rate", 0.0)
+
+            # 깊이 증가 조건: 반복 횟수가 많고 완성도가 낮을 때
+            if iteration_count >= max_iterations * 0.7 and completion_rate < 0.6:
+                # 깊이 증가
+                if current_depth.preset == ResearchPreset.QUICK:
+                    new_preset = ResearchPreset.MEDIUM
+                elif current_depth.preset == ResearchPreset.MEDIUM:
+                    new_preset = ResearchPreset.DEEP
+                else:
+                    return None  # 이미 최대 깊이
+
+                logger.info(
+                    "Progressive deepening: %s -> %s (iteration=%d, completion=%.2f)",
+                    current_depth.preset.value,
+                    new_preset.value,
+                    iteration_count,
+                    completion_rate,
+                )
+                configs = self._load_preset_configs()
+                preset_config = configs.get(new_preset.value, configs["medium"])
+
+                return DepthConfig(
+                    preset=new_preset,
+                    planning=preset_config.get("planning", {}),
+                    researching=preset_config.get("researching", {}),
+                    reporting=preset_config.get("reporting", {}),
+                    complexity_score=current_depth.complexity_score + 0.2,
+                )
+
             return None
-
-        # 진행 상황 분석
-        iteration_count = progress.get("iteration_count", 0)
-        max_iterations = current_depth.researching.get("max_iterations", 5)
-        completion_rate = progress.get("completion_rate", 0.0)
-
-        # 깊이 증가 조건: 반복 횟수가 많고 완성도가 낮을 때
-        if iteration_count >= max_iterations * 0.7 and completion_rate < 0.6:
-            # 깊이 증가
-            if current_depth.preset == ResearchPreset.QUICK:
-                new_preset = ResearchPreset.MEDIUM
-            elif current_depth.preset == ResearchPreset.MEDIUM:
-                new_preset = ResearchPreset.DEEP
-            else:
-                return None  # 이미 최대 깊이
-
-            logger.info(
-                f"Progressive deepening: {current_depth.preset.value} -> {new_preset.value}"
-            )
-            configs = self._load_preset_configs()
-            preset_config = configs.get(new_preset.value, configs["medium"])
-
-            return DepthConfig(
-                preset=new_preset,
-                planning=preset_config.get("planning", {}),
-                researching=preset_config.get("researching", {}),
-                reporting=preset_config.get("reporting", {}),
-                complexity_score=current_depth.complexity_score + 0.2,
-            )
-
-        return None
+        except (ValueError, TypeError, KeyError) as e:
+            logger.error("Configuration error during depth adjustment: %s", e)
+            return None
+        except Exception as e:
+            logger.error("Unexpected error during depth adjustment: %s", e)
+            return None
 
     async def run_depth_adjustment(self, *args, **kwargs):
         try:
@@ -390,5 +402,5 @@ class AdaptiveResearchDepth:
             logger.warning("Depth adjustment task was cancelled")
             raise
         except Exception as e:
-            logger.error(f"Error during depth adjustment: {e}")
+            logger.error("Unexpected error during depth adjustment: %s", e)
             return None
