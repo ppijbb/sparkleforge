@@ -507,7 +507,7 @@ class Scheduler:
                         task = asyncio.create_task(self._execute_schedule(schedule))
                         self.running_tasks[schedule.schedule_id] = task
                         task.add_done_callback(
-                            lambda t: self.running_tasks.pop(schedule.schedule_id, None))
+                            lambda t, sid=schedule.schedule_id: self.running_tasks.pop(sid, None))
 
                 # 1분마다 체크
                 await asyncio.sleep(60)
@@ -593,6 +593,7 @@ class Scheduler:
         except asyncio.CancelledError:
             execution.status = "cancelled"
             execution.completed_at = datetime.now()
+            self._save_executions()
         except Exception as e:
             logger.error(f"Error executing schedule: {e}", exc_info=True)
 
