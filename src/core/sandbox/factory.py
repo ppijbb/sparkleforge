@@ -12,10 +12,10 @@ from src.core.sandbox.backends.local import LocalSandboxBackend
 
 logger = logging.getLogger(__name__)
 
-_SANDBOX_BACKEND: Optional[BaseSandboxBackend] = None
+_SANDBOX_BACKEND: BaseSandboxBackend | None = None
 
 
-def get_sandbox_backend(project_root: Optional[Path] = None) -> Optional[BaseSandboxBackend]:
+def get_sandbox_backend(project_root: Path | None = None) -> BaseSandboxBackend | None:
     """Return the configured sandbox backend for code execution.
 
     Env SANDBOX_BACKEND: local | docker | runloop | daytona | modal.

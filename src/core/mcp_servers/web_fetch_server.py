@@ -32,15 +32,11 @@ mcp = FastMCP("web-fetch")
 class FetchInput(BaseModel):
     """Input schema for fetch tool."""
 
-    url: str = Field(
-        ..., description="URL to fetch content from", min_length=1, max_length=2048
-    )
+    url: str = Field(..., description="URL to fetch content from", min_length=1, max_length=2048)
     max_length: int = Field(
         default=50000, description="Maximum content length to return", ge=100, le=500000
     )
-    timeout: int = Field(
-        default=30, description="Request timeout in seconds", ge=1, le=120
-    )
+    timeout: int = Field(default=30, description="Request timeout in seconds", ge=1, le=120)
     headers: Dict[str, str] | None = Field(
         default=None, description="Optional headers to include in request"
     )
@@ -86,9 +82,7 @@ def truncate_text(text: str, max_length: int = 10000) -> str:
 def clean_html_content(html: str, max_length: int) -> str:
     """Extract clean text from HTML content."""
     # Remove script and style elements
-    html = re.sub(
-        r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE
-    )
+    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
 
     # Remove HTML tags
@@ -168,9 +162,7 @@ async def fetch_url(
                 content = truncate_text(response.text, max_length)
             else:
                 # For binary content, return message
-                content = (
-                    f"[Binary content: {content_type}, {len(response.content)} bytes]"
-                )
+                content = f"[Binary content: {content_type}, {len(response.content)} bytes]"
 
             return {
                 "success": True,
@@ -230,9 +222,7 @@ async def simple_search(query: str, num_results: int = 10) -> Dict[str, Any]:
             # Parse results
             results = []
             # DuckDuckGo HTML pattern
-            pattern = (
-                r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]*)"[^>]*>(.*?)</a>'
-            )
+            pattern = r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]*)"[^>]*>(.*?)</a>'
             matches = re.findall(pattern, response.text, re.DOTALL)
 
             for href, title_html in matches[:num_results]:

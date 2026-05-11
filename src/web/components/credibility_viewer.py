@@ -104,9 +104,7 @@ class CredibilityViewer:
         # 평균 신뢰도
         avg_credibility = sum(s.overall_score for s in sources) / len(sources)
         with col1:
-            st.metric(
-                label="Average Credibility", value=f"{avg_credibility:.2f}", delta=None
-            )
+            st.metric(label="Average Credibility", value=f"{avg_credibility:.2f}", delta=None)
 
         # 검증된 출처 수
         verified_count = sum(1 for s in sources if s.verification_status == "verified")
@@ -133,9 +131,7 @@ class CredibilityViewer:
             domain_types[domain_type] = domain_types.get(domain_type, 0) + 1
 
         most_common_domain = (
-            max(domain_types.items(), key=lambda x: x[1])[0]
-            if domain_types
-            else "unknown"
+            max(domain_types.items(), key=lambda x: x[1])[0] if domain_types else "unknown"
         )
         with col4:
             st.metric(
@@ -144,9 +140,7 @@ class CredibilityViewer:
                 delta=f"{domain_types.get(most_common_domain, 0)} sources",
             )
 
-    def _render_credibility_distribution(
-        self, sources: List[SourceCredibility]
-    ) -> None:
+    def _render_credibility_distribution(self, sources: List[SourceCredibility]) -> None:
         """신뢰도 분포 차트를 렌더링합니다."""
         st.subheader("📊 Credibility Score Distribution")
 
@@ -196,9 +190,7 @@ class CredibilityViewer:
         avg_domain_trust = np.mean([s.domain_trust for s in sources])
         avg_recency = np.mean([s.recency_score for s in sources])
         avg_authority = np.mean([s.authority_score for s in sources])
-        avg_citations = np.mean(
-            [min(1.0, s.citation_count / 100) for s in sources]
-        )  # 0-1 스케일
+        avg_citations = np.mean([min(1.0, s.citation_count / 100) for s in sources])  # 0-1 스케일
 
         categories = ["Domain Trust", "Recency", "Authority", "Citations"]
         values = [avg_domain_trust, avg_recency, avg_authority, avg_citations]
@@ -333,21 +325,15 @@ class CredibilityViewer:
 
                 with col2:
                     st.write(f"**Supporting Sources:** {len(fact.supporting_sources)}")
-                    st.write(
-                        f"**Conflicting Sources:** {len(fact.conflicting_sources)}"
-                    )
-                    st.write(
-                        f"**Timestamp:** {fact.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-                    )
+                    st.write(f"**Conflicting Sources:** {len(fact.conflicting_sources)}")
+                    st.write(f"**Timestamp:** {fact.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
 
                 # 상세 정보
                 if fact.verification_details:
                     st.write("**Verification Details:**")
                     for stage, details in fact.verification_details.items():
                         if isinstance(details, dict):
-                            st.write(
-                                f"- {stage}: {details.get('confidence', 'N/A'):.2f}"
-                            )
+                            st.write(f"- {stage}: {details.get('confidence', 'N/A'):.2f}")
 
     def _render_detailed_sources_table(self, sources: List[SourceCredibility]) -> None:
         """상세 출처 테이블을 렌더링합니다."""
@@ -442,9 +428,7 @@ class CredibilityViewer:
             return
 
         for i, conflict in enumerate(conflicts, 1):
-            with st.expander(
-                f"⚠️ Conflict {i}: {conflict.original_text[:100]}...", expanded=True
-            ):
+            with st.expander(f"⚠️ Conflict {i}: {conflict.original_text[:100]}...", expanded=True):
                 st.warning(f"**Status:** {conflict.fact_status.value.upper()}")
                 st.write(f"**Confidence:** {conflict.confidence_score:.2f}")
 

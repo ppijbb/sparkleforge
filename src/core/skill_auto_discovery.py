@@ -57,9 +57,7 @@ class DiscoveredSkill(BaseModel):
     content_hash: str = Field(default="", description="파일 해시 (변경 감지용)")
 
     # 컨텍스트 파일들
-    context_files: List[str] = Field(
-        default_factory=list, description="컨텍스트 파일들"
-    )
+    context_files: List[str] = Field(default_factory=list, description="컨텍스트 파일들")
     scripts: List[str] = Field(default_factory=list, description="스크립트 파일들")
     resources: List[str] = Field(default_factory=list, description="리소스 파일들")
 
@@ -266,9 +264,7 @@ class SkillContextLoader:
         # reference.md
         reference_md = skill_directory / "reference.md"
         if reference_md.exists():
-            context_parts.append(
-                f"\n# Reference\n{reference_md.read_text(encoding='utf-8')}"
-            )
+            context_parts.append(f"\n# Reference\n{reference_md.read_text(encoding='utf-8')}")
 
         # forms.md
         forms_md = skill_directory / "forms.md"
@@ -278,9 +274,7 @@ class SkillContextLoader:
         # examples.md
         examples_md = skill_directory / "examples.md"
         if examples_md.exists():
-            context_parts.append(
-                f"\n# Examples\n{examples_md.read_text(encoding='utf-8')}"
-            )
+            context_parts.append(f"\n# Examples\n{examples_md.read_text(encoding='utf-8')}")
 
         # 스크립트
         if include_scripts:
@@ -308,13 +302,9 @@ class SkillContextLoader:
                     ]:
                         try:
                             content = resource_file.read_text(encoding="utf-8")
-                            context_parts.append(
-                                f"\n# Resource: {resource_file.name}\n{content}"
-                            )
+                            context_parts.append(f"\n# Resource: {resource_file.name}\n{content}")
                         except Exception as e:
-                            logger.debug(
-                                f"Failed to load resource {resource_file}: {e}"
-                            )
+                            logger.debug(f"Failed to load resource {resource_file}: {e}")
 
         return "\n\n".join(context_parts)
 
@@ -336,9 +326,7 @@ class SkillContextLoader:
         # 리소스
         resources_dir = skill_directory / "resources"
         if resources_dir.exists():
-            result["resources"] = [
-                f.name for f in resources_dir.iterdir() if f.is_file()
-            ]
+            result["resources"] = [f.name for f in resources_dir.iterdir() if f.is_file()]
 
         return result
 
@@ -669,9 +657,7 @@ class SkillAutoDiscovery:
 
         status_counts = {}
         for skill in self.skills.values():
-            status_counts[skill.status.value] = (
-                status_counts.get(skill.status.value, 0) + 1
-            )
+            status_counts[skill.status.value] = status_counts.get(skill.status.value, 0) + 1
 
         return {
             "total_skills": len(self.skills),

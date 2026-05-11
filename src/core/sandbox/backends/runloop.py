@@ -32,8 +32,10 @@ class RunloopSandboxBackend(BaseSandboxBackend):
         if self._devbox is not None:
             return
         try:
-            from runloop_api_client.sdk import Runloop
             import os
+
+            from runloop_api_client.sdk import Runloop
+
             api_key = os.environ.get("RUNLOOP_API_KEY")
             devbox_id = os.environ.get("RUNLOOP_DEVELOPMENT_BOX_ID")
             if not api_key:
@@ -44,11 +46,15 @@ class RunloopSandboxBackend(BaseSandboxBackend):
             else:
                 devboxes = list(client.development_boxes.list())
                 if not devboxes:
-                    raise RuntimeError("No Runloop devbox found; create one or set RUNLOOP_DEVELOPMENT_BOX_ID")
+                    raise RuntimeError(
+                        "No Runloop devbox found; create one or set RUNLOOP_DEVELOPMENT_BOX_ID"
+                    )
                 self._devbox = devboxes[0]
             self._client = client
         except ImportError as e:
-            raise ImportError("Runloop sandbox requires runloop-api-client: pip install runloop-api-client") from e
+            raise ImportError(
+                "Runloop sandbox requires runloop-api-client: pip install runloop-api-client"
+            ) from e
 
     async def execute_code(self, code: str, language: str = "python") -> ExecuteResponse:
         """Run code on the Runloop devbox via shell command."""
@@ -58,6 +64,7 @@ class RunloopSandboxBackend(BaseSandboxBackend):
         else:
             command = code
         import asyncio
+
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,

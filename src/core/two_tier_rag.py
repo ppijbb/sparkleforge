@@ -61,13 +61,9 @@ class MemoryEntry(BaseModel):
     last_accessed: datetime | None = Field(default=None)
 
     # 연결 정보 (Bidirectional)
-    related_entries: List[str] = Field(
-        default_factory=list, description="관련 엔트리 ID들"
-    )
+    related_entries: List[str] = Field(default_factory=list, description="관련 엔트리 ID들")
     parent_entry: str | None = Field(default=None, description="부모 엔트리 ID")
-    child_entries: List[str] = Field(
-        default_factory=list, description="자식 엔트리 ID들"
-    )
+    child_entries: List[str] = Field(default_factory=list, description="자식 엔트리 ID들")
 
     class Config:
         arbitrary_types_allowed = True
@@ -257,9 +253,7 @@ class TierTwoStore:
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
 
-    def search_by_type(
-        self, memory_type: MemoryType, top_k: int = 10
-    ) -> List[MemoryEntry]:
+    def search_by_type(self, memory_type: MemoryType, top_k: int = 10) -> List[MemoryEntry]:
         """타입별 검색."""
         entry_ids = self.type_index.get(memory_type, set())
         entries = [self.entries[eid] for eid in entry_ids if eid in self.entries]
@@ -410,9 +404,7 @@ class TwoTierRAGSystem:
         seen_ids: Set[str] = set()
 
         # Tier 1 검색 (빠른 캐시)
-        tier1_results = self.tier1.search(
-            keywords, top_k=top_k, memory_type=memory_type
-        )
+        tier1_results = self.tier1.search(keywords, top_k=top_k, memory_type=memory_type)
         for entry, score in tier1_results:
             if entry.entry_id not in seen_ids:
                 results.append((entry, score * 1.2, "tier1"))  # Tier 1 보너스
@@ -455,9 +447,7 @@ class TwoTierRAGSystem:
 
         return results[:top_k]
 
-    def query_by_type(
-        self, memory_type: MemoryType, top_k: int = 10
-    ) -> List[MemoryEntry]:
+    def query_by_type(self, memory_type: MemoryType, top_k: int = 10) -> List[MemoryEntry]:
         """타입별 검색."""
         return self.tier2.search_by_type(memory_type, top_k=top_k)
 
@@ -491,9 +481,7 @@ class TwoTierRAGSystem:
 
         # 세션 ID가 있으면 해당 세션의 메모리도 포함
         if session_id:
-            session_entries = [
-                e for e in self.tier2.entries.values() if e.session_id == session_id
-            ]
+            session_entries = [e for e in self.tier2.entries.values() if e.session_id == session_id]
             results.extend([(e, e.importance) for e in session_entries])
 
         # 중복 제거 및 중요도 기준 정렬
@@ -597,9 +585,7 @@ class TwoTierRAGSystem:
                 "size": self.tier1.size,
                 "max_size": self.tier1.max_entries,
                 "hit_rate": self.tier1.hit_rate,
-                "loaded_at": self.tier1.loaded_at.isoformat()
-                if self.tier1.loaded_at
-                else None,
+                "loaded_at": self.tier1.loaded_at.isoformat() if self.tier1.loaded_at else None,
             },
             "tier2": self.tier2.get_statistics(),
             "auto_promote": self.auto_promote,

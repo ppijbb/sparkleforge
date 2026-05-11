@@ -13,11 +13,9 @@ import random
 import sys
 import time
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 try:
     from dotenv import load_dotenv
@@ -27,7 +25,7 @@ except ImportError:
     pass
 
 # SparkleForge Registry
-from src.core.tools.registry import registry as global_registry, ToolMetadata
+from src.core.tools.registry import registry as global_registry
 
 # MCP imports
 try:
@@ -128,12 +126,8 @@ logger = logging.getLogger(__name__)
 
 def _normalize_mcp_tool_alias(tool_name: str) -> str:
     """Normalize legacy MCP tool names to SEP-986-safe aliases."""
-    return (
-        tool_name.replace("::", "_")
-        .replace("-", "_")
-        .replace("/", "_")
-        .replace(" ", "_")
-    )
+    return tool_name.replace("::", "_").replace("-", "_").replace("/", "_").replace(" ", "_")
+
 
 # 9대 혁신: ToolTrace 추적 시스템
 _tool_trace_manager = None
@@ -182,9 +176,7 @@ def _create_tool_trace(
         from src.core.tool_trace import ToolTrace
 
         # raw_answer 생성 (result를 JSON 문자열로)
-        raw_answer = (
-            json.dumps(result, ensure_ascii=False, indent=2) if result else "{}"
-        )
+        raw_answer = json.dumps(result, ensure_ascii=False, indent=2) if result else "{}"
 
         # summary 생성 (간단한 요약)
         if result.get("success"):
@@ -203,9 +195,7 @@ def _create_tool_trace(
             else:
                 summary = "Tool executed successfully"
         else:
-            summary = (
-                f"Tool execution failed: {result.get('error', 'Unknown error')[:100]}"
-            )
+            summary = f"Tool execution failed: {result.get('error', 'Unknown error')[:100]}"
 
         trace = ToolTrace.create_with_size_limit(
             tool_id=tool_id,
@@ -362,6 +352,7 @@ def _cap_tool_result_for_context(
 
 def _normalize_mcp_call_params(tool_def: Any, params: Dict[str, Any]) -> Dict[str, Any]:
     """Wrap params for FastMCP tools whose schema exposes a single input model."""
+
     def _normalize_aliases(raw: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize common caller aliases to embedded MCP server field names."""
         normalized = dict(raw or {})
@@ -372,20 +363,14 @@ def _normalize_mcp_call_params(tool_def: Any, params: Dict[str, Any]) -> Dict[st
     if isinstance(tool_def, dict):
         schema = tool_def.get("inputSchema") or tool_def.get("input_schema")
     else:
-        schema = getattr(tool_def, "inputSchema", None) or getattr(
-            tool_def, "input_schema", None
-        )
+        schema = getattr(tool_def, "inputSchema", None) or getattr(tool_def, "input_schema", None)
     params = _normalize_aliases(params)
     if not isinstance(schema, dict):
         return params
 
     properties = schema.get("properties") or {}
     required = schema.get("required") or []
-    if (
-        set(properties.keys()) == {"input"}
-        and "input" in required
-        and "input" not in params
-    ):
+    if set(properties.keys()) == {"input"} and "input" in required and "input" not in params:
         return {"input": params}
     if "input" in params and isinstance(params["input"], dict):
         return {"input": _normalize_aliases(params["input"])}
@@ -393,14 +378,7 @@ def _normalize_mcp_call_params(tool_def: Any, params: Dict[str, Any]) -> Dict[st
 
 
 # Centralized Tool Registry imports
-from src.core.tools.registry import (
-    ToolCategory, 
-    ToolInfo, 
-    ToolMetadata, 
-    ToolResult, 
-    ToolRegistry,
-    registry as global_registry
-)
+from src.core.tools.registry import ToolCategory, ToolInfo, ToolResult
 
 # Alias for backward compatibility
 SEP986ToolResult = ToolResult
@@ -413,17 +391,13 @@ class OpenRouterClient:
         self.api_key = api_key
 
     async def __aenter__(self):
-        raise RuntimeError(
-            "OpenRouter is disabled. Use Gemini direct path via llm_manager."
-        )
+        raise RuntimeError("OpenRouter is disabled. Use Gemini direct path via llm_manager.")
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return False
 
     async def generate_response(self, *args, **kwargs):
-        raise RuntimeError(
-            "OpenRouter is disabled. Use Gemini direct path via llm_manager."
-        )
+        raise RuntimeError("OpenRouter is disabled. Use Gemini direct path via llm_manager.")
 
 
 class UniversalMCPHub:
@@ -439,19 +413,17 @@ class UniversalMCPHub:
         # 실행 컨텍스트별 MCP 세션 관리 (ROMA 스타일)
         # 각 실행마다 독립적인 MCP 세션 풀을 유지
         self._execution_sessions: Dict[str, Dict[str, Any]] = {}
-        self.tools: Dict[
-            str, ToolInfo
-        ] = {}  # 하위 호환성을 위해 유지 (registry.tools 참조)
+        self.tools: Dict[str, ToolInfo] = {}  # 하위 호환성을 위해 유지 (registry.tools 참조)
         self.openrouter_client: OpenRouterClient | None = None
 
         # MCP 클라이언트 (기존 시스템)
         self.mcp_sessions: Dict[str, ClientSession] = {}
-        self.exit_stacks: Dict[
-            str, AsyncExitStack
-        ] = {}  # 참조만 유지, cleanup에서 aclose() 호출 안 함
-        self.mcp_tools_map: Dict[
-            str, Dict[str, Any]
-        ] = {}  # server_name -> {tool_name -> tool_info}
+        self.exit_stacks: Dict[str, AsyncExitStack] = (
+            {}
+        )  # 참조만 유지, cleanup에서 aclose() 호출 안 함
+        self.mcp_tools_map: Dict[str, Dict[str, Any]] = (
+            {}
+        )  # server_name -> {tool_name -> tool_info}
         self.mcp_server_configs: Dict[str, Dict[str, Any]] = {}
         # 각 서버별 연결 진단 정보
         self.connection_diagnostics: Dict[str, Dict[str, Any]] = {}
@@ -483,18 +455,14 @@ class UniversalMCPHub:
         ]
 
         # 요청 간격 변동성을 위한 히스토리 (Skyvern 스타일: 인간 행동 패턴 모방)
-        self.request_timing_history: Dict[
-            str, List[float]
-        ] = {}  # server_name -> [timestamps]
+        self.request_timing_history: Dict[str, List[float]] = {}  # server_name -> [timestamps]
 
         # FastMCP 자동 발견 시스템 (신규)
         self.fastmcp_servers: Dict[str, HTTPServerSpec] = {}  # 자동 발견용 서버 설정
         self.fastmcp_multi: FastMCPMulti | None = None
         self.fastmcp_tool_loader: MCPToolLoader | None = None
         # FastMCP 설정 저장소 (서버별) - Client는 context manager이므로 매번 새로 생성
-        self.fastmcp_configs: Dict[
-            str, Dict[str, Any]
-        ] = {}  # server_name -> mcp_config
+        self.fastmcp_configs: Dict[str, Dict[str, Any]] = {}  # server_name -> mcp_config
         self.auto_discovered_tools: Dict[str, BaseTool] = {}  # 자동 발견된 도구들
         self.auto_discovered_tool_infos: Dict[str, MCPToolInfo] = {}  # 도구 메타데이터
 
@@ -554,9 +522,9 @@ class UniversalMCPHub:
             }
 
             category_str = tool_config.get("category", "utility")
-            category = category_map.get(category_str, ToolCategory.UTILITY)
+            category_map.get(category_str, ToolCategory.UTILITY)
             description = _structured_tool_description(tool_config, tool_name)
-            params_config = tool_config.get("parameters", {})
+            tool_config.get("parameters", {})
 
             # Pydantic 스키마 생성 - 최신 방식으로 단순화 (args_schema 없이도 동작)
             ToolSchema = None
@@ -599,16 +567,12 @@ class UniversalMCPHub:
                     if tool_name_str == "fetch":
 
                         def fetch_wrapper(url: str, format: str = "detailed") -> str:
-                            return _execute_data_tool_sync(
-                                "fetch", {"url": url, "format": format}
-                            )
+                            return _execute_data_tool_sync("fetch", {"url": url, "format": format})
 
                         return fetch_wrapper
                     elif tool_name_str == "filesystem":
 
-                        def filesystem_wrapper(
-                            path: str, operation: str = "read"
-                        ) -> str:
+                        def filesystem_wrapper(path: str, operation: str = "read") -> str:
                             return _execute_data_tool_sync(
                                 "filesystem", {"path": path, "operation": operation}
                             )
@@ -632,9 +596,7 @@ class UniversalMCPHub:
                     else:
 
                         def code_wrapper(code: str) -> str:
-                            return _execute_code_tool_sync(
-                                tool_name_str, {"code": code}
-                            )
+                            return _execute_code_tool_sync(tool_name_str, {"code": code})
 
                         return code_wrapper
                 else:
@@ -720,15 +682,11 @@ class UniversalMCPHub:
                         )
                         return langchain_tool
                 except Exception as e2:
-                    logger.error(
-                        f"Failed to create tool without schema for {tool_name}: {e2}"
-                    )
+                    logger.error(f"Failed to create tool without schema for {tool_name}: {e2}")
                     return None
 
         except Exception as e:
-            logger.error(
-                f"Failed to create LangChain tool wrapper for {tool_name}: {e}"
-            )
+            logger.error(f"Failed to create LangChain tool wrapper for {tool_name}: {e}")
             return None
 
     def _initialize_tools(self):
@@ -744,11 +702,9 @@ class UniversalMCPHub:
                 loop = asyncio.get_running_loop()
                 # 이미 실행 중인 루프가 있으면 태스크로 실행 (asyncio.run() 사용 금지)
                 # 태스크를 생성하지만 await하지 않음 (백그라운드 실행)
-                task = loop.create_task(self._initialize_auto_discovered_tools())
+                loop.create_task(self._initialize_auto_discovered_tools())
                 # 태스크가 완료될 때까지 기다리지 않음 (비동기 초기화)
-                logger.debug(
-                    "Auto-discovered MCP tools initialization started as background task"
-                )
+                logger.debug("Auto-discovered MCP tools initialization started as background task")
             except RuntimeError:
                 # 실행 중인 루프가 없으면 새 루프에서 실행
                 asyncio.run(self._initialize_auto_discovered_tools())
@@ -1007,9 +963,7 @@ class UniversalMCPHub:
                                 # 이미 실행 중인 루프가 있으면 새 태스크 생성
                                 import concurrent.futures
 
-                                with (
-                                    concurrent.futures.ThreadPoolExecutor() as executor
-                                ):
+                                with concurrent.futures.ThreadPoolExecutor() as executor:
                                     future = executor.submit(
                                         asyncio.run,
                                         create_git_tool_wrapper(tool_name)(**kwargs),
@@ -1020,9 +974,7 @@ class UniversalMCPHub:
                                     create_git_tool_wrapper(tool_name)(**kwargs)
                                 )
                         except RuntimeError:
-                            return asyncio.run(
-                                create_git_tool_wrapper(tool_name)(**kwargs)
-                            )
+                            return asyncio.run(create_git_tool_wrapper(tool_name)(**kwargs))
 
                     return wrapper
 
@@ -1083,7 +1035,6 @@ class UniversalMCPHub:
         # 환경 변수에서 서버 설정 로드 (예: FASTMCP_SERVERS)
         # 실제로는 config나 환경 변수에서 로드해야 함
         # 여기서는 예시로 빈 설정 유지
-        pass
 
     def _merge_tools(self):
         """자동 발견 도구와 수동 등록 도구 통합 및 충돌 해결."""
@@ -1135,16 +1086,12 @@ class UniversalMCPHub:
 
         # Registry와 self.tools 동기화
         self.tools.update(self.registry.tools)
-        logger.info(
-            f"✅ Merged tools: {len(self.registry.tools)} total tools in registry"
-        )
+        logger.info(f"✅ Merged tools: {len(self.registry.tools)} total tools in registry")
 
     def _initialize_clients(self):
         """클라이언트 초기화 - Gemini 직결 사용, OpenRouter 비활성화."""
         self.openrouter_client = None
-        logger.info(
-            "✅ LLM routed via llm_manager (Gemini direct). OpenRouter disabled."
-        )
+        logger.info("✅ LLM routed via llm_manager (Gemini direct). OpenRouter disabled.")
 
     def _resolve_env_vars_in_value(self, value: Any) -> Any:
         """재귀적으로 객체 내의 환경변수 플레이스홀더를 실제 값으로 치환.
@@ -1162,9 +1109,7 @@ class UniversalMCPHub:
                 if env_value is not None:
                     return env_value
                 # 환경변수가 없으면 원본 유지 (또는 경고)
-                logger.warning(
-                    f"Environment variable '{var_name}' not found, keeping placeholder"
-                )
+                logger.warning(f"Environment variable '{var_name}' not found, keeping placeholder")
                 return match.group(0)
 
             result = re.sub(pattern, replace_env_var, value)
@@ -1176,9 +1121,7 @@ class UniversalMCPHub:
         else:
             return value
 
-    def _check_server_requirements(
-        self, server_name: str, server_config: Dict[str, Any]
-    ) -> bool:
+    def _check_server_requirements(self, server_name: str, server_config: Dict[str, Any]) -> bool:
         """서버에 필요한 API 키나 환경변수가 있는지 확인.
 
         Returns:
@@ -1218,15 +1161,9 @@ class UniversalMCPHub:
                 if "GITHUB_PERSONAL_ACCESS_TOKEN" in env_config:
                     env_value = env_config["GITHUB_PERSONAL_ACCESS_TOKEN"]
                     # 환경변수 치환이 안된 경우 (${GITHUB_TOKEN} 형태)
-                    if (
-                        isinstance(env_value, str)
-                        and "${" in env_value
-                        and not github_token
-                    ):
+                    if isinstance(env_value, str) and "${" in env_value and not github_token:
                         return False
-            logger.debug(
-                f"[MCP][check.req] server={server_name} stdio mode, requirements checked"
-            )
+            logger.debug(f"[MCP][check.req] server={server_name} stdio mode, requirements checked")
             return True
 
         # HTTP 서버는 설정에 따라 API 키가 필요할 수 있음 (서버별로 다름)
@@ -1258,11 +1195,11 @@ class UniversalMCPHub:
                     os.environ["PROJECT_ROOT"] = str(project_root)
                     # 환경변수 치환
                     resolved_configs = self._resolve_env_vars_in_value(raw_configs)
-                    from src.core.mcp_python import normalize_mcp_servers_python_commands
-
-                    resolved_configs = normalize_mcp_servers_python_commands(
-                        resolved_configs
+                    from src.core.mcp_python import (
+                        normalize_mcp_servers_python_commands,
                     )
+
+                    resolved_configs = normalize_mcp_servers_python_commands(resolved_configs)
 
                     # API 키 확인 및 필터링
                     filtered_configs = {}
@@ -1273,9 +1210,7 @@ class UniversalMCPHub:
                             continue
 
                         # API 키가 필요한 서버 확인
-                        if not self._check_server_requirements(
-                            server_name, server_config
-                        ):
+                        if not self._check_server_requirements(server_name, server_config):
                             logger.info(
                                 f"[MCP][skip.no-api-key] server={server_name} (API key not configured)"
                             )
@@ -1393,9 +1328,7 @@ class UniversalMCPHub:
                 # 여기서는 클라이언트 존재 여부만 확인 (성능 고려)
                 return fastmcp_client is not None
             except Exception as e:
-                logger.debug(
-                    f"FastMCP connection health check failed for {server_name}: {e}"
-                )
+                logger.debug(f"FastMCP connection health check failed for {server_name}: {e}")
                 return False
 
         # 기존 ClientSession 방식 확인
@@ -1427,9 +1360,7 @@ class UniversalMCPHub:
         if server_name in self.mcp_sessions:
             is_healthy = await self._check_connection_health(server_name)
             if is_healthy:
-                logger.debug(
-                    f"[MCP][connect.pool] Reusing existing connection for {server_name}"
-                )
+                logger.debug(f"[MCP][connect.pool] Reusing existing connection for {server_name}")
                 return True
             else:
                 logger.warning(
@@ -1492,9 +1423,7 @@ class UniversalMCPHub:
                     or StdioServerParameters is None
                     or stdio_client is None
                 ):
-                    logger.error(
-                        f"MCP package not available for stdio server {server_name}"
-                    )
+                    logger.error(f"MCP package not available for stdio server {server_name}")
                     return False
 
                 command = server_config.get("command")
@@ -1538,8 +1467,7 @@ class UniversalMCPHub:
 
                     # 환경변수가 모두 비어있으면 서버 스킵
                     if all(
-                        not v or (isinstance(v, str) and "${" in v)
-                        for v in resolved_env.values()
+                        not v or (isinstance(v, str) and "${" in v) for v in resolved_env.values()
                     ):
                         logger.warning(
                             f"[MCP][stdio.connect] server={server_name} required env vars not set, skipping"
@@ -1573,20 +1501,14 @@ class UniversalMCPHub:
                                 item_path = os.path.join(npx_cache_dir, item)
                                 if os.path.isdir(item_path):
                                     # zod 모듈이 손상된 경우 해당 디렉토리 전체 삭제
-                                    zod_path = os.path.join(
-                                        item_path, "node_modules", "zod"
-                                    )
+                                    zod_path = os.path.join(item_path, "node_modules", "zod")
                                     if os.path.exists(zod_path):
                                         # zod 파일들이 없는 경우 (TAR_ENTRY_ERROR)
-                                        zod_external = os.path.join(
-                                            zod_path, "v3", "external.js"
-                                        )
+                                        zod_external = os.path.join(zod_path, "v3", "external.js")
                                         if not os.path.exists(zod_external):
                                             # 손상된 패키지 디렉토리 전체 삭제
                                             try:
-                                                shutil.rmtree(
-                                                    item_path, ignore_errors=True
-                                                )
+                                                shutil.rmtree(item_path, ignore_errors=True)
                                                 logger.info(
                                                     f"[MCP][stdio.connect] Cleaned corrupted npx cache directory: {item}"
                                                 )
@@ -1595,9 +1517,7 @@ class UniversalMCPHub:
                                                     f"[MCP][stdio.connect] Failed to remove cache dir {item}: {e}"
                                                 )
                     except Exception as e:
-                        logger.debug(
-                            f"[MCP][stdio.connect] Failed to clean npm cache: {e}"
-                        )
+                        logger.debug(f"[MCP][stdio.connect] Failed to clean npm cache: {e}")
 
                 try:
                     # 표준 MCP 방식으로 연결 (OpenManus 스타일)
@@ -1613,20 +1533,14 @@ class UniversalMCPHub:
                         stdio_client(server_params)
                     )
                     read, write = stdio_transport
-                    session = await exit_stack.enter_async_context(
-                        ClientSession(read, write)
-                    )
+                    session = await exit_stack.enter_async_context(ClientSession(read, write))
 
                     # 세션 초기화 및 도구 목록 가져오기
                     if self.stopping:
-                        raise asyncio.CancelledError(
-                            "Stopping flag is set, skipping initialize"
-                        )
+                        raise asyncio.CancelledError("Stopping flag is set, skipping initialize")
 
                     await asyncio.wait_for(session.initialize(), timeout=timeout)
-                    response = await asyncio.wait_for(
-                        session.list_tools(), timeout=timeout
-                    )
+                    response = await asyncio.wait_for(session.list_tools(), timeout=timeout)
 
                     # 도구 등록
                     for tool in response.tools:
@@ -1640,9 +1554,7 @@ class UniversalMCPHub:
                             server_guess=server_name,
                             name=f"{server_name}::{tool.name}",
                             description=tool.description or "",
-                            input_schema=tool.inputSchema
-                            if hasattr(tool, "inputSchema")
-                            else {},
+                            input_schema=tool.inputSchema if hasattr(tool, "inputSchema") else {},
                         )
                         self.mcp_tools_map[server_name][tool.name] = tool_info
 
@@ -1663,9 +1575,7 @@ class UniversalMCPHub:
 
                     return True
                 except asyncio.CancelledError:
-                    logger.debug(
-                        f"[MCP][stdio.connect] Connection cancelled for {server_name}"
-                    )
+                    logger.debug(f"[MCP][stdio.connect] Connection cancelled for {server_name}")
                     raise
                 except Exception as e:
                     error_str = str(e).lower()
@@ -1679,8 +1589,7 @@ class UniversalMCPHub:
                     )
                     is_server_error = "server error detected" in error_str
                     is_npm_404 = is_npm_404 or (
-                        "not found" in error_str
-                        and "server error" in error_str
+                        "not found" in error_str and "server error" in error_str
                     )
 
                     # npm 오류 감지
@@ -1696,14 +1605,15 @@ class UniversalMCPHub:
 
                     # Connection closed 오류는 서버 연결 실패
                     is_connection_closed = (
-                        "connection closed" in error_str
-                        or "client failed to connect" in error_str
+                        "connection closed" in error_str or "client failed to connect" in error_str
                     )
 
                     # npm 캐시 손상 오류 해결: 캐시 정리 후 재시도
                     if (
-                        is_npm_enotempty or is_npm_tar_error or is_module_not_found
-                    ) and command == "npx" and not is_server_error:
+                        (is_npm_enotempty or is_npm_tar_error or is_module_not_found)
+                        and command == "npx"
+                        and not is_server_error
+                    ):
                         try:
                             import shutil
                             import subprocess
@@ -1738,9 +1648,7 @@ class UniversalMCPHub:
                                                 )
                                                 if not os.path.exists(zod_external):
                                                     # 손상된 패키지 디렉토리 전체 삭제
-                                                    shutil.rmtree(
-                                                        item_path, ignore_errors=True
-                                                    )
+                                                    shutil.rmtree(item_path, ignore_errors=True)
                                                     logger.info(
                                                         f"[MCP][stdio.connect] Cleaned corrupted npx cache directory: {item}"
                                                     )
@@ -1759,16 +1667,12 @@ class UniversalMCPHub:
                                         env=resolved_env if resolved_env else None,
                                     )
 
-                                    retry_stdio_transport = (
-                                        await exit_stack.enter_async_context(
-                                            stdio_client(retry_server_params)
-                                        )
+                                    retry_stdio_transport = await exit_stack.enter_async_context(
+                                        stdio_client(retry_server_params)
                                     )
                                     retry_read, retry_write = retry_stdio_transport
-                                    retry_session = (
-                                        await exit_stack.enter_async_context(
-                                            ClientSession(retry_read, retry_write)
-                                        )
+                                    retry_session = await exit_stack.enter_async_context(
+                                        ClientSession(retry_read, retry_write)
                                     )
 
                                     await retry_session.initialize()
@@ -1778,22 +1682,20 @@ class UniversalMCPHub:
 
                                     # 도구 등록
                                     for tool in retry_response.tools:
-                                        self.registry.register_mcp_tool(
-                                            server_name, tool, tool
-                                        )
+                                        self.registry.register_mcp_tool(server_name, tool, tool)
                                         if server_name not in self.mcp_tools_map:
                                             self.mcp_tools_map[server_name] = {}
                                         tool_info = MCPToolInfo(
                                             server_guess=server_name,
                                             name=f"{server_name}::{tool.name}",
                                             description=tool.description or "",
-                                            input_schema=tool.inputSchema
-                                            if hasattr(tool, "inputSchema")
-                                            else {},
+                                            input_schema=(
+                                                tool.inputSchema
+                                                if hasattr(tool, "inputSchema")
+                                                else {}
+                                            ),
                                         )
-                                        self.mcp_tools_map[server_name][tool.name] = (
-                                            tool_info
-                                        )
+                                        self.mcp_tools_map[server_name][tool.name] = tool_info
 
                                     # 세션 저장
                                     self.mcp_sessions[server_name] = retry_session
@@ -1814,9 +1716,7 @@ class UniversalMCPHub:
                                         f"[MCP][stdio.connect] Retry failed for {server_name}: {retry_e}"
                                     )
                         except Exception as cleanup_e:
-                            logger.debug(
-                                f"[MCP][stdio.connect] Cache cleanup failed: {cleanup_e}"
-                            )
+                            logger.debug(f"[MCP][stdio.connect] Cache cleanup failed: {cleanup_e}")
 
                     # 조용히 처리할 오류들 (WARNING 레벨로만 로깅)
                     if is_npm_404:
@@ -1863,9 +1763,7 @@ class UniversalMCPHub:
                 # HTTP 서버 연결 (기존 로직)
                 # FastMCP 기반 연결 (모든 서버를 HTTP로 처리)
                 if not FASTMCP_AVAILABLE or FastMCPClient is None:
-                    logger.error(
-                        f"FastMCP client not available for server {server_name}"
-                    )
+                    logger.error(f"FastMCP client not available for server {server_name}")
                     return False
 
                 # 서버 설정을 FastMCP 형식으로 변환
@@ -2015,9 +1913,7 @@ class UniversalMCPHub:
                     # FastMCP Client 인스턴스 저장 (나중에 도구 호출 시 사용)
                     # 주의: FastMCP Client는 context manager이므로, 도구 호출 시마다 async with로 사용해야 함
                     # 세션은 저장하지 않고 클라이언트만 저장
-                    self.mcp_sessions[server_name] = (
-                        fastmcp_client  # FastMCP Client 저장
-                    )
+                    self.mcp_sessions[server_name] = fastmcp_client  # FastMCP Client 저장
 
                     return True
 
@@ -2027,9 +1923,7 @@ class UniversalMCPHub:
                     logger.error(
                         f"[MCP][fastmcp.error] server={server_name} err={error_type}: {error_msg}"
                     )
-                    logger.exception(
-                        f"[MCP][fastmcp.error] server={server_name} full traceback:"
-                    )
+                    logger.exception(f"[MCP][fastmcp.error] server={server_name} full traceback:")
 
                     # 연결 실패 시 클라이언트 제거
                     if server_name in self.fastmcp_clients:
@@ -2053,9 +1947,7 @@ class UniversalMCPHub:
                 logger.error(
                     f"[MCP][fastmcp.error] server={server_name} err={error_type}: {error_msg}"
                 )
-                logger.exception(
-                    f"[MCP][fastmcp.error] server={server_name} full traceback:"
-                )
+                logger.exception(f"[MCP][fastmcp.error] server={server_name} full traceback:")
                 di = self.connection_diagnostics.get(server_name, {})
                 di.update(
                     {
@@ -2130,9 +2022,7 @@ class UniversalMCPHub:
                 pass
             return False
 
-    async def _register_dynamic_server(
-        self, server_name: str, server_path: Path
-    ) -> bool:
+    async def _register_dynamic_server(self, server_name: str, server_path: Path) -> bool:
         """동적으로 생성된 MCP 서버를 등록하고 시작.
 
         Args:
@@ -2143,9 +2033,7 @@ class UniversalMCPHub:
             등록 성공 여부
         """
         try:
-            logger.info(
-                f"[MCP][builder.register] Registering dynamic server: {server_name}"
-            )
+            logger.info(f"[MCP][builder.register] Registering dynamic server: {server_name}")
 
             # 서버 설정 생성 (stdio 방식)
             server_config = {
@@ -2190,9 +2078,7 @@ class UniversalMCPHub:
                 # 계속 진행 (메모리에는 등록됨)
 
             # 서버 연결 시도
-            connected = await self._connect_to_mcp_server(
-                server_name, server_config, timeout=30.0
-            )
+            connected = await self._connect_to_mcp_server(server_name, server_config, timeout=30.0)
 
             if connected:
                 logger.info(
@@ -2203,7 +2089,7 @@ class UniversalMCPHub:
                 try:
                     from src.core.process_manager import get_process_manager
 
-                    pm = get_process_manager()
+                    get_process_manager()
                     # 서버 프로세스는 _connect_to_mcp_server에서 시작되므로 여기서는 로깅만
                     logger.debug(
                         f"[MCP][builder.register] Server {server_name} process will be tracked by ProcessManager"
@@ -2257,9 +2143,7 @@ class UniversalMCPHub:
                     del self.fastmcp_clients[server_name]
                     logger.debug(f"Removed FastMCP client for {server_name}")
                 except Exception as e:
-                    logger.debug(
-                        f"Error removing FastMCP client for {server_name}: {e}"
-                    )
+                    logger.debug(f"Error removing FastMCP client for {server_name}: {e}")
                     # 오류가 있어도 참조는 제거
                     if server_name in self.fastmcp_clients:
                         del self.fastmcp_clients[server_name]
@@ -2280,9 +2164,7 @@ class UniversalMCPHub:
                         elif hasattr(session, "close"):
                             await asyncio.wait_for(session.close(), timeout=1.0)
                     except (TimeoutError, AttributeError, Exception) as e:
-                        logger.debug(
-                            f"Session shutdown timeout/error for {server_name}: {e}"
-                        )
+                        logger.debug(f"Session shutdown timeout/error for {server_name}: {e}")
                         # 타임아웃이어도 세션은 제거 (heartbeat 중지)
                 # 세션 제거 (heartbeat 무한 루프 방지)
                 del self.mcp_sessions[server_name]
@@ -2317,18 +2199,14 @@ class UniversalMCPHub:
             logger.warning("MCP is disabled. Continuing with limited functionality.")
             return
         if self.stopping:
-            logger.warning(
-                "MCP initialization requested during stopping state; skipping"
-            )
+            logger.warning("MCP initialization requested during stopping state; skipping")
             return
 
         try:
             logger.info("Initializing MCP Hub with MCP servers (no OpenRouter)...")
 
             # 일괄 초기화 대기 시간 (agent 시작 초기에 모든 서버 준비 시간 확보)
-            batch_init_delay = float(
-                os.getenv("MCP_BATCH_INIT_DELAY", "3.0")
-            )  # 기본 3초
+            batch_init_delay = float(os.getenv("MCP_BATCH_INIT_DELAY", "3.0"))  # 기본 3초
             if batch_init_delay > 0:
                 logger.info(
                     f"[MCP][init.batch] Waiting {batch_init_delay}s for batch initialization before connecting servers..."
@@ -2351,16 +2229,12 @@ class UniversalMCPHub:
             allowlist_str = os.getenv("MCP_ALLOWED_SERVERS", "").strip()
             allowlist = [s.strip() for s in allowlist_str.split(",") if s.strip()]
             base_items = [
-                (n, c)
-                for n, c in self.mcp_server_configs.items()
-                if not c.get("disabled")
+                (n, c) for n, c in self.mcp_server_configs.items() if not c.get("disabled")
             ]
             if allowlist:
                 # 화이트리스트가 있으면 그것만 연결
                 enabled_server_items = [(n, c) for n, c in base_items if n in allowlist]
-                logger.info(
-                    f"[MCP][allowlist] enabled={[n for n, _ in enabled_server_items]}"
-                )
+                logger.info(f"[MCP][allowlist] enabled={[n for n, _ in enabled_server_items]}")
             else:
                 # 화이트리스트가 없으면 disabled가 아닌 모든 서버 연결 시도
                 enabled_server_items = base_items
@@ -2369,15 +2243,11 @@ class UniversalMCPHub:
                 )
 
             # 서버별 타임아웃 설정 적용 (재시도 로직 포함)
-            async def connect_one_with_settings(
-                name: str, cfg: Dict[str, Any]
-            ) -> tuple[str, bool]:
+            async def connect_one_with_settings(name: str, cfg: Dict[str, Any]) -> tuple[str, bool]:
                 try:
                     # stopping 플래그 체크
                     if self.stopping:
-                        logger.info(
-                            f"[MCP][skip.stopping] server={name} stopping flag is set"
-                        )
+                        logger.info(f"[MCP][skip.stopping] server={name} stopping flag is set")
                         return name, False
 
                     async with semaphore:
@@ -2432,9 +2302,7 @@ class UniversalMCPHub:
                                 else:
                                     # 연결 실패
                                     if retry_attempt < max_connection_retries - 1:
-                                        wait_time = (
-                                            2**retry_attempt
-                                        )  # 지수 백오프: 1초, 2초
+                                        wait_time = 2**retry_attempt  # 지수 백오프: 1초, 2초
                                         logger.warning(
                                             f"[MCP][init.retry] server={name} connection failed (attempt {retry_attempt + 1}/{max_connection_retries}), retrying in {wait_time}s..."
                                         )
@@ -2449,9 +2317,7 @@ class UniversalMCPHub:
                             except TimeoutError:
                                 # 타임아웃 에러는 재시도 가능
                                 if retry_attempt < max_connection_retries - 1:
-                                    wait_time = (
-                                        2**retry_attempt
-                                    )  # 지수 백오프: 1초, 2초
+                                    wait_time = 2**retry_attempt  # 지수 백오프: 1초, 2초
                                     logger.warning(
                                         f"[MCP][init.timeout] server={name} timeout (attempt {retry_attempt + 1}/{max_connection_retries}), retrying in {wait_time}s..."
                                     )
@@ -2477,8 +2343,7 @@ class UniversalMCPHub:
 
                                 # npm ENOTEMPTY 오류는 디렉토리 관련 문제로, 재시도 불필요
                                 is_npm_enotempty = "enotempty" in error_str or (
-                                    "npm error" in error_str
-                                    and "directory not empty" in error_str
+                                    "npm error" in error_str and "directory not empty" in error_str
                                 )
 
                                 # Connection closed 오류는 서버 연결 실패로, 재시도 불필요
@@ -2518,13 +2383,8 @@ class UniversalMCPHub:
                                     ]
                                 )
 
-                                if (
-                                    is_retryable
-                                    and retry_attempt < max_connection_retries - 1
-                                ):
-                                    wait_time = (
-                                        2**retry_attempt
-                                    )  # 지수 백오프: 1초, 2초
+                                if is_retryable and retry_attempt < max_connection_retries - 1:
+                                    wait_time = 2**retry_attempt  # 지수 백오프: 1초, 2초
                                     logger.warning(
                                         f"[MCP][init.retry] server={name} error (attempt {retry_attempt + 1}/{max_connection_retries}): {error_msg[:100]}, retrying in {wait_time}s..."
                                     )
@@ -2541,14 +2401,10 @@ class UniversalMCPHub:
 
                 except asyncio.CancelledError:
                     # shutdown 중 취소는 정상적인 동작 - 다른 서버 연결은 계속 진행
-                    logger.info(
-                        f"[MCP][init.cancelled] server={name} (shutdown in progress)"
-                    )
+                    logger.info(f"[MCP][init.cancelled] server={name} (shutdown in progress)")
                     return name, False
                 except Exception as e:
-                    logger.exception(
-                        f"[MCP][connect.error] server={name} unexpected err={e}"
-                    )
+                    logger.exception(f"[MCP][connect.error] server={name} unexpected err={e}")
                     return name, False
 
             tasks = [
@@ -2590,9 +2446,7 @@ class UniversalMCPHub:
                             f"[MCP][init.cancelled] server={server_name} (task was cancelled)"
                         )
                     else:
-                        logger.warning(
-                            f"[MCP][init.exception] server={server_name} error={result}"
-                        )
+                        logger.warning(f"[MCP][init.exception] server={server_name} error={result}")
                 elif isinstance(result, tuple) and len(result) == 2:
                     name, ok = result
                     if ok:
@@ -2635,9 +2489,7 @@ class UniversalMCPHub:
             logger.warning(
                 f"⚠️ MCP Hub initialization failed: {e} - continuing with graceful degradation"
             )
-            logger.info(
-                "ℹ️ System will continue with limited functionality (no API calls)"
-            )
+            logger.info("ℹ️ System will continue with limited functionality (no API calls)")
             # Don't raise, allow graceful degradation
 
     async def _execute_via_mcp_server(
@@ -2647,14 +2499,10 @@ class UniversalMCPHub:
         # Connection pooling: Check if connection exists and is healthy
         if server_name not in self.mcp_sessions:
             # Try to connect if not in sessions
-            logger.debug(
-                f"Server {server_name} not in sessions, attempting connection..."
-            )
+            logger.debug(f"Server {server_name} not in sessions, attempting connection...")
             if server_name in self.mcp_server_configs:
                 server_config = self.mcp_server_configs[server_name]
-                connected = await self._connect_to_mcp_server(
-                    server_name, server_config
-                )
+                connected = await self._connect_to_mcp_server(server_name, server_config)
                 if not connected:
                     logger.error(f"Failed to connect to server {server_name}")
                     return None
@@ -2667,9 +2515,7 @@ class UniversalMCPHub:
             # Health check existing connection
             is_healthy = await self._check_connection_health(server_name)
             if not is_healthy:
-                logger.warning(
-                    f"Connection to {server_name} is unhealthy, reconnecting..."
-                )
+                logger.warning(f"Connection to {server_name} is unhealthy, reconnecting...")
                 # Auto-reconnection
                 if server_name in self.mcp_server_configs:
                     try:
@@ -2677,9 +2523,7 @@ class UniversalMCPHub:
                     except Exception:
                         pass
                     server_config = self.mcp_server_configs[server_name]
-                    connected = await self._connect_to_mcp_server(
-                        server_name, server_config
-                    )
+                    connected = await self._connect_to_mcp_server(server_name, server_config)
                     if not connected:
                         logger.error(f"Failed to reconnect to server {server_name}")
                         return None
@@ -2688,9 +2532,7 @@ class UniversalMCPHub:
                     return None
 
         if server_name not in self.mcp_sessions:
-            logger.error(
-                f"Server {server_name} still not in mcp_sessions after connection attempt"
-            )
+            logger.error(f"Server {server_name} still not in mcp_sessions after connection attempt")
             return None
 
         if server_name not in self.mcp_tools_map:
@@ -2720,9 +2562,7 @@ class UniversalMCPHub:
                     )
 
                     if session is None:
-                        logger.error(
-                            f"[MCP][exec.error] Session is None for {server_name}"
-                        )
+                        logger.error(f"[MCP][exec.error] Session is None for {server_name}")
                         return None
 
                     if not hasattr(session, "call_tool"):
@@ -2747,9 +2587,7 @@ class UniversalMCPHub:
                         )
                         if not should_retry_wrapped:
                             raise
-                        wrapped_params = {
-                            "input": _normalize_mcp_call_params(tool_def, params)
-                        }
+                        wrapped_params = {"input": _normalize_mcp_call_params(tool_def, params)}
                         logger.debug(
                             "[MCP][exec.retry] Retrying %s/%s with FastMCP input wrapper",
                             server_name,
@@ -2813,20 +2651,16 @@ class UniversalMCPHub:
 
             except McpError as e:
                 error_msg = str(e) if e else "Unknown MCP error"
-                error_code = (
-                    getattr(e.error, "code", None) if hasattr(e, "error") else None
-                )
-                error_data = (
-                    getattr(e.error, "data", None) if hasattr(e, "error") else None
-                )
+                error_code = getattr(e.error, "code", None) if hasattr(e, "error") else None
+                error_data = getattr(e.error, "data", None) if hasattr(e, "error") else None
 
                 # 레이트리밋 / 토큰 오류 감지
                 is_rate_limit = "Too Many Requests" in error_msg or (error_code == 429)
-                is_auth_error = "invalid_token" in error_msg.lower() or (
-                    error_code == 401
-                )
+                is_auth_error = "invalid_token" in error_msg.lower() or (error_code == 401)
 
-                error_details = f"[MCP][exec.error] server={server_name} tool={tool_name} operation=call_tool"
+                error_details = (
+                    f"[MCP][exec.error] server={server_name} tool={tool_name} operation=call_tool"
+                )
                 if error_code:
                     error_details += f" code={error_code}"
                 if error_data:
@@ -2853,8 +2687,7 @@ class UniversalMCPHub:
                 error_type = type(e).__name__
                 error_msg = str(e)
                 closed_like = (
-                    "closed" in error_msg.lower()
-                    or "connection reset" in error_msg.lower()
+                    "closed" in error_msg.lower() or "connection reset" in error_msg.lower()
                 )
 
                 if (
@@ -2870,16 +2703,12 @@ class UniversalMCPHub:
                     except Exception:
                         pass
                     server_config = self.mcp_server_configs[server_name]
-                    reconnected = await self._connect_to_mcp_server(
-                        server_name, server_config
-                    )
+                    reconnected = await self._connect_to_mcp_server(server_name, server_config)
                     if reconnected:
                         wait = backoff_seconds[attempt]
                         await asyncio.sleep(wait)
                         continue
-                    logger.error(
-                        f"[MCP][exec.error] Reconnect failed for {server_name}"
-                    )
+                    logger.error(f"[MCP][exec.error] Reconnect failed for {server_name}")
                     # Reconnect failed, session/client is bad or gone
                     if server_name in self.mcp_sessions:
                         del self.mcp_sessions[server_name]
@@ -2950,9 +2779,7 @@ class UniversalMCPHub:
                         _, original_tool_name = registered_name.split("::", 1)
                         if original_tool_name == tool:
                             tool_found = True
-                            logger.info(
-                                f"✅ Found essential tool: {tool} as {registered_name}"
-                            )
+                            logger.info(f"✅ Found essential tool: {tool} as {registered_name}")
                             break
 
             if not tool_found:
@@ -2965,9 +2792,7 @@ class UniversalMCPHub:
             logger.warning(
                 "⚠️ Tools may be registered later when MCP servers connect or may need manual configuration"
             )
-            logger.warning(
-                "⚠️ System will continue, but these tools may not be available"
-            )
+            logger.warning("⚠️ System will continue, but these tools may not be available")
         else:
             logger.info("✅ All essential tools found in registry")
 
@@ -2995,9 +2820,7 @@ class UniversalMCPHub:
                         pass
                 elif hasattr(client, "__aexit__"):
                     try:
-                        await asyncio.wait_for(
-                            client.__aexit__(None, None, None), timeout=0.5
-                        )
+                        await asyncio.wait_for(client.__aexit__(None, None, None), timeout=0.5)
                     except (TimeoutError, Exception):
                         pass
                 logger.debug(f"Closed FastMCP client for {server_name}")
@@ -3050,9 +2873,7 @@ class UniversalMCPHub:
                     elif session and hasattr(session, "shutdown"):
                         # 기존 ClientSession 방식
                         try:
-                            await asyncio.wait_for(
-                                session.shutdown(), timeout=0.5
-                            )  # 타임아웃 단축
+                            await asyncio.wait_for(session.shutdown(), timeout=0.5)  # 타임아웃 단축
                         except:
                             pass
                     del self.mcp_sessions[server_name]
@@ -3064,10 +2885,7 @@ class UniversalMCPHub:
                         # anyio RuntimeError는 완전히 무시 (다른 태스크에서 닫히려 할 때 발생)
                         await asyncio.wait_for(exit_stack.aclose(), timeout=2.0)
                     except RuntimeError as e:
-                        if (
-                            "cancel scope" in str(e).lower()
-                            or "different task" in str(e).lower()
-                        ):
+                        if "cancel scope" in str(e).lower() or "different task" in str(e).lower():
                             # anyio cancel scope 오류는 무시
                             pass
                         else:
@@ -3097,12 +2915,10 @@ class UniversalMCPHub:
             try:
                 from src.core.mcp_server_builder import get_mcp_server_builder
 
-                builder = get_mcp_server_builder()
+                get_mcp_server_builder()
                 # 빌드된 서버 디렉토리 정리 (선택적)
                 # 실제 서버 프로세스는 ProcessManager가 관리하므로 여기서는 로깅만
-                logger.debug(
-                    "[MCP][cleanup] Dynamic servers will be cleaned up by ProcessManager"
-                )
+                logger.debug("[MCP][cleanup] Dynamic servers will be cleaned up by ProcessManager")
             except Exception as e:
                 logger.debug(f"[MCP][cleanup] Builder cleanup skipped: {e}")
 
@@ -3120,9 +2936,7 @@ class UniversalMCPHub:
         max_tokens: int = 4000,
     ) -> Dict[str, Any]:
         """LLM 호출은 llm_manager를 통해 수행하도록 강제 (Gemini 직결)."""
-        raise RuntimeError(
-            "call_llm_async via MCP Hub is disabled. Use llm_manager for Gemini."
-        )
+        raise RuntimeError("call_llm_async via MCP Hub is disabled. Use llm_manager for Gemini.")
 
     async def execute_tool(
         self,
@@ -3294,9 +3108,7 @@ class UniversalMCPHub:
             agent_name="mcp_integration",
         )
 
-        logger.info(
-            f"[MCP][exec.start] tool={tool_name} params_keys={list(parameters.keys())}"
-        )
+        logger.info(f"[MCP][exec.start] tool={tool_name} params_keys={list(parameters.keys())}")
         logger.info(f"[MCP][exec.start] parameters_preview={str(parameters)[:200]}...")
 
         # 학술 도구 라우팅 (arxiv, scholar) - MCP 서버 우선 사용
@@ -3310,9 +3122,7 @@ class UniversalMCPHub:
 
                 # MCP 서버 연결 확인
                 if not mcp_hub.mcp_sessions:
-                    logger.warning(
-                        "No MCP servers connected, attempting to initialize..."
-                    )
+                    logger.warning("No MCP servers connected, attempting to initialize...")
                     try:
                         await mcp_hub.initialize_mcp()
                     except Exception as e:
@@ -3322,10 +3132,7 @@ class UniversalMCPHub:
                 mcp_result = None
                 if tool_name == "arxiv":
                     # arXiv MCP 서버 도구 찾기
-                    if (
-                        "arxiv" in mcp_hub.mcp_sessions
-                        and "arxiv" in mcp_hub.mcp_tools_map
-                    ):
+                    if "arxiv" in mcp_hub.mcp_sessions and "arxiv" in mcp_hub.mcp_tools_map:
                         tools = mcp_hub.mcp_tools_map["arxiv"]
                         arxiv_tool_name = None
 
@@ -3337,9 +3144,7 @@ class UniversalMCPHub:
                                 break
 
                         if arxiv_tool_name:
-                            logger.info(
-                                f"Using arXiv MCP server with tool: {arxiv_tool_name}"
-                            )
+                            logger.info(f"Using arXiv MCP server with tool: {arxiv_tool_name}")
                             mcp_result = await mcp_hub._execute_via_mcp_server(
                                 "arxiv", arxiv_tool_name, parameters
                             )
@@ -3350,9 +3155,7 @@ class UniversalMCPHub:
 
                     tool_result = ToolResult(
                         success=True,
-                        data=mcp_result
-                        if isinstance(mcp_result, dict)
-                        else {"result": mcp_result},
+                        data=mcp_result if isinstance(mcp_result, dict) else {"result": mcp_result},
                         execution_time=time.time() - start_time,
                         confidence=0.9,
                     )
@@ -3373,16 +3176,11 @@ class UniversalMCPHub:
                 # 도구 실행 결과 표시
                 result_summary = ""
                 if tool_result.success and tool_result.data:
-                    if (
-                        isinstance(tool_result.data, dict)
-                        and "results" in tool_result.data
-                    ):
+                    if isinstance(tool_result.data, dict) and "results" in tool_result.data:
                         result_count = len(tool_result.data["results"])
                         result_summary = f"{result_count}개 논문 검색됨"
                     else:
-                        result_summary = (
-                            f"데이터 반환됨 ({type(tool_result.data).__name__})"
-                        )
+                        result_summary = f"데이터 반환됨 ({type(tool_result.data).__name__})"
                 elif tool_result.error:
                     result_summary = f"오류: {tool_result.error[:100]}..."
 
@@ -3449,16 +3247,11 @@ class UniversalMCPHub:
                 # 도구 실행 결과 표시
                 result_summary = ""
                 if tool_result.success and tool_result.data:
-                    if (
-                        isinstance(tool_result.data, dict)
-                        and "results" in tool_result.data
-                    ):
+                    if isinstance(tool_result.data, dict) and "results" in tool_result.data:
                         result_count = len(tool_result.data["results"])
                         result_summary = f"{result_count}개 결과 검색됨"
                     else:
-                        result_summary = (
-                            f"데이터 반환됨 ({type(tool_result.data).__name__})"
-                        )
+                        result_summary = f"데이터 반환됨 ({type(tool_result.data).__name__})"
                 elif tool_result.error:
                     result_summary = f"오류: {tool_result.error[:100]}..."
 
@@ -3512,15 +3305,15 @@ class UniversalMCPHub:
 
         # 브라우저 도구 라우팅 (우선 처리)
         if tool_name.startswith("browser_"):
-            logger.info(
-                f"[MCP][exec.browser] Routing {tool_name} to _execute_browser_tool"
-            )
+            logger.info(f"[MCP][exec.browser] Routing {tool_name} to _execute_browser_tool")
             try:
                 # IMPORTANT: avoid binding the name `_execute_browser_tool` in this scope.
                 # If we import it with the same identifier, Python treats it as a local variable
                 # across the whole function (leading to UnboundLocalError in the local-tool branch).
                 from src.core.mcp_integration import (
                     ToolResult,
+                )
+                from src.core.mcp_integration import (
                     _execute_browser_tool as browser_execute_tool,
                 )
 
@@ -3531,21 +3324,17 @@ class UniversalMCPHub:
                 if tool_result.success and tool_result.data:
                     if isinstance(tool_result.data, dict):
                         if "extracted_data" in tool_result.data:
-                            result_summary = f"콘텐츠 추출 완료 ({tool_result.data.get('content_length', 0)}자)"
+                            result_summary = (
+                                f"콘텐츠 추출 완료 ({tool_result.data.get('content_length', 0)}자)"
+                            )
                         elif "screenshot_path" in tool_result.data:
-                            result_summary = (
-                                f"스크린샷 저장: {tool_result.data['screenshot_path']}"
-                            )
+                            result_summary = f"스크린샷 저장: {tool_result.data['screenshot_path']}"
                         elif "actions" in tool_result.data:
-                            result_summary = (
-                                f"{len(tool_result.data['actions'])}개 액션 실행"
-                            )
+                            result_summary = f"{len(tool_result.data['actions'])}개 액션 실행"
                         else:
                             result_summary = "브라우저 작업 완료"
                     else:
-                        result_summary = (
-                            f"데이터 반환됨 ({type(tool_result.data).__name__})"
-                        )
+                        result_summary = f"데이터 반환됨 ({type(tool_result.data).__name__})"
                 elif tool_result.error:
                     result_summary = f"오류: {tool_result.error[:100]}..."
 
@@ -3569,9 +3358,7 @@ class UniversalMCPHub:
                 }
             except Exception as e:
                 execution_time = time.time() - start_time
-                logger.error(
-                    f"[MCP][exec.browser.error] {tool_name} failed: {e}", exc_info=True
-                )
+                logger.error(f"[MCP][exec.browser.error] {tool_name} failed: {e}", exc_info=True)
 
                 tool_exec_result = ToolExecutionResult(
                     tool_name=tool_name,
@@ -3593,9 +3380,7 @@ class UniversalMCPHub:
 
         # 문서 생성 도구 라우팅
         if tool_name.startswith("generate_"):
-            logger.info(
-                f"[MCP][exec.document] Routing {tool_name} to _execute_document_tool"
-            )
+            logger.info(f"[MCP][exec.document] Routing {tool_name} to _execute_document_tool")
             try:
                 from src.core.mcp_integration import ToolResult, _execute_document_tool
 
@@ -3604,13 +3389,8 @@ class UniversalMCPHub:
 
                 result_summary = ""
                 if tool_result.success and tool_result.data:
-                    if (
-                        isinstance(tool_result.data, dict)
-                        and "file_path" in tool_result.data
-                    ):
-                        result_summary = (
-                            f"문서 생성 완료: {tool_result.data['file_path']}"
-                        )
+                    if isinstance(tool_result.data, dict) and "file_path" in tool_result.data:
+                        result_summary = f"문서 생성 완료: {tool_result.data['file_path']}"
                     else:
                         result_summary = "문서 생성 완료"
                 elif tool_result.error:
@@ -3636,9 +3416,7 @@ class UniversalMCPHub:
                 }
             except Exception as e:
                 execution_time = time.time() - start_time
-                logger.error(
-                    f"[MCP][exec.document.error] {tool_name} failed: {e}", exc_info=True
-                )
+                logger.error(f"[MCP][exec.document.error] {tool_name} failed: {e}", exc_info=True)
 
                 tool_exec_result = ToolExecutionResult(
                     tool_name=tool_name,
@@ -3678,9 +3456,7 @@ class UniversalMCPHub:
                             stdout_preview = tool_result.data["stdout"][:100]
                             result_summary = f"명령 실행 완료: {stdout_preview}..."
                         elif "pid" in tool_result.data:
-                            result_summary = (
-                                f"백그라운드 작업 시작: PID {tool_result.data['pid']}"
-                            )
+                            result_summary = f"백그라운드 작업 시작: PID {tool_result.data['pid']}"
                         else:
                             result_summary = "Shell 명령 실행 완료"
                     else:
@@ -3721,9 +3497,7 @@ class UniversalMCPHub:
                 return result_dict
             except Exception as e:
                 execution_time = time.time() - start_time
-                logger.error(
-                    f"[MCP][exec.shell.error] {tool_name} failed: {e}", exc_info=True
-                )
+                logger.error(f"[MCP][exec.shell.error] {tool_name} failed: {e}", exc_info=True)
 
                 tool_exec_result = ToolExecutionResult(
                     tool_name=tool_name,
@@ -3764,17 +3538,11 @@ class UniversalMCPHub:
                 if tool_result.success and tool_result.data:
                     if isinstance(tool_result.data, dict):
                         if "commit_hash" in tool_result.data:
-                            result_summary = (
-                                f"커밋 완료: {tool_result.data['commit_hash'][:8]}"
-                            )
+                            result_summary = f"커밋 완료: {tool_result.data['commit_hash'][:8]}"
                         elif "pr_url" in tool_result.data:
-                            result_summary = (
-                                f"PR 생성 완료: {tool_result.data['pr_url']}"
-                            )
+                            result_summary = f"PR 생성 완료: {tool_result.data['pr_url']}"
                         elif "branch" in tool_result.data:
-                            result_summary = (
-                                f"브랜치 작업 완료: {tool_result.data['branch']}"
-                            )
+                            result_summary = f"브랜치 작업 완료: {tool_result.data['branch']}"
                         else:
                             result_summary = "Git 작업 완료"
                     else:
@@ -3815,9 +3583,7 @@ class UniversalMCPHub:
                 return result_dict
             except Exception as e:
                 execution_time = time.time() - start_time
-                logger.error(
-                    f"[MCP][exec.git.error] {tool_name} failed: {e}", exc_info=True
-                )
+                logger.error(f"[MCP][exec.git.error] {tool_name} failed: {e}", exc_info=True)
 
                 tool_exec_result = ToolExecutionResult(
                     tool_name=tool_name,
@@ -3858,13 +3624,9 @@ class UniversalMCPHub:
                 if tool_result.success and tool_result.data:
                     if isinstance(tool_result.data, dict):
                         if "file_path" in tool_result.data:
-                            result_summary = (
-                                f"파일 작업 완료: {tool_result.data['file_path']}"
-                            )
+                            result_summary = f"파일 작업 완료: {tool_result.data['file_path']}"
                         elif "files" in tool_result.data:
-                            result_summary = (
-                                f"{len(tool_result.data['files'])}개 파일/디렉토리"
-                            )
+                            result_summary = f"{len(tool_result.data['files'])}개 파일/디렉토리"
                         else:
                             result_summary = "파일 작업 완료"
                     else:
@@ -3892,9 +3654,7 @@ class UniversalMCPHub:
                 }
             except Exception as e:
                 execution_time = time.time() - start_time
-                logger.error(
-                    f"[MCP][exec.file.error] {tool_name} failed: {e}", exc_info=True
-                )
+                logger.error(f"[MCP][exec.file.error] {tool_name} failed: {e}", exc_info=True)
 
                 tool_exec_result = ToolExecutionResult(
                     tool_name=tool_name,
@@ -3949,9 +3709,7 @@ class UniversalMCPHub:
                     ):
                         tool_info = self.registry.get_tool_info(registered_name)
                         resolved_registered_name = registered_name
-                        logger.info(
-                            f"Found tool {tool_name} as {registered_name} (SEP-986 alias)"
-                        )
+                        logger.info(f"Found tool {tool_name} as {registered_name} (SEP-986 alias)")
                         break
                 elif registered_name == tool_name:
                     tool_info = self.registry.get_tool_info(registered_name)
@@ -3986,14 +3744,10 @@ class UniversalMCPHub:
                         server_name = build_result["server_name"]
                         server_path = build_result["server_path"]
 
-                        logger.info(
-                            f"[MCP][builder] Server built successfully: {server_name}"
-                        )
+                        logger.info(f"[MCP][builder] Server built successfully: {server_name}")
 
                         # 동적 서버 등록
-                        registered = await self._register_dynamic_server(
-                            server_name, server_path
-                        )
+                        registered = await self._register_dynamic_server(server_name, server_path)
 
                         if registered:
                             logger.info(
@@ -4021,9 +3775,7 @@ class UniversalMCPHub:
             # 사용 가능한 모든 tool 목록 로깅
             available_tools = self.registry.get_all_tool_names()
             execution_time = time.time() - start_time
-            logger.error(
-                f"[MCP][exec.unknown] tool={tool_name} available={available_tools}"
-            )
+            logger.error(f"[MCP][exec.unknown] tool={tool_name} available={available_tools}")
 
             # 도구 찾기 실패 결과 표시
             available_preview = ", ".join(available_tools[:5]) + (
@@ -4081,21 +3833,16 @@ class UniversalMCPHub:
                         # tool_name이 실제 서버의 원본 tool name인지 확인 필요
                         # registry에서 찾기
                         for registered_name in self.registry.get_all_tool_names():
-                            if (
-                                registered_name == tool_name
-                                and self.registry.is_mcp_tool(registered_name)
+                            if registered_name == tool_name and self.registry.is_mcp_tool(
+                                registered_name
                             ):
-                                mcp_info = self.registry.get_mcp_server_info(
-                                    registered_name
-                                )
+                                mcp_info = self.registry.get_mcp_server_info(registered_name)
                                 found_tool_name = registered_name
                                 break
                             elif "::" in registered_name:
                                 _, original_tool_name = registered_name.split("::", 1)
                                 if original_tool_name == tool_name:
-                                    mcp_info = self.registry.get_mcp_server_info(
-                                        registered_name
-                                    )
+                                    mcp_info = self.registry.get_mcp_server_info(registered_name)
                                     found_tool_name = registered_name
                                     logger.info(
                                         f"[MCP][exec.resolve] Found {tool_name} as {registered_name}"
@@ -4117,27 +3864,18 @@ class UniversalMCPHub:
                     # server_name::tool_name 형식으로 찾기
                     for registered_name in self.registry.get_all_tool_names():
                         if "::" in registered_name:
-                            server_part, original_tool_name = registered_name.split(
-                                "::", 1
-                            )
-                            if (
-                                original_tool_name == tool_name
-                                and self.registry.is_mcp_tool(registered_name)
+                            server_part, original_tool_name = registered_name.split("::", 1)
+                            if original_tool_name == tool_name and self.registry.is_mcp_tool(
+                                registered_name
                             ):
-                                mcp_info = self.registry.get_mcp_server_info(
-                                    registered_name
-                                )
+                                mcp_info = self.registry.get_mcp_server_info(registered_name)
                                 found_tool_name = registered_name
-                                logger.info(
-                                    f"[MCP][exec.resolve] {tool_name} -> {registered_name}"
-                                )
+                                logger.info(f"[MCP][exec.resolve] {tool_name} -> {registered_name}")
                                 break
                         elif registered_name == tool_name and self.registry.is_mcp_tool(
                             registered_name
                         ):
-                            mcp_info = self.registry.get_mcp_server_info(
-                                registered_name
-                            )
+                            mcp_info = self.registry.get_mcp_server_info(registered_name)
                             found_tool_name = registered_name
                             break
 
@@ -4181,10 +3919,7 @@ class UniversalMCPHub:
                                         error_msg = "Authentication failed (401)"
                                     elif "404" in result_lower:
                                         error_msg = "Not found (404)"
-                                    elif (
-                                        "502" in result_lower
-                                        or "bad gateway" in result_lower
-                                    ):
+                                    elif "502" in result_lower or "bad gateway" in result_lower:
                                         error_msg = "Bad gateway (502)"
                                     elif "500" in result_lower:
                                         error_msg = "Internal server error (500)"
@@ -4194,9 +3929,7 @@ class UniversalMCPHub:
 
                             if is_error:
                                 execution_time = time.time() - start_time
-                                logger.error(
-                                    f"MCP tool {tool_name} returned error: {error_msg}"
-                                )
+                                logger.error(f"MCP tool {tool_name} returned error: {error_msg}")
 
                                 # MCP 도구 에러 결과 표시
                                 tool_exec_result = ToolExecutionResult(
@@ -4207,9 +3940,7 @@ class UniversalMCPHub:
                                     confidence=0.0,
                                     error_message=error_msg,
                                 )
-                                await output_manager.output_tool_execution(
-                                    tool_exec_result
-                                )
+                                await output_manager.output_tool_execution(tool_exec_result)
 
                                 return {
                                     "success": False,
@@ -4281,15 +4012,13 @@ class UniversalMCPHub:
                                     result_count = len(result_data["results"])
                                     result_summary = f"{result_count}개 결과 반환됨"
                                 elif "result" in result_data:
-                                    result_summary = f"결과 반환됨 ({type(result_data['result']).__name__})"
-                                else:
                                     result_summary = (
-                                        f"데이터 반환됨 ({len(result_data)}개 필드)"
+                                        f"결과 반환됨 ({type(result_data['result']).__name__})"
                                     )
+                                else:
+                                    result_summary = f"데이터 반환됨 ({len(result_data)}개 필드)"
                             else:
-                                result_summary = (
-                                    f"결과 반환됨 ({type(result_data).__name__})"
-                                )
+                                result_summary = f"결과 반환됨 ({type(result_data).__name__})"
 
                             tool_exec_result = ToolExecutionResult(
                                 tool_name=tool_name,
@@ -4375,9 +4104,7 @@ class UniversalMCPHub:
                     elif category == ToolCategory.ACADEMIC:
                         from src.core.mcp_integration import _execute_academic_tool
 
-                        tool_result = await _execute_academic_tool(
-                            tool_name, parameters
-                        )
+                        tool_result = await _execute_academic_tool(tool_name, parameters)
                     elif category == ToolCategory.GIT:
                         from src.core.mcp_integration import _execute_git_tool
 
@@ -4405,9 +4132,7 @@ class UniversalMCPHub:
                                     f"데이터 반환됨 ({type(tool_result.data).__name__})"
                                 )
                         else:
-                            result_summary = (
-                                f"결과 반환됨 ({type(tool_result.data).__name__})"
-                            )
+                            result_summary = f"결과 반환됨 ({type(tool_result.data).__name__})"
                     elif tool_result.error:
                         result_summary = f"오류: {tool_result.error[:100]}..."
 
@@ -4489,14 +4214,10 @@ class UniversalMCPHub:
                         server_name = build_result["server_name"]
                         server_path = build_result["server_path"]
 
-                        logger.info(
-                            f"[MCP][builder] Server built successfully: {server_name}"
-                        )
+                        logger.info(f"[MCP][builder] Server built successfully: {server_name}")
 
                         # 동적 서버 등록
-                        registered = await self._register_dynamic_server(
-                            server_name, server_path
-                        )
+                        registered = await self._register_dynamic_server(server_name, server_path)
 
                         if registered:
                             logger.info(
@@ -4664,13 +4385,9 @@ class UniversalMCPHub:
             # 세션 정리
             del self._execution_sessions[execution_id]
 
-            logger.info(
-                f"Cleaned up execution session {execution_id} ({tools_count} tools)"
-            )
+            logger.info(f"Cleaned up execution session {execution_id} ({tools_count} tools)")
         else:
-            logger.debug(
-                f"Execution session {execution_id} not found (already cleaned up?)"
-            )
+            logger.debug(f"Execution session {execution_id} not found (already cleaned up?)")
 
     def get_all_langchain_tools(self) -> List[BaseTool]:
         """모든 LangChain Tool 리스트 반환."""
@@ -4717,9 +4434,7 @@ class UniversalMCPHub:
 
             # 연결 상태 확인
             if server_name in self.mcp_sessions:
-                server_info["connected"] = await self._check_connection_health(
-                    server_name
-                )
+                server_info["connected"] = await self._check_connection_health(server_name)
                 if not server_info["connected"]:
                     server_info["error"] = "Session health check failed"
 
@@ -4761,9 +4476,7 @@ class UniversalMCPHub:
 
         return server_status
 
-    def print_server_status(
-        self, server_status: Dict[str, Any], verbose: bool = False
-    ) -> None:
+    def print_server_status(self, server_status: Dict[str, Any], verbose: bool = False) -> None:
         """CLI용: :meth:`check_mcp_servers` 결과를 사람이 읽기 쉽게 출력."""
         summary = server_status.get("summary", {})
         print("=" * 80)
@@ -4852,17 +4565,11 @@ class UniversalMCPHub:
                 try:
                     # 간단한 테스트 실행
                     if tool == "g-search":
-                        test_result = await execute_tool(
-                            tool, {"query": "test", "max_results": 1}
-                        )
+                        test_result = await execute_tool(tool, {"query": "test", "max_results": 1})
                     elif tool == "fetch":
-                        test_result = await execute_tool(
-                            tool, {"url": "https://httpbin.org/get"}
-                        )
+                        test_result = await execute_tool(tool, {"url": "https://httpbin.org/get"})
                     elif tool == "filesystem":
-                        test_result = await execute_tool(
-                            tool, {"path": ".", "operation": "list"}
-                        )
+                        test_result = await execute_tool(tool, {"path": ".", "operation": "list"})
 
                     tool_health[tool] = test_result.get("success", False)
                     if not test_result.get("success", False):
@@ -4950,12 +4657,8 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
 
         hook_runner = get_skill_manager().get_hook_runner()
         if hook_runner:
-            session_id = getattr(
-                get_skill_manager(), "_current_session_id", ""
-            ) or ""
-            allowed = await hook_runner.run_pre_tool_use(
-                tool_name, parameters, session_id
-            )
+            session_id = getattr(get_skill_manager(), "_current_session_id", "") or ""
+            allowed = await hook_runner.run_pre_tool_use(tool_name, parameters, session_id)
             if not allowed:
                 return {
                     "success": False,
@@ -5011,9 +4714,7 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
             summary = str(d)[:500] if not isinstance(d, str) else d[:500]
         else:
             summary = result.get("error", "failed") or "failed"
-        await sm.stream_tool_result(
-            session_id, tool_name, result.get("success", False), summary
-        )
+        await sm.stream_tool_result(session_id, tool_name, result.get("success", False), summary)
     except Exception as viz_err:
         logger.debug("Tool visualization stream_tool_result skipped: %s", viz_err)
 
@@ -5023,12 +4724,8 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
 
         hook_runner = get_skill_manager().get_hook_runner()
         if hook_runner:
-            session_id = getattr(
-                get_skill_manager(), "_current_session_id", ""
-            ) or ""
-            await hook_runner.run_post_tool_use(
-                tool_name, parameters, result, session_id
-            )
+            session_id = getattr(get_skill_manager(), "_current_session_id", "") or ""
+            await hook_runner.run_post_tool_use(tool_name, parameters, result, session_id)
     except Exception as hook_err:
         logger.debug("PostToolUse hook skipped: %s", hook_err)
 
@@ -5041,7 +4738,10 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         data = result["data"]
         max_concise_chars = 1500
         if isinstance(data, str) and len(data) > max_concise_chars:
-            result = {**result, "data": data[:max_concise_chars] + "\n...[truncated (format=concise)]"}
+            result = {
+                **result,
+                "data": data[:max_concise_chars] + "\n...[truncated (format=concise)]",
+            }
         elif isinstance(data, dict) and "results" in data and isinstance(data["results"], list):
             result = {
                 **result,
@@ -5066,14 +4766,11 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
                 build_result_with_scratch_ref,
                 write_tool_output,
             )
+
             threshold = int(os.getenv("SCRATCH_PAD_THRESHOLD_CHARS", "8000"))
-            scratch_path, summary = write_tool_output(
-                tool_name, result, threshold_chars=threshold
-            )
+            scratch_path, summary = write_tool_output(tool_name, result, threshold_chars=threshold)
             if scratch_path:
-                result = build_result_with_scratch_ref(
-                    result, scratch_path, summary
-                )
+                result = build_result_with_scratch_ref(result, scratch_path, summary)
         except Exception as e:
             logger.debug("Scratch pad offload skipped: %s", e)
 
@@ -5082,14 +4779,10 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         # TTL 결정: 검색/데이터 도구는 1시간, 다른 도구는 30분
         ttl = (
             3600
-            if any(
-                keyword in tool_name.lower() for keyword in ["search", "fetch", "data"]
-            )
+            if any(keyword in tool_name.lower() for keyword in ["search", "fetch", "data"])
             else 1800
         )
-        await result_cache.set(
-            tool_name=tool_name, parameters=parameters, value=result, ttl=ttl
-        )
+        await result_cache.set(tool_name=tool_name, parameters=parameters, value=result, ttl=ttl)
         logger.debug(f"[MCP][execute_tool] Cached result for {tool_name}")
 
     return result
@@ -5113,9 +4806,7 @@ def _execute_search_tool_sync(tool_name: str, parameters: Dict[str, Any]) -> str
                     # timeout 설정으로 무한 대기 방지
                     result = future.result(timeout=300)  # 최대 5분
             else:
-                result = loop.run_until_complete(
-                    _execute_search_tool(tool_name, parameters)
-                )
+                result = loop.run_until_complete(_execute_search_tool(tool_name, parameters))
         except RuntimeError:
             # 이벤트 루프가 없으면 새로 생성
             result = asyncio.run(_execute_search_tool(tool_name, parameters))
@@ -5145,9 +4836,7 @@ def _execute_academic_tool_sync(tool_name: str, parameters: Dict[str, Any]) -> s
                     # timeout 설정으로 무한 대기 방지
                     result = future.result(timeout=300)  # 최대 5분
             else:
-                result = loop.run_until_complete(
-                    _execute_academic_tool(tool_name, parameters)
-                )
+                result = loop.run_until_complete(_execute_academic_tool(tool_name, parameters))
         except RuntimeError:
             result = asyncio.run(_execute_academic_tool(tool_name, parameters))
 
@@ -5170,15 +4859,11 @@ def _execute_data_tool_sync(tool_name: str, parameters: Dict[str, Any]) -> str:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run, _execute_data_tool(tool_name, parameters)
-                    )
+                    future = executor.submit(asyncio.run, _execute_data_tool(tool_name, parameters))
                     # timeout 설정으로 무한 대기 방지
                     result = future.result(timeout=300)  # 최대 5분
             else:
-                result = loop.run_until_complete(
-                    _execute_data_tool(tool_name, parameters)
-                )
+                result = loop.run_until_complete(_execute_data_tool(tool_name, parameters))
         except RuntimeError:
             result = asyncio.run(_execute_data_tool(tool_name, parameters))
 
@@ -5201,15 +4886,11 @@ def _execute_code_tool_sync(tool_name: str, parameters: Dict[str, Any]) -> str:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        asyncio.run, _execute_code_tool(tool_name, parameters)
-                    )
+                    future = executor.submit(asyncio.run, _execute_code_tool(tool_name, parameters))
                     # timeout 설정으로 무한 대기 방지
                     result = future.result(timeout=300)  # 최대 5분
             else:
-                result = loop.run_until_complete(
-                    _execute_code_tool(tool_name, parameters)
-                )
+                result = loop.run_until_complete(_execute_code_tool(tool_name, parameters))
         except RuntimeError:
             result = asyncio.run(_execute_code_tool(tool_name, parameters))
 
@@ -5247,7 +4928,9 @@ async def _fallback_to_ddg_search(query: str, max_results: int) -> ToolResult:
             try:
                 result = json.loads(result)
             except (json.JSONDecodeError, ValueError):
-                logger.warning("[MCP][fallback] DDG returned non-JSON string, wrapping as plain text result")
+                logger.warning(
+                    "[MCP][fallback] DDG returned non-JSON string, wrapping as plain text result"
+                )
                 return ToolResult(
                     success=True,
                     data={"results": [{"content": result}], "total_results": 1},
@@ -5291,9 +4974,7 @@ async def _fallback_to_ddg_search(query: str, max_results: int) -> ToolResult:
         )
 
 
-async def _execute_search_tool(
-    tool_name: str, parameters: Dict[str, Any]
-) -> ToolResult:
+async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
     """검색 도구 실행 - src/utils에서 직접 사용."""
     start_time = time.time()
 
@@ -5302,9 +4983,7 @@ async def _execute_search_tool(
         from src.utils.search_utils import search_duckduckgo
 
         query = parameters.get("query", "")
-        num_results = parameters.get("num_results", 10) or parameters.get(
-            "max_results", 10
-        )
+        num_results = parameters.get("num_results", 10) or parameters.get("max_results", 10)
 
         if not query:
             return ToolResult(
@@ -5341,9 +5020,7 @@ async def _execute_search_tool(
             )
     except ImportError:
         # embedded_mcp_servers가 없으면 기존 로직 사용
-        logger.debug(
-            "src.utils.search_utils not available, using existing MCP server logic"
-        )
+        logger.debug("src.utils.search_utils not available, using existing MCP server logic")
     except Exception as e:
         logger.warning(f"Embedded search failed: {e}, falling back to MCP servers")
         # 기존 로직으로 fallback
@@ -5431,14 +5108,10 @@ async def _execute_search_tool(
 
             # 이미 연결된 서버 우선 사용
             connected_servers = [s for s in search_servers if s in mcp_hub.mcp_sessions]
-            unconnected_servers = [
-                s for s in search_servers if s not in mcp_hub.mcp_sessions
-            ]
+            unconnected_servers = [s for s in search_servers if s not in mcp_hub.mcp_sessions]
             server_order = connected_servers + unconnected_servers
 
-            logger.info(
-                f"[MCP][_execute_search_tool] Trying search servers: {server_order}"
-            )
+            logger.info(f"[MCP][_execute_search_tool] Trying search servers: {server_order}")
 
             # MCP 서버가 없거나 모두 실패하면 DDG search로 즉시 fallback
             if not server_order:
@@ -5469,9 +5142,7 @@ async def _execute_search_tool(
                         try:
                             # 타임아웃 10초로 제한하여 빠르게 실패
                             success = await asyncio.wait_for(
-                                mcp_hub._connect_to_mcp_server(
-                                    server_name, server_config
-                                ),
+                                mcp_hub._connect_to_mcp_server(server_name, server_config),
                                 timeout=10.0,
                             )
                             if success:
@@ -5483,9 +5154,7 @@ async def _execute_search_tool(
                             else:
                                 # 연결 실패 (서버가 False 반환)
                                 if retry_attempt < max_connection_retries - 1:
-                                    wait_time = (
-                                        2**retry_attempt
-                                    )  # 지수 백오프: 1초, 2초
+                                    wait_time = 2**retry_attempt  # 지수 백오프: 1초, 2초
                                     logger.warning(
                                         f"[MCP][_execute_search_tool] ⚠️ Connection to {server_name} failed (attempt {retry_attempt + 1}/{max_connection_retries}), retrying in {wait_time}s..."
                                     )
@@ -5516,9 +5185,7 @@ async def _execute_search_tool(
                                 logger.warning(
                                     f"[MCP][_execute_search_tool] ❌ MCP server {server_name} connection timeout after {max_connection_retries} attempts, skipping..."
                                 )
-                                failed_servers.append(
-                                    {"server": server_name, "reason": "timeout"}
-                                )
+                                failed_servers.append({"server": server_name, "reason": "timeout"})
                                 break
 
                         except Exception as e:
@@ -5527,8 +5194,7 @@ async def _execute_search_tool(
 
                             # npm ENOTEMPTY 오류는 디렉토리 관련 문제로, 재시도 불필요
                             is_npm_enotempty = "enotempty" in error_str or (
-                                "npm error" in error_str
-                                and "directory not empty" in error_str
+                                "npm error" in error_str and "directory not empty" in error_str
                             )
 
                             # Connection closed 오류는 서버 연결 실패로, 재시도 불필요
@@ -5564,10 +5230,7 @@ async def _execute_search_tool(
                                 ]
                             )
 
-                            if (
-                                is_retryable
-                                and retry_attempt < max_connection_retries - 1
-                            ):
+                            if is_retryable and retry_attempt < max_connection_retries - 1:
                                 wait_time = 2**retry_attempt  # 지수 백오프: 1초, 2초
                                 logger.warning(
                                     f"[MCP][_execute_search_tool] ⚠️ Error connecting to {server_name} (attempt {retry_attempt + 1}/{max_connection_retries}): {error_msg[:100]}, retrying in {wait_time}s..."
@@ -5601,9 +5264,7 @@ async def _execute_search_tool(
                     logger.warning(
                         f"[MCP][_execute_search_tool] ❌ MCP server {server_name} has no tools map"
                     )
-                    failed_servers.append(
-                        {"server": server_name, "reason": "no_tools_map"}
-                    )
+                    failed_servers.append({"server": server_name, "reason": "no_tools_map"})
                     continue
 
                 try:
@@ -5686,8 +5347,7 @@ async def _execute_search_tool(
                             # 마지막 요청 시간 확인
                             if "last_request" in _ddg_last_request_time:
                                 time_since_last = (
-                                    current_time
-                                    - _ddg_last_request_time["last_request"]
+                                    current_time - _ddg_last_request_time["last_request"]
                                 )
                                 min_interval = 2.0  # 최소 2초 간격
 
@@ -5703,14 +5363,9 @@ async def _execute_search_tool(
                             if len(history) > 0:
                                 # 평균 간격 계산
                                 intervals = [
-                                    history[i + 1] - history[i]
-                                    for i in range(len(history) - 1)
+                                    history[i + 1] - history[i] for i in range(len(history) - 1)
                                 ]
-                                avg_interval = (
-                                    sum(intervals) / len(intervals)
-                                    if intervals
-                                    else 3.0
-                                )
+                                avg_interval = sum(intervals) / len(intervals) if intervals else 3.0
 
                                 # 평균 간격을 기준으로 ±50% 변동 (최소 1.5초, 최대 5초)
                                 base_delay = max(
@@ -5854,17 +5509,11 @@ async def _execute_search_tool(
                             is_error = True
                             if not error_msg:
                                 # 에러 메시지 추출 시도
-                                if (
-                                    "401" in result_lower
-                                    or "invalid_token" in result_lower
-                                ):
+                                if "401" in result_lower or "invalid_token" in result_lower:
                                     error_msg = "Authentication failed (401)"
                                 elif "404" in result_lower:
                                     error_msg = "Not found (404)"
-                                elif (
-                                    "502" in result_lower
-                                    or "bad gateway" in result_lower
-                                ):
+                                elif "502" in result_lower or "bad gateway" in result_lower:
                                     error_msg = "Bad gateway (502) - Server temporarily unavailable"
                                 elif "500" in result_lower:
                                     error_msg = "Internal server error (500)"
@@ -5913,18 +5562,14 @@ async def _execute_search_tool(
                                     line = line.strip()
                                     if not line:
                                         # 빈 줄이면 현재 결과 저장하고 새로 시작
-                                        if current_result and current_result.get(
-                                            "title"
-                                        ):
+                                        if current_result and current_result.get("title"):
                                             results.append(current_result)
                                             current_result = {}
                                         continue
 
                                     # TAVILY 형식: "Title: ...", "URL: ...", "Content: ..."
                                     if line.startswith("Title:"):
-                                        if current_result and current_result.get(
-                                            "title"
-                                        ):
+                                        if current_result and current_result.get("title"):
                                             results.append(current_result)
                                         current_result = {
                                             "title": line[6:].strip(),
@@ -6014,9 +5659,7 @@ async def _execute_search_tool(
                                     continue
 
                                 # 마크다운 링크 패턴: [Title](url)
-                                link_match = re.match(
-                                    r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line
-                                )
+                                link_match = re.match(r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line)
                                 if link_match:
                                     # 이전 결과 저장
                                     if current_result:
@@ -6079,19 +5722,13 @@ async def _execute_search_tool(
                             "no matches",
                         ]
 
-                        for result_item in (
-                            results if isinstance(results, list) else [results]
-                        ):
+                        for result_item in (results if isinstance(results, list) else [results]):
                             if isinstance(result_item, dict):
                                 snippet = result_item.get(
                                     "snippet",
-                                    result_item.get(
-                                        "content", result_item.get("description", "")
-                                    ),
+                                    result_item.get("content", result_item.get("description", "")),
                                 )
-                                title = result_item.get(
-                                    "title", result_item.get("name", "")
-                                )
+                                title = result_item.get("title", result_item.get("name", ""))
 
                                 snippet_lower = str(snippet).lower() if snippet else ""
                                 title_lower = str(title).lower() if title else ""
@@ -6109,9 +5746,7 @@ async def _execute_search_tool(
                                         matched_indicators.append(indicator)
 
                                 # "Search Results" 제목 + 빈 내용 또는 에러 메시지인 경우
-                                if "search results" in title_lower and (
-                                    not snippet or is_invalid
-                                ):
+                                if "search results" in title_lower and (not snippet or is_invalid):
                                     is_invalid = True
 
                                 if is_invalid:
@@ -6125,8 +5760,7 @@ async def _execute_search_tool(
                                 # 문자열 결과도 검증
                                 result_lower = result_item.lower()
                                 is_invalid = any(
-                                    indicator in result_lower
-                                    for indicator in invalid_indicators
+                                    indicator in result_lower for indicator in invalid_indicators
                                 )
 
                                 if is_invalid:
@@ -6146,9 +5780,7 @@ async def _execute_search_tool(
 
                         # 유효한 결과가 있는지 확인
                         if not valid_results:
-                            original_count = (
-                                len(results) if isinstance(results, list) else 1
-                            )
+                            original_count = len(results) if isinstance(results, list) else 1
                             logger.warning(
                                 f"[MCP][_execute_search_tool] ❌ All {original_count} results from {server_name} were filtered out (bot detection or error messages), trying next server..."
                             )
@@ -6160,9 +5792,7 @@ async def _execute_search_tool(
                             )
                             continue  # 다음 서버 시도
 
-                        original_count = (
-                            len(results) if isinstance(results, list) else 1
-                        )
+                        original_count = len(results) if isinstance(results, list) else 1
                         filtered_count = original_count - len(valid_results)
                         logger.info(
                             f"✅ Search successful via MCP server {server_name}: {len(valid_results)} valid results (filtered {filtered_count} invalid results)"
@@ -6193,27 +5823,20 @@ async def _execute_search_tool(
                             value=cache_dict,
                             ttl=3600,  # 1 hour for search results
                         )
-                        logger.debug(
-                            f"[MCP][_execute_search_tool] Cached result for {tool_name}"
-                        )
+                        logger.debug(f"[MCP][_execute_search_tool] Cached result for {tool_name}")
 
                         return tool_result
                     else:
                         logger.warning(
                             f"[MCP][_execute_search_tool] ❌ MCP server {server_name} returned empty results"
                         )
-                        failed_servers.append(
-                            {"server": server_name, "reason": "empty_results"}
-                        )
+                        failed_servers.append({"server": server_name, "reason": "empty_results"})
                         continue
 
                 except Exception as mcp_error:
                     error_str = str(mcp_error)
                     # ToolResult 관련 오류는 명확히 처리
-                    if (
-                        "ToolResult" in error_str
-                        or "cannot access local variable" in error_str
-                    ):
+                    if "ToolResult" in error_str or "cannot access local variable" in error_str:
                         logger.error(
                             f"[MCP][_execute_search_tool] ❌ MCP 서버 {server_name} 검색 실패 (코드 오류): {mcp_error}"
                         )
@@ -6251,9 +5874,7 @@ async def _execute_search_tool(
                 )
 
             # 모든 MCP 서버 실패 시 DDG search로 fallback
-            logger.warning(
-                "[MCP][_execute_search_tool] 🔄 Falling back to DDG search..."
-            )
+            logger.warning("[MCP][_execute_search_tool] 🔄 Falling back to DDG search...")
             return await _fallback_to_ddg_search(query, max_results)
 
         elif tool_name == "tavily":
@@ -6277,9 +5898,7 @@ async def _execute_search_tool(
                             break
 
                     if tavily_tool_name:
-                        logger.info(
-                            f"Using MCP server {server_name} with tool {tavily_tool_name}"
-                        )
+                        logger.info(f"Using MCP server {server_name} with tool {tavily_tool_name}")
                         result = await mcp_hub._execute_via_mcp_server(
                             server_name,
                             tavily_tool_name,
@@ -6307,9 +5926,7 @@ async def _execute_search_tool(
                             for pattern in error_patterns:
                                 if re.search(pattern, result_lower):
                                     is_error = True
-                                    logger.warning(
-                                        "Error detected in tavily response, skipping"
-                                    )
+                                    logger.warning("Error detected in tavily response, skipping")
                                     break
 
                             if is_error:
@@ -6368,21 +5985,19 @@ async def _execute_search_tool(
 
                             results = result_data.get("results", [])
                             if not results and isinstance(result_data, dict):
-                                results = result_data.get(
-                                    "items", result_data.get("data", [])
-                                )
+                                results = result_data.get("items", result_data.get("data", []))
 
                             if results:
                                 tool_result = ToolResult(
                                     success=True,
                                     data={
                                         "query": query,
-                                        "results": results
-                                        if isinstance(results, list)
-                                        else [results],
-                                        "total_results": len(results)
-                                        if isinstance(results, list)
-                                        else 1,
+                                        "results": (
+                                            results if isinstance(results, list) else [results]
+                                        ),
+                                        "total_results": (
+                                            len(results) if isinstance(results, list) else 1
+                                        ),
                                         "source": f"{server_name}-mcp",
                                     },
                                     execution_time=time.time() - start_time,
@@ -6416,9 +6031,7 @@ async def _execute_search_tool(
                     continue
 
             # MCP 서버에 tavily가 없으면 에러 (fallback 제거)
-            raise ValueError(
-                "Tavily MCP server not found. Add tavily server to mcp_config.json"
-            )
+            raise ValueError("Tavily MCP server not found. Add tavily server to mcp_config.json")
 
         elif tool_name == "exa":
             # MCP 서버를 통해 exa 사용 (mcp_config.json에 정의된 서버)
@@ -6441,9 +6054,7 @@ async def _execute_search_tool(
                             break
 
                     if exa_tool_name:
-                        logger.info(
-                            f"Using MCP server {server_name} with tool {exa_tool_name}"
-                        )
+                        logger.info(f"Using MCP server {server_name} with tool {exa_tool_name}")
                         result = await mcp_hub._execute_via_mcp_server(
                             server_name,
                             exa_tool_name,
@@ -6471,9 +6082,7 @@ async def _execute_search_tool(
                             for pattern in error_patterns:
                                 if re.search(pattern, result_lower):
                                     is_error = True
-                                    logger.warning(
-                                        "Error detected in tavily response, skipping"
-                                    )
+                                    logger.warning("Error detected in tavily response, skipping")
                                     break
 
                             if is_error:
@@ -6532,21 +6141,19 @@ async def _execute_search_tool(
 
                             results = result_data.get("results", [])
                             if not results and isinstance(result_data, dict):
-                                results = result_data.get(
-                                    "items", result_data.get("data", [])
-                                )
+                                results = result_data.get("items", result_data.get("data", []))
 
                             if results:
                                 tool_result = ToolResult(
                                     success=True,
                                     data={
                                         "query": query,
-                                        "results": results
-                                        if isinstance(results, list)
-                                        else [results],
-                                        "total_results": len(results)
-                                        if isinstance(results, list)
-                                        else 1,
+                                        "results": (
+                                            results if isinstance(results, list) else [results]
+                                        ),
+                                        "total_results": (
+                                            len(results) if isinstance(results, list) else 1
+                                        ),
                                         "source": f"{server_name}-mcp",
                                     },
                                     execution_time=time.time() - start_time,
@@ -6574,15 +6181,11 @@ async def _execute_search_tool(
                                 return tool_result
 
                 except Exception as mcp_error:
-                    logger.warning(
-                        f"MCP 서버 {server_name} exa 실패: {mcp_error}, 다음 서버 시도"
-                    )
+                    logger.warning(f"MCP 서버 {server_name} exa 실패: {mcp_error}, 다음 서버 시도")
                     continue
 
             # MCP 서버에 exa가 없으면 에러 (fallback 제거)
-            raise ValueError(
-                "Exa MCP server not found. Add exa server to mcp_config.json"
-            )
+            raise ValueError("Exa MCP server not found. Add exa server to mcp_config.json")
 
         else:
             raise ValueError(f"Unknown search tool: {tool_name}")
@@ -6598,9 +6201,7 @@ async def _execute_search_tool(
         )
 
 
-async def _execute_academic_tool(
-    tool_name: str, parameters: Dict[str, Any]
-) -> ToolResult:
+async def _execute_academic_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
     """학술 도구 실행 - src/utils에서 직접 사용."""
     start_time = time.time()
     query = parameters.get("query", "")
@@ -6647,9 +6248,7 @@ async def _execute_academic_tool(
         except ImportError:
             logger.debug("src.utils.academic_utils not available, using existing logic")
         except Exception as e:
-            logger.warning(
-                f"Embedded arXiv search failed: {e}, falling back to existing logic"
-            )
+            logger.warning(f"Embedded arXiv search failed: {e}, falling back to existing logic")
 
     # 기존 로직 (src/utils 실패 시 또는 다른 tool_name)
     try:
@@ -6782,9 +6381,7 @@ async def _execute_data_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
             except ImportError:
                 logger.debug("src.utils.web_utils not available, using existing logic")
             except Exception as e:
-                logger.warning(
-                    f"Embedded fetch failed: {e}, falling back to existing logic"
-                )
+                logger.warning(f"Embedded fetch failed: {e}, falling back to existing logic")
 
             # 기존 로직 (fallback)
             url = parameters.get("url", "")
@@ -6845,7 +6442,7 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
 
     # 1. 리소스 제한 체크
     try:
-        from src.core.resource_limits import CodeSizeLimitError, ResourceLimits
+        from src.core.resource_limits import ResourceLimits
 
         code_bytes = code.encode("utf-8")
         if ResourceLimits.exceeds_code_limit(len(code_bytes)):
@@ -6868,6 +6465,7 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
 
     # 2. Optional remote sandbox (Runloop/Daytona/Modal) from env SANDBOX_BACKEND
     import os
+
     backend_name = (os.getenv("SANDBOX_BACKEND") or "").strip().lower()
     if backend_name in ("runloop", "daytona", "modal"):
         try:
@@ -6936,10 +6534,7 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
         return ToolResult(
             success=False,
             data=None,
-            error=(
-                f"Unsupported sandbox '{sandbox_type}'. "
-                "Use 'docker' or 'runsc'."
-            ),
+            error=(f"Unsupported sandbox '{sandbox_type}'. " "Use 'docker' or 'runsc'."),
             execution_time=time.time() - start_time,
             confidence=0.0,
         )
@@ -6967,9 +6562,7 @@ async def _playwright_dismiss_google_consent(page: Any) -> None:
             continue
 
 
-async def _execute_browser_tool(
-    tool_name: str, parameters: Dict[str, Any]
-) -> ToolResult:
+async def _execute_browser_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
     """브라우저 자동화 도구 실행."""
     start_time = time.time()
 
@@ -6981,7 +6574,10 @@ async def _execute_browser_tool(
 
         # browser-use 기반 브라우저 유틸은 `browser_navigate`/`browser_extract`에서만 사용됩니다.
         # `browser_search` 등 Playwright 전용 경로에서는 browser-use가 없어도 동작해야 합니다.
-        if tool_name in {"browser_navigate", "browser_extract"} and not browser_manager.browser_available:
+        if (
+            tool_name in {"browser_navigate", "browser_extract"}
+            and not browser_manager.browser_available
+        ):
             await browser_manager.initialize_browser()
 
         if tool_name == "browser_navigate":
@@ -7048,9 +6644,7 @@ async def _execute_browser_tool(
                         # 임시 파일에 저장
                         import tempfile
 
-                        with tempfile.NamedTemporaryFile(
-                            suffix=".png", delete=False
-                        ) as tmp:
+                        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                             output_path = tmp.name
                             await page.screenshot(path=output_path, full_page=True)
 
@@ -7144,9 +6738,7 @@ async def _execute_browser_tool(
                                     }
                                 )
                         except Exception as e:
-                            results.append(
-                                {"type": action_type, "success": False, "error": str(e)}
-                            )
+                            results.append({"type": action_type, "success": False, "error": str(e)})
 
                     # 최종 페이지 콘텐츠 추출
                     final_content = await page.content()
@@ -7161,9 +6753,7 @@ async def _execute_browser_tool(
                             "final_content": final_content[:10000],  # 처음 10000자만
                         },
                         execution_time=time.time() - start_time,
-                        confidence=0.8
-                        if all(r.get("success", False) for r in results)
-                        else 0.5,
+                        confidence=0.8 if all(r.get("success", False) for r in results) else 0.5,
                     )
             else:
                 raise RuntimeError("Playwright not available for browser interaction")
@@ -7174,12 +6764,14 @@ async def _execute_browser_tool(
 
             query = parameters.get("query", "")
             engine = (
-                parameters.get("engine")
-                or os.getenv("SPARKLEFORGE_BROWSER_SEARCH_ENGINE", "wikipedia")
-            ).lower().strip()
-            max_results = int(
-                min(20, max(1, int(parameters.get("max_results", 3) or 3)))
+                (
+                    parameters.get("engine")
+                    or os.getenv("SPARKLEFORGE_BROWSER_SEARCH_ENGINE", "wikipedia")
+                )
+                .lower()
+                .strip()
             )
+            max_results = int(min(20, max(1, int(parameters.get("max_results", 3) or 3))))
 
             if not query:
                 raise ValueError("query parameter is required for browser_search")
@@ -7390,8 +6982,7 @@ async def _execute_browser_tool(
             elif engine == "bing":
                 q_enc = urllib.parse.quote(query)
                 b_url = (
-                    f"https://www.bing.com/search?q={q_enc}"
-                    f"&setlang=en-US&cc=US&form=QBLH&sp=-1"
+                    f"https://www.bing.com/search?q={q_enc}" f"&setlang=en-US&cc=US&form=QBLH&sp=-1"
                 )
                 await page.goto(b_url, wait_until="domcontentloaded", timeout=45000)
                 await page.wait_for_timeout(1000)
@@ -7489,9 +7080,7 @@ async def _execute_browser_tool(
         )
 
 
-async def _execute_document_tool(
-    tool_name: str, parameters: Dict[str, Any]
-) -> ToolResult:
+async def _execute_document_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
     """문서 생성 도구 실행."""
     start_time = time.time()
 
@@ -7503,9 +7092,7 @@ async def _execute_document_tool(
         report_type = parameters.get("report_type", "comprehensive")
 
         if not research_data:
-            raise ValueError(
-                "research_data parameter is required for document generation"
-            )
+            raise ValueError("research_data parameter is required for document generation")
 
         # 도구 이름에서 형식 추출
         if tool_name == "generate_pdf":
@@ -7540,9 +7127,7 @@ async def _execute_document_tool(
         )
 
     except Exception as e:
-        logger.error(
-            f"Document tool execution failed: {tool_name} - {e}", exc_info=True
-        )
+        logger.error(f"Document tool execution failed: {tool_name} - {e}", exc_info=True)
         return ToolResult(
             success=False,
             data=None,
@@ -7583,9 +7168,7 @@ async def _execute_git_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolR
         elif tool_name == "git_commit":
             message = parameters.get("message")
             auto_stage = parameters.get("auto_stage", True)
-            result = await git_workflow.git_commit(
-                message=message, auto_stage=auto_stage
-            )
+            result = await git_workflow.git_commit(message=message, auto_stage=auto_stage)
             return ToolResult(
                 success=result.get("success", False),
                 data=result,
@@ -7752,9 +7335,7 @@ async def _execute_shell_tool(tool_name: str, parameters: Dict[str, Any]) -> Too
                     confidence=0.0,
                 )
 
-            result = await executor.run_background(
-                command=command, working_dir=working_dir
-            )
+            result = await executor.run_background(command=command, working_dir=working_dir)
             return ToolResult(
                 success=result.get("success", False),
                 data=result,
@@ -7781,8 +7362,6 @@ async def _execute_shell_tool(tool_name: str, parameters: Dict[str, Any]) -> Too
             execution_time=time.time() - start_time,
             confidence=0.0,
         )
-
-
 
 
 async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
@@ -8001,7 +7580,9 @@ async def get_tool_for_category(category: ToolCategory) -> str | None:
     return mcp_hub.get_tool_for_category(category)
 
 
-async def get_best_tool_for_task(task_type: str, category: ToolCategory | None = None) -> str | None:
+async def get_best_tool_for_task(
+    task_type: str, category: ToolCategory | None = None
+) -> str | None:
     """태스크 타입에 가장 적합한 도구 반환."""
     if category is not None:
         return await get_tool_for_category(category)
@@ -8076,9 +7657,7 @@ async def check_mcp_servers():
         print(f"전체 서버 수: {server_status['total_servers']}")
         print(f"연결된 서버: {server_status['connected_servers']}")
         print(f"연결률: {server_status['summary']['connection_rate']}")
-        print(
-            f"전체 사용 가능한 Tool 수: {server_status['summary']['total_tools_available']}"
-        )
+        print(f"전체 사용 가능한 Tool 수: {server_status['summary']['total_tools_available']}")
         print("\n")
 
         for server_name, info in server_status["servers"].items():
@@ -8125,9 +7704,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Universal MCP Hub - MCP Only")
     parser.add_argument("--start", action="store_true", help="Start MCP Hub")
-    parser.add_argument(
-        "--list-tools", action="store_true", help="List available tools"
-    )
+    parser.add_argument("--list-tools", action="store_true", help="List available tools")
     parser.add_argument("--health", action="store_true", help="Show health status")
     parser.add_argument(
         "--check-servers", action="store_true", help="Check all MCP server connections"

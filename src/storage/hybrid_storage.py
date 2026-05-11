@@ -3,9 +3,9 @@
 import json
 import logging
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from datetime import UTC, datetime
 
 from src.storage.vector_store import ResearchMemory
 
@@ -16,9 +16,7 @@ class HybridStorage:
     """Stores and retrieves research results with optional similarity search."""
 
     def __init__(self, storage_path: str | None = None) -> None:
-        self._storage_path = Path(
-            storage_path or "./storage/research_memory"
-        )
+        self._storage_path = Path(storage_path or "./storage/research_memory")
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._memory: List[ResearchMemory] = []
         self._index_path = self._storage_path / "index.jsonl"
@@ -29,7 +27,7 @@ class HybridStorage:
         if not self._index_path.exists():
             return
         try:
-            with open(self._index_path, "r", encoding="utf-8") as f:
+            with open(self._index_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -38,9 +36,7 @@ class HybridStorage:
                         data = json.loads(line)
                         ts = data.get("timestamp")
                         if isinstance(ts, str):
-                            data["timestamp"] = datetime.fromisoformat(
-                                ts.replace("Z", "+00:00")
-                            )
+                            data["timestamp"] = datetime.fromisoformat(ts.replace("Z", "+00:00"))
                         self._memory.append(ResearchMemory(**data))
                     except Exception as e:
                         logger.debug("Skip invalid index line: %s", e)
@@ -95,12 +91,8 @@ class HybridStorage:
                 content=content or "",
                 summary=summary or "",
                 keywords=keywords,
-                confidence_score=float(
-                    (results or {}).get("confidence", 0.0)
-                ),
-                source_count=len(
-                    (metadata or {}).get("execution_results", [])
-                ),
+                confidence_score=float((results or {}).get("confidence", 0.0)),
+                source_count=len((metadata or {}).get("execution_results", [])),
                 verification_status=(
                     (metadata or {}).get("verification_status")
                     or (results or {}).get("verification_status", "unverified")
@@ -135,9 +127,7 @@ class HybridStorage:
             text_words = set(re.findall(r"\w+", topic_lower + " " + summary_lower))
             if not text_words:
                 continue
-            overlap = len(query_words & text_words) / max(
-                len(query_words | text_words), 1
-            )
+            overlap = len(query_words & text_words) / max(len(query_words | text_words), 1)
             if overlap >= similarity_threshold:
                 scored.append((overlap, m))
 

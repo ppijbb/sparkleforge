@@ -83,13 +83,9 @@ class ExecutionRegistry:
 
         return None
 
-    def filter_by_trust(self, trust: TrustContext) -> "ExecutionRegistry":
+    def filter_by_trust(self, trust: TrustContext) -> ExecutionRegistry:
         """Filter tool entries according to trust policy."""
-        tools = tuple(
-            tool
-            for tool in self.tools
-            if trust.allows_tool(tool.name, tool.mcp_server)
-        )
+        tools = tuple(tool for tool in self.tools if trust.allows_tool(tool.name, tool.mcp_server))
         return ExecutionRegistry(
             commands=self.commands,
             skills=self.skills,
@@ -106,7 +102,7 @@ class ExecutionRegistry:
         scheduler: Any,
         trust: TrustContext,
         commands: tuple[RegisteredCommand, ...] | None = None,
-    ) -> "ExecutionRegistry":
+    ) -> ExecutionRegistry:
         """Build the runtime registry from current managers."""
         commands = commands or default_command_registry()
 

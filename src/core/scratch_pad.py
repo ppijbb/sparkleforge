@@ -73,7 +73,9 @@ def _extract_summary(data: Any, max_chars: int = 500) -> str:
             return (str(c)[:max_chars] + "..." if len(str(c)) > max_chars else str(c)).strip()
         return (json.dumps(data, ensure_ascii=False)[:max_chars] + "...").strip()
     if isinstance(data, list):
-        return f"List of {len(data)} items. First: {str(data[0])[:150]}..." if data else "(empty list)"
+        return (
+            f"List of {len(data)} items. First: {str(data[0])[:150]}..." if data else "(empty list)"
+        )
     return str(data)[:max_chars]
 
 
@@ -112,10 +114,7 @@ def write_tool_output(
         num_tokens = _estimate_tokens(raw)
 
         # Hard cap 32K (OpenClaw): over cap or pathological -> always offload
-        force_offload = (
-            num_chars > TOOL_RESULT_MAX_CHARS
-            or _is_pathological_payload(raw)
-        )
+        force_offload = num_chars > TOOL_RESULT_MAX_CHARS or _is_pathological_payload(raw)
         if not force_offload and num_chars <= threshold_chars and num_tokens <= threshold_tokens:
             return None, summary
 
@@ -130,7 +129,8 @@ def write_tool_output(
 
         logger.info(
             "ScratchPad: offloaded %s chars to %s (summary in context)",
-            num_chars, file_path.name,
+            num_chars,
+            file_path.name,
         )
         return str(file_path), summary
     except Exception as e:

@@ -55,9 +55,7 @@ class DockerSandbox:
 
     def __init__(self, config: SandboxConfig | None = None):
         if not DOCKER_AVAILABLE:
-            raise RuntimeError(
-                "Docker is not available. Please install docker package."
-            )
+            raise RuntimeError("Docker is not available. Please install docker package.")
 
         self.config = config or SandboxConfig()
         self.docker_client = docker.from_env()
@@ -99,12 +97,8 @@ class DockerSandbox:
             container.start()
             wait_result = container.wait(timeout=self.config.timeout)
             exit_code = int(wait_result.get("StatusCode", -1))
-            stdout = container.logs(stdout=True, stderr=False).decode(
-                "utf-8", errors="replace"
-            )
-            stderr = container.logs(stdout=False, stderr=True).decode(
-                "utf-8", errors="replace"
-            )
+            stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
+            stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
             execution_time = time.time() - start_time
 
             return ExecutionResult(
@@ -182,9 +176,7 @@ class DockerSandbox:
         else:
             raise ValueError(f"Unsupported language: {language}")
 
-    def _container_kwargs(
-        self, image: str, command: list[str], input_data: str | None
-    ) -> dict:
+    def _container_kwargs(self, image: str, command: list[str], input_data: str | None) -> dict:
         kwargs = {
             "image": image,
             "command": command,
@@ -238,9 +230,7 @@ def get_sandbox() -> DockerSandbox:
         config = SandboxConfig(
             image=os.getenv("SPARKLEFORGE_SANDBOX_PYTHON_IMAGE", "python:3.11-slim"),
             node_image=os.getenv("SPARKLEFORGE_SANDBOX_NODE_IMAGE", "node:20-slim"),
-            bash_image=os.getenv(
-                "SPARKLEFORGE_SANDBOX_BASH_IMAGE", "debian:bookworm-slim"
-            ),
+            bash_image=os.getenv("SPARKLEFORGE_SANDBOX_BASH_IMAGE", "debian:bookworm-slim"),
             runtime=runtime,
             allow_default_runtime_fallback=allow_fallback,
         )

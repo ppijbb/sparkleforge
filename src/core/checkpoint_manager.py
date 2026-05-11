@@ -70,9 +70,7 @@ class CheckpointManager:
         if file_snapshots:
             for file_path, content in file_snapshots.items():
                 snapshot_hash = hashlib.md5(content.encode()).hexdigest()
-                snapshot_path = (
-                    self.snapshots_dir / f"{checkpoint_id}_{snapshot_hash}.snapshot"
-                )
+                snapshot_path = self.snapshots_dir / f"{checkpoint_id}_{snapshot_hash}.snapshot"
                 snapshot_path.write_text(content, encoding="utf-8")
                 saved_snapshots[file_path] = snapshot_hash
 
@@ -137,9 +135,7 @@ class CheckpointManager:
         # 파일 스냅샷 복원
         if restore_files and checkpoint.file_snapshots:
             for file_path, snapshot_hash in checkpoint.file_snapshots.items():
-                snapshot_path = (
-                    self.snapshots_dir / f"{checkpoint_id}_{snapshot_hash}.snapshot"
-                )
+                snapshot_path = self.snapshots_dir / f"{checkpoint_id}_{snapshot_hash}.snapshot"
                 if snapshot_path.exists():
                     content = snapshot_path.read_text(encoding="utf-8")
                     target_path = Path(file_path)

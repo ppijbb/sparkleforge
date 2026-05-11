@@ -145,9 +145,7 @@ class ContextChunk:
             compressed=True,
             original_size=self.original_size,
         )
-        compressed_chunk.metadata["compression_ratio"] = len(compressed_content) / len(
-            self.content
-        )
+        compressed_chunk.metadata["compression_ratio"] = len(compressed_content) / len(self.content)
 
         return compressed_chunk
 
@@ -171,6 +169,7 @@ class ContextChunk:
         if content_bytes > threshold_bytes:
             try:
                 from src.core.context_mode.store import FTS5_AVAILABLE, get_store
+
                 if FTS5_AVAILABLE:
                     store = get_store()
                     indexed = store.index_plain_text(content, "context_engineer:tool_results")
@@ -189,9 +188,7 @@ class ContextChunk:
                 if isinstance(results, list):
                     # 상위 3개 결과만 유지
                     compressed_results = results[:3]
-                    summary = (
-                        f"총 {len(results)}개 결과 중 {len(compressed_results)}개 표시"
-                    )
+                    summary = f"총 {len(results)}개 결과 중 {len(compressed_results)}개 표시"
                     return json.dumps(
                         {
                             "results": compressed_results,
@@ -214,9 +211,7 @@ class ContextChunk:
             if isinstance(messages, list):
                 # 최근 5개 메시지만 유지
                 recent_messages = messages[-5:] if len(messages) > 5 else messages
-                summary = (
-                    f"총 {len(messages)}개 메시지 중 최근 {len(recent_messages)}개 표시"
-                )
+                summary = f"총 {len(messages)}개 메시지 중 최근 {len(recent_messages)}개 표시"
                 return json.dumps(
                     {
                         "messages": recent_messages,
@@ -237,9 +232,7 @@ class ContextChunk:
             if isinstance(memory, dict):
                 # 중요한 키만 유지
                 important_keys = ["goals", "findings", "decisions", "status"]
-                compressed_memory = {
-                    k: v for k, v in memory.items() if k in important_keys
-                }
+                compressed_memory = {k: v for k, v in memory.items() if k in important_keys}
                 return json.dumps(compressed_memory, ensure_ascii=False)
         except:
             pass
@@ -337,18 +330,12 @@ class ContextEngineer:
 
                 adaptive = get_adaptive_memory()
                 if session_id:
-                    raw = adaptive.retrieve_for_session(
-                        session_id, limit=20
-                    )
+                    raw = adaptive.retrieve_for_session(session_id, limit=20)
                     out_memories = []
                     for m in raw:
                         v = m.get("value", "")
-                        content = (
-                            v.get("content", v) if isinstance(v, dict) else v
-                        )
-                        out_memories.append(
-                            {"content": str(content), "id": m.get("key")}
-                        )
+                        content = v.get("content", v) if isinstance(v, dict) else v
+                        out_memories.append({"content": str(content), "id": m.get("key")})
                     fetched_context["memories"] = out_memories
             except Exception as e:
                 logger.debug(f"Memory retrieval failed: {e}")
@@ -390,9 +377,7 @@ class ContextEngineer:
 
             # 4. Bootstrap file (SPARKLE.md) - global + project hierarchy
             try:
-                fetched_context["bootstrap_content"] = load_bootstrap_content(
-                    max_chars=8000
-                )
+                fetched_context["bootstrap_content"] = load_bootstrap_content(max_chars=8000)
             except Exception as e:
                 logger.debug("Bootstrap load failed: %s", e)
                 fetched_context["bootstrap_content"] = ""
@@ -430,7 +415,11 @@ class ContextEngineer:
             return ""
         parts = []
         for c in chunks:
-            content = c.content if hasattr(c, "content") else (c.get("content", "") if isinstance(c, dict) else str(c))
+            content = (
+                c.content
+                if hasattr(c, "content")
+                else (c.get("content", "") if isinstance(c, dict) else str(c))
+            )
             if content:
                 parts.append(content)
         return "\n\n".join(parts) if parts else ""
@@ -551,9 +540,7 @@ class ContextEngineer:
                         )
                         if asyncio.iscoroutine(save_result):
                             await save_result
-                    logger.debug(
-                        f"Context uploaded in background for session {session_id}"
-                    )
+                    logger.debug(f"Context uploaded in background for session {session_id}")
                 except Exception as e:
                     logger.warning(f"Background context upload failed: {e}")
 
@@ -609,9 +596,7 @@ class ContextEngineer:
             # 실제 업로드는 세션 종료 시 수행
 
             self.current_cycle = cycle_result
-            logger.info(
-                f"Context Engineering cycle completed: {cycle_result['cycle_id']}"
-            )
+            logger.info(f"Context Engineering cycle completed: {cycle_result['cycle_id']}")
 
             return cycle_result
 
@@ -639,9 +624,7 @@ class ContextEngineer:
         Returns:
             청크 ID
         """
-        chunk_id = (
-            f"{content_type.value}_{int(time.time() * 1000)}_{len(self.context_chunks)}"
-        )
+        chunk_id = f"{content_type.value}_{int(time.time() * 1000)}_{len(self.context_chunks)}"
 
         chunk = ContextChunk(
             content=content,
@@ -681,14 +664,10 @@ class ContextEngineer:
                 context_cache = get_context_cache()
 
                 # 캐시 키 생성
-                context_types = [
-                    chunk.content_type.value for chunk in self.context_chunks
-                ]
+                context_types = [chunk.content_type.value for chunk in self.context_chunks]
                 query = ""  # 쿼리는 별도로 전달 필요
                 token_allocation = self._calculate_token_allocation(max_tokens)
-                cache_key = context_cache.generate_cache_key(
-                    context_types, query, token_allocation
-                )
+                cache_key = context_cache.generate_cache_key(context_types, query, token_allocation)
 
                 cached = context_cache.get(cache_key, query)
                 if cached:
@@ -698,8 +677,7 @@ class ContextEngineer:
                         "stats": {
                             "total_chunks": len(cached.context_chunks),
                             "total_tokens": sum(
-                                chunk.get("token_count", 0)
-                                for chunk in cached.context_chunks
+                                chunk.get("token_count", 0) for chunk in cached.context_chunks
                             ),
                             "available_tokens": max_tokens,
                             "usage_ratio": 0.0,
@@ -716,15 +694,10 @@ class ContextEngineer:
         total_tokens = sum(chunk.token_count for chunk in self.context_chunks)
         usage_ratio = total_tokens / max_tokens if max_tokens > 0 else 1.0
 
-        logger.info(
-            f"Context optimization: {total_tokens}/{max_tokens} tokens ({usage_ratio:.1%})"
-        )
+        logger.info(f"Context optimization: {total_tokens}/{max_tokens} tokens ({usage_ratio:.1%})")
 
         # 압축 필요 여부 확인
-        if (
-            usage_ratio > self.config.compression_threshold
-            and self.config.enable_auto_compression
-        ):
+        if usage_ratio > self.config.compression_threshold and self.config.enable_auto_compression:
             await self._compress_context(max_tokens)
 
         # 최적화된 컨텍스트 생성
@@ -810,9 +783,7 @@ class ContextEngineer:
                 "can_expand": len(core_chunks) < len(self.context_chunks),
             }
 
-            logger.info(
-                f"Progressive loading stage 1: {len(core_chunks)} core chunks loaded"
-            )
+            logger.info(f"Progressive loading stage 1: {len(core_chunks)} core chunks loaded")
             return result
 
         except Exception as e:
@@ -951,10 +922,9 @@ class ContextEngineer:
                         self.compression_stats["chunks_compressed"] = (
                             self.compression_stats.get("chunks_compressed", 0) + 1
                         )
-                        self.compression_stats["tokens_saved"] = (
-                            self.compression_stats.get("tokens_saved", 0)
-                            + (original_tokens - compressed_chunk.token_count)
-                        )
+                        self.compression_stats["tokens_saved"] = self.compression_stats.get(
+                            "tokens_saved", 0
+                        ) + (original_tokens - compressed_chunk.token_count)
 
                         logger.debug(
                             f"Recursive summarization: {original_tokens} -> {compressed_chunk.token_count} tokens"
@@ -1002,9 +972,7 @@ class ContextEngineer:
         for content_type, chunks in chunks_by_type.items():
             allocated_tokens = allocation.get(content_type.value, 0)
             if allocated_tokens > 0:
-                selected_chunks = await self._select_chunks_for_type(
-                    chunks, allocated_tokens
-                )
+                selected_chunks = await self._select_chunks_for_type(chunks, allocated_tokens)
                 optimized_chunks.extend(selected_chunks)
 
         # Context ordering for caching: static/cacheable first, dynamic last
@@ -1042,9 +1010,7 @@ class ContextEngineer:
             unique_types = list(set(context_types))
 
             # 추천 조합 가져오기
-            recommended = memory_learner.get_recommended_combination(
-                unique_types, max_tokens
-            )
+            recommended = memory_learner.get_recommended_combination(unique_types, max_tokens)
             if recommended and recommended.token_allocation:
                 logger.debug("Using learned token allocation pattern")
                 return recommended.token_allocation
@@ -1067,9 +1033,7 @@ class ContextEngineer:
         allocation = {}
 
         # 시스템 프롬프트 고정
-        allocation["system_prompt"] = min(
-            self.config.system_prompt_tokens, int(max_tokens * 0.15)
-        )
+        allocation["system_prompt"] = min(self.config.system_prompt_tokens, int(max_tokens * 0.15))
 
         # 도구 설명 고정
         allocation["tool_descriptions"] = min(
@@ -1092,9 +1056,7 @@ class ContextEngineer:
         total_chunks = sum(type_counts.values())
 
         if total_chunks > 0:
-            total_weight = sum(
-                type_weights.get(ct.value, 1.0) for ct in type_counts.keys()
-            )
+            total_weight = sum(type_weights.get(ct.value, 1.0) for ct in type_counts.keys())
             for content_type, count in type_counts.items():
                 if content_type.value not in ["system_prompt", "tool_descriptions"]:
                     weight = type_weights.get(content_type.value, 1.0)
@@ -1129,9 +1091,7 @@ class ContextEngineer:
 
             # 의존성이 많을수록 가중치 증가
             dependency_bonus = len(chunk.dependencies) * 0.1
-            weights[chunk_type] = max(
-                weights[chunk_type], base_weight + dependency_bonus
-            )
+            weights[chunk_type] = max(weights[chunk_type], base_weight + dependency_bonus)
 
         return dict(weights)
 
@@ -1214,8 +1174,7 @@ class ContextEngineer:
             for existing_chunk in self.context_chunks:
                 if (
                     existing_chunk.content_type == shared_chunk.content_type
-                    and existing_chunk.metadata.get("key")
-                    == shared_chunk.metadata.get("key")
+                    and existing_chunk.metadata.get("key") == shared_chunk.metadata.get("key")
                     and abs(existing_chunk.timestamp - shared_chunk.timestamp) < 60
                 ):  # 1분 내
                     # 최신 것으로 업데이트
@@ -1281,15 +1240,12 @@ class ContextEngineer:
         self.context_chunks = [
             chunk
             for chunk in self.context_chunks
-            if chunk.timestamp > cutoff_time
-            or chunk.priority == ContextPriority.CRITICAL
+            if chunk.timestamp > cutoff_time or chunk.priority == ContextPriority.CRITICAL
         ]
 
         removed_count = original_count - len(self.context_chunks)
         if removed_count > 0:
-            logger.info(
-                f"Cleaned up {removed_count} old context chunks (>{max_age_hours}h)"
-            )
+            logger.info(f"Cleaned up {removed_count} old context chunks (>{max_age_hours}h)")
 
         return removed_count
 

@@ -81,16 +81,12 @@ class ToolTrace:
                             isinstance(data[field_name], str)
                             and len(data[field_name]) > max_size // 2
                         ):
-                            data[field_name] = (
-                                data[field_name][: max_size // 2] + "... [truncated]"
-                            )
+                            data[field_name] = data[field_name][: max_size // 2] + "... [truncated]"
                         elif isinstance(data[field_name], list):
                             # 처음 몇 개 항목만 유지
                             data[field_name] = data[field_name][:3]
                             if data[field_name]:
-                                data[field_name].append(
-                                    {"note": "... additional items truncated"}
-                                )
+                                data[field_name].append({"note": "... additional items truncated"})
 
                 truncated = json.dumps(data, ensure_ascii=False)
                 if len(truncated) <= max_size:
@@ -99,9 +95,7 @@ class ToolTrace:
             pass
 
         # Fallback: 간단한 잘라내기
-        truncation_marker = (
-            f"\n... [content truncated, original size: {len(raw_answer)} bytes]"
-        )
+        truncation_marker = f"\n... [content truncated, original size: {len(raw_answer)} bytes]"
         return raw_answer[: max_size - len(truncation_marker)] + truncation_marker
 
     def to_dict(self) -> Dict[str, Any]:
@@ -154,9 +148,7 @@ class TopicBlock:
         """모든 도구 추적의 요약을 연결하여 반환."""
         if not self.tool_traces:
             return ""
-        return "\n".join(
-            [f"[{trace.tool_type}] {trace.summary}" for trace in self.tool_traces]
-        )
+        return "\n".join([f"[{trace.tool_type}] {trace.summary}" for trace in self.tool_traces])
 
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환."""
@@ -209,9 +201,9 @@ class TaskQueueItem:
             task=self.task,
             priority=self.priority,
             dependencies=self.dependencies,
-            created_at=self.created_at.isoformat()
-            if self.created_at
-            else datetime.now().isoformat(),
+            created_at=(
+                self.created_at.isoformat() if self.created_at else datetime.now().isoformat()
+            ),
         )
 
 
@@ -252,12 +244,8 @@ class TaskQueue:
         # Performance optimizations: Indexed lookups
         self._task_index: Dict[str, int] = {}  # task_id -> index in blocks
         self._block_index: Dict[str, int] = {}  # block_id -> index in blocks
-        self._priority_queues: Dict[int, List[str]] = defaultdict(
-            list
-        )  # priority -> [block_ids]
-        self._sorted_priorities: List[
-            int
-        ] = []  # Cached sorted priorities for faster lookups
+        self._priority_queues: Dict[int, List[str]] = defaultdict(list)  # priority -> [block_ids]
+        self._sorted_priorities: List[int] = []  # Cached sorted priorities for faster lookups
 
     def add_tasks(self, tasks: List[Dict[str, Any]]) -> None:
         """작업들을 큐에 추가."""
@@ -302,9 +290,7 @@ class TaskQueue:
                 continue
 
             # 의존성이 없거나 모든 의존성이 완료된 작업들로 그룹 생성
-            if not dependencies or all(
-                dep in self.completed_tasks for dep in dependencies
-            ):
+            if not dependencies or all(dep in self.completed_tasks for dep in dependencies):
                 group = [task_id]
 
                 # 다른 독립적인 작업들 찾기
@@ -313,8 +299,7 @@ class TaskQueue:
                         other_task_id != task_id
                         and other_task_id not in processed
                         and (
-                            not other_deps
-                            or all(dep in self.completed_tasks for dep in other_deps)
+                            not other_deps or all(dep in self.completed_tasks for dep in other_deps)
                         )
                     ):
                         group.append(other_task_id)
@@ -325,9 +310,7 @@ class TaskQueue:
 
         logger.info(f"Identified {len(self.parallel_groups)} parallel groups")
 
-    def get_next_task_group(
-        self, max_group_size: int | None = None
-    ) -> List[str] | None:
+    def get_next_task_group(self, max_group_size: int | None = None) -> List[str] | None:
         """다음 실행 가능한 작업 그룹 반환."""
         # 병렬 그룹이 있으면 반환
         if self.parallel_groups:
@@ -342,8 +325,7 @@ class TaskQueue:
                 for task_id in group
                 if task_id not in self.completed_tasks
                 and all(
-                    dep in self.completed_tasks
-                    for dep in self.dependency_graph.get(task_id, [])
+                    dep in self.completed_tasks for dep in self.dependency_graph.get(task_id, [])
                 )
             ]
 
@@ -571,9 +553,7 @@ class TaskQueue:
         return {
             "total_blocks": len(self.blocks),
             "pending": len(self.get_all_pending_blocks()),
-            "researching": len(
-                [b for b in self.blocks if b.status == TopicStatus.RESEARCHING]
-            ),
+            "researching": len([b for b in self.blocks if b.status == TopicStatus.RESEARCHING]),
             "completed": len(self.get_all_completed_blocks()),
             "failed": len([b for b in self.blocks if b.status == TopicStatus.FAILED]),
             "total_tool_calls": sum(len(b.tool_traces) for b in self.blocks),

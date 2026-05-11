@@ -52,8 +52,7 @@ class PipelineGraphVisualizer:
             import networkx as nx
         except ImportError:
             raise ImportError(
-                "Please install networkx to draw graph. "
-                "Run: pip install networkx[default]"
+                "Please install networkx to draw graph. " "Run: pip install networkx[default]"
             )
 
         # 그래프 생성
@@ -79,9 +78,7 @@ class PipelineGraphVisualizer:
 
     def _get_node_label(self, op_node) -> str:
         """노드 레이블을 생성합니다."""
-        op_class_name = (
-            op_node.op_obj.__class__.__name__ if op_node.op_obj else "Storage/No-Op"
-        )
+        op_class_name = op_node.op_obj.__class__.__name__ if op_node.op_obj else "Storage/No-Op"
         return f"{op_node.op_name}\n<{op_class_name}>"
 
     def _draw_html_graph(self, G, output_path: str | None) -> str:
@@ -89,9 +86,7 @@ class PipelineGraphVisualizer:
         try:
             from pyvis.network import Network
         except ImportError:
-            raise ImportError(
-                "Please install pyvis to draw HTML graph. Run: pip install pyvis"
-            )
+            raise ImportError("Please install pyvis to draw HTML graph. Run: pip install pyvis")
 
         if output_path is None:
             output_path = "pipeline_graph.html"
@@ -122,8 +117,7 @@ class PipelineGraphVisualizer:
             import matplotlib.pyplot as plt
         except ImportError:
             raise ImportError(
-                "Please install matplotlib to draw image graph. "
-                "Run: pip install matplotlib"
+                "Please install matplotlib to draw image graph. " "Run: pip install matplotlib"
             )
 
         if output_path is None:

@@ -1,13 +1,12 @@
 import logging
-import os
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
 class PersistentMemory:
     """Manages persistent memory files (MEMORY.md, USER.md) (Phase 6)."""
-    
+
     def __init__(self, base_path: str = "./"):
         self.base_path = Path(base_path)
         self.memory_file = self.base_path / "MEMORY.md"
@@ -39,11 +38,11 @@ class PersistentMemory:
         """Returns a formatted block for the prompt."""
         mem = self.load_memory()
         user = self.load_user_preferences()
-        
+
         block = ""
         if mem:
             block += f"\n### Project Memory (MEMORY.md)\n{mem}\n"
         if user:
             block += f"\n### User Preferences (USER.md)\n{user}\n"
-            
+
         return block

@@ -109,10 +109,7 @@ class ShellExecutor:
             for allowed in self.allowed_dirs:
                 try:
                     allowed_resolved = allowed.resolve()
-                    if (
-                        resolved.is_relative_to(allowed_resolved)
-                        or resolved == allowed_resolved
-                    ):
+                    if resolved.is_relative_to(allowed_resolved) or resolved == allowed_resolved:
                         return True
                 except (ValueError, AttributeError):
                     # Python 3.8 호환성
@@ -182,9 +179,7 @@ class ShellExecutor:
                 pass
             elif confirm is True:
                 # 여기서는 자동으로 진행 (실제로는 사용자 확인 필요)
-                logger.warning(
-                    f"Warning: Executing potentially risky command: {command[:100]}"
-                )
+                logger.warning(f"Warning: Executing potentially risky command: {command[:100]}")
             # confirm이 None이면 자동으로 진행하지 않음 (사용자 확인 필요)
             # 실제 구현에서는 사용자 인터페이스와 통합 필요
 
@@ -202,9 +197,7 @@ class ShellExecutor:
             )
 
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=exec_timeout
-                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=exec_timeout)
             except TimeoutError:
                 # 타임아웃 시 프로세스 종료
                 process.kill()
@@ -300,9 +293,7 @@ class ShellExecutor:
             logger.error(f"Interactive command execution failed: {e}", exc_info=True)
             return {"success": False, "error": str(e), "command": command[:100]}
 
-    async def run_background(
-        self, command: str, working_dir: Path | None = None
-    ) -> Dict[str, Any]:
+    async def run_background(self, command: str, working_dir: Path | None = None) -> Dict[str, Any]:
         """백그라운드 작업 실행.
 
         Args:

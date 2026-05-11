@@ -39,9 +39,7 @@ _ATTACH_CREATOR_ENV = "SPARKLEFORGE_ATTACH_SKILL_CREATOR_TO_SUBAGENTS"
 def _infer_role(task: Dict[str, Any]) -> SubAgentRole:
     """태스크 설명/메타데이터에서 서브 에이전트 역할 추론."""
     desc = (task.get("description") or "").lower()
-    objectives = " ".join(
-        str(o).lower() for o in task.get("objectives", [])
-    )
+    objectives = " ".join(str(o).lower() for o in task.get("objectives", []))
     text = f"{desc} {objectives}"
 
     if any(
@@ -162,9 +160,7 @@ class DynamicSubAgentFactory:
             tasks = []
 
         if not tasks:
-            logger.warning(
-                "DynamicSubAgentFactory: no tasks in plan, returning empty list"
-            )
+            logger.warning("DynamicSubAgentFactory: no tasks in plan, returning empty list")
             return []
 
         retriever = self._get_retriever()
@@ -209,14 +205,10 @@ class DynamicSubAgentFactory:
                 )
 
             try:
-                agent = await self.sam.add_sub_agent(
-                    network_id, config, parent_agent_id
-                )
+                agent = await self.sam.add_sub_agent(network_id, config, parent_agent_id)
                 if agent:
                     query = description or str(domain or "")
-                    skill_matches = await retriever.retrieve(
-                        query, agent_skill_tree=None, top_k=3
-                    )
+                    skill_matches = await retriever.retrieve(query, agent_skill_tree=None, top_k=3)
                     assigned_ids = [m.skill_id for m in skill_matches]
                     creator_id = os.getenv(_SKILL_CREATOR_ENV_ID, "skill-creator").strip()
                     attach = os.getenv(_ATTACH_CREATOR_ENV, "true").lower() in (
@@ -224,12 +216,8 @@ class DynamicSubAgentFactory:
                         "true",
                         "yes",
                     )
-                    if attach and creator_id and self._skill_manager.get_skill_by_id(
-                        creator_id
-                    ):
-                        assigned_ids = [creator_id] + [
-                            s for s in assigned_ids if s != creator_id
-                        ]
+                    if attach and creator_id and self._skill_manager.get_skill_by_id(creator_id):
+                        assigned_ids = [creator_id] + [s for s in assigned_ids if s != creator_id]
                         agent.knowledge_base["skill_creator_skill_id"] = creator_id
                     elif attach and creator_id:
                         logger.debug(
@@ -244,11 +232,7 @@ class DynamicSubAgentFactory:
                     skill_tree = SkillTree(agent_id=agent.agent_id)
                     for sid in assigned_ids:
                         meta = self._skill_manager.get_skill_by_id(sid)
-                        cat = (
-                            getattr(meta, "category", "general")
-                            if meta
-                            else "general"
-                        )
+                        cat = getattr(meta, "category", "general") if meta else "general"
                         skill_tree.add_skill(sid, [str(cat)])
                     agent.skill_tree = skill_tree
 

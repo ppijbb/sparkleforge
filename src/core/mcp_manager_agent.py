@@ -62,12 +62,8 @@ class MCPServerInfo(BaseModel):
     env: Dict[str, str] = Field(default_factory=dict, description="환경 변수")
 
     # 상태
-    status: MCPServerStatus = Field(
-        default=MCPServerStatus.UNKNOWN, description="연결 상태"
-    )
-    last_connected: datetime | None = Field(
-        default=None, description="마지막 연결 시간"
-    )
+    status: MCPServerStatus = Field(default=MCPServerStatus.UNKNOWN, description="연결 상태")
+    last_connected: datetime | None = Field(default=None, description="마지막 연결 시간")
     last_error: str | None = Field(default=None, description="마지막 오류")
 
     # 통계
@@ -76,9 +72,7 @@ class MCPServerInfo(BaseModel):
     total_tool_calls: int = Field(default=0, description="총 도구 호출 수")
 
     # 메타데이터
-    categories: List[ToolCategory] = Field(
-        default_factory=list, description="서버 카테고리"
-    )
+    categories: List[ToolCategory] = Field(default_factory=list, description="서버 카테고리")
     priority: int = Field(default=5, ge=1, le=10, description="우선순위 (1=최고)")
 
     class Config:
@@ -94,12 +88,8 @@ class ToolInfo(BaseModel):
     server_id: str = Field(description="소속 서버 ID")
 
     # 스키마
-    input_schema: Dict[str, Any] = Field(
-        default_factory=dict, description="입력 스키마"
-    )
-    output_schema: Dict[str, Any] = Field(
-        default_factory=dict, description="출력 스키마"
-    )
+    input_schema: Dict[str, Any] = Field(default_factory=dict, description="입력 스키마")
+    output_schema: Dict[str, Any] = Field(default_factory=dict, description="출력 스키마")
 
     # 카테고리 및 태그
     category: ToolCategory = Field(default=ToolCategory.OTHER, description="카테고리")
@@ -244,9 +234,7 @@ class MCPManagerAgent:
             server.connection_count += 1
             self.reconnect_attempts[server_id] = 0
 
-            logger.info(
-                f"Connected to {server.name}: {len(discovered_tools)} tools discovered"
-            )
+            logger.info(f"Connected to {server.name}: {len(discovered_tools)} tools discovered")
 
             if self.on_server_connected:
                 await self._safe_callback(self.on_server_connected, server)
@@ -392,13 +380,9 @@ class MCPManagerAgent:
                 continue
 
             # 점수 계산
-            score, reason = self._calculate_recommendation_score(
-                tool, keywords, task_description
-            )
+            score, reason = self._calculate_recommendation_score(tool, keywords, task_description)
 
-            recommendations.append(
-                ToolRecommendation(tool=tool, score=score, reason=reason)
-            )
+            recommendations.append(ToolRecommendation(tool=tool, score=score, reason=reason))
 
         # 점수 기준 정렬
         recommendations.sort(key=lambda r: r.score, reverse=True)
@@ -610,9 +594,7 @@ class MCPManagerAgent:
         for server in self.servers.values():
             status_counts[server.status.value] += 1
 
-        category_counts = {
-            cat.value: len(ids) for cat, ids in self.category_index.items()
-        }
+        category_counts = {cat.value: len(ids) for cat, ids in self.category_index.items()}
 
         return {
             "total_servers": len(self.servers),

@@ -52,7 +52,7 @@ class TaskValidator:
         metadata = {}
 
         # 1. 필수 필드 확인
-        required_fields = ["name"] # task_id is recovered below
+        required_fields = ["name"]  # task_id is recovered below
         for field in required_fields:
             if field not in task or not task[field]:
                 errors.append(f"Missing required field: {field}")
@@ -69,9 +69,7 @@ class TaskValidator:
             errors.append("Task name is empty or invalid")
             confidence -= 0.3
         elif len(task_name) > 500:
-            warnings.append(
-                f"Task name is very long ({len(task_name)} chars), may cause issues"
-            )
+            warnings.append(f"Task name is very long ({len(task_name)} chars), may cause issues")
             confidence -= 0.05
 
         # 3. 의존성 확인
@@ -105,11 +103,13 @@ class TaskValidator:
             tool_category = self._get_tool_category_for_task(task)
             if not available_tools:
                 if tool_category == "general":
-                     warnings.append(f"No available tools for category '{tool_category}', using LLM fallback")
-                     confidence -= 0.05
+                    warnings.append(
+                        f"No available tools for category '{tool_category}', using LLM fallback"
+                    )
+                    confidence -= 0.05
                 else:
-                     errors.append(f"No available tools for category '{tool_category}'")
-                     confidence -= 0.3
+                    errors.append(f"No available tools for category '{tool_category}'")
+                    confidence -= 0.3
             else:
                 metadata["available_tools"] = len(available_tools)
                 metadata["tool_category"] = tool_category
@@ -174,9 +174,7 @@ class TaskValidator:
         if errors:
             logger.warning(f"Task {task_id} pre-execution validation failed: {errors}")
         if warnings:
-            logger.debug(
-                f"Task {task_id} pre-execution validation warnings: {warnings}"
-            )
+            logger.debug(f"Task {task_id} pre-execution validation warnings: {warnings}")
 
         return result
 
@@ -210,9 +208,7 @@ class TaskValidator:
             )
             confidence -= 0.3
         elif execution_time > max_execution_time * 0.8:
-            warnings.append(
-                f"Execution time ({execution_time:.2f}s) is approaching limit"
-            )
+            warnings.append(f"Execution time ({execution_time:.2f}s) is approaching limit")
             confidence -= 0.1
 
         # 2. 중간 결과 검증
@@ -228,9 +224,7 @@ class TaskValidator:
             if intermediate_result.get("success", False):
                 data = intermediate_result.get("data")
                 if data is None:
-                    warnings.append(
-                        "Intermediate result has success=True but data is None"
-                    )
+                    warnings.append("Intermediate result has success=True but data is None")
                     confidence -= 0.1
                 elif isinstance(data, (list, dict)) and len(data) == 0:
                     warnings.append("Intermediate result data is empty")
@@ -338,9 +332,7 @@ class TaskValidator:
                         )
                         confidence -= 0.2
                     elif valid_items < len(data) * 0.5:
-                        warnings.append(
-                            f"Only {valid_items}/{len(data)} search results are valid"
-                        )
+                        warnings.append(f"Only {valid_items}/{len(data)} search results are valid")
                         confidence -= 0.1
 
                     metadata["total_results"] = len(data)
@@ -400,9 +392,7 @@ class TaskValidator:
         if isinstance(data, list) and len(data) > 0:
             # 리스트 항목들이 일관된 구조를 가지는지 확인
             first_item_type = type(data[0]).__name__
-            consistent_types = sum(
-                1 for item in data if type(item).__name__ == first_item_type
-            )
+            consistent_types = sum(1 for item in data if type(item).__name__ == first_item_type)
             if consistent_types < len(data) * 0.8:
                 warnings.append(
                     f"Inconsistent data types in result list ({consistent_types}/{len(data)} consistent)"
@@ -478,9 +468,7 @@ class TaskValidator:
             "confidence_penalty": confidence_penalty,
         }
 
-    def get_validation_history(
-        self, task_id: str | None = None
-    ) -> List[Dict[str, Any]]:
+    def get_validation_history(self, task_id: str | None = None) -> List[Dict[str, Any]]:
         """검증 이력 조회."""
         if task_id:
             return [v for v in self.validation_history if v.get("task_id") == task_id]

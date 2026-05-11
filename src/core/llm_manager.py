@@ -123,9 +123,7 @@ class ConnectionPool:
         )
         self.last_cleanup = time.time()
 
-    def get_connection(
-        self, model_name: str, provider: str, create_func: Callable
-    ) -> Any:
+    def get_connection(self, model_name: str, provider: str, create_func: Callable) -> Any:
         """Get or create a connection from the pool.
 
         Args:
@@ -159,9 +157,7 @@ class ConnectionPool:
 
         return connection
 
-    def return_connection(
-        self, model_name: str, provider: str, connection: Any
-    ) -> None:
+    def return_connection(self, model_name: str, provider: str, connection: Any) -> None:
         """Return a connection to the pool.
 
         Args:
@@ -172,9 +168,7 @@ class ConnectionPool:
         pool_key = f"{provider}:{model_name}"
 
         if len(self.pools[pool_key]) < self.pool_size:
-            self.pools[pool_key].append(
-                {"connection": connection, "created_at": time.time()}
-            )
+            self.pools[pool_key].append({"connection": connection, "created_at": time.time()})
         # If pool is full, let connection be garbage collected
 
     def _cleanup_old_connections(self) -> None:
@@ -290,9 +284,7 @@ class ModelPerformanceTracker:
 
             success_rate = task_stats["successes"] / task_stats["executions"]
             avg_quality = task_stats["avg_quality"]
-            speed_score = 1.0 / (
-                1.0 + task_stats["avg_time"]
-            )  # 시간이 짧을수록 높은 점수
+            speed_score = 1.0 / (1.0 + task_stats["avg_time"])  # 시간이 짧을수록 높은 점수
 
             return success_rate * 0.4 + avg_quality * 0.4 + speed_score * 0.2
         else:
@@ -344,15 +336,11 @@ class MultiModelOrchestrator:
         """Provider별 API 키 검증."""
         # API 키가 없어도 경고만 출력 (폴백 메커니즘 사용)
         if not os.getenv("OPENROUTER_API_KEY"):
-            logger.warning(
-                "OPENROUTER_API_KEY not found - OpenRouter models will be unavailable"
-            )
+            logger.warning("OPENROUTER_API_KEY not found - OpenRouter models will be unavailable")
         if not os.getenv("GROQ_API_KEY"):
             logger.warning("GROQ_API_KEY not found - Groq models will be unavailable")
         if not self.llm_config.api_key:
-            logger.warning(
-                "GOOGLE_API_KEY not found - Gemini models will be unavailable"
-            )
+            logger.warning("GOOGLE_API_KEY not found - Gemini models will be unavailable")
         if not os.getenv("OPENAI_API_KEY"):
             logger.warning("OPENAI_API_KEY not found - GPT models will be unavailable")
 
@@ -448,9 +436,7 @@ class MultiModelOrchestrator:
                     model_name = self._generate_model_name(model_data)
                     model_config = self._create_model_config(model_data, model_name)
                     self.models[model_name] = model_config
-                    logger.info(
-                        f"Loaded OpenRouter model: {model_name} ({model_data['id']})"
-                    )
+                    logger.info(f"Loaded OpenRouter model: {model_name} ({model_data['id']})")
         except Exception as e:
             logger.warning(f"Failed to load OpenRouter models: {e}")
             # 예외를 raise하지 않음 - Gemini만 사용하도록 함
@@ -466,17 +452,13 @@ class MultiModelOrchestrator:
             "Content-Type": "application/json",
         }
 
-        response = requests.get(
-            "https://openrouter.ai/api/v1/models", headers=headers, timeout=10
-        )
+        response = requests.get("https://openrouter.ai/api/v1/models", headers=headers, timeout=10)
 
         if response.status_code == 200:
             data = response.json()
             return data.get("data", [])
         else:
-            raise Exception(
-                f"OpenRouter API error: {response.status_code} - {response.text}"
-            )
+            raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
 
     def _is_free_model(self, model_data):
         """모델이 무료인지 확인."""
@@ -541,30 +523,21 @@ class MultiModelOrchestrator:
         capabilities = [TaskType.GENERATION]  # 기본
 
         # 모델명에 따른 capabilities 추가
-        if any(
-            keyword in model_id.lower() for keyword in ["reasoning", "reason", "think"]
-        ):
+        if any(keyword in model_id.lower() for keyword in ["reasoning", "reason", "think"]):
             capabilities.extend([TaskType.DEEP_REASONING, TaskType.ANALYSIS])
 
-        if any(
-            keyword in model_id.lower() for keyword in ["code", "coder", "programming"]
-        ):
+        if any(keyword in model_id.lower() for keyword in ["code", "coder", "programming"]):
             capabilities.extend([TaskType.RESEARCH, TaskType.COMPRESSION])
 
-        if any(
-            keyword in model_id.lower() for keyword in ["verify", "check", "validate"]
-        ):
+        if any(keyword in model_id.lower() for keyword in ["verify", "check", "validate"]):
             capabilities.extend([TaskType.VERIFICATION])
 
-        if any(
-            keyword in model_id.lower() for keyword in ["plan", "planning", "strategy"]
-        ):
+        if any(keyword in model_id.lower() for keyword in ["plan", "planning", "strategy"]):
             capabilities.append(TaskType.PLANNING)
 
         # 기본적으로 모든 작업 가능
         if not any(
-            keyword in model_id.lower()
-            for keyword in ["reasoning", "code", "verify", "plan"]
+            keyword in model_id.lower() for keyword in ["reasoning", "code", "verify", "plan"]
         ):
             capabilities = [
                 TaskType.PLANNING,
@@ -579,23 +552,16 @@ class MultiModelOrchestrator:
 
     def _estimate_speed_rating(self, model_id):
         """모델 ID를 기반으로 속도 등급 추정."""
-        if any(
-            keyword in model_id.lower()
-            for keyword in ["flash", "fast", "lite", "small"]
-        ):
+        if any(keyword in model_id.lower() for keyword in ["flash", "fast", "lite", "small"]):
             return 8.0
-        elif any(
-            keyword in model_id.lower() for keyword in ["large", "big", "70b", "72b"]
-        ):
+        elif any(keyword in model_id.lower() for keyword in ["large", "big", "70b", "72b"]):
             return 6.0
         else:
             return 7.0
 
     def _estimate_quality_rating(self, model_id):
         """모델 ID를 기반으로 품질 등급 추정."""
-        if any(
-            keyword in model_id.lower() for keyword in ["70b", "72b", "large", "pro"]
-        ):
+        if any(keyword in model_id.lower() for keyword in ["70b", "72b", "large", "pro"]):
             return 9.0
         elif any(keyword in model_id.lower() for keyword in ["27b", "medium"]):
             return 7.5
@@ -743,9 +709,7 @@ class MultiModelOrchestrator:
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
             )
-            logger.info(
-                f"Loaded Groq model: {model_data['name']} ({model_data['model_id']})"
-            )
+            logger.info(f"Loaded Groq model: {model_data['name']} ({model_data['model_id']})")
 
     def _load_openai_models(self):
         """OpenAI/GPT 모델 로딩."""
@@ -798,18 +762,14 @@ class MultiModelOrchestrator:
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
             )
-            logger.info(
-                f"Loaded OpenAI/GPT model: {model_data['name']} ({model_data['model_id']})"
-            )
+            logger.info(f"Loaded OpenAI/GPT model: {model_data['name']} ({model_data['model_id']})")
 
     def refresh_openrouter_models(self):
         """OpenRouter 모델 목록을 새로고침."""
         logger.info("Refreshing OpenRouter models...")
         # 기존 OpenRouter 모델들 제거
         openrouter_models = [
-            name
-            for name, config in self.models.items()
-            if config.provider == "openrouter"
+            name for name, config in self.models.items() if config.provider == "openrouter"
         ]
         for model_name in openrouter_models:
             del self.models[model_name]
@@ -828,33 +788,25 @@ class MultiModelOrchestrator:
             for model_name, model_config in self.models.items():
                 if model_config.provider == "google":
                     # Google Generative AI 클라이언트
-                    self.model_clients[model_name] = genai.GenerativeModel(
-                        model_config.model_id
-                    )
+                    self.model_clients[model_name] = genai.GenerativeModel(model_config.model_id)
 
                     # LangChain 클라이언트 (선택적)
                     # Note: ChatGoogleGenerativeAI does not support safety_settings parameter
                     # Safety settings are handled at the genai.GenerativeModel level
-                    self.model_clients[f"{model_name}_langchain"] = (
-                        ChatGoogleGenerativeAI(
-                            model=model_config.model_id,
-                            temperature=model_config.temperature,
-                            max_tokens=model_config.max_tokens,
-                            google_api_key=self.llm_config.api_key,
-                        )
+                    self.model_clients[f"{model_name}_langchain"] = ChatGoogleGenerativeAI(
+                        model=model_config.model_id,
+                        temperature=model_config.temperature,
+                        max_tokens=model_config.max_tokens,
+                        google_api_key=self.llm_config.api_key,
                     )
 
                 elif model_config.provider == "openrouter":
                     # OpenRouter 클라이언트는 HTTP 요청으로 직접 처리
                     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
                     if not openrouter_api_key:
-                        raise ValueError(
-                            f"OpenRouter API key not found for {model_name}"
-                        )
+                        raise ValueError(f"OpenRouter API key not found for {model_name}")
                     # OpenRouter는 HTTP 요청으로 직접 처리하므로 클라이언트 저장하지 않음
-                    logger.info(
-                        f"OpenRouter model {model_name} configured for HTTP requests"
-                    )
+                    logger.info(f"OpenRouter model {model_name} configured for HTTP requests")
 
                 elif model_config.provider == "groq":
                     # Groq 클라이언트 초기화
@@ -867,13 +819,9 @@ class MultiModelOrchestrator:
                         self.model_clients[model_name] = Groq(api_key=groq_api_key)
                         logger.info(f"Groq model {model_name} configured")
                     except ImportError:
-                        logger.warning(
-                            "groq library not installed. Install with: pip install groq"
-                        )
+                        logger.warning("groq library not installed. Install with: pip install groq")
                     except Exception as e:
-                        logger.warning(
-                            f"Failed to initialize Groq client for {model_name}: {e}"
-                        )
+                        logger.warning(f"Failed to initialize Groq client for {model_name}: {e}")
 
                 elif model_config.provider == "openai":
                     # OpenAI 클라이언트 초기화
@@ -882,9 +830,7 @@ class MultiModelOrchestrator:
 
                         openai_api_key = os.getenv("OPENAI_API_KEY")
                         if not openai_api_key:
-                            raise ValueError(
-                                f"OPENAI_API_KEY not found for {model_name}"
-                            )
+                            raise ValueError(f"OPENAI_API_KEY not found for {model_name}")
                         self.model_clients[model_name] = OpenAI(api_key=openai_api_key)
                         logger.info(f"OpenAI/GPT model {model_name} configured")
                     except ImportError:
@@ -892,9 +838,7 @@ class MultiModelOrchestrator:
                             "openai library not installed. Install with: pip install openai"
                         )
                     except Exception as e:
-                        logger.warning(
-                            f"Failed to initialize OpenAI client for {model_name}: {e}"
-                        )
+                        logger.warning(f"Failed to initialize OpenAI client for {model_name}: {e}")
 
             logger.info("Model clients initialized successfully")
 
@@ -912,9 +856,7 @@ class MultiModelOrchestrator:
         if time.time() - rate_limit_time > 300:
             # 5분 경과 시 자동 해제
             del self.provider_rate_limited[provider]
-            logger.info(
-                f"Provider {provider} rate limit automatically cleared after 5 minutes"
-            )
+            logger.info(f"Provider {provider} rate limit automatically cleared after 5 minutes")
             return False
 
         return True
@@ -922,9 +864,7 @@ class MultiModelOrchestrator:
     def _mark_provider_rate_limited(self, provider: str):
         """Provider를 rate limit 상태로 표시."""
         self.provider_rate_limited[provider] = time.time()
-        logger.warning(
-            f"Provider {provider} marked as rate-limited (will retry after 5 minutes)"
-        )
+        logger.warning(f"Provider {provider} marked as rate-limited (will retry after 5 minutes)")
 
     def _get_available_providers(self) -> List[str]:
         """Rate limit되지 않은 사용 가능한 Provider 목록 반환."""
@@ -953,9 +893,7 @@ class MultiModelOrchestrator:
 
         # 작업 유형에 적합한 모델 필터링
         suitable_models = [
-            name
-            for name, config in self.models.items()
-            if task_type in config.capabilities
+            name for name, config in self.models.items() if task_type in config.capabilities
         ]
 
         if not suitable_models:
@@ -967,20 +905,14 @@ class MultiModelOrchestrator:
 
         if not available_providers:
             # 모든 Provider가 rate limit에 걸린 경우, 가장 오래된 것부터 재시도
-            logger.warning(
-                "All providers are rate-limited, using oldest rate-limited provider"
-            )
+            logger.warning("All providers are rate-limited, using oldest rate-limited provider")
             if self.provider_rate_limited:
-                oldest_provider = min(
-                    self.provider_rate_limited.items(), key=lambda x: x[1]
-                )[0]
+                oldest_provider = min(self.provider_rate_limited.items(), key=lambda x: x[1])[0]
                 available_providers = [oldest_provider]
             else:
                 # 폴백: Gemini 모델 사용
                 gemini_models = [
-                    name
-                    for name in suitable_models
-                    if self.models[name].provider == "google"
+                    name for name in suitable_models if self.models[name].provider == "google"
                 ]
                 if gemini_models:
                     return gemini_models[0]
@@ -988,8 +920,7 @@ class MultiModelOrchestrator:
 
         # Provider 로테이션: 사용 횟수가 가장 적은 Provider 선택
         provider_usage = {
-            provider: self.provider_usage_count.get(provider, 0)
-            for provider in available_providers
+            provider: self.provider_usage_count.get(provider, 0) for provider in available_providers
         }
 
         # 사용 횟수가 가장 적은 Provider 선택 (동일하면 순서대로)
@@ -999,28 +930,20 @@ class MultiModelOrchestrator:
         )
 
         # 사용 횟수 증가
-        self.provider_usage_count[selected_provider] = (
-            provider_usage[selected_provider] + 1
-        )
+        self.provider_usage_count[selected_provider] = provider_usage[selected_provider] + 1
 
         # Cerebras는 OpenRouter를 통해 접근
-        check_provider = (
-            "openrouter" if selected_provider == "cerebras" else selected_provider
-        )
+        check_provider = "openrouter" if selected_provider == "cerebras" else selected_provider
 
         # 해당 Provider의 모델 선택
         provider_models = [
-            name
-            for name in suitable_models
-            if self.models[name].provider == check_provider
+            name for name in suitable_models if self.models[name].provider == check_provider
         ]
 
         # Cerebras인 경우 cerebras 모델 필터링
         if selected_provider == "cerebras":
             provider_models = [
-                name
-                for name in provider_models
-                if "cerebras" in self.models[name].model_id.lower()
+                name for name in provider_models if "cerebras" in self.models[name].model_id.lower()
             ]
 
         if provider_models:
@@ -1036,9 +959,7 @@ class MultiModelOrchestrator:
             return self.select_model(task_type, complexity, budget)
 
         # 모든 Provider 실패 시 폴백: Gemini 모델 사용
-        gemini_models = [
-            name for name in suitable_models if self.models[name].provider == "google"
-        ]
+        gemini_models = [name for name in suitable_models if self.models[name].provider == "google"]
         if gemini_models:
             return gemini_models[0]
 
@@ -1150,11 +1071,7 @@ class MultiModelOrchestrator:
                 except Exception as error:
                     error_str = str(error).lower()
                     # Rate limit 에러인 경우 Provider를 rate-limited로 표시
-                    if (
-                        "rate limit" in error_str
-                        or "429" in error_str
-                        or "quota" in error_str
-                    ):
+                    if "rate limit" in error_str or "429" in error_str or "quota" in error_str:
                         self._mark_provider_rate_limited("groq")
                     logger.warning(
                         f"Groq model {model_name_clean} failed: {error}, trying fallback..."
@@ -1246,9 +1163,7 @@ class MultiModelOrchestrator:
 
             raise
 
-    def _build_gemini_prompt_ordered(
-        self, system_message: str | None, prompt: str
-    ) -> str:
+    def _build_gemini_prompt_ordered(self, system_message: str | None, prompt: str) -> str:
         """Build prompt with context ordering for caching: static (system) first, then dynamic."""
         if not system_message:
             return prompt
@@ -1269,7 +1184,9 @@ class MultiModelOrchestrator:
         api_key = self.llm_config.api_key
         model_id = getattr(model_config, "model_id", None) or model_name
         if not model_id.startswith("models/"):
-            model_id = f"models/{model_id}" if not model_id.startswith("gemini") else f"models/{model_id}"
+            model_id = (
+                f"models/{model_id}" if not model_id.startswith("gemini") else f"models/{model_id}"
+            )
 
         client = genai_v2.Client(api_key=api_key)
         config = types.CreateCachedContentConfig(
@@ -1314,7 +1231,11 @@ class MultiModelOrchestrator:
         full_prompt = self._build_gemini_prompt_ordered(system_message, prompt)
 
         # Optional: explicit prompt caching when google-genai and env are set
-        if os.getenv("ENABLE_GEMINI_PROMPT_CACHING", "").lower() in ("1", "true", "yes") and system_message and len(system_message) >= 1024:
+        if (
+            os.getenv("ENABLE_GEMINI_PROMPT_CACHING", "").lower() in ("1", "true", "yes")
+            and system_message
+            and len(system_message) >= 1024
+        ):
             try:
                 return await self._execute_gemini_with_cached_content(
                     model_name, model_config, full_prompt, system_message, prompt
@@ -1365,9 +1286,7 @@ class MultiModelOrchestrator:
         # 먼저 candidates와 parts 확인
         if hasattr(response, "candidates") and response.candidates:
             candidate = response.candidates[0]
-            finish_reason = (
-                candidate.finish_reason if hasattr(candidate, "finish_reason") else None
-            )
+            finish_reason = candidate.finish_reason if hasattr(candidate, "finish_reason") else None
 
             # parts 확인
             if hasattr(candidate, "content") and candidate.content:
@@ -1386,9 +1305,7 @@ class MultiModelOrchestrator:
                         finish_reason_int = finish_reason.value
                     elif hasattr(finish_reason, "name"):
                         # SAFETY = 2
-                        if "SAFETY" in finish_reason.name or "SAFETY" in str(
-                            finish_reason
-                        ):
+                        if "SAFETY" in finish_reason.name or "SAFETY" in str(finish_reason):
                             finish_reason_int = 2
                     # 숫자인 경우
                     elif isinstance(finish_reason, int):
@@ -1399,9 +1316,7 @@ class MultiModelOrchestrator:
                             finish_reason_int = 2
                 except Exception:
                     # 변환 실패 시 그대로 사용
-                    finish_reason_int = (
-                        finish_reason if isinstance(finish_reason, int) else None
-                    )
+                    finish_reason_int = finish_reason if isinstance(finish_reason, int) else None
 
         # finish_reason이 2 (SAFETY)이거나 유효한 Part가 없는 경우
         if (
@@ -1437,9 +1352,7 @@ class MultiModelOrchestrator:
             content = response.text
         except ValueError as e:
             # 예외 발생 시 직접 추출 시도
-            logger.warning(
-                f"Gemini API response.text failed: {e}. Trying direct extraction."
-            )
+            logger.warning(f"Gemini API response.text failed: {e}. Trying direct extraction.")
             content = ""
             if hasattr(response, "candidates") and response.candidates:
                 for candidate in response.candidates:
@@ -1471,19 +1384,17 @@ class MultiModelOrchestrator:
         model_config = self.models[model_name]
 
         # OpenRouter에 실제 존재하는 모델 ID 확인 및 변환
-        model_id = self._get_valid_openrouter_model_id(
-            model_config.model_id, model_name
-        )
+        model_id = self._get_valid_openrouter_model_id(model_config.model_id, model_name)
 
         # 메시지 구성
         history = kwargs.pop("history_messages", [])
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
-        
+
         if history:
             messages.extend(history)
-            
+
         # If the last message in history is already the user prompt, don't duplicate
         if not history or history[-1].get("content") != prompt:
             messages.append({"role": "user", "content": prompt})
@@ -1542,15 +1453,13 @@ class MultiModelOrchestrator:
                     import re
 
                     status_code = response.status_code
-                    title_match = re.search(
-                        r"<title>([^<]+)</title>", error_text, re.IGNORECASE
-                    )
+                    title_match = re.search(r"<title>([^<]+)</title>", error_text, re.IGNORECASE)
                     if title_match:
-                        error_msg = (
-                            f"HTTP {status_code}: {title_match.group(1).strip()}"
-                        )
+                        error_msg = f"HTTP {status_code}: {title_match.group(1).strip()}"
                     elif status_code == 502:
-                        error_msg = f"HTTP {status_code}: Bad Gateway - Server temporarily unavailable"
+                        error_msg = (
+                            f"HTTP {status_code}: Bad Gateway - Server temporarily unavailable"
+                        )
                     elif status_code == 500:
                         error_msg = f"HTTP {status_code}: Internal Server Error"
                     else:
@@ -1566,15 +1475,10 @@ class MultiModelOrchestrator:
                         "OpenRouter rate-limited (429), will use next provider in rotation"
                     )
                     # Rate limit is not retried; immediately switch to the next provider.
-                    raise RuntimeError(
-                        f"OpenRouter API rate-limited (429): {error_msg}"
-                    )
+                    raise RuntimeError(f"OpenRouter API rate-limited (429): {error_msg}")
 
                 # 재시도 가능한 에러인지 확인 (429는 이미 처리했으므로 제외)
-                if (
-                    response.status_code in retryable_status_codes
-                    and attempt < max_retries - 1
-                ):
+                if response.status_code in retryable_status_codes and attempt < max_retries - 1:
                     wait_time = 2**attempt  # 지수 백오프: 1초, 2초, 4초
                     logger.warning(
                         f"OpenRouter API error (attempt {attempt + 1}/{max_retries}): {error_msg}, retrying in {wait_time:.1f}s..."
@@ -1585,8 +1489,7 @@ class MultiModelOrchestrator:
                     # 재시도 불가능한 에러 (401, 403, 404 등) 또는 최대 재시도 횟수 초과
                     # 400 에러는 모델 ID가 잘못된 경우일 수 있음
                     if response.status_code == 400 and (
-                        "not a valid model ID" in error_text.lower()
-                        or "400" in error_text
+                        "not a valid model ID" in error_text.lower() or "400" in error_text
                     ):
                         # OpenRouter에 존재하는 모델로 자동 대체 시도
                         logger.warning(
@@ -1614,9 +1517,7 @@ class MultiModelOrchestrator:
 
                                 if fallback_response.status_code == 200:
                                     response = fallback_response
-                                    model_id = (
-                                        fallback_model  # 실제 사용된 모델 ID 업데이트
-                                    )
+                                    model_id = fallback_model  # 실제 사용된 모델 ID 업데이트
                                     logger.info(
                                         f"✅ Successfully used fallback model: {fallback_model}"
                                     )
@@ -1644,7 +1545,9 @@ class MultiModelOrchestrator:
                     await asyncio.sleep(wait_time)
                     continue
                 else:
-                    logger.error("OpenRouter API request failed after %d attempts: %s", max_retries, e)
+                    logger.error(
+                        "OpenRouter API request failed after %d attempts: %s", max_retries, e
+                    )
                     raise
 
         # 마지막 시도 결과 확인
@@ -1783,9 +1686,7 @@ class MultiModelOrchestrator:
         if task_type == TaskType.RESEARCH:
             return len(content) >= 100
         if task_type == TaskType.GENERATION:
-            return len(content) >= 80 and (
-                "\n\n" in content or ". " in content or "。" in content
-            )
+            return len(content) >= 80 and ("\n\n" in content or ". " in content or "。" in content)
         if task_type == TaskType.VERIFICATION:
             verdict_like = (
                 "verified" in text
@@ -1815,13 +1716,9 @@ class MultiModelOrchestrator:
             cascade_config = None
 
         base_threshold = cascade_config.confidence_threshold if cascade_config else 0.75
-        enable_adaptive = (
-            cascade_config.enable_adaptive_threshold if cascade_config else True
-        )
+        enable_adaptive = cascade_config.enable_adaptive_threshold if cascade_config else True
         domain_validation = (
-            getattr(cascade_config, "domain_validation_enabled", True)
-            if cascade_config
-            else True
+            getattr(cascade_config, "domain_validation_enabled", True) if cascade_config else True
         )
 
         # Complexity 기반 threshold 조정
@@ -1850,9 +1747,7 @@ class MultiModelOrchestrator:
         if domain_validation:
             content = draft_result.get("content") or ""
             if not self._domain_validate_content(task_type, content):
-                logger.debug(
-                    f"Draft rejected by domain validation (task_type={task_type})"
-                )
+                logger.debug(f"Draft rejected by domain validation (task_type={task_type})")
                 return False
 
         return True
@@ -1876,9 +1771,7 @@ class MultiModelOrchestrator:
                 model_name, prompt, system_message, **kwargs
             )
         elif model_provider == "groq":
-            return await self._execute_groq_model(
-                model_name, prompt, system_message, **kwargs
-            )
+            return await self._execute_groq_model(model_name, prompt, system_message, **kwargs)
         elif model_provider == "google":
             if model_name.endswith("_langchain"):
                 return await self._execute_langchain_model(
@@ -1889,9 +1782,7 @@ class MultiModelOrchestrator:
                     model_name, prompt, system_message, **kwargs
                 )
         elif model_provider == "openai":
-            return await self._execute_openai_model(
-                model_name, prompt, system_message, **kwargs
-            )
+            return await self._execute_openai_model(model_name, prompt, system_message, **kwargs)
         else:
             raise ValueError(f"Unknown provider: {model_provider}")
 
@@ -1917,9 +1808,7 @@ class MultiModelOrchestrator:
             (result_dict, actual_model_used) 튜플
         """
         # 1. Drafter/Verifier 분류
-        drafter_models, verifier_models = self._classify_models_for_cascade(
-            provider_models
-        )
+        drafter_models, verifier_models = self._classify_models_for_cascade(provider_models)
 
         drafter = drafter_models[0]
         verifier = verifier_models[0] if verifier_models else provider_models[-1]
@@ -1931,17 +1820,12 @@ class MultiModelOrchestrator:
         )
 
         # 3. Quality validation (confidence + domain heuristics)
-        should_accept = self._validate_draft_quality(
-            draft_result, prompt, task_type, complexity
-        )
+        should_accept = self._validate_draft_quality(draft_result, prompt, task_type, complexity)
 
         # 3b. Optional semantic agreement: second drafter run and similarity check
         try:
             cascade_cfg = get_cascade_config()
-            if (
-                should_accept
-                and getattr(cascade_cfg, "semantic_agreement_enabled", False)
-            ):
+            if should_accept and getattr(cascade_cfg, "semantic_agreement_enabled", False):
                 draft_2 = await self._execute_single_model_by_provider(
                     drafter, prompt, system_message, task_type, **kwargs
                 )
@@ -1959,9 +1843,7 @@ class MultiModelOrchestrator:
                         )
                         if jaccard < th:
                             should_accept = False
-                            logger.info(
-                                f"Semantic agreement failed (jaccard={jaccard:.2f} < {th})"
-                            )
+                            logger.info(f"Semantic agreement failed (jaccard={jaccard:.2f} < {th})")
         except Exception as e:
             logger.debug(f"Semantic agreement check skipped: {e}")
 
@@ -2045,9 +1927,7 @@ class MultiModelOrchestrator:
 
             # 첫 번째 사용 가능한 모델 시도
             fallback_model = available_models[0]
-            logger.info(
-                f"Trying fallback model: {fallback_model} (provider: {provider})"
-            )
+            logger.info(f"Trying fallback model: {fallback_model} (provider: {provider})")
 
             try:
                 if provider == "openrouter" or provider == "cerebras":
@@ -2127,13 +2007,9 @@ class MultiModelOrchestrator:
 
                     status_match = re.search(r"(\d{3})", error_str)
                     status_code = status_match.group(1) if status_match else "Unknown"
-                    title_match = re.search(
-                        r"<title>([^<]+)</title>", error_str, re.IGNORECASE
-                    )
+                    title_match = re.search(r"<title>([^<]+)</title>", error_str, re.IGNORECASE)
                     if title_match:
-                        error_msg = (
-                            f"HTTP {status_code}: {title_match.group(1).strip()}"
-                        )
+                        error_msg = f"HTTP {status_code}: {title_match.group(1).strip()}"
                     else:
                         error_msg = f"HTTP {status_code}: Server Error"
                 else:
@@ -2170,13 +2046,13 @@ class MultiModelOrchestrator:
         model_id = self._get_valid_groq_model_id(model_config.model_id)
 
         # 메시지 구성
-        history = kwargs.pop('history_messages', [])
+        history = kwargs.pop("history_messages", [])
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
         if history:
             messages.extend(history)
-        if not history or (history and history[-1].get('content') != prompt):
+        if not history or (history and history[-1].get("content") != prompt):
             messages.append({"role": "user", "content": prompt})
 
         try:
@@ -2204,9 +2080,11 @@ class MultiModelOrchestrator:
                     "provider": "groq",
                     "model_id": model_id,  # 실제 사용된 모델 ID (변환된 것일 수 있음)
                     "original_model_id": model_config.model_id,  # 원래 요청한 모델 ID
-                    "tokens_used": response.usage.total_tokens
-                    if hasattr(response, "usage")
-                    else len(str(content).split()),
+                    "tokens_used": (
+                        response.usage.total_tokens
+                        if hasattr(response, "usage")
+                        else len(str(content).split())
+                    ),
                     "tool_calls": tool_calls,
                 },
             }
@@ -2231,29 +2109,23 @@ class MultiModelOrchestrator:
                 ]
 
                 for replacement_model in replacement_models:
-                    logger.info(
-                        f"Attempting to use replacement model: {replacement_model}"
-                    )
+                    logger.info(f"Attempting to use replacement model: {replacement_model}")
                     try:
                         # 대체 모델로 재시도
-                        replacement_response = (
-                            await asyncio.get_event_loop().run_in_executor(
-                                None,
-                                lambda rm=replacement_model: (
-                                    client.chat.completions.create(
-                                        model=rm,
-                                        messages=messages,
-                                        temperature=model_config.temperature,
-                                        max_tokens=model_config.max_tokens,
-                                        **kwargs,
-                                    )
-                                ),
-                            )
+                        replacement_response = await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda rm=replacement_model: (
+                                client.chat.completions.create(
+                                    model=rm,
+                                    messages=messages,
+                                    temperature=model_config.temperature,
+                                    max_tokens=model_config.max_tokens,
+                                    **kwargs,
+                                )
+                            ),
                         )
                         content = replacement_response.choices[0].message.content
-                        logger.info(
-                            f"✅ Successfully used replacement model: {replacement_model}"
-                        )
+                        logger.info(f"✅ Successfully used replacement model: {replacement_model}")
 
                         # 모델 설정 업데이트 (다음 요청을 위해)
                         self.models[model_name].model_id = replacement_model
@@ -2267,9 +2139,11 @@ class MultiModelOrchestrator:
                                 "provider": "groq",
                                 "model_id": replacement_model,  # 실제 사용된 모델
                                 "original_model_id": model_config.model_id,  # 원래 요청한 모델
-                                "tokens_used": replacement_response.usage.total_tokens
-                                if hasattr(replacement_response, "usage")
-                                else len(content.split()),
+                                "tokens_used": (
+                                    replacement_response.usage.total_tokens
+                                    if hasattr(replacement_response, "usage")
+                                    else len(content.split())
+                                ),
                             },
                         }
                     except Exception as replacement_error:
@@ -2300,13 +2174,13 @@ class MultiModelOrchestrator:
         model_config = self.models[model_name]
 
         # 메시지 구성
-        history = kwargs.pop('history_messages', [])
+        history = kwargs.pop("history_messages", [])
         messages = []
         if system_message:
             messages.append({"role": "system", "content": system_message})
         if history:
             messages.extend(history)
-        if not history or (history and history[-1].get('content') != prompt):
+        if not history or (history and history[-1].get("content") != prompt):
             messages.append({"role": "user", "content": prompt})
 
         try:
@@ -2333,9 +2207,11 @@ class MultiModelOrchestrator:
                     "model": model_name,
                     "provider": "openai",
                     "model_id": model_config.model_id,
-                    "tokens_used": response.usage.total_tokens
-                    if hasattr(response, "usage")
-                    else len(str(content).split()),
+                    "tokens_used": (
+                        response.usage.total_tokens
+                        if hasattr(response, "usage")
+                        else len(str(content).split())
+                    ),
                     "tool_calls": tool_calls,
                 },
             }
@@ -2391,9 +2267,7 @@ class MultiModelOrchestrator:
                         # 문자열인 경우 숫자로 변환 시도
                         # 먼저 숫자가 아닌 문자 제거 (공백, 문자 등)
                         cleaned_str = "".join(
-                            c
-                            for c in w
-                            if c.isdigit() or c == "." or c == "-" or c == "+"
+                            c for c in w if c.isdigit() or c == "." or c == "-" or c == "+"
                         )
 
                         # '.' 만 있거나 숫자가 없는 경우 처리
@@ -2450,8 +2324,7 @@ class MultiModelOrchestrator:
             # 부족한 weights는 동일하게 분배
             remaining = 1.0 - sum(weights[: len(weights)])
             weights.extend(
-                [remaining / (len(results) - len(weights))]
-                * (len(results) - len(weights))
+                [remaining / (len(results) - len(weights))] * (len(results) - len(weights))
             )
 
         # 가중 평균으로 결과 통합
@@ -2476,14 +2349,10 @@ class MultiModelOrchestrator:
             # 안전한 weight 계산
             try:
                 weight = (
-                    float(weights[i]) / total_weight
-                    if total_weight > 0
-                    else 1.0 / len(results)
+                    float(weights[i]) / total_weight if total_weight > 0 else 1.0 / len(results)
                 )
             except (TypeError, ValueError, IndexError) as e:
-                logger.warning(
-                    f"Error calculating weight for result {i}: {e}, using equal weight"
-                )
+                logger.warning(f"Error calculating weight for result {i}: {e}, using equal weight")
                 weight = 1.0 / len(results)
 
             weighted_content += f"[{result.model_used}] {result.content}\n\n"
@@ -2514,9 +2383,7 @@ class MultiModelOrchestrator:
             stats[model_name] = {
                 "overall_score": self.performance_tracker.get_model_score(model_name),
                 "task_scores": {
-                    task_type.value: self.performance_tracker.get_model_score(
-                        model_name, task_type
-                    )
+                    task_type.value: self.performance_tracker.get_model_score(model_name, task_type)
                     for task_type in TaskType
                 },
             }
@@ -2564,9 +2431,7 @@ def _build_active_skills_system_block(
 
     sm = get_skill_manager()
     parts: List[str] = []
-    use_progressive = (
-        os.getenv("USE_PROGRESSIVE_SKILL_DISCLOSURE", "false").lower() == "true"
-    )
+    use_progressive = os.getenv("USE_PROGRESSIVE_SKILL_DISCLOSURE", "false").lower() == "true"
 
     # 1) CLI --skills로 지정된 스킬 (우선)
     forced_ids = list(sm.get_forced_skills())
@@ -2586,14 +2451,10 @@ def _build_active_skills_system_block(
             parts.append(f"[{skill.metadata.skill_id}]\n{skill.instructions}")
 
     # 3) 현재 prompt/query 기준 선택 스킬 (중복 제외)
-    seen_ids = set(forced_ids) | {
-        s.metadata.skill_id for s in sm.get_global_rules_skills()
-    }
+    seen_ids = set(forced_ids) | {s.metadata.skill_id for s in sm.get_global_rules_skills()}
     query_for_selector = kwargs.get("user_query") or prompt[:500] if prompt else ""
     if query_for_selector:
-        for match in get_skill_selector().select_skills_for_task(
-            query_for_selector, max_skills=3
-        ):
+        for match in get_skill_selector().select_skills_for_task(query_for_selector, max_skills=3):
             if match.skill_id in seen_ids:
                 continue
             seen_ids.add(match.skill_id)
@@ -2632,15 +2493,15 @@ async def execute_llm_task(
 ) -> ModelResult:
     """LLM 작업 실행 (API 모델 + CLI 에이전트 지원)."""
     try:
-        system_message = _build_active_skills_system_block(
-            system_message, prompt, kwargs
-        )
+        system_message = _build_active_skills_system_block(system_message, prompt, kwargs)
         if not agent_name:
             from src.core.agent_security import get_current_agent_name
+
             agent_name = get_current_agent_name()
 
         if agent_name:
             from src.core.agent_security import get_agent_security_manager
+
             _sec = get_agent_security_manager()
             if not _sec.check_rate_limit(agent_name):
                 return ModelResult(
@@ -2654,6 +2515,7 @@ async def execute_llm_task(
 
         # Provider가 opencode면 무조건 OpenCode(Kimi K 2.5)로 라우팅
         from src.core.researcher_config import get_llm_config
+
         if get_llm_config().provider == "opencode":
             result = await _execute_cli_agent_task(
                 prompt, task_type, "open_code", system_message, **kwargs
@@ -2679,6 +2541,7 @@ async def execute_llm_task(
                 )
             if agent_name:
                 from src.core.agent_security import get_agent_security_manager
+
                 _sec_out = get_agent_security_manager()
                 out_check = _sec_out.enforce_output(agent_name, result.content or "")
                 if out_check.filtered_text != (result.content or ""):
@@ -2750,6 +2613,7 @@ async def execute_llm_task(
 
         if agent_name:
             from src.core.agent_security import get_agent_security_manager
+
             _sec_out = get_agent_security_manager()
             out_check = _sec_out.enforce_output(agent_name, result.content or "")
             if out_check.filtered_text != (result.content or ""):
@@ -2824,9 +2688,7 @@ async def _execute_cli_agent_task(
             agent_kwargs.setdefault("mode", "chat")
 
         # CLI 에이전트 실행
-        result = await cli_manager.execute_with_agent(
-            agent_name, full_query, **agent_kwargs
-        )
+        result = await cli_manager.execute_with_agent(agent_name, full_query, **agent_kwargs)
 
         # ModelResult 형식으로 변환 (content, model_used, execution_time, cost)
         meta = result.get("metadata", {})

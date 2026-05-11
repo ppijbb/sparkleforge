@@ -46,9 +46,7 @@ class A2UIHandler:
                     try:
                         a2ui_json = json.loads(match.group())
                         if self._validate_a2ui(a2ui_json):
-                            logger.info(
-                                f"Detected A2UI message: {list(a2ui_json.keys())[0]}"
-                            )
+                            logger.info(f"Detected A2UI message: {list(a2ui_json.keys())[0]}")
                             return a2ui_json
                     except json.JSONDecodeError as e:
                         logger.debug(f"Failed to parse A2UI JSON: {e}")

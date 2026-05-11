@@ -499,9 +499,7 @@ async def get_file_contents(input: GetFileInput) -> str:
         if data.get("type") == "file":
             import base64
 
-            content = base64.b64decode(data["content"]).decode(
-                "utf-8", errors="replace"
-            )
+            content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
             return json.dumps(
                 {
                     "success": True,
@@ -595,9 +593,7 @@ async def search_code(input: SearchCodeInput) -> str:
 
 @mcp.tool()
 async def get_user_info(
-    username: str = Field(
-        default="", description="Username (empty for authenticated user)"
-    ),
+    username: str = Field(default="", description="Username (empty for authenticated user)"),
 ) -> str:
     """Get GitHub user information.
 
@@ -636,9 +632,7 @@ async def get_user_info(
 
 @mcp.tool()
 async def list_user_repos(
-    username: str = Field(
-        default="", description="Username (empty for authenticated user)"
-    ),
+    username: str = Field(default="", description="Username (empty for authenticated user)"),
     sort: str = Field(
         default="updated", description="Sort by: updated, created, pushed, full_name"
     ),

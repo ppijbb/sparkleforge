@@ -138,12 +138,8 @@ class ClineCLIAgent(BaseCLIAgent):
                 changes = result.output.strip()
 
                 # 신뢰도 추출
-                confidence_match = re.search(
-                    r"confidence:?\s*([0-9.]+)", changes, re.IGNORECASE
-                )
-                confidence = (
-                    float(confidence_match.group(1)) if confidence_match else 0.8
-                )
+                confidence_match = re.search(r"confidence:?\s*([0-9.]+)", changes, re.IGNORECASE)
+                confidence = float(confidence_match.group(1)) if confidence_match else 0.8
 
                 # 변경사항 파일 추출
                 changes_applied = []

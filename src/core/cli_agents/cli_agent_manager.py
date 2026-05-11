@@ -99,14 +99,12 @@ class CLIAgentManager:
             if name == "open_code" and not config.get("model_path"):
                 try:
                     from src.core.researcher_config import get_llm_config
-                    config["model_path"] = (
-                        get_llm_config().open_code_model_path
-                        or os.getenv("OPEN_CODE_MODEL_PATH", "kimi-k2.5")
-                    )
-                except Exception:
-                    config["model_path"] = os.getenv(
+
+                    config["model_path"] = get_llm_config().open_code_model_path or os.getenv(
                         "OPEN_CODE_MODEL_PATH", "kimi-k2.5"
                     )
+                except Exception:
+                    config["model_path"] = os.getenv("OPEN_CODE_MODEL_PATH", "kimi-k2.5")
 
             # 인스턴스 생성
             agent = agent_class(**config)
@@ -130,9 +128,7 @@ class CLIAgentManager:
         }
         return agent_classes.get(name)
 
-    async def execute_with_agent(
-        self, agent_name: str, query: str, **kwargs
-    ) -> Dict[str, Any]:
+    async def execute_with_agent(self, agent_name: str, query: str, **kwargs) -> Dict[str, Any]:
         """특정 CLI 에이전트로 쿼리 실행
 
         Args:
@@ -169,9 +165,7 @@ class CLIAgentManager:
                 "agent_name": agent_name,
             }
 
-    async def execute_parallel(
-        self, queries: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    async def execute_parallel(self, queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """여러 CLI 에이전트에 대해 병렬 실행
 
         Args:

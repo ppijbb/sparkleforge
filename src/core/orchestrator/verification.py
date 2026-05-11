@@ -1,12 +1,12 @@
 import asyncio
-import logging
 import json
+import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from src.core.orchestrator.state import ResearchState
-from src.core.orchestrator.base_node import BaseNode
 from src.core.llm_manager import TaskType, execute_llm_task
+from src.core.orchestrator.base_node import BaseNode
+from src.core.orchestrator.state import ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,14 @@ Return ONLY a JSON object:
                     state["current_step"] = (
                         "overseer_initial_review" if state["plan_approved"] else "planning_agent"
                     )
-                    self._log_node_output("verify_plan", state, {
-                        "approved": state["plan_approved"],
-                        "iteration": plan_iteration,
-                    })
+                    self._log_node_output(
+                        "verify_plan",
+                        state,
+                        {
+                            "approved": state["plan_approved"],
+                            "iteration": plan_iteration,
+                        },
+                    )
                     return state
 
                 last_error = "LLM returned unparseable response"
@@ -92,12 +96,14 @@ Return ONLY a JSON object:
                 )
 
             if attempt < _VERIFY_MAX_RETRIES - 1:
-                backoff = _VERIFY_BASE_BACKOFF * (2 ** attempt)
+                backoff = _VERIFY_BASE_BACKOFF * (2**attempt)
                 await asyncio.sleep(backoff)
 
         # 모든 retry 실패 시 에러 전파
         state["plan_approved"] = False
-        state["plan_feedback"] = f"Verification failed after {_VERIFY_MAX_RETRIES} attempts: {last_error}"
+        state["plan_feedback"] = (
+            f"Verification failed after {_VERIFY_MAX_RETRIES} attempts: {last_error}"
+        )
         state["current_step"] = "planning_agent"
         state["error_message"] = state["plan_feedback"]
         logger.error(f"verify_plan: all {_VERIFY_MAX_RETRIES} attempts failed — {last_error}")
@@ -116,9 +122,11 @@ Return ONLY a JSON object:
 
         if o_cfg and o_cfg.enabled:
             overseer = get_greedy_overseer_agent()
-            res = await overseer.define_requirements(state["user_request"], state["analyzed_objectives"])
+            res = await overseer.define_requirements(
+                state["user_request"], state["analyzed_objectives"]
+            )
             state["overseer_requirements"] = res.get("requirements", [])
-        
+
         state["current_step"] = "adaptive_supervisor"
         return state
 
@@ -169,18 +177,23 @@ Return ONLY a JSON object:
         """Overseer의 평가 - 결과의 완전성과 품질 검증"""
         logger.info("🔍 [OVERSEER] Evaluation")
         from src.agents.greedy_overseer_agent import get_greedy_overseer_agent
+
         overseer = get_greedy_overseer_agent()
         res = await overseer.evaluate_results(state["user_request"], state["execution_results"])
-        
+
         state["overseer_decision"] = res.get("decision", "proceed")
-        state["current_step"] = "evaluate_results" if state["overseer_decision"] == "proceed" else "execute_research"
+        state["current_step"] = (
+            "evaluate_results" if state["overseer_decision"] == "proceed" else "execute_research"
+        )
         return state
 
     def overseer_decision_router(self, state: ResearchState) -> str:
         """Overseer의 결정에 따른 라우팅"""
         decision = state.get("overseer_decision", "proceed")
-        if decision == "retry": return "retry"
-        if decision == "ask_user": return "waiting_for_clarification"
+        if decision == "retry":
+            return "retry"
+        if decision == "ask_user":
+            return "waiting_for_clarification"
         return "proceed"
 
     def _parse_verification_result(self, content: str) -> Dict[str, Any] | None:

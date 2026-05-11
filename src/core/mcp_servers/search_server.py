@@ -36,12 +36,8 @@ class SearchInput(BaseModel):
     """Input schema for web search."""
 
     query: str = Field(..., description="Search query", min_length=1, max_length=500)
-    num_results: int = Field(
-        default=10, description="Number of results to return", ge=1, le=50
-    )
-    timeout: int = Field(
-        default=30, description="Search timeout in seconds", ge=5, le=120
-    )
+    num_results: int = Field(default=10, description="Number of results to return", ge=1, le=50)
+    timeout: int = Field(default=30, description="Search timeout in seconds", ge=5, le=120)
     safe_search: bool = Field(default=True, description="Enable safe search filtering")
 
 
@@ -57,15 +53,9 @@ class MultiSearchInput(BaseModel):
 class NewsSearchInput(BaseModel):
     """Input schema for news search."""
 
-    query: str = Field(
-        ..., description="News search query", min_length=1, max_length=500
-    )
-    num_results: int = Field(
-        default=10, description="Number of news results", ge=1, le=20
-    )
-    days_back: int = Field(
-        default=7, description="Search within last N days", ge=1, le=30
-    )
+    query: str = Field(..., description="News search query", min_length=1, max_length=500)
+    num_results: int = Field(default=10, description="Number of news results", ge=1, le=20)
+    days_back: int = Field(default=7, description="Search within last N days", ge=1, le=30)
 
 
 def parse_search_result(html: str, num_results: int = 10) -> List[Dict[str, str]]:
@@ -99,9 +89,7 @@ def parse_search_result(html: str, num_results: int = 10) -> List[Dict[str, str]
     return results
 
 
-async def search_duckduckgo(
-    query: str, num_results: int = 10, timeout: int = 30
-) -> Dict[str, Any]:
+async def search_duckduckgo(query: str, num_results: int = 10, timeout: int = 30) -> Dict[str, Any]:
     """Search using DuckDuckGo HTML interface.
 
     Args:
@@ -141,9 +129,7 @@ async def search_duckduckgo(
         }
 
 
-async def search_bing(
-    query: str, num_results: int = 10, timeout: int = 30
-) -> Dict[str, Any]:
+async def search_bing(query: str, num_results: int = 10, timeout: int = 30) -> Dict[str, Any]:
     """Search using Bing (via HTML interface).
 
     Args:
@@ -378,9 +364,7 @@ async def search(
     - count: number of results returned
     - provider: which search provider was used
     """
-    request = _search_input_from_args(
-        input, query, num_results, max_results, timeout, safe_search
-    )
+    request = _search_input_from_args(input, query, num_results, max_results, timeout, safe_search)
     result = await search_duckduckgo(request.query, request.num_results, request.timeout)
     return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -402,9 +386,7 @@ async def search_all(
     - count: total results
     - providers_searched: number of providers queried
     """
-    request = _search_input_from_args(
-        input, query, num_results, max_results, timeout, safe_search
-    )
+    request = _search_input_from_args(input, query, num_results, max_results, timeout, safe_search)
     result = await search_all_providers(request.query, request.num_results)
     return json.dumps(result, ensure_ascii=False, indent=2)
 

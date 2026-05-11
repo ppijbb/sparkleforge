@@ -29,13 +29,15 @@ def record_tool_context_savings(
     except LookupError:
         records = []
     kept_out = max(0, raw_bytes - returned_bytes)
-    records.append({
-        "tool_name": tool_name,
-        "raw_bytes": raw_bytes,
-        "returned_bytes": returned_bytes,
-        "kept_out_bytes": kept_out,
-        "turn_id": turn_id,
-    })
+    records.append(
+        {
+            "tool_name": tool_name,
+            "raw_bytes": raw_bytes,
+            "returned_bytes": returned_bytes,
+            "kept_out_bytes": kept_out,
+            "turn_id": turn_id,
+        }
+    )
     _current_turn_tool_savings.set(records)
 
 
@@ -181,7 +183,9 @@ class SessionStats:
         ]
         all_tools = sorted(set(self.calls) | set(self.bytes_returned))
         if all_tools:
-            lines.extend(["", "| Tool | Calls | Context | Tokens |", "|------|------:|--------:|-------:|"])
+            lines.extend(
+                ["", "| Tool | Calls | Context | Tokens |", "|------|------:|--------:|-------:|"]
+            )
             for tool in all_tools:
                 calls = self.calls.get(tool, 0)
                 bytes_ = self.bytes_returned.get(tool, 0)

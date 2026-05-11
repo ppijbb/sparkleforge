@@ -134,12 +134,10 @@ class BaseResearchTool(ABC):
     @abstractmethod
     async def search(self, query: str, **kwargs) -> List[SearchResult]:
         """검색 작업 수행 (Universal MCP Hub 통합)."""
-        pass
 
     @abstractmethod
     async def get_content(self, url: str) -> str | None:
         """URL에서 콘텐츠 가져오기."""
-        pass
 
     async def execute_with_mcp(
         self,
@@ -218,8 +216,7 @@ class BaseResearchTool(ABC):
             self.performance.total_requests += 1
             self.performance.successful_requests += 1
             self.performance.average_response_time = (
-                self.performance.average_response_time
-                * (self.performance.total_requests - 1)
+                self.performance.average_response_time * (self.performance.total_requests - 1)
                 + execution_time
             ) / self.performance.total_requests
             self.performance.success_rate = (
@@ -261,9 +258,9 @@ class BaseResearchTool(ABC):
             "average_response_time": self.performance.average_response_time,
             "error_count": self.performance.error_count,
             "circuit_breaker_status": self.performance.circuit_breaker_status,
-            "last_used": self.performance.last_used.isoformat()
-            if self.performance.last_used
-            else None,
+            "last_used": (
+                self.performance.last_used.isoformat() if self.performance.last_used else None
+            ),
         }
 
     async def validate_query(self, query: str) -> bool:
@@ -293,14 +290,10 @@ class BaseResearchTool(ABC):
 
         # 단어 겹침 계산
         title_overlap = (
-            len(query_words.intersection(title_words)) / len(query_words)
-            if query_words
-            else 0
+            len(query_words.intersection(title_words)) / len(query_words) if query_words else 0
         )
         snippet_overlap = (
-            len(query_words.intersection(snippet_words)) / len(query_words)
-            if query_words
-            else 0
+            len(query_words.intersection(snippet_words)) / len(query_words) if query_words else 0
         )
 
         # 제목을 스니펫보다 더 중요하게 가중치 적용
@@ -346,7 +339,9 @@ class BaseResearchTool(ABC):
             # Use MCP tools for HTTP requests instead of direct aiohttp
             from src.core.mcp_integration import execute_tool
 
-            result = await execute_tool("fetch", {
+            result = await execute_tool(
+                "fetch",
+                {
                     "url": url,
                     "method": method,
                     "headers": headers or {},
@@ -357,9 +352,7 @@ class BaseResearchTool(ABC):
             if result.get("success", False):
                 return result.get("data", {})
             else:
-                logger.error(
-                    f"MCP fetch failed for {url}: {result.get('error', 'Unknown error')}"
-                )
+                logger.error(f"MCP fetch failed for {url}: {result.get('error', 'Unknown error')}")
                 return None
 
         except Exception as e:

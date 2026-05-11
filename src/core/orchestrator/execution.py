@@ -1,11 +1,11 @@
-import logging
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any, Dict, List
 
-from src.core.orchestrator.state import ResearchState
-from src.core.orchestrator.base_node import BaseNode
 from src.core.mcp_integration import ToolCategory, execute_tool
+from src.core.orchestrator.base_node import BaseNode
+from src.core.orchestrator.state import ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,10 @@ def _get_browser_controller():
     global _playwright_controller
     if _playwright_controller is None:
         from src.automation.browser_manager import get_playwright_controller
+
         _playwright_controller = get_playwright_controller()
     return _playwright_controller
+
 
 class ExecutionNode(BaseNode):
     """Handler for research execution and resource allocation."""
@@ -55,18 +57,20 @@ class ExecutionNode(BaseNode):
         logger.info(f"👥 Allocated Researchers: {allocated_researchers}")
         logger.info(f"📋 Priority Queue Size: {len(priority_queue)}")
 
-        state.update({
-            "allocated_researchers": allocated_researchers,
-            "priority_queue": priority_queue,
-            "quality_threshold": quality_threshold,
-            "current_step": "execute_research",
-            "innovation_stats": {
-                **state.get("innovation_stats", {}),
+        state.update(
+            {
                 "allocated_researchers": allocated_researchers,
-                "complexity_score": complexity,
-                "priority_queue_size": len(priority_queue),
-            },
-        })
+                "priority_queue": priority_queue,
+                "quality_threshold": quality_threshold,
+                "current_step": "execute_research",
+                "innovation_stats": {
+                    **state.get("innovation_stats", {}),
+                    "allocated_researchers": allocated_researchers,
+                    "complexity_score": complexity,
+                    "priority_queue_size": len(priority_queue),
+                },
+            }
+        )
         return state
 
     async def execute_research(self, state: ResearchState) -> ResearchState:
@@ -91,6 +95,7 @@ class ExecutionNode(BaseNode):
         if use_parallel:
             logger.info("🚀 Using parallel execution with ParallelAgentExecutor")
             from src.core.parallel_agent_executor import ParallelAgentExecutor
+
             executor = ParallelAgentExecutor()
             parallel_results = await executor.execute_parallel_tasks(
                 tasks=tasks,
@@ -122,13 +127,15 @@ class ExecutionNode(BaseNode):
                         browser_result = await self._execute_browser_task(task)
                         if browser_result:
                             execution_results.append(browser_result)
-                            streaming_data.append({
-                                "timestamp": datetime.now().isoformat(),
-                                "task_id": task.get("id"),
-                                "status": browser_result.get("status", "completed"),
-                                "data": browser_result.get("result"),
-                                "tool_used": "playwright",
-                            })
+                            streaming_data.append(
+                                {
+                                    "timestamp": datetime.now().isoformat(),
+                                    "task_id": task.get("id"),
+                                    "status": browser_result.get("status", "completed"),
+                                    "data": browser_result.get("result"),
+                                    "tool_used": "playwright",
+                                }
+                            )
                             continue
 
                     available_tools = self._get_available_tools_for_category(tool_category)
@@ -137,17 +144,23 @@ class ExecutionNode(BaseNode):
                         try:
                             params = self._generate_tool_parameters(task, tool_name)
                             if "__missing_required__" in params:
-                                tool_attempts.append({"tool": tool_name, "success": False, "error": "Missing params"})
+                                tool_attempts.append(
+                                    {"tool": tool_name, "success": False, "error": "Missing params"}
+                                )
                                 continue
 
                             tool_result = await execute_tool(tool_name, params)
-                            tool_attempts.append({
-                                "tool": tool_name, 
-                                "success": tool_result.get("success", False),
-                                "execution_time": tool_result.get("execution_time", 0.0)
-                            })
+                            tool_attempts.append(
+                                {
+                                    "tool": tool_name,
+                                    "success": tool_result.get("success", False),
+                                    "execution_time": tool_result.get("execution_time", 0.0),
+                                }
+                            )
 
-                            if tool_result.get("success", False) and self._validate_tool_result(tool_result, task):
+                            if tool_result.get("success", False) and self._validate_tool_result(
+                                tool_result, task
+                            ):
                                 res_item = {
                                     "task_id": task.get("id"),
                                     "task_name": task.get("name"),
@@ -156,13 +169,15 @@ class ExecutionNode(BaseNode):
                                     "status": "completed",
                                 }
                                 execution_results.append(res_item)
-                                streaming_data.append({
-                                    "timestamp": datetime.now().isoformat(),
-                                    "task_id": task.get("id"),
-                                    "status": "completed",
-                                    "data": tool_result.get("data"),
-                                    "tool_used": tool_name,
-                                })
+                                streaming_data.append(
+                                    {
+                                        "timestamp": datetime.now().isoformat(),
+                                        "task_id": task.get("id"),
+                                        "status": "completed",
+                                        "data": tool_result.get("data"),
+                                        "tool_used": tool_name,
+                                    }
+                                )
                                 task_success = True
                                 break
                         except Exception as e:
@@ -171,15 +186,19 @@ class ExecutionNode(BaseNode):
                                 raise
                             else:
                                 logger.warning(f"Tool {tool_name} failed: {e}")
-                                tool_attempts.append({"tool": tool_name, "success": False, "error": str(e)})
-                    
+                                tool_attempts.append(
+                                    {"tool": tool_name, "success": False, "error": str(e)}
+                                )
+
                     if not task_success:
-                        execution_results.append({
-                            "task_id": task.get("id"),
-                            "status": "failed",
-                            "error": f"All {len(available_tools)} tools failed",
-                            "attempts": tool_attempts,
-                        })
+                        execution_results.append(
+                            {
+                                "task_id": task.get("id"),
+                                "status": "failed",
+                                "error": f"All {len(available_tools)} tools failed",
+                                "attempts": tool_attempts,
+                            }
+                        )
                 except Exception as e:
                     if isinstance(e, asyncio.CancelledError):
                         await self._save_executions(execution_results)
@@ -189,17 +208,19 @@ class ExecutionNode(BaseNode):
         # Depth Adjustment (Progressive Deepening)
         self._adjust_depth_if_needed(state, tasks, execution_results)
 
-        state.update({
-            "execution_results": execution_results,
-            "streaming_data": streaming_data,
-            "current_step": "hierarchical_compression",
-            "research_iteration": state.get("research_iteration", 0) + 1,
-            "innovation_stats": {
-                **state.get("innovation_stats", {}),
-                "tasks_executed": len(execution_results),
-                "parallel_execution_used": use_parallel,
-            },
-        })
+        state.update(
+            {
+                "execution_results": execution_results,
+                "streaming_data": streaming_data,
+                "current_step": "hierarchical_compression",
+                "research_iteration": state.get("research_iteration", 0) + 1,
+                "innovation_stats": {
+                    **state.get("innovation_stats", {}),
+                    "tasks_executed": len(execution_results),
+                    "parallel_execution_used": use_parallel,
+                },
+            }
+        )
         self._log_node_output("execute_research", state, {"tasks_executed": len(execution_results)})
         return state
 
@@ -217,21 +238,27 @@ class ExecutionNode(BaseNode):
             return
 
         from src.core.adaptive_research_depth import DepthConfig, ResearchPreset
+
         try:
             progress = {
                 "iteration_count": state.get("research_iteration", 0) + 1,
-                "completion_rate": len([r for r in execution_results if r.get("status") == "completed"]) / max(len(tasks), 1),
+                "completion_rate": len(
+                    [r for r in execution_results if r.get("status") == "completed"]
+                )
+                / max(len(tasks), 1),
                 "tasks_total": len(tasks),
             }
             preset = ResearchPreset(current_depth.get("preset", "medium"))
             current_depth_config = DepthConfig(
-                preset=preset, 
+                preset=preset,
                 planning=current_depth.get("planning", {}),
                 researching=current_depth.get("researching", {}),
                 reporting=current_depth.get("reporting", {}),
-                complexity_score=current_depth.get("complexity_score", 0.5)
+                complexity_score=current_depth.get("complexity_score", 0.5),
             )
-            adjusted = self.research_depth.adjust_depth_progressively(current_depth_config, progress)
+            adjusted = self.research_depth.adjust_depth_progressively(
+                current_depth_config, progress
+            )
             if adjusted:
                 state["research_depth"] = {
                     "preset": adjusted.preset.value,
@@ -255,8 +282,18 @@ class ExecutionNode(BaseNode):
         tasks = state.get("planned_tasks", [])
         queue = []
         for task in tasks:
-            p = 1 if task.get("priority") == "high" else (2 if task.get("priority") == "medium" else 3)
-            queue.append({"task_id": task.get("task_id", ""), "priority": p, "complexity": task.get("estimated_complexity", 5)})
+            p = (
+                1
+                if task.get("priority") == "high"
+                else (2 if task.get("priority") == "medium" else 3)
+            )
+            queue.append(
+                {
+                    "task_id": task.get("task_id", ""),
+                    "priority": p,
+                    "complexity": task.get("estimated_complexity", 5),
+                }
+            )
         queue.sort(key=lambda x: (x["priority"], x["complexity"]))
         return queue
 
@@ -289,7 +326,15 @@ class ExecutionNode(BaseNode):
             ToolCategory.ACADEMIC: ["arxiv", "scholar"],
             ToolCategory.DATA: ["fetch::fetch_url", "fetch::extract_elements"],
             ToolCategory.CODE: ["python_coder", "code_interpreter"],
-            ToolCategory.BROWSER: ["cdp_navigate", "cdp_click", "cdp_type_text", "cdp_screenshot", "cdp_extract_text", "cdp_js", "cdp_page_info"],
+            ToolCategory.BROWSER: [
+                "cdp_navigate",
+                "cdp_click",
+                "cdp_type_text",
+                "cdp_screenshot",
+                "cdp_extract_text",
+                "cdp_js",
+                "cdp_page_info",
+            ],
         }
         tools = mapping.get(category)
         if tools is None:
@@ -305,26 +350,26 @@ class ExecutionNode(BaseNode):
 
         # 동적으로 컨트롤러 종류 확인
         is_cdp = hasattr(controller, "cdp")
-        
+
         try:
             # 컨트롤러 초기화 시도
             init_success = await controller.initialize()
             if not init_success:
-                raise RuntimeError(f"Browser backend initialization failed.")
+                raise RuntimeError("Browser backend initialization failed.")
 
             # URL이 있으면 navigate
-            page_state = None
             if task_url:
-                page_state = await controller.navigate(task_url)
+                await controller.navigate(task_url)
             elif "http" in task_desc:
                 import re
-                url_match = re.search(r'https?://\S+', task_desc)
+
+                url_match = re.search(r"https?://\S+", task_desc)
                 if url_match:
-                    page_state = await controller.navigate(url_match.group())
+                    await controller.navigate(url_match.group())
 
             # actions가 있으면 interact
             if task_actions:
-                action_results = await controller.interact(task_actions)
+                await controller.interact(task_actions)
 
             # 콘텐츠 추출
             extraction_spec = task.get("extraction", {"full_text": True, "metadata": True})
@@ -368,8 +413,11 @@ class ExecutionNode(BaseNode):
         return params
 
     def _validate_tool_result(self, tool_result: Dict[str, Any], task: Dict[str, Any]) -> bool:
-        if not tool_result.get("success"): return False
+        if not tool_result.get("success"):
+            return False
         data = tool_result.get("data")
-        if not data: return False
-        if isinstance(data, (str, list, dict)) and len(data) == 0: return False
+        if not data:
+            return False
+        if isinstance(data, (str, list, dict)) and len(data) == 0:
+            return False
         return True

@@ -45,9 +45,7 @@ async def config_show_command(cli, args: List[str]):
 [bold]Temperature:[/bold] {getattr(config, "temperature", "N/A")}
 """
 
-        cli.console.print(
-            Panel(config_text.strip(), title="Configuration", border_style="cyan")
-        )
+        cli.console.print(Panel(config_text.strip(), title="Configuration", border_style="cyan"))
 
     except Exception as e:
         logger.error(f"Failed to show config: {e}", exc_info=True)

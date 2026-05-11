@@ -298,8 +298,7 @@ async def write_file(input: WriteInput) -> str:
                 "success": True,
                 "path": str(path),
                 "size": len(input.content),
-                "created": not path.exists()
-                or False,  # This is before write, so check stat
+                "created": not path.exists() or False,  # This is before write, so check stat
             },
             ensure_ascii=False,
             indent=2,
@@ -369,9 +368,7 @@ async def list_directory(input: ListInput) -> str:
                             "path": str(item),
                             "type": "file",
                             "size": stat.st_size,
-                            "modified": datetime.fromtimestamp(
-                                stat.st_mtime
-                            ).isoformat(),
+                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                         }
                     )
         else:
@@ -384,15 +381,11 @@ async def list_directory(input: ListInput) -> str:
                             "path": str(item),
                             "type": "file",
                             "size": stat.st_size,
-                            "modified": datetime.fromtimestamp(
-                                stat.st_mtime
-                            ).isoformat(),
+                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                         }
                     )
                 elif item.is_dir():
-                    items.append(
-                        {"name": item.name, "path": str(item), "type": "directory"}
-                    )
+                    items.append({"name": item.name, "path": str(item), "type": "directory"})
 
         return json.dumps(
             {"success": True, "path": str(path), "items": items, "count": len(items)},
@@ -561,9 +554,7 @@ async def search_content(input: SearchInput) -> str:
 
                 for i, line in enumerate(lines, 1):
                     if re.search(input.query, line, flags):
-                        results.append(
-                            {"file": str(file_path), "line": i, "content": line.strip()}
-                        )
+                        results.append({"file": str(file_path), "line": i, "content": line.strip()})
 
             except Exception as e:
                 logger.debug(f"Error reading {file_path}: {e}")
@@ -614,9 +605,7 @@ async def create_directory(input: MakeDirInput) -> str:
     try:
         path.mkdir(parents=input.parents, exist_ok=True)
 
-        return json.dumps(
-            {"success": True, "path": str(path)}, ensure_ascii=False, indent=2
-        )
+        return json.dumps({"success": True, "path": str(path)}, ensure_ascii=False, indent=2)
 
     except Exception as e:
         logger.error(f"Error creating directory: {e}")
@@ -663,9 +652,7 @@ async def remove_path(input: RemoveInput) -> str:
         else:
             path.unlink()
 
-        return json.dumps(
-            {"success": True, "path": str(path)}, ensure_ascii=False, indent=2
-        )
+        return json.dumps({"success": True, "path": str(path)}, ensure_ascii=False, indent=2)
 
     except Exception as e:
         logger.error(f"Error removing: {e}")

@@ -238,9 +238,7 @@ class AgentToolSelector:
 
         # 서버 필터 적용
         if server_filter:
-            server_groups = {
-                k: v for k, v in server_groups.items() if k in server_filter
-            }
+            server_groups = {k: v for k, v in server_groups.items() if k in server_filter}
 
         selected_tools: list[BaseTool] = []
         selected_infos: list[ToolInfo] = []
@@ -290,9 +288,7 @@ class AgentToolSelector:
 
         for agent_type in AgentType:
             server_filt = server_filter.get(agent_type) if server_filter else None
-            max_tools = (
-                max_tools_per_agent.get(agent_type, 5) if max_tools_per_agent else 5
-            )
+            max_tools = max_tools_per_agent.get(agent_type, 5) if max_tools_per_agent else 5
 
             assignment = self._select_tools_for_agent(
                 agent_type=agent_type,

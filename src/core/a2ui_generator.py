@@ -40,9 +40,7 @@ class A2UIGenerator:
         surface_id = f"research-report-{int(datetime.now().timestamp())}"
 
         # createSurface 메시지
-        create_surface = {
-            "createSurface": {"surfaceId": surface_id, "catalogId": self.catalog_id}
-        }
+        create_surface = {"createSurface": {"surfaceId": surface_id, "catalogId": self.catalog_id}}
 
         # updateComponents 메시지
         components = self._build_report_components(query, verified_results, report_text)

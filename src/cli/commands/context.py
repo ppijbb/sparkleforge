@@ -30,9 +30,7 @@ async def context_show_command(cli, args: List[str]):
                 )
             )
         else:
-            cli.console.print(
-                "[yellow]No context file found (SPARKLEFORGE.md)[/yellow]"
-            )
+            cli.console.print("[yellow]No context file found (SPARKLEFORGE.md)[/yellow]")
 
     except Exception as e:
         logger.error(f"Failed to show context: {e}", exc_info=True)
@@ -52,9 +50,7 @@ async def context_reload_command(cli, args: List[str]):
         if context:
             cli.console.print("[green]✅ Context reloaded[/green]")
         else:
-            cli.console.print(
-                "[yellow]No context file found (SPARKLEFORGE.md)[/yellow]"
-            )
+            cli.console.print("[yellow]No context file found (SPARKLEFORGE.md)[/yellow]")
 
     except Exception as e:
         logger.error(f"Failed to reload context: {e}", exc_info=True)

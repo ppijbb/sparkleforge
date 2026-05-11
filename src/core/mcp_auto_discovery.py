@@ -33,9 +33,7 @@ class FastMCPClientWrapper:
 class FastMCPMulti:
     """다중 서버를 위한 FastMCP 클라이언트 래퍼."""
 
-    def __init__(
-        self, servers: Mapping[str, ServerSpec] | dict[str, dict[str, Any]]
-    ) -> None:
+    def __init__(self, servers: Mapping[str, ServerSpec] | dict[str, dict[str, Any]]) -> None:
         """다중 서버 FastMCP 클라이언트 초기화.
 
         Args:

@@ -154,22 +154,16 @@ class ValidationAgent:
             Validation results with scores and recommendations
         """
         try:
-            logger.info(
-                f"Starting enhanced autonomous validation for objective: {objective_id}"
-            )
+            logger.info(f"Starting enhanced autonomous validation for objective: {objective_id}")
 
             # Phase 1: Cross-Validation Analysis
-            cross_validation_results = await self._perform_cross_validation(
-                execution_results
-            )
+            cross_validation_results = await self._perform_cross_validation(execution_results)
 
             # Phase 2: Source Credibility Analysis
-            source_credibility = await self._analyze_source_credibility(
-                execution_results
-            )
+            source_credibility = await self._analyze_source_credibility(execution_results)
 
             # Phase 3: Bias Detection Analysis
-            bias_analysis = await self._detect_bias(execution_results)
+            await self._detect_bias(execution_results)
 
             # Phase 4: Objective Alignment Validation
             alignment_validation = await self._validate_objective_alignment(
@@ -177,9 +171,7 @@ class ValidationAgent:
             )
 
             # Phase 5: Quality Standards Validation
-            quality_validation = await self._validate_quality_standards(
-                execution_results
-            )
+            quality_validation = await self._validate_quality_standards(execution_results)
 
             # Phase 6: Completeness Validation
             completeness_validation = await self._validate_completeness(
@@ -272,16 +264,13 @@ class ValidationAgent:
 
                 objective_id = objective.get("objective_id")
                 objective_description = objective.get("description", "")
-                objective_type = objective.get("type", "primary")
+                objective.get("type", "primary")
 
                 # Find results related to this objective
                 related_results = []
                 if isinstance(execution_results, list):
                     for r in execution_results:
-                        if (
-                            isinstance(r, dict)
-                            and r.get("objective_id") == objective_id
-                        ):
+                        if isinstance(r, dict) and r.get("objective_id") == objective_id:
                             related_results.append(r)
 
                 if related_results:
@@ -314,25 +303,23 @@ class ValidationAgent:
 
             # Calculate overall alignment score
             overall_alignment = (
-                sum(alignment_scores) / len(alignment_scores)
-                if alignment_scores
-                else 0.0
+                sum(alignment_scores) / len(alignment_scores) if alignment_scores else 0.0
             )
 
             return {
                 "overall_alignment_score": overall_alignment,
                 "objective_scores": alignment_scores,
                 "alignment_issues": alignment_issues,
-                "alignment_level": "high"
-                if overall_alignment >= 0.8
-                else "medium"
-                if overall_alignment >= 0.6
-                else "low",
-                "coverage_percentage": len([s for s in alignment_scores if s > 0])
-                / len(alignment_scores)
-                * 100
-                if alignment_scores
-                else 0,
+                "alignment_level": (
+                    "high"
+                    if overall_alignment >= 0.8
+                    else "medium" if overall_alignment >= 0.6 else "low"
+                ),
+                "coverage_percentage": (
+                    len([s for s in alignment_scores if s > 0]) / len(alignment_scores) * 100
+                    if alignment_scores
+                    else 0
+                ),
             }
 
         except Exception as e:
@@ -359,9 +346,7 @@ class ValidationAgent:
                     continue
 
                 result_type = result.get("agent", "unknown")
-                quality_score = await self._calculate_result_quality_score(
-                    result, result_type
-                )
+                quality_score = await self._calculate_result_quality_score(result, result_type)
                 quality_scores.append(quality_score)
 
                 if quality_score < 0.7:
@@ -375,24 +360,22 @@ class ValidationAgent:
                     )
 
             # Calculate overall quality score
-            overall_quality = (
-                sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-            )
+            overall_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
 
             return {
                 "overall_quality_score": overall_quality,
                 "individual_scores": quality_scores,
                 "quality_issues": quality_issues,
-                "quality_level": "high"
-                if overall_quality >= 0.8
-                else "medium"
-                if overall_quality >= 0.6
-                else "low",
-                "standards_met": len([s for s in quality_scores if s >= 0.7])
-                / len(quality_scores)
-                * 100
-                if quality_scores
-                else 0,
+                "quality_level": (
+                    "high"
+                    if overall_quality >= 0.8
+                    else "medium" if overall_quality >= 0.6 else "low"
+                ),
+                "standards_met": (
+                    len([s for s in quality_scores if s >= 0.7]) / len(quality_scores) * 100
+                    if quality_scores
+                    else 0
+                ),
             }
 
         except Exception as e:
@@ -450,9 +433,7 @@ class ValidationAgent:
             )
 
             # Overall completeness score
-            overall_completeness = (
-                completeness_score * 0.6 + avg_result_completeness * 0.4
-            )
+            overall_completeness = completeness_score * 0.6 + avg_result_completeness * 0.4
 
             completeness_issues = []
             for missing_id in missing_objectives:
@@ -469,11 +450,11 @@ class ValidationAgent:
                 "objective_coverage": completeness_score,
                 "result_completeness": avg_result_completeness,
                 "completeness_issues": completeness_issues,
-                "completeness_level": "high"
-                if overall_completeness >= 0.8
-                else "medium"
-                if overall_completeness >= 0.6
-                else "low",
+                "completeness_level": (
+                    "high"
+                    if overall_completeness >= 0.8
+                    else "medium" if overall_completeness >= 0.6 else "low"
+                ),
                 "missing_objectives_count": len(missing_objectives),
             }
 
@@ -481,9 +462,7 @@ class ValidationAgent:
             logger.error(f"Completeness validation failed: {e}")
             return {"overall_completeness_score": 0.0, "completeness_level": "low"}
 
-    async def _validate_accuracy(
-        self, execution_results: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def _validate_accuracy(self, execution_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Validate accuracy of results.
 
         Args:
@@ -521,14 +500,12 @@ class ValidationAgent:
                 "overall_accuracy_score": overall_accuracy,
                 "individual_scores": accuracy_scores,
                 "accuracy_issues": accuracy_issues,
-                "accuracy_level": "high"
-                if overall_accuracy >= 0.8
-                else "medium"
-                if overall_accuracy >= 0.6
-                else "low",
-                "accuracy_consistency": self._calculate_accuracy_consistency(
-                    accuracy_scores
+                "accuracy_level": (
+                    "high"
+                    if overall_accuracy >= 0.8
+                    else "medium" if overall_accuracy >= 0.6 else "low"
                 ),
+                "accuracy_consistency": self._calculate_accuracy_consistency(accuracy_scores),
             }
 
         except Exception as e:
@@ -575,23 +552,19 @@ class ValidationAgent:
 
             # Calculate overall relevance score
             overall_relevance = (
-                sum(relevance_scores) / len(relevance_scores)
-                if relevance_scores
-                else 0.0
+                sum(relevance_scores) / len(relevance_scores) if relevance_scores else 0.0
             )
 
             return {
                 "overall_relevance_score": overall_relevance,
                 "individual_scores": relevance_scores,
                 "relevance_issues": relevance_issues,
-                "relevance_level": "high"
-                if overall_relevance >= 0.8
-                else "medium"
-                if overall_relevance >= 0.6
-                else "low",
-                "relevance_consistency": self._calculate_relevance_consistency(
-                    relevance_scores
+                "relevance_level": (
+                    "high"
+                    if overall_relevance >= 0.8
+                    else "medium" if overall_relevance >= 0.6 else "low"
                 ),
+                "relevance_consistency": self._calculate_relevance_consistency(relevance_scores),
             }
 
         except Exception as e:
@@ -663,9 +636,7 @@ class ValidationAgent:
                 "component_scores": {
                     "alignment": alignment_validation.get("overall_alignment_score", 0),
                     "quality": quality_validation.get("overall_quality_score", 0),
-                    "completeness": completeness_validation.get(
-                        "overall_completeness_score", 0
-                    ),
+                    "completeness": completeness_validation.get("overall_completeness_score", 0),
                     "accuracy": accuracy_validation.get("overall_accuracy_score", 0),
                     "relevance": relevance_validation.get("overall_relevance_score", 0),
                 },
@@ -718,35 +689,25 @@ class ValidationAgent:
             )
 
             # Generate summary
-            summary = await self._generate_validation_summary(
-                overall_validation, all_issues
-            )
+            summary = await self._generate_validation_summary(overall_validation, all_issues)
 
             # Include benchmark evaluation results
             benchmark_summary = {}
             if benchmark_evaluation.get("success"):
                 benchmark_summary = {
                     "benchmark_score": benchmark_evaluation.get("overall_score", 0.0),
-                    "grade": benchmark_evaluation.get("summary", {}).get(
-                        "grade", "N/A"
+                    "grade": benchmark_evaluation.get("summary", {}).get("grade", "N/A"),
+                    "strengths": benchmark_evaluation.get("summary", {}).get("strengths", []),
+                    "weaknesses": benchmark_evaluation.get("summary", {}).get("weaknesses", []),
+                    "benchmark_recommendations": benchmark_evaluation.get("summary", {}).get(
+                        "recommendations", []
                     ),
-                    "strengths": benchmark_evaluation.get("summary", {}).get(
-                        "strengths", []
-                    ),
-                    "weaknesses": benchmark_evaluation.get("summary", {}).get(
-                        "weaknesses", []
-                    ),
-                    "benchmark_recommendations": benchmark_evaluation.get(
-                        "summary", {}
-                    ).get("recommendations", []),
                 }
             else:
                 benchmark_summary = {
                     "benchmark_score": 0.0,
                     "grade": "N/A",
-                    "error": benchmark_evaluation.get(
-                        "error", "Benchmark evaluation failed"
-                    ),
+                    "error": benchmark_evaluation.get("error", "Benchmark evaluation failed"),
                 }
 
             return {
@@ -758,9 +719,7 @@ class ValidationAgent:
                 "issues_by_category": {
                     "alignment": len(alignment_validation.get("alignment_issues", [])),
                     "quality": len(quality_validation.get("quality_issues", [])),
-                    "completeness": len(
-                        completeness_validation.get("completeness_issues", [])
-                    ),
+                    "completeness": len(completeness_validation.get("completeness_issues", [])),
                     "accuracy": len(accuracy_validation.get("accuracy_issues", [])),
                     "relevance": len(relevance_validation.get("relevance_issues", [])),
                 },
@@ -801,9 +760,7 @@ class ValidationAgent:
             result = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message=self.config.prompts["objective_alignment"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["objective_alignment"]["system_message"],
             )
 
             try:
@@ -836,9 +793,7 @@ class ValidationAgent:
             result_score = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message=self.config.prompts["quality_assessment"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["quality_assessment"]["system_message"],
             )
 
             try:
@@ -868,9 +823,7 @@ class ValidationAgent:
             result_score = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message=self.config.prompts["completeness_evaluation"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["completeness_evaluation"]["system_message"],
             )
 
             try:
@@ -900,9 +853,7 @@ class ValidationAgent:
             result_score = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message=self.config.prompts["accuracy_assessment"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["accuracy_assessment"]["system_message"],
             )
 
             try:
@@ -939,9 +890,7 @@ class ValidationAgent:
             result_score = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message=self.config.prompts["relevance_evaluation"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["relevance_evaluation"]["system_message"],
             )
 
             try:
@@ -968,9 +917,7 @@ class ValidationAgent:
             return 0.0
         # Calculate standard deviation (simplified)
         mean = sum(relevance_scores) / len(relevance_scores)
-        variance = sum((x - mean) ** 2 for x in relevance_scores) / len(
-            relevance_scores
-        )
+        variance = sum((x - mean) ** 2 for x in relevance_scores) / len(relevance_scores)
         return 1.0 - (variance**0.5)  # Higher consistency = lower variance
 
     async def _generate_validation_recommendations(
@@ -986,9 +933,7 @@ class ValidationAgent:
         recommendations = []
 
         if overall_validation["overall_score"] < 0.7:
-            recommendations.append(
-                "Overall validation score is below acceptable threshold"
-            )
+            recommendations.append("Overall validation score is below acceptable threshold")
 
         if alignment_validation.get("overall_alignment_score", 0) < 0.7:
             recommendations.append("Improve alignment with original objectives")
@@ -1042,21 +987,14 @@ class ValidationAgent:
                     if len(group) > 1:
                         # Check consistency within group
                         consistency = self._check_content_consistency(group)
-                        cross_validation["consistent_sources"] += consistency[
-                            "consistent"
-                        ]
-                        cross_validation["conflicting_sources"] += consistency[
-                            "conflicting"
-                        ]
+                        cross_validation["consistent_sources"] += consistency["consistent"]
+                        cross_validation["conflicting_sources"] += consistency["conflicting"]
                         cross_validation["conflicts"].extend(consistency["conflicts"])
 
             # Calculate consistency score
             if cross_validation["total_sources"] > 0:
-                cross_validation["consistency_score"] = cross_validation[
-                    "consistent_sources"
-                ] / (
-                    cross_validation["consistent_sources"]
-                    + cross_validation["conflicting_sources"]
+                cross_validation["consistency_score"] = cross_validation["consistent_sources"] / (
+                    cross_validation["consistent_sources"] + cross_validation["conflicting_sources"]
                 )
 
             return cross_validation
@@ -1136,9 +1074,7 @@ class ValidationAgent:
             logger.error(f"Source credibility analysis failed: {e}")
             return {"overall_credibility_score": 0.0}
 
-    async def _detect_bias(
-        self, execution_results: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def _detect_bias(self, execution_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Detect potential bias in research results."""
         try:
             bias_analysis = {
@@ -1163,21 +1099,15 @@ class ValidationAgent:
             bias_analysis["content_bias"] = content_bias
 
             # Calculate overall bias score
-            bias_analysis["bias_score"] = (
-                language_bias + source_bias + content_bias
-            ) / 3.0
+            bias_analysis["bias_score"] = (language_bias + source_bias + content_bias) / 3.0
 
             # Generate bias indicators
             if language_bias > 0.7:
                 bias_analysis["bias_indicators"].append("Strong language bias detected")
             if source_bias > 0.7:
-                bias_analysis["bias_indicators"].append(
-                    "Source diversity issues detected"
-                )
+                bias_analysis["bias_indicators"].append("Source diversity issues detected")
             if content_bias > 0.7:
-                bias_analysis["bias_indicators"].append(
-                    "Content perspective bias detected"
-                )
+                bias_analysis["bias_indicators"].append("Content perspective bias detected")
 
             return bias_analysis
 
@@ -1315,9 +1245,7 @@ class ValidationAgent:
             total_content += content + " "
 
         total_content = total_content.lower()
-        bias_count = sum(
-            1 for indicator in bias_indicators if indicator in total_content
-        )
+        bias_count = sum(1 for indicator in bias_indicators if indicator in total_content)
 
         # Normalize bias score
         return min(bias_count / 10.0, 1.0)
@@ -1377,9 +1305,7 @@ class ValidationAgent:
             return 0.0
 
         # Calculate bias towards positive or negative
-        bias_ratio = abs(positive_count - negative_count) / (
-            positive_count + negative_count
-        )
+        bias_ratio = abs(positive_count - negative_count) / (positive_count + negative_count)
         return bias_ratio
 
     async def _generate_validation_summary(
@@ -1442,9 +1368,7 @@ class ValidationAgent:
                 return {
                     "success": False,
                     "overall_score": 0.0,
-                    "error": benchmark_result.get(
-                        "error", "Benchmark evaluation failed"
-                    ),
+                    "error": benchmark_result.get("error", "Benchmark evaluation failed"),
                     "timestamp": datetime.now().isoformat(),
                 }
 

@@ -262,9 +262,7 @@ class DocumentOrganizerAgent:
 
         return "other"
 
-    async def _find_duplicates(
-        self, documents: Dict[str, DocumentInfo]
-    ) -> Dict[str, List[str]]:
+    async def _find_duplicates(self, documents: Dict[str, DocumentInfo]) -> Dict[str, List[str]]:
         """중복 문서 찾기."""
         hash_to_files: Dict[str, List[str]] = defaultdict(list)
 
@@ -273,9 +271,7 @@ class DocumentOrganizerAgent:
 
         # 해시가 2개 이상인 경우만 중복으로 간주
         duplicates = {
-            hash_val: files
-            for hash_val, files in hash_to_files.items()
-            if len(files) > 1
+            hash_val: files for hash_val, files in hash_to_files.items() if len(files) > 1
         }
 
         return duplicates
@@ -369,16 +365,12 @@ class DocumentOrganizerAgent:
         for hash_val, file_paths in self.index.duplicates.items():
             if keep_strategy == "newest":
                 # 가장 최근 수정된 파일 유지
-                file_times = [
-                    (fp, (self.root_path / fp).stat().st_mtime) for fp in file_paths
-                ]
+                file_times = [(fp, (self.root_path / fp).stat().st_mtime) for fp in file_paths]
                 file_times.sort(key=lambda x: x[1], reverse=True)
                 keep_file = file_times[0][0]
             elif keep_strategy == "oldest":
                 # 가장 오래된 파일 유지
-                file_times = [
-                    (fp, (self.root_path / fp).stat().st_mtime) for fp in file_paths
-                ]
+                file_times = [(fp, (self.root_path / fp).stat().st_mtime) for fp in file_paths]
                 file_times.sort(key=lambda x: x[1])
                 keep_file = file_times[0][0]
             elif keep_strategy == "shortest_path":
@@ -543,9 +535,7 @@ class DocumentOrganizerAgent:
             "total_conversions": len(conversions),
         }
 
-    async def _convert_format(
-        self, content: str, from_format: str, to_format: str
-    ) -> str:
+    async def _convert_format(self, content: str, from_format: str, to_format: str) -> str:
         """포맷 변환 (LLM 사용)."""
         from src.core.mcp_integration import get_mcp_hub
 

@@ -318,15 +318,11 @@ class UserProfiler:
 
             # 연구 깊이 패턴 업데이트
             depth_key = f"depth_{session.research_depth.value}"
-            profile.research_patterns[depth_key] = (
-                profile.research_patterns.get(depth_key, 0) + 1
-            )
+            profile.research_patterns[depth_key] = profile.research_patterns.get(depth_key, 0) + 1
 
             # 출력 형식 선호도 업데이트
             format_key = f"format_{session.output_format}"
-            profile.research_patterns[format_key] = (
-                profile.research_patterns.get(format_key, 0) + 1
-            )
+            profile.research_patterns[format_key] = profile.research_patterns.get(format_key, 0) + 1
 
             # 만족도 기반 조정
             if session.satisfaction_score is not None:
@@ -394,9 +390,7 @@ class UserProfiler:
                     "comprehensive": ResearchDepth.COMPREHENSIVE,
                 }
                 if analysis["preferred_depth"] in depth_mapping:
-                    profile.avg_research_depth = depth_mapping[
-                        analysis["preferred_depth"]
-                    ]
+                    profile.avg_research_depth = depth_mapping[analysis["preferred_depth"]]
 
             if "preferred_format" in analysis:
                 profile.preferred_output_format = analysis["preferred_format"]
@@ -419,9 +413,7 @@ class UserProfiler:
                     "chinese": LanguagePreference.CHINESE,
                 }
                 if analysis["language_preference"] in lang_mapping:
-                    profile.language_preference = lang_mapping[
-                        analysis["language_preference"]
-                    ]
+                    profile.language_preference = lang_mapping[analysis["language_preference"]]
 
         except Exception as e:
             logger.error(f"Failed to adjust preferences from feedback: {e}")
@@ -574,15 +566,11 @@ class UserProfiler:
                     confidence_scores.append(data.get("confidence_score", 0.0))
 
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to process profile file {profile_file}: {e}"
-                    )
+                    logger.warning(f"Failed to process profile file {profile_file}: {e}")
                     continue
 
             # 인사이트 생성
-            insights["avg_confidence"] = (
-                np.mean(confidence_scores) if confidence_scores else 0.0
-            )
+            insights["avg_confidence"] = np.mean(confidence_scores) if confidence_scores else 0.0
             insights["popular_topics"] = [
                 topic for topic, count in Counter(all_topics).most_common(10)
             ]

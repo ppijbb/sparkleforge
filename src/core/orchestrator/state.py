@@ -1,5 +1,7 @@
 from typing import Annotated, Any, Dict, List, TypedDict
+
 from langchain_core.messages import BaseMessage
+
 
 class ResearchState(TypedDict):
     """LangGraph 연구 워크플로우 상태 정의 (8대 혁신 통합)."""

@@ -46,9 +46,7 @@ async def session_list_command(cli, args: List[str]):
 
         for s in sessions:
             status = status_icons.get(s.status, "[dim]⚪ UNKNOWN[/dim]")
-            session_id = (
-                s.session_id[:28] + "..." if len(s.session_id) > 28 else s.session_id
-            )
+            session_id = s.session_id[:28] + "..." if len(s.session_id) > 28 else s.session_id
             progress = f"{s.progress_percentage:.1f}%"
             last_activity = s.last_activity.strftime("%Y-%m-%d %H:%M:%S")
             query = (
@@ -114,9 +112,7 @@ async def session_show_command(cli, args: List[str]):
         if session_info.current_task:
             info_text += f"[bold]Current Task:[/bold] {session_info.current_task}\n"
 
-        cli.console.print(
-            Panel(info_text.strip(), title="Session Details", border_style="cyan")
-        )
+        cli.console.print(Panel(info_text.strip(), title="Session Details", border_style="cyan"))
 
     except Exception as e:
         logger.error(f"Failed to show session: {e}", exc_info=True)
@@ -297,9 +293,7 @@ async def session_tasks_command(cli, args: List[str]):
         tasks = await cli.session_control.get_session_tasks(session_id)
 
         if not tasks:
-            cli.console.print(
-                f"[yellow]No tasks found for session: {session_id}[/yellow]"
-            )
+            cli.console.print(f"[yellow]No tasks found for session: {session_id}[/yellow]")
             return
 
         table = Table(

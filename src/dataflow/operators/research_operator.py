@@ -91,9 +91,7 @@ class ResearchOperator(SparkleForgeOperatorABC):
         df = storage.read("dataframe")
 
         if input_key not in df.columns:
-            self.logger.warning(
-                f"Input key '{input_key}' not found. Creating empty results."
-            )
+            self.logger.warning(f"Input key '{input_key}' not found. Creating empty results.")
             df[output_key] = None
             storage.write(df)
             return "No research tasks found"
@@ -138,7 +136,7 @@ class ResearchOperator(SparkleForgeOperatorABC):
             try:
                 if isinstance(task, dict):
                     task_id = task.get("task_id", task.get("id", "unknown"))
-                    task_description = task.get("description", task.get("query", ""))
+                    task.get("description", task.get("query", ""))
 
                     self.logger.info(f"Executing research task: {task_id}")
 
@@ -197,9 +195,7 @@ class ResearchOperator(SparkleForgeOperatorABC):
         # 동기 함수이므로 동기 실행으로 fallback
         return self._execute_research_tasks_sync(tasks, row)
 
-    async def _execute_research_task_async(
-        self, task: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _execute_research_task_async(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """단일 연구 태스크를 비동기적으로 실행합니다."""
         if self.research_agent is None:
             return {

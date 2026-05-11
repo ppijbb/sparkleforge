@@ -85,9 +85,7 @@ class SynthesisOperator(SparkleForgeOperatorABC):
         df = storage.read("dataframe")
 
         if input_key not in df.columns:
-            self.logger.warning(
-                f"Input key '{input_key}' not found. Creating empty results."
-            )
+            self.logger.warning(f"Input key '{input_key}' not found. Creating empty results.")
             df[output_key] = None
             storage.write(df)
             return "No evaluation results found"
@@ -109,15 +107,17 @@ class SynthesisOperator(SparkleForgeOperatorABC):
                 # SynthesisAgent의 synthesize_results 호출
                 synthesis_result = asyncio.run(
                     self.synthesis_agent.synthesize_results(
-                        execution_results=research_results
-                        if isinstance(research_results, list)
-                        else [research_results],
-                        evaluation_results=evaluation_results
-                        if isinstance(evaluation_results, dict)
-                        else {},
-                        original_objectives=original_objectives
-                        if isinstance(original_objectives, list)
-                        else [],
+                        execution_results=(
+                            research_results
+                            if isinstance(research_results, list)
+                            else [research_results]
+                        ),
+                        evaluation_results=(
+                            evaluation_results if isinstance(evaluation_results, dict) else {}
+                        ),
+                        original_objectives=(
+                            original_objectives if isinstance(original_objectives, list) else []
+                        ),
                         context=row.to_dict() if hasattr(row, "to_dict") else {},
                         deliverable_type=self.deliverable_type,
                     )

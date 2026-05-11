@@ -128,27 +128,23 @@ class _AskAgentTool(BaseTool):
         # 결과에서 최종 답변 추출
         return _extract_final_answer(result)
 
-    def _run(
-        self, message: str, context: str | None = None, timeout_s: float | None = None
-    ) -> str:
+    def _run(self, message: str, context: str | None = None, timeout_s: float | None = None) -> str:
         """동기 실행 (anyio 사용)."""
-        return anyio.run(
-            lambda: self._arun(message=message, context=context, timeout_s=timeout_s)
-        )
+        return anyio.run(lambda: self._arun(message=message, context=context, timeout_s=timeout_s))
 
 
 class _BroadcastTool(BaseTool):
     """여러 피어 에이전트에게 병렬 질의를 수행하는 도구."""
 
     name: str = "broadcast_to_agents"
-    description: str = "지정된 피어 에이전트들에게 동일한 질문을 병렬로 전달하고 각자의 답변을 수집합니다."
+    description: str = (
+        "지정된 피어 에이전트들에게 동일한 질문을 병렬로 전달하고 각자의 답변을 수집합니다."
+    )
 
     _peers: Mapping[str, CrossAgent] = PrivateAttr()
     _timeout_s: float = PrivateAttr()
 
-    def __init__(
-        self, *, peers: Mapping[str, CrossAgent], timeout_s: float = 30.0
-    ) -> None:
+    def __init__(self, *, peers: Mapping[str, CrossAgent], timeout_s: float = 30.0) -> None:
         super().__init__()
         self._peers = peers
         self._timeout_s = timeout_s
@@ -165,9 +161,7 @@ class _BroadcastTool(BaseTool):
         timeout = timeout_s or self._timeout_s
 
         # 존재하는 피어만 필터링
-        valid_peers = {
-            name: self._peers[name] for name in target_peers if name in self._peers
-        }
+        valid_peers = {name: self._peers[name] for name in target_peers if name in self._peers}
 
         if not valid_peers:
             return {"error": f"유효한 피어 에이전트를 찾을 수 없습니다: {target_peers}"}
@@ -209,9 +203,7 @@ class _BroadcastTool(BaseTool):
         timeout_s: float | None = None,
     ) -> dict[str, str]:
         """동기 실행 (anyio 사용)."""
-        return anyio.run(
-            lambda: self._arun(message=message, peers=peers, timeout_s=timeout_s)
-        )
+        return anyio.run(lambda: self._arun(message=message, peers=peers, timeout_s=timeout_s))
 
 
 # -----------------------------

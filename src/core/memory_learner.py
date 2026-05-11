@@ -133,9 +133,10 @@ class MemoryLearner:
             logger.debug(
                 f"Learned from session {session_id}: pattern={pattern_id}, success={success}"
             )
-            
+
             # Reasoning Memory 추출 백그라운드 태스크 (비동기 처리)
             import asyncio
+
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
@@ -144,49 +145,58 @@ class MemoryLearner:
                     session_id,
                 )
             else:
-                loop.create_task(self._induce_reasoning_memory_from_session(
-                    session_id=session_id,
-                    context_combination=context_combination,
-                    success=success
-                ))
-            
+                loop.create_task(
+                    self._induce_reasoning_memory_from_session(
+                        session_id=session_id,
+                        context_combination=context_combination,
+                        success=success,
+                    )
+                )
+
             return True
 
         except Exception as e:
             logger.error(f"Failed to learn from session {session_id}: {e}")
             return False
 
-    async def _induce_reasoning_memory_from_session(self, session_id: str, context_combination: ContextCombination, success: bool):
+    async def _induce_reasoning_memory_from_session(
+        self, session_id: str, context_combination: ContextCombination, success: bool
+    ):
         """세션으로부터 추론 메모리를 추출합니다."""
         try:
-            from src.core.reasoning_memory_inducer import get_reasoning_memory_inducer, TrajectoryRecord
             from src.core.reasoning_memory import get_reasoning_memory_bank
-            
+            from src.core.reasoning_memory_inducer import (
+                TrajectoryRecord,
+                get_reasoning_memory_inducer,
+            )
+
             inducer = get_reasoning_memory_inducer()
             bank = get_reasoning_memory_bank()
-            
+
             # 세션에서 수행된 작업을 TrajectoryRecord로 재구성
             # (실제 구현에서는 세션 로그에서 추출해야 함)
             # 여기서는 ContextCombination을 바탕으로 가상의 궤적 생성
             query = f"Task using contexts: {', '.join(context_combination.context_types)}"
             traj = TrajectoryRecord(query=query, domain="session")
-            
+
             think_str = f"Decided to use context priority: {context_combination.priority_order}"
             action_str = f"Allocated tokens: {context_combination.token_allocation}"
             obs_str = f"Execution resulted in {'success' if success else 'failure'}."
-            
+
             traj.add_step(think=think_str, action=action_str, observation=obs_str)
             traj.status = "success" if success else "fail"
-            
+
             if success:
                 new_memories = await inducer.induce_from_success(traj)
             else:
                 new_memories = await inducer.induce_from_failure(traj)
-                
+
             if new_memories:
                 await bank.store_batch(new_memories)
-                logger.info(f"Learned {len(new_memories)} reasoning memories from session {session_id}.")
-                
+                logger.info(
+                    f"Learned {len(new_memories)} reasoning memories from session {session_id}."
+                )
+
         except Exception as e:
             logger.warning(f"Failed to induce reasoning memory from session {session_id}: {e}")
 
@@ -253,9 +263,9 @@ class MemoryLearner:
                 combination = pattern.context_combination
 
                 # 타입 일치도 계산
-                type_match = len(
-                    set(context_types) & set(combination.context_types)
-                ) / max(len(context_types), len(combination.context_types), 1)
+                type_match = len(set(context_types) & set(combination.context_types)) / max(
+                    len(context_types), len(combination.context_types), 1
+                )
 
                 # 성공률과 품질 점수 고려
                 success_score = (
@@ -415,12 +425,10 @@ class MemoryLearner:
                 and test_result["variant_b"]["sessions"] >= 10
             ):
                 a_score = (
-                    test_result["variant_a"]["successes"]
-                    / test_result["variant_a"]["sessions"]
+                    test_result["variant_a"]["successes"] / test_result["variant_a"]["sessions"]
                 )
                 b_score = (
-                    test_result["variant_b"]["successes"]
-                    / test_result["variant_b"]["sessions"]
+                    test_result["variant_b"]["successes"] / test_result["variant_b"]["sessions"]
                 )
 
                 if a_score > b_score * 1.1:  # 10% 이상 차이
@@ -449,9 +457,7 @@ class MemoryLearner:
     ) -> Dict[str, int]:
         """토큰 할당 계산."""
         allocation = {}
-        total_reference = (
-            sum(reference_allocation.values()) if reference_allocation else 1
-        )
+        total_reference = sum(reference_allocation.values()) if reference_allocation else 1
 
         for ctx_type in context_types:
             if ctx_type in reference_allocation:
@@ -468,11 +474,7 @@ class MemoryLearner:
     ) -> ContextCombination:
         """기본 조합 생성."""
         allocation = {}
-        per_type = (
-            available_tokens // len(context_types)
-            if context_types
-            else available_tokens
-        )
+        per_type = available_tokens // len(context_types) if context_types else available_tokens
 
         for ctx_type in context_types:
             allocation[ctx_type] = per_type
@@ -490,13 +492,12 @@ class MemoryLearner:
             "failed_patterns": len(self.failed_patterns),
             "total_feedbacks": len(self.user_feedbacks),
             "active_ab_tests": len(self.ab_tests),
-            "average_success_rate": sum(
-                p.context_combination.success_rate
-                for p in self.successful_patterns.values()
-            )
-            / len(self.successful_patterns)
-            if self.successful_patterns
-            else 0.0,
+            "average_success_rate": (
+                sum(p.context_combination.success_rate for p in self.successful_patterns.values())
+                / len(self.successful_patterns)
+                if self.successful_patterns
+                else 0.0
+            ),
         }
 
 

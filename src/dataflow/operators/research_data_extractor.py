@@ -53,18 +53,14 @@ class ResearchDataExtractor(SparkleForgeOperatorABC):
         Returns:
             실행 결과 메시지
         """
-        self.logger.info(
-            f"Extracting research data from '{input_key}' to '{output_key}'"
-        )
+        self.logger.info(f"Extracting research data from '{input_key}' to '{output_key}'")
 
         # 입력 데이터 읽기
         df = storage.read("dataframe")
 
         # research_tasks 컬럼에서 데이터 추출
         if input_key not in df.columns:
-            self.logger.warning(
-                f"Input key '{input_key}' not found. Creating empty results."
-            )
+            self.logger.warning(f"Input key '{input_key}' not found. Creating empty results.")
             df[output_key] = None
             storage.write(df)
             return "No research tasks found"

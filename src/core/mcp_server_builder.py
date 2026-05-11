@@ -224,9 +224,7 @@ Respond in JSON format:
             )
 
             # JSON 응답 파싱
-            response_text = (
-                result.content if hasattr(result, "content") else str(result)
-            )
+            response_text = result.content if hasattr(result, "content") else str(result)
 
             # JSON 추출 (코드 블록 제거)
             json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
@@ -236,9 +234,7 @@ Respond in JSON format:
                 # JSON이 없으면 기본 구조 생성
                 logger.warning("Could not parse JSON from LLM response, using defaults")
                 requirements = {
-                    "server_name": tool_name.lower()
-                    .replace(" ", "_")
-                    .replace("-", "_"),
+                    "server_name": tool_name.lower().replace(" ", "_").replace("-", "_"),
                     "api_base_url": "https://api.example.com",
                     "auth_method": "api_key",
                     "api_key_env": f"{tool_name.upper()}_API_KEY",
@@ -309,7 +305,7 @@ Respond in JSON format:
         api_base_url = requirements.get("api_base_url", "https://api.example.com")
         auth_method = requirements.get("auth_method", "api_key")
         api_key_env = requirements.get("api_key_env", "API_KEY")
-        dependencies = requirements.get("dependencies", ["httpx"])
+        requirements.get("dependencies", ["httpx"])
 
         # FastMCP 서버 코드 템플릿
         code_parts = [
@@ -373,11 +369,7 @@ Respond in JSON format:
                         f'    {field_name}: {python_type} = Field(..., description="{field_desc}")'
                     )
                 else:
-                    default_val = (
-                        json.dumps(field_default)
-                        if field_default is not None
-                        else "None"
-                    )
+                    default_val = json.dumps(field_default) if field_default is not None else "None"
                     code_parts.append(
                         f'    {field_name}: Optional[{python_type}] = Field(default={default_val}, description="{field_desc}")'
                     )
@@ -385,9 +377,7 @@ Respond in JSON format:
             code_parts.append("")
 
             # 도구 함수 생성 (유효한 식별자로 정의). SEP-986: MCP 도구명은 [a-zA-Z0-9_.-]만 허용
-            mcp_tool_name = (
-                tool_name.replace("::", "_").replace("-", "_").replace(" ", "_")
-            )
+            mcp_tool_name = tool_name.replace("::", "_").replace("-", "_").replace(" ", "_")
             code_parts.append(f'@mcp.tool(name="{mcp_tool_name}")')
             code_parts.append(f"async def {func_name}(input: {model_name}) -> str:")
             code_parts.append('    """')
@@ -402,13 +392,9 @@ Respond in JSON format:
                 code_parts.append(
                     f'            return json.dumps({{"error": "API key not found. Set {api_key_env} environment variable."}})'
                 )
-                code_parts.append(
-                    '        headers = {"Authorization": f"Bearer {api_key}"}'
-                )
+                code_parts.append('        headers = {"Authorization": f"Bearer {api_key}"}')
             elif auth_method == "oauth":
-                code_parts.append(
-                    "        # OAuth token retrieval (implement based on service)"
-                )
+                code_parts.append("        # OAuth token retrieval (implement based on service)")
                 code_parts.append("        headers = {}")
             else:
                 code_parts.append("        headers = {}")
@@ -418,46 +404,34 @@ Respond in JSON format:
             # HTTP 요청 생성
             if method.upper() == "GET":
                 code_parts.append(f'        url = f"{api_base_url}{endpoint}"')
-                code_parts.append(
-                    "        params = input.model_dump(exclude_none=True)"
-                )
-                code_parts.append(
-                    "        async with httpx.AsyncClient(timeout=30.0) as client:"
-                )
+                code_parts.append("        params = input.model_dump(exclude_none=True)")
+                code_parts.append("        async with httpx.AsyncClient(timeout=30.0) as client:")
                 code_parts.append(
                     "            response = await client.get(url, params=params, headers=headers)"
                 )
             elif method.upper() == "POST":
                 code_parts.append(f'        url = f"{api_base_url}{endpoint}"')
                 code_parts.append("        data = input.model_dump(exclude_none=True)")
-                code_parts.append(
-                    "        async with httpx.AsyncClient(timeout=30.0) as client:"
-                )
+                code_parts.append("        async with httpx.AsyncClient(timeout=30.0) as client:")
                 code_parts.append(
                     "            response = await client.post(url, json=data, headers=headers)"
                 )
             elif method.upper() == "PUT":
                 code_parts.append(f'        url = f"{api_base_url}{endpoint}"')
                 code_parts.append("        data = input.model_dump(exclude_none=True)")
-                code_parts.append(
-                    "        async with httpx.AsyncClient(timeout=30.0) as client:"
-                )
+                code_parts.append("        async with httpx.AsyncClient(timeout=30.0) as client:")
                 code_parts.append(
                     "            response = await client.put(url, json=data, headers=headers)"
                 )
             elif method.upper() == "DELETE":
                 code_parts.append(f'        url = f"{api_base_url}{endpoint}"')
-                code_parts.append(
-                    "        async with httpx.AsyncClient(timeout=30.0) as client:"
-                )
+                code_parts.append("        async with httpx.AsyncClient(timeout=30.0) as client:")
                 code_parts.append(
                     "            response = await client.delete(url, headers=headers)"
                 )
             else:
                 code_parts.append(f'        url = f"{api_base_url}{endpoint}"')
-                code_parts.append(
-                    "        async with httpx.AsyncClient(timeout=30.0) as client:"
-                )
+                code_parts.append("        async with httpx.AsyncClient(timeout=30.0) as client:")
                 code_parts.append(
                     f'            response = await client.request("{method.upper()}", url, headers=headers)'
                 )
@@ -482,22 +456,16 @@ Respond in JSON format:
             code_parts.append("        logger.error(error_msg)")
             code_parts.append('        return json.dumps({"error": error_msg})')
             code_parts.append("    except Exception as e:")
-            code_parts.append(
-                f'        error_msg = f"Error in {tool_name}: {{str(e)}}"'
-            )
+            code_parts.append(f'        error_msg = f"Error in {tool_name}: {{str(e)}}"')
             code_parts.append("        logger.error(error_msg)")
             code_parts.append('        return json.dumps({"error": error_msg})')
             code_parts.append("")
 
         # 메인 실행 부분 (show_banner=False로 FastMCP 배너 비활성화)
-        code_parts.extend(
-            ['if __name__ == "__main__":', "    mcp.run(show_banner=False)", ""]
-        )
+        code_parts.extend(['if __name__ == "__main__":', "    mcp.run(show_banner=False)", ""])
 
         server_code = "\n".join(code_parts)
-        logger.debug(
-            f"Generated server code for {server_name} ({len(server_code)} chars)"
-        )
+        logger.debug(f"Generated server code for {server_name} ({len(server_code)} chars)")
         return server_code
 
     async def build_server(
@@ -525,9 +493,7 @@ Respond in JSON format:
         logger.info(f"Server code saved to: {server_file}")
 
         # requirements.txt 생성
-        dependencies = requirements.get(
-            "dependencies", ["httpx", "fastmcp", "pydantic"]
-        )
+        dependencies = requirements.get("dependencies", ["httpx", "fastmcp", "pydantic"])
         requirements_txt = server_dir / "requirements.txt"
         requirements_txt.write_text("\n".join(dependencies) + "\n", encoding="utf-8")
 
@@ -547,7 +513,7 @@ Respond in JSON format:
         # 의존성 설치 확인 (선택적)
         try:
             # fastmcp가 설치되어 있는지 확인
-            import fastmcp
+            pass
 
             logger.debug("fastmcp is available")
         except ImportError:
@@ -601,17 +567,13 @@ Respond in JSON format:
             requirements = await self.analyze_tool_requirements(
                 tool_name, parameters, error_context
             )
-            server_name = requirements.get(
-                "server_name", tool_name.lower().replace(" ", "_")
-            )
+            server_name = requirements.get("server_name", tool_name.lower().replace(" ", "_"))
 
             # 서버 코드 생성
             server_code = self.generate_server_code(requirements)
 
             # 서버 빌드
-            server_path, metadata = await self.build_server(
-                server_name, server_code, requirements
-            )
+            server_path, metadata = await self.build_server(server_name, server_code, requirements)
 
             # 캐시에 저장
             self.build_cache[cache_key] = {
@@ -622,9 +584,7 @@ Respond in JSON format:
             }
             self._save_metadata()
 
-            logger.info(
-                f"✅ MCP server built successfully: {server_name} at {server_path}"
-            )
+            logger.info(f"✅ MCP server built successfully: {server_name} at {server_path}")
 
             return {
                 "success": True,

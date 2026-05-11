@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 class CouncilError(Exception):
     """Council 실행 중 발생한 에러."""
 
-    pass
-
 
 async def query_model_via_openrouter(
     model: str,
@@ -69,7 +67,9 @@ async def query_model_via_openrouter(
             }
 
     except httpx.HTTPStatusError as e:
-        error_msg = f"HTTP error querying model {model}: {e.response.status_code} - {e.response.text}"
+        error_msg = (
+            f"HTTP error querying model {model}: {e.response.status_code} - {e.response.text}"
+        )
         logger.error(error_msg)
         raise CouncilError(error_msg) from e
     except httpx.TimeoutException as e:
@@ -103,8 +103,7 @@ async def query_models_parallel(
     """
     # 모든 모델에 대한 태스크 생성
     tasks = [
-        query_model_via_openrouter(model, messages, api_key, api_url, timeout)
-        for model in models
+        query_model_via_openrouter(model, messages, api_key, api_url, timeout) for model in models
     ]
 
     # 모든 태스크 완료 대기 (일부 실패해도 계속 진행)
@@ -147,17 +146,13 @@ async def stage1_collect_responses(
     messages = [{"role": "user", "content": user_query}]
 
     # 모든 모델을 병렬로 쿼리
-    responses = await query_models_parallel(
-        council_models, messages, api_key, api_url, timeout
-    )
+    responses = await query_models_parallel(council_models, messages, api_key, api_url, timeout)
 
     # 성공한 응답만 포맷팅
     stage1_results = []
     for model, response in responses.items():
         if response is not None:
-            stage1_results.append(
-                {"model": model, "response": response.get("content", "")}
-            )
+            stage1_results.append({"model": model, "response": response.get("content", "")})
 
     # 모든 모델이 실패한 경우 명확한 에러 반환 (fallback 제거)
     if not stage1_results:
@@ -165,9 +160,7 @@ async def stage1_collect_responses(
         logger.error(error_msg)
         raise CouncilError(error_msg)
 
-    logger.info(
-        f"Stage 1: Collected {len(stage1_results)}/{len(council_models)} responses"
-    )
+    logger.info(f"Stage 1: Collected {len(stage1_results)}/{len(council_models)} responses")
     return stage1_results
 
 
@@ -197,8 +190,7 @@ async def stage2_collect_rankings(
 
     # 레이블에서 모델 이름으로의 매핑 생성
     label_to_model = {
-        f"Response {label}": result["model"]
-        for label, result in zip(labels, stage1_results)
+        f"Response {label}": result["model"] for label, result in zip(labels, stage1_results)
     }
 
     # 순위 매기기 프롬프트 구성
@@ -243,9 +235,7 @@ Now provide your evaluation and ranking:"""
     messages = [{"role": "user", "content": ranking_prompt}]
 
     # 모든 council 모델에서 순위 수집 (병렬)
-    responses = await query_models_parallel(
-        council_models, messages, api_key, api_url, timeout
-    )
+    responses = await query_models_parallel(council_models, messages, api_key, api_url, timeout)
 
     # 결과 포맷팅
     stage2_results = []
@@ -253,13 +243,9 @@ Now provide your evaluation and ranking:"""
         if response is not None:
             full_text = response.get("content", "")
             parsed = parse_ranking_from_text(full_text)
-            stage2_results.append(
-                {"model": model, "ranking": full_text, "parsed_ranking": parsed}
-            )
+            stage2_results.append({"model": model, "ranking": full_text, "parsed_ranking": parsed})
 
-    logger.info(
-        f"Stage 2: Collected {len(stage2_results)}/{len(council_models)} rankings"
-    )
+    logger.info(f"Stage 2: Collected {len(stage2_results)}/{len(council_models)} rankings")
     return stage2_results, label_to_model
 
 
@@ -282,9 +268,7 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
             numbered_matches = re.findall(r"\d+\.\s*Response [A-Z]", ranking_section)
             if numbered_matches:
                 # "Response X" 부분만 추출
-                return [
-                    re.search(r"Response [A-Z]", m).group() for m in numbered_matches
-                ]
+                return [re.search(r"Response [A-Z]", m).group() for m in numbered_matches]
 
             # Fallback: 모든 "Response X" 패턴을 순서대로 추출
             matches = re.findall(r"Response [A-Z]", ranking_section)
@@ -368,17 +352,11 @@ async def stage3_synthesize_final(
     """
     # Chairman를 위한 포괄적인 컨텍스트 구성
     stage1_text = "\n\n".join(
-        [
-            f"Model: {result['model']}\nResponse: {result['response']}"
-            for result in stage1_results
-        ]
+        [f"Model: {result['model']}\nResponse: {result['response']}" for result in stage1_results]
     )
 
     stage2_text = "\n\n".join(
-        [
-            f"Model: {result['model']}\nRanking: {result['ranking']}"
-            for result in stage2_results
-        ]
+        [f"Model: {result['model']}\nRanking: {result['ranking']}" for result in stage2_results]
     )
 
     chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.

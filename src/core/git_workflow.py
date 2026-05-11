@@ -86,9 +86,7 @@ class GitWorkflow:
 
             # 상태 정보
             status_result = await self._run_git_command("status", "--porcelain")
-            status_lines = (
-                status_result["stdout"].split("\n") if status_result["stdout"] else []
-            )
+            status_lines = status_result["stdout"].split("\n") if status_result["stdout"] else []
 
             # 변경된 파일 분류
             staged = []
@@ -109,21 +107,15 @@ class GitWorkflow:
                     unstaged.append(file_path)
 
             # 원격 브랜치 정보
-            remote_result = await self._run_git_command(
-                "remote", "get-url", "origin", check=False
-            )
-            remote_url = (
-                remote_result["stdout"] if remote_result["returncode"] == 0 else None
-            )
+            remote_result = await self._run_git_command("remote", "get-url", "origin", check=False)
+            remote_url = remote_result["stdout"] if remote_result["returncode"] == 0 else None
 
             return {
                 "current_branch": current_branch,
                 "staged_files": staged,
                 "unstaged_files": unstaged,
                 "untracked_files": untracked,
-                "has_changes": len(staged) > 0
-                or len(unstaged) > 0
-                or len(untracked) > 0,
+                "has_changes": len(staged) > 0 or len(unstaged) > 0 or len(untracked) > 0,
                 "remote_url": remote_url,
             }
         except Exception as e:
@@ -169,9 +161,7 @@ class GitWorkflow:
             staged_diff = diff_result["stdout"] if diff_result["stdout"] else ""
 
             unstaged_diff_result = await self._run_git_command("diff", check=False)
-            unstaged_diff = (
-                unstaged_diff_result["stdout"] if unstaged_diff_result["stdout"] else ""
-            )
+            unstaged_diff = unstaged_diff_result["stdout"] if unstaged_diff_result["stdout"] else ""
 
             # LLM에 커밋 메시지 생성 요청
             prompt = f"""Generate a commit message based on the following changes.
@@ -245,8 +235,7 @@ Return only the commit message, no additional text."""
                 files_to_stage = []
                 for file in status["unstaged_files"] + status["untracked_files"]:
                     if not any(
-                        secret in file.lower()
-                        for secret in [".env", "credentials.json", "secrets"]
+                        secret in file.lower() for secret in [".env", "credentials.json", "secrets"]
                     ):
                         files_to_stage.append(file)
 
@@ -287,9 +276,7 @@ Return only the commit message, no additional text."""
             logger.error(f"Failed to commit: {e}")
             return {"success": False, "error": str(e)}
 
-    async def git_push(
-        self, branch: str | None = None, force: bool = False
-    ) -> Dict[str, Any]:
+    async def git_push(self, branch: str | None = None, force: bool = False) -> Dict[str, Any]:
         """Git 브랜치 푸시.
 
         Args:
@@ -308,9 +295,7 @@ Return only the commit message, no additional text."""
                 return {"success": False, "error": "No branch specified"}
 
             # 원격 저장소 확인
-            remote_result = await self._run_git_command(
-                "remote", "get-url", "origin", check=False
-            )
+            remote_result = await self._run_git_command("remote", "get-url", "origin", check=False)
             if remote_result["returncode"] != 0:
                 return {"success": False, "error": "No remote 'origin' configured"}
 
@@ -326,9 +311,7 @@ Return only the commit message, no additional text."""
             logger.error(f"Failed to push: {e}")
             return {"success": False, "error": str(e)}
 
-    async def git_create_pr(
-        self, title: str, body: str, base: str = "main"
-    ) -> Dict[str, Any]:
+    async def git_create_pr(self, title: str, body: str, base: str = "main") -> Dict[str, Any]:
         """Pull Request 생성 (GitHub CLI 사용).
 
         Args:

@@ -43,9 +43,7 @@ class BootstrapResult:
         for stage in self.stages:
             status = "OK" if stage.ok else "FAIL"
             detail = f" {stage.error}" if stage.error else ""
-            lines.append(
-                f"[{status}] {stage.name} ({stage.duration_ms:.1f} ms){detail}"
-            )
+            lines.append(f"[{status}] {stage.name} ({stage.duration_ms:.1f} ms){detail}")
         return lines
 
 

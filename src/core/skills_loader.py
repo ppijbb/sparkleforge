@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 try:
     import yaml
@@ -187,9 +187,7 @@ class SkillLoader:
                     if isinstance(frontmatter, dict):
                         parsed["frontmatter"] = frontmatter
                         parsed["name"] = str(frontmatter.get("name", "")).strip()
-                        parsed["description"] = str(
-                            frontmatter.get("description", "")
-                        ).strip()
+                        parsed["description"] = str(frontmatter.get("description", "")).strip()
                         raw_allowed = frontmatter.get(
                             "allowed-tools", frontmatter.get("allowed_tools")
                         )
@@ -199,15 +197,11 @@ class SkillLoader:
                             ]
                         elif isinstance(raw_allowed, str) and raw_allowed.strip():
                             parsed["allowed_tools"] = [
-                                t.strip()
-                                for t in raw_allowed.split(",")
-                                if t.strip()
+                                t.strip() for t in raw_allowed.split(",") if t.strip()
                             ]
                         comp = frontmatter.get("compatibility")
                         if comp is not None:
-                            parsed["compatibility"] = (
-                                comp if isinstance(comp, str) else str(comp)
-                            )
+                            parsed["compatibility"] = comp if isinstance(comp, str) else str(comp)
                 except Exception as e:
                     logger.debug("YAML frontmatter parse skipped: %s", e)
                 content_to_parse = parts[2].strip()
@@ -251,9 +245,7 @@ class SkillLoader:
             parsed["dependencies"] = deps
 
         # Metadata 추출 (JSON 블록) - body 기준
-        metadata_match = re.search(
-            r"```json\s*(\{.*?\})\s*```", content_to_parse, re.DOTALL
-        )
+        metadata_match = re.search(r"```json\s*(\{.*?\})\s*```", content_to_parse, re.DOTALL)
         if metadata_match:
             try:
                 parsed["metadata"] = json.loads(metadata_match.group(1))
@@ -327,9 +319,7 @@ class SkillLoader:
         if not isinstance(comp_str, str):
             comp_str = str(comp_str)
         return SkillMetadata(
-            skill_id=metadata_json.get("skill_id")
-            or registry_metadata.get("skill_id")
-            or skill_id,
+            skill_id=metadata_json.get("skill_id") or registry_metadata.get("skill_id") or skill_id,
             name=parsed.get("name")
             or frontmatter.get("name")
             or registry_metadata.get("name")
@@ -338,22 +328,17 @@ class SkillLoader:
             or frontmatter.get("description")
             or registry_metadata.get("description")
             or "",
-            version=metadata_json.get("version")
-            or registry_metadata.get("version", "1.0.0"),
-            category=metadata_json.get("category")
-            or registry_metadata.get("category", "general"),
+            version=metadata_json.get("version") or registry_metadata.get("version", "1.0.0"),
+            category=metadata_json.get("category") or registry_metadata.get("category", "general"),
             tags=metadata_json.get("tags") or registry_metadata.get("tags", []),
-            author=metadata_json.get("author")
-            or registry_metadata.get("author", "Unknown"),
+            author=metadata_json.get("author") or registry_metadata.get("author", "Unknown"),
             created_at=metadata_json.get("created_at")
             or registry_metadata.get("created_at", datetime.now().isoformat()),
             updated_at=metadata_json.get("updated_at")
             or registry_metadata.get("updated_at", datetime.now().isoformat()),
             path=str(skill_path.relative_to(self.project_root)),
             enabled=registry_metadata.get("enabled", True),
-            dependencies=registry_metadata.get(
-                "dependencies", parsed.get("dependencies", [])
-            ),
+            dependencies=registry_metadata.get("dependencies", parsed.get("dependencies", [])),
             required_tools=req_tools,
             capabilities=registry_metadata.get("metadata", {}).get(
                 "capabilities", parsed.get("capabilities", [])

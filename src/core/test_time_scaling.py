@@ -89,9 +89,7 @@ class RolloutResult(BaseModel):
     def quality_score(self) -> float:
         """통합 품질 점수."""
         return (
-            self.coherence_score * 0.3
-            + self.completeness_score * 0.4
-            + self.relevance_score * 0.3
+            self.coherence_score * 0.3 + self.completeness_score * 0.4 + self.relevance_score * 0.3
         )
 
     class Config:
@@ -107,9 +105,7 @@ class FusionResult(BaseModel):
 
     # 메타데이터
     num_rollouts_used: int = Field(default=0, description="사용된 rollout 수")
-    rollout_ids: List[str] = Field(
-        default_factory=list, description="사용된 rollout ID들"
-    )
+    rollout_ids: List[str] = Field(default_factory=list, description="사용된 rollout ID들")
 
     # 품질 지표
     quality_score: float = Field(default=0.0)
@@ -172,10 +168,7 @@ class ParallelRolloutExecutor:
         logger.info(f"Starting {len(configs)} parallel rollouts")
 
         # 병렬 실행
-        tasks = [
-            self._execute_single(prompt, config, executor_fn, context)
-            for config in configs
-        ]
+        tasks = [self._execute_single(prompt, config, executor_fn, context) for config in configs]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -193,9 +186,7 @@ class ParallelRolloutExecutor:
             else:
                 valid_results.append(result)
 
-        successful = sum(
-            1 for r in valid_results if r.status == RolloutStatus.COMPLETED
-        )
+        successful = sum(1 for r in valid_results if r.status == RolloutStatus.COMPLETED)
         logger.info(f"Rollouts completed: {successful}/{len(configs)} successful")
 
         return valid_results
@@ -227,15 +218,9 @@ class ParallelRolloutExecutor:
                     context=context,
                 )
 
-            result.output = (
-                output.get("content", "") if isinstance(output, dict) else str(output)
-            )
-            result.confidence = (
-                output.get("confidence", 0.5) if isinstance(output, dict) else 0.5
-            )
-            result.tokens_used = (
-                output.get("tokens", 0) if isinstance(output, dict) else 0
-            )
+            result.output = output.get("content", "") if isinstance(output, dict) else str(output)
+            result.confidence = output.get("confidence", 0.5) if isinstance(output, dict) else 0.5
+            result.tokens_used = output.get("tokens", 0) if isinstance(output, dict) else 0
             result.status = RolloutStatus.COMPLETED
 
             # 품질 점수 추정
@@ -254,9 +239,7 @@ class ParallelRolloutExecutor:
         finally:
             result.completed_at = datetime.now()
             if result.started_at:
-                result.duration_seconds = (
-                    result.completed_at - result.started_at
-                ).total_seconds()
+                result.duration_seconds = (result.completed_at - result.started_at).total_seconds()
 
         return result
 
@@ -417,8 +400,7 @@ class FusionAgent:
         valid_results = [
             r
             for r in results
-            if r.status == RolloutStatus.COMPLETED
-            and r.confidence >= self.min_confidence_threshold
+            if r.status == RolloutStatus.COMPLETED and r.confidence >= self.min_confidence_threshold
         ]
 
         if not valid_results:
@@ -430,9 +412,7 @@ class FusionAgent:
             )
 
         # 품질 기준 정렬
-        sorted_results = sorted(
-            valid_results, key=lambda r: r.quality_score, reverse=True
-        )
+        sorted_results = sorted(valid_results, key=lambda r: r.quality_score, reverse=True)
 
         # 전략별 융합
         if strategy == FusionStrategy.BEST_CONFIDENCE:
@@ -475,9 +455,7 @@ class FusionAgent:
         # 신뢰도는 가중 평균
         total_weight = sum(r.quality_score for r in results)
         if total_weight > 0:
-            weighted_conf = (
-                sum(r.confidence * r.quality_score for r in results) / total_weight
-            )
+            weighted_conf = sum(r.confidence * r.quality_score for r in results) / total_weight
         else:
             weighted_conf = best.confidence
 
@@ -550,9 +528,11 @@ class FusionAgent:
 
             return FusionResult(
                 strategy=FusionStrategy.LAST_K_FUSION,
-                output=fused_output.get("content", "")
-                if isinstance(fused_output, dict)
-                else str(fused_output),
+                output=(
+                    fused_output.get("content", "")
+                    if isinstance(fused_output, dict)
+                    else str(fused_output)
+                ),
                 confidence=avg_confidence * 1.1,  # 융합 보너스
                 num_rollouts_used=len(results),
                 rollout_ids=[r.rollout_id for r in results],
@@ -659,22 +639,22 @@ class TestTimeScaler:
 
 class MemoryAwareTestTimeScaler(TestTimeScaler):
     """메모리 인식 테스트 타임 스케일링.
-    
+
     ReasoningBank의 핵심 혁신:
     - 실행 전: 관련 추론 메모리를 검색하여 프롬프트에 주입
     - 실행 후: 병렬 궤적(rollouts)을 대조하여 새로운 추론 메모리 학습
     """
-    
+
     def __init__(
         self,
         num_rollouts: int = 3,
         fusion_strategy: FusionStrategy = FusionStrategy.LAST_K_FUSION,
         timeout_seconds: float = 120.0,
-        domain: str = "general"
+        domain: str = "general",
     ):
         super().__init__(num_rollouts, fusion_strategy, timeout_seconds)
         self.domain = domain
-        
+
     async def scale_with_memory(
         self,
         prompt: str,
@@ -683,34 +663,34 @@ class MemoryAwareTestTimeScaler(TestTimeScaler):
         context: Dict[str, Any] | None = None,
     ) -> Tuple[FusionResult, List[RolloutResult]]:
         """메모리 인식 스케일링을 수행합니다."""
-        from src.core.reasoning_memory import get_reasoning_memory_bank
-        from src.core.reasoning_memory_inducer import get_reasoning_memory_inducer, TrajectoryRecord
         from src.core.prompts.reasoning_memory_prompts import MEMORY_INJECTION_TEMPLATE
-        
+        from src.core.reasoning_memory import get_reasoning_memory_bank
+        from src.core.reasoning_memory_inducer import (
+            TrajectoryRecord,
+            get_reasoning_memory_inducer,
+        )
+
         memory_bank = get_reasoning_memory_bank()
         inducer = get_reasoning_memory_inducer()
-        
+
         # 1. 관련된 과거 메모리 검색
-        memories = await memory_bank.select_reasoning_memory(query=prompt, n=3, domain_filter=self.domain)
-        
+        memories = await memory_bank.select_reasoning_memory(
+            query=prompt, n=3, domain_filter=self.domain
+        )
+
         # 2. 프롬프트 강화
         enhanced_prompt = prompt
         if memories:
-            memory_text = "\n\n".join(
-                [f"### {m.title}\n{m.content}" for m in memories]
-            )
+            memory_text = "\n\n".join([f"### {m.title}\n{m.content}" for m in memories])
             injection = MEMORY_INJECTION_TEMPLATE.format(memories=memory_text)
             enhanced_prompt = f"{prompt}\n\n{injection}"
             logger.info(f"Injected {len(memories)} reasoning memories into prompt.")
-            
+
         # 3. 기존 병렬 스케일링 실행
         fusion_result, rollout_results = await self.scale(
-            prompt=enhanced_prompt,
-            executor_fn=executor_fn,
-            llm_fuser=llm_fuser,
-            context=context
+            prompt=enhanced_prompt, executor_fn=executor_fn, llm_fuser=llm_fuser, context=context
         )
-        
+
         # 4. 결과로부터 새로운 메모리 학습 (비동기 백그라운드 태스크로 던질 수도 있음)
         try:
             trajectories = []
@@ -720,26 +700,28 @@ class MemoryAwareTestTimeScaler(TestTimeScaler):
                 # 여기서는 rollout_result의 output을 observation으로 간주
                 traj.add_step(think="Rollout execution", action="Execution", observation=r.output)
                 traj.final_result = r.output
-                
+
                 # Confidence로 대략적인 성공/실패 판단
                 if r.status == RolloutStatus.COMPLETED:
                     traj.status = "success" if r.confidence >= 0.7 else "fail"
                 else:
                     traj.status = "fail"
-                    
+
                 trajectories.append(traj)
-                
+
             # 병렬 궤적 대조로 메모리 추출
             new_memories = await inducer.induce_from_parallel(trajectories, prompt, self.domain)
-            
+
             # 저장
             if new_memories:
                 await memory_bank.store_batch(new_memories)
-                logger.info(f"Learned {len(new_memories)} new reasoning memories from test-time scaling.")
-                
+                logger.info(
+                    f"Learned {len(new_memories)} new reasoning memories from test-time scaling."
+                )
+
         except Exception as e:
             logger.error(f"Failed to induce memory after test-time scaling: {e}")
-            
+
         return fusion_result, rollout_results
 
 
@@ -752,7 +734,7 @@ def get_test_time_scaler(
     num_rollouts: int = 3,
     fusion_strategy: FusionStrategy = FusionStrategy.LAST_K_FUSION,
     use_memory: bool = False,
-    domain: str = "general"
+    domain: str = "general",
 ) -> TestTimeScaler:
     """TestTimeScaler 싱글톤 인스턴스 반환."""
     global _test_time_scaler

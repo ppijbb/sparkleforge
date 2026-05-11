@@ -70,9 +70,7 @@ class ResultCache:
             "total_requests": 0,
         }
 
-        logger.info(
-            f"ResultCache initialized: default_ttl={default_ttl}s, max_size={max_size}"
-        )
+        logger.info(f"ResultCache initialized: default_ttl={default_ttl}s, max_size={max_size}")
 
     def _generate_cache_key(
         self, tool_name: str, parameters: Dict[str, Any], task_id: str | None = None
@@ -88,9 +86,7 @@ class ResultCache:
             Cache key string
         """
         # Normalize parameters (sort keys, remove None values)
-        normalized_params = {
-            k: v for k, v in sorted(parameters.items()) if v is not None
-        }
+        normalized_params = {k: v for k, v in sorted(parameters.items()) if v is not None}
 
         # Create key components
         key_parts = [tool_name]
@@ -169,10 +165,7 @@ class ResultCache:
                 # Calculate similarity
                 similarity = self._calculate_similarity(query, entry_query)
 
-                if (
-                    similarity >= self.similarity_threshold
-                    and similarity > best_similarity
-                ):
+                if similarity >= self.similarity_threshold and similarity > best_similarity:
                     best_similarity = similarity
                     best_match = (key, entry)
 
@@ -231,9 +224,7 @@ class ResultCache:
 
         # Check for similar entries if enabled
         if check_similarity:
-            similar_match = await self._find_similar_entry(
-                tool_name, parameters, current_time
-            )
+            similar_match = await self._find_similar_entry(tool_name, parameters, current_time)
             if similar_match:
                 key, entry = similar_match
                 async with self.lock:
@@ -314,9 +305,7 @@ class ResultCache:
         logger.debug(f"Cache set: {cache_key}, ttl={ttl}s")
         return cache_key
 
-    async def invalidate(
-        self, tool_name: str | None = None, pattern: str | None = None
-    ) -> int:
+    async def invalidate(self, tool_name: str | None = None, pattern: str | None = None) -> int:
         """Invalidate cache entries.
 
         Args:

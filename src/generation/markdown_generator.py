@@ -39,9 +39,7 @@ class MarkdownGenerator:
             return asyncio.run(self.agenerate(data))
         except Exception as e:
             self.logger.error(f"Markdown generation failed: {e}")
-            raise RuntimeError(
-                f"Markdown generation failed: {e}. No fallback available."
-            )
+            raise RuntimeError(f"Markdown generation failed: {e}. No fallback available.")
 
     async def agenerate(self, data: Dict[str, Any]) -> Document:
         """Generate markdown document asynchronously."""
@@ -70,9 +68,7 @@ class MarkdownGenerator:
 
         except Exception as e:
             self.logger.error(f"Markdown generation failed: {e}")
-            raise RuntimeError(
-                f"Markdown generation failed: {e}. No fallback available."
-            )
+            raise RuntimeError(f"Markdown generation failed: {e}. No fallback available.")
 
     def _generate_content(self, data: Dict[str, Any]) -> str:
         """Generate markdown content."""
@@ -89,9 +85,7 @@ class MarkdownGenerator:
             lines.append(f"- **Topic**: {data.get('topic', 'N/A')}")
             lines.append(f"- **Domain**: {data.get('domain', 'N/A')}")
             lines.append(f"- **Depth**: {data.get('depth', 'N/A')}")
-            lines.append(
-                f"- **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
+            lines.append(f"- **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             lines.append("")
 
         # Table of Contents
@@ -148,9 +142,7 @@ class MarkdownGenerator:
             lines.append(
                 f"- **Reading Time**: {content_stats.get('reading_time_minutes', 0)} minutes"
             )
-            lines.append(
-                f"- **Sources Processed**: {content_stats.get('sources_processed', 0)}"
-            )
+            lines.append(f"- **Sources Processed**: {content_stats.get('sources_processed', 0)}")
             lines.append("")
 
         # Conclusion

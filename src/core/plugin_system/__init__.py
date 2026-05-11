@@ -7,9 +7,9 @@ Plugins are discovered from:
 Hooks (hooks.json) support: PreTaskRun, PostTaskRun, PreToolUse, PostToolUse.
 """
 
-from src.core.plugin_system.manifest import PluginManifest
 from src.core.plugin_system.discovery import PluginDiscovery, PluginInfo
-from src.core.plugin_system.hooks import HookRunner, HookPhase
+from src.core.plugin_system.hooks import HookPhase, HookRunner
+from src.core.plugin_system.manifest import PluginManifest
 
 __all__ = [
     "PluginManifest",

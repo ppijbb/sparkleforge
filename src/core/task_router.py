@@ -10,10 +10,9 @@
 """
 
 import asyncio
+import json
 import logging
 import re
-import json
-from typing import Dict, Any, List, Optional
 from enum import Enum
 
 from src.core.harness_state import HarnessState, TaskState
@@ -23,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class RoutePath(Enum):
     """실행 경로 옵션"""
+
     SINGLE_AGENT = "single_agent"
     PLANNER_PARALLEL = "planner_parallel"
     FINANCIAL_PIPELINE = "financial_pipeline"
@@ -104,7 +104,7 @@ class TaskRouter:
 
         최대 MAX_RETRIES회 재시도하며, 모든 시도가 실패하면 예외를 발생시킵니다.
         """
-        from src.core.llm_manager import get_llm_orchestrator, TaskType
+        from src.core.llm_manager import TaskType, get_llm_orchestrator
 
         route_map = {
             "codebase_agent": RoutePath.CODEBASE_AGENT,
@@ -142,12 +142,10 @@ class TaskRouter:
 
             except Exception as e:
                 last_error = str(e)
-                logger.warning(
-                    f"TaskRouter: attempt {attempt + 1}/{self.MAX_RETRIES} failed — {e}"
-                )
+                logger.warning(f"TaskRouter: attempt {attempt + 1}/{self.MAX_RETRIES} failed — {e}")
 
             if attempt < self.MAX_RETRIES - 1:
-                backoff = self.BASE_BACKOFF * (2 ** attempt)
+                backoff = self.BASE_BACKOFF * (2**attempt)
                 await asyncio.sleep(backoff)
 
         raise RuntimeError(
@@ -160,11 +158,16 @@ class TaskRouter:
         최대 MAX_RETRIES회 재시도하며, 모든 시도가 실패하면 예외를 발생시킵니다.
         """
         description = task.get("description", "")
-        from src.core.llm_manager import get_llm_orchestrator, TaskType
+        from src.core.llm_manager import TaskType, get_llm_orchestrator
 
         valid_agents = {
-            "code_architect_agent", "code_implementor_agent", "code_reviewer_agent",
-            "researcher_agent", "analyzer_agent", "validator_agent", "synthesizer_agent",
+            "code_architect_agent",
+            "code_implementor_agent",
+            "code_reviewer_agent",
+            "researcher_agent",
+            "analyzer_agent",
+            "validator_agent",
+            "synthesizer_agent",
         }
 
         last_error = None
@@ -198,7 +201,7 @@ class TaskRouter:
                 )
 
             if attempt < self.MAX_RETRIES - 1:
-                backoff = self.BASE_BACKOFF * (2 ** attempt)
+                backoff = self.BASE_BACKOFF * (2**attempt)
                 await asyncio.sleep(backoff)
 
         raise RuntimeError(

@@ -11,18 +11,20 @@ import re
 import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.core.skills_manager import SkillManager
 
 logger = logging.getLogger(__name__)
 
+
 # Lazy import to avoid circular dependency; SkillMatch used for return type
 def _get_skill_match_type():
     from src.core.skills_selector import SkillMatch
+
     return SkillMatch
 
 
@@ -41,7 +43,9 @@ class SkillPerformanceMetrics:
 
     MAX_QUALITY_HISTORY = 50
 
-    def record_use(self, success: bool, latency_ms: float = 0.0, quality_score: float = 1.0) -> None:
+    def record_use(
+        self, success: bool, latency_ms: float = 0.0, quality_score: float = 1.0
+    ) -> None:
         """Record one skill use and update EMA-style metrics."""
         self.total_uses += 1
         if success:
@@ -49,12 +53,12 @@ class SkillPerformanceMetrics:
         self.success_rate = self.success_count / self.total_uses
         if latency_ms >= 0:
             self.avg_latency_ms = (
-                (self.avg_latency_ms * (self.total_uses - 1) + latency_ms) / self.total_uses
-            )
+                self.avg_latency_ms * (self.total_uses - 1) + latency_ms
+            ) / self.total_uses
         self.quality_scores.append(quality_score)
         if len(self.quality_scores) > self.MAX_QUALITY_HISTORY:
-            self.quality_scores = self.quality_scores[-self.MAX_QUALITY_HISTORY:]
-        self.last_used_at = datetime.now(timezone.utc).isoformat()
+            self.quality_scores = self.quality_scores[-self.MAX_QUALITY_HISTORY :]
+        self.last_used_at = datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -62,11 +66,11 @@ class SkillTreeNode:
     """Single node in the skill tree (category or leaf skill)."""
 
     node_id: str
-    skill_id: Optional[str] = None
+    skill_id: str | None = None
     category: str = ""
     category_path: List[str] = field(default_factory=list)
     children: Dict[str, "SkillTreeNode"] = field(default_factory=dict)
-    performance: Optional[SkillPerformanceMetrics] = None
+    performance: SkillPerformanceMetrics | None = None
     depth: int = 0
 
     def is_leaf(self) -> bool:
@@ -90,7 +94,7 @@ class SkillTree:
         self._skill_to_node: Dict[str, SkillTreeNode] = {}
         self._performance: Dict[str, SkillPerformanceMetrics] = {}
 
-    def add_skill(self, skill_id: str, category_path: Optional[List[str]] = None) -> None:
+    def add_skill(self, skill_id: str, category_path: List[str] | None = None) -> None:
         if not category_path:
             category_path = ["general"]
         key = "/".join(category_path)
@@ -153,7 +157,7 @@ class SkillTree:
                 ids.append(node.skill_id)
         return [s for s in ids if s]
 
-    def _hot_score(self, perf: Optional[SkillPerformanceMetrics]) -> float:
+    def _hot_score(self, perf: SkillPerformanceMetrics | None) -> float:
         if not perf:
             return 0.0
         if perf.hot_score > 0:
@@ -240,7 +244,7 @@ class SkillPerformanceTracker:
     GAMMA = 0.2
     RECENCY_HALFLIFE_HOURS = 24.0
 
-    def __init__(self, store_path: Optional[Path] = None) -> None:
+    def __init__(self, store_path: Path | None = None) -> None:
         if store_path is None:
             root = Path(__file__).resolve().parent.parent.parent
             store_path = root / ".sparkleforge" / "skill_performance.json"
@@ -276,7 +280,7 @@ class SkillPerformanceTracker:
             skills = [asdict(m) for m in self._metrics.values()]
             with open(self.store_path, "w", encoding="utf-8") as f:
                 json.dump(
-                    {"skills": skills, "updated_at": datetime.now(timezone.utc).isoformat()},
+                    {"skills": skills, "updated_at": datetime.now(UTC).isoformat()},
                     f,
                     ensure_ascii=False,
                     indent=2,
@@ -305,27 +309,27 @@ class SkillPerformanceTracker:
         if m.last_used_at:
             try:
                 dt = datetime.fromisoformat(m.last_used_at.replace("Z", "+00:00"))
-                age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
+                age_hours = (datetime.now(UTC) - dt).total_seconds() / 3600.0
                 recency = math.exp(-age_hours * (math.log(2) / self.RECENCY_HALFLIFE_HOURS))
             except Exception:
                 recency = 0.5
         usage_term = math.log(1 + m.total_uses) / math.log(1 + max(m.total_uses, 1))
-        return (
-            self.ALPHA * m.success_rate
-            + self.BETA * usage_term
-            + self.GAMMA * recency
-        )
+        return self.ALPHA * m.success_rate + self.BETA * usage_term + self.GAMMA * recency
 
-    def get_top_skills(self, category: Optional[str] = None, top_k: int = 10) -> List[str]:
+    def get_top_skills(self, category: str | None = None, top_k: int = 10) -> List[str]:
         for m in self._metrics.values():
             m.hot_score = self.compute_hot_score(m.skill_id)
         items = list(self._metrics.items())
         if category:
-            items = [(sid, m) for sid, m in items if category.lower() in (m.skill_id + str(getattr(m, "category", ""))).lower()]
+            items = [
+                (sid, m)
+                for sid, m in items
+                if category.lower() in (m.skill_id + str(getattr(m, "category", ""))).lower()
+            ]
         items.sort(key=lambda x: x[1].hot_score, reverse=True)
         return [sid for sid, _ in items[:top_k]]
 
-    def get_metrics(self, skill_id: str) -> Optional[SkillPerformanceMetrics]:
+    def get_metrics(self, skill_id: str) -> SkillPerformanceMetrics | None:
         return self._metrics.get(skill_id)
 
 
@@ -343,7 +347,7 @@ class HotSkillCache:
         self.refresh_interval = refresh_interval
         self._cache: OrderedDict[str, Any] = OrderedDict()
         self._last_refresh: float = 0.0
-        self._tracker: Optional[SkillPerformanceTracker] = None
+        self._tracker: SkillPerformanceTracker | None = None
 
     def refresh(self, tracker: SkillPerformanceTracker) -> None:
         self._tracker = tracker
@@ -372,10 +376,11 @@ class HotSkillCache:
             self._cache.move_to_end(skill_id)
         return skill
 
-    def get_top_cached(self, category: Optional[str] = None, top_k: int = 5) -> List[Any]:
+    def get_top_cached(self, category: str | None = None, top_k: int = 5) -> List[Any]:
         if category:
             skills = [
-                s for s in self._cache.values()
+                s
+                for s in self._cache.values()
                 if getattr(s, "metadata", None) and getattr(s.metadata, "category", "") == category
             ]
         else:
@@ -389,8 +394,8 @@ class SkillRetriever:
     def __init__(
         self,
         skill_manager: "SkillManager",
-        hot_cache: Optional[HotSkillCache] = None,
-        tracker: Optional[SkillPerformanceTracker] = None,
+        hot_cache: HotSkillCache | None = None,
+        tracker: SkillPerformanceTracker | None = None,
         flashrank_model: str = "ms-marco-TinyBERT-L-2-v2",
     ) -> None:
         self.skill_manager = skill_manager
@@ -402,16 +407,62 @@ class SkillRetriever:
 
     def _build_keyword_map(self) -> Dict[str, List[str]]:
         return {
-            "research_planner": ["plan", "planning", "strategy", "objective", "goal", "research plan", "계획", "전략", "목표"],
-            "research_executor": ["search", "find", "gather", "execute", "research", "investigate", "검색", "수집", "실행", "연구", "조사"],
-            "evaluator": ["verify", "validate", "check", "evaluate", "assess", "quality", "검증", "평가", "확인", "품질"],
-            "synthesizer": ["synthesize", "summarize", "report", "generate", "create", "final", "종합", "요약", "리포트", "생성", "최종"],
+            "research_planner": [
+                "plan",
+                "planning",
+                "strategy",
+                "objective",
+                "goal",
+                "research plan",
+                "계획",
+                "전략",
+                "목표",
+            ],
+            "research_executor": [
+                "search",
+                "find",
+                "gather",
+                "execute",
+                "research",
+                "investigate",
+                "검색",
+                "수집",
+                "실행",
+                "연구",
+                "조사",
+            ],
+            "evaluator": [
+                "verify",
+                "validate",
+                "check",
+                "evaluate",
+                "assess",
+                "quality",
+                "검증",
+                "평가",
+                "확인",
+                "품질",
+            ],
+            "synthesizer": [
+                "synthesize",
+                "summarize",
+                "report",
+                "generate",
+                "create",
+                "final",
+                "종합",
+                "요약",
+                "리포트",
+                "생성",
+                "최종",
+            ],
         }
 
     def _get_ranker(self) -> Any:
         if self._ranker is None:
             try:
                 from flashrank import Ranker
+
                 self._ranker = Ranker(model_name=self._flashrank_model, log_level="WARNING")
             except Exception as e:
                 logger.warning("FlashRank Ranker unavailable: %s", e)
@@ -431,7 +482,7 @@ class SkillRetriever:
     async def retrieve(
         self,
         query: str,
-        agent_skill_tree: Optional[SkillTree] = None,
+        agent_skill_tree: SkillTree | None = None,
         top_k: int = 5,
     ) -> List[Any]:
         SkillMatch = _get_skill_match_type()
@@ -465,8 +516,16 @@ class SkillRetriever:
         if ranker:
             try:
                 from flashrank import RerankRequest
+
                 passages = [
-                    {"id": sid, "text": (meta.description or "") + " " + " ".join(meta.tags or []) + " " + " ".join(meta.capabilities or [])}
+                    {
+                        "id": sid,
+                        "text": (meta.description or "")
+                        + " "
+                        + " ".join(meta.tags or [])
+                        + " "
+                        + " ".join(meta.capabilities or []),
+                    }
                     for sid, _, meta, _ in to_rerank
                 ]
                 req = RerankRequest(query=query, passages=passages)
@@ -476,7 +535,9 @@ class SkillRetriever:
                 for r in reranked[:top_k]:
                     cand = id_to_cand.get(r["id"])
                     if cand:
-                        ordered.append((cand[0], float(r["score"]), cand[2], cand[3] + ["flashrank"]))
+                        ordered.append(
+                            (cand[0], float(r["score"]), cand[2], cand[3] + ["flashrank"])
+                        )
                 if ordered:
                     to_rerank = ordered
             except Exception as e:
@@ -485,13 +546,11 @@ class SkillRetriever:
         result = []
         for item in to_rerank[:top_k]:
             sid, score, meta, reasons = item
-            result.append(
-                SkillMatch(skill_id=sid, score=score, reasons=reasons, metadata=meta)
-            )
+            result.append(SkillMatch(skill_id=sid, score=score, reasons=reasons, metadata=meta))
         return result
 
 
-def get_skill_performance_tracker(store_path: Optional[Path] = None) -> SkillPerformanceTracker:
+def get_skill_performance_tracker(store_path: Path | None = None) -> SkillPerformanceTracker:
     """Return global SkillPerformanceTracker instance."""
     global _skill_performance_tracker
     if "_skill_performance_tracker" not in globals():

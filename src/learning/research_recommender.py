@@ -25,10 +25,9 @@ from typing import Any, Dict, List
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.storage.hybrid_storage import HybridStorage, ResearchMemory
-
 from src.core.logging_config import get_logger
 from src.learning.user_profiler import UserProfiler
+from src.storage.hybrid_storage import HybridStorage, ResearchMemory
 
 logger = get_logger(__name__)
 
@@ -148,9 +147,7 @@ class ResearchRecommender:
             all_recommendations = []
 
             for rec_type in recommendation_types:
-                recommendations = await self._generate_recommendations_by_type(
-                    context, rec_type
-                )
+                recommendations = await self._generate_recommendations_by_type(context, rec_type)
                 all_recommendations.extend(recommendations)
 
             # 추천 정렬 및 필터링
@@ -255,9 +252,7 @@ class ResearchRecommender:
             for topic in profile.preferred_topics:
                 if topic != context.current_topic:
                     # 간단한 키워드 기반 관련성 계산
-                    relatedness = self._calculate_topic_relatedness(
-                        context.current_topic, topic
-                    )
+                    relatedness = self._calculate_topic_relatedness(context.current_topic, topic)
                     if relatedness > 0.3:
                         related_topics.append((topic, relatedness))
 
@@ -400,7 +395,6 @@ class ResearchRecommender:
             )
 
             # 모든 사용자의 최근 연구 가져오기
-            all_recent_research = []
 
             # 실제로는 모든 사용자의 연구를 가져와야 하지만,
             # 여기서는 현재 사용자의 최근 연구를 사용
@@ -409,9 +403,7 @@ class ResearchRecommender:
             )
 
             # 최근 연구 필터링
-            recent_research = [
-                r for r in recent_research if r.timestamp >= trending_window
-            ]
+            recent_research = [r for r in recent_research if r.timestamp >= trending_window]
 
             # 주제별 빈도 계산
             topic_counts = defaultdict(int)
@@ -419,9 +411,7 @@ class ResearchRecommender:
                 topic_counts[research.topic] += 1
 
             # 트렌딩 주제 찾기
-            trending_topics = sorted(
-                topic_counts.items(), key=lambda x: x[1], reverse=True
-            )[:5]
+            trending_topics = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)[:5]
 
             recommendations = []
             for topic, count in trending_topics:
@@ -447,9 +437,7 @@ class ResearchRecommender:
             logger.error(f"Failed to generate trending recommendations: {e}")
             return []
 
-    def _calculate_time_weight(
-        self, timestamp: datetime, time_preference: str
-    ) -> float:
+    def _calculate_time_weight(self, timestamp: datetime, time_preference: str) -> float:
         """시간 가중치를 계산합니다."""
         try:
             now = datetime.now(UTC)
@@ -463,9 +451,7 @@ class ResearchRecommender:
                 return 1.0
             else:  # balanced
                 # 균형잡힌 가중치
-                return max(
-                    0.3, 1.0 - (days_old * self.config["time_decay_factor"] * 0.5)
-                )
+                return max(0.3, 1.0 - (days_old * self.config["time_decay_factor"] * 0.5))
 
         except Exception as e:
             logger.error(f"Failed to calculate time weight: {e}")
@@ -509,9 +495,7 @@ class ResearchRecommender:
             confidence_weight = previous_research.confidence_score
 
             # 종합 점수
-            continuity_score = (
-                topic_relatedness * 0.5 + time_weight * 0.3 + confidence_weight * 0.2
-            )
+            continuity_score = topic_relatedness * 0.5 + time_weight * 0.3 + confidence_weight * 0.2
 
             return min(1.0, continuity_score)
 
@@ -548,8 +532,7 @@ class ResearchRecommender:
                 key = f"{rec.type.value}_{rec.topic or rec.research_id}"
                 if (
                     key not in unique_recommendations
-                    or rec.similarity_score
-                    > unique_recommendations[key].similarity_score
+                    or rec.similarity_score > unique_recommendations[key].similarity_score
                 ):
                     unique_recommendations[key] = rec
 

@@ -305,9 +305,7 @@ class LongRunningSessionManager:
         restart_info = {
             "session_id": self.session_id,
             "restart_time": datetime.now().isoformat(),
-            "reason": "scheduled"
-            if self.config.max_uptime_hours > 0
-            else "memory_limit",
+            "reason": "scheduled" if self.config.max_uptime_hours > 0 else "memory_limit",
             "uptime_hours": (time.time() - self.start_time) / 3600,
         }
 

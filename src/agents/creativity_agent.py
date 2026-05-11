@@ -106,9 +106,7 @@ class CreativityAgent:
             "cross_domain_threshold": 0.7,
         }
 
-        logger.info(
-            "CreativityAgent initialized with production-grade creativity engine"
-        )
+        logger.info("CreativityAgent initialized with production-grade creativity engine")
 
     def _initialize_creativity_patterns(self) -> Dict[str, List[str]]:
         """창의성 패턴을 초기화합니다."""
@@ -271,9 +269,7 @@ class CreativityAgent:
             if creativity_type == CreativityType.ANALOGICAL:
                 return await self._generate_analogical_insights(context, current_ideas)
             elif creativity_type == CreativityType.CROSS_DOMAIN:
-                return await self._generate_cross_domain_insights(
-                    context, current_ideas
-                )
+                return await self._generate_cross_domain_insights(context, current_ideas)
             elif creativity_type == CreativityType.LATERAL:
                 return await self._generate_lateral_insights(context, current_ideas)
             elif creativity_type == CreativityType.CONVERGENT:
@@ -687,9 +683,7 @@ class CreativityAgent:
             logger.debug(f"Failed to generate divergent insights: {e}")
             return []
 
-    def _filter_and_rank_insights(
-        self, insights: List[CreativeInsight]
-    ) -> List[CreativeInsight]:
+    def _filter_and_rank_insights(self, insights: List[CreativeInsight]) -> List[CreativeInsight]:
         """인사이트를 필터링하고 순위를 매깁니다."""
         try:
             # 최소 임계값 필터링
@@ -754,9 +748,7 @@ class CreativityAgent:
             logger.error(f"Failed to combine ideas: {e}")
             return []
 
-    async def _create_idea_combination(
-        self, base_ideas: List[str]
-    ) -> IdeaCombination | None:
+    async def _create_idea_combination(self, base_ideas: List[str]) -> IdeaCombination | None:
         """아이디어 조합을 생성합니다."""
         try:
             combination_prompt = f"""

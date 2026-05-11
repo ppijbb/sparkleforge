@@ -157,9 +157,7 @@ class MemoryExtractor:
                     metadata={"extraction_model": result.model_used},
                 )
 
-            logger.info(
-                f"Extracted {len(extracted_memories)} memories from session {session_id}"
-            )
+            logger.info(f"Extracted {len(extracted_memories)} memories from session {session_id}")
             return extracted_memories
 
         except Exception as e:
@@ -227,9 +225,7 @@ class MemoryExtractor:
                         event_ts = None
                         if mem_data.get("event_timestamp"):
                             try:
-                                event_ts = datetime.fromisoformat(
-                                    mem_data["event_timestamp"]
-                                )
+                                event_ts = datetime.fromisoformat(mem_data["event_timestamp"])
                             except:
                                 pass
                         memory = EpisodicMemory(
@@ -253,15 +249,11 @@ class MemoryExtractor:
                     memories.append(memory)
 
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to parse memory entry: {e}, data: {mem_data}"
-                    )
+                    logger.warning(f"Failed to parse memory entry: {e}, data: {mem_data}")
                     continue
 
         except json.JSONDecodeError as e:
-            logger.error(
-                f"Failed to parse LLM output as JSON: {e}, output: {llm_output[:500]}"
-            )
+            logger.error(f"Failed to parse LLM output as JSON: {e}, output: {llm_output[:500]}")
         except Exception as e:
             logger.error(f"Failed to parse extraction result: {e}", exc_info=True)
 
@@ -313,12 +305,8 @@ class MemoryConsolidator:
 
             # Consolidation 프롬프트 구성
             user_prompt = CONSOLIDATION_USER_PROMPT_TEMPLATE.format(
-                new_memories=json.dumps(
-                    new_memories_json, ensure_ascii=False, indent=2
-                ),
-                existing_memories=json.dumps(
-                    existing_memories_json, ensure_ascii=False, indent=2
-                ),
+                new_memories=json.dumps(new_memories_json, ensure_ascii=False, indent=2),
+                existing_memories=json.dumps(existing_memories_json, ensure_ascii=False, indent=2),
             )
 
             # LLM 호출
@@ -329,9 +317,7 @@ class MemoryConsolidator:
             )
 
             # 결과 파싱
-            consolidation_result = self._parse_consolidation_result(
-                result.content, user_id=user_id
-            )
+            consolidation_result = self._parse_consolidation_result(result.content, user_id=user_id)
 
             # Provenance 기록
             for consolidated_mem in consolidation_result["consolidated"]:
@@ -362,9 +348,7 @@ class MemoryConsolidator:
                 "conflicts": [],
             }
 
-    def _parse_consolidation_result(
-        self, llm_output: str, user_id: str
-    ) -> Dict[str, Any]:
+    def _parse_consolidation_result(self, llm_output: str, user_id: str) -> Dict[str, Any]:
         """LLM 출력을 통합 결과로 파싱."""
         try:
             # JSON 추출
@@ -401,9 +385,7 @@ class MemoryConsolidator:
             }
 
         except Exception as e:
-            logger.error(
-                f"Failed to parse consolidation result: {e}, output: {llm_output[:500]}"
-            )
+            logger.error(f"Failed to parse consolidation result: {e}, output: {llm_output[:500]}")
             return {"consolidated": [], "deleted_ids": [], "conflicts": []}
 
     def _find_source_memory_ids(

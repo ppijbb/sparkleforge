@@ -199,7 +199,9 @@ async def start_heartbeat_loop(
     from src.core.input_router import normalize_heartbeat
 
     lane = lane or get_session_lane()
-    logger.info("Heartbeat loop started (interval=%s s, session_id=%s)", interval_seconds, session_id)
+    logger.info(
+        "Heartbeat loop started (interval=%s s, session_id=%s)", interval_seconds, session_id
+    )
     while True:
         await asyncio.sleep(interval_seconds)
         envelope = normalize_heartbeat(session_id)

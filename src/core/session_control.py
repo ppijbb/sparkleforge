@@ -84,12 +84,10 @@ class SessionControl:
 
         # 활성 세션 추적
         self.active_sessions: Dict[str, Dict[str, Any]] = {}
-        self.session_tasks: Dict[
-            str, Dict[str, TaskInfo]
-        ] = {}  # session_id -> {task_id -> TaskInfo}
-        self.session_controls: Dict[
-            str, asyncio.Event
-        ] = {}  # session_id -> control event
+        self.session_tasks: Dict[str, Dict[str, TaskInfo]] = (
+            {}
+        )  # session_id -> {task_id -> TaskInfo}
+        self.session_controls: Dict[str, asyncio.Event] = {}  # session_id -> control event
 
         logger.info("SessionControl initialized")
 
@@ -118,9 +116,7 @@ class SessionControl:
             세션 정보 리스트
         """
         # 저장된 세션 목록 가져오기
-        all_sessions = self.session_manager.list_sessions(
-            limit=limit * 2, offset=offset
-        )
+        all_sessions = self.session_manager.list_sessions(limit=limit * 2, offset=offset)
 
         results = []
 
@@ -154,8 +150,7 @@ class SessionControl:
                 if (
                     query_lower not in session_id.lower()
                     and query_lower not in (session_meta.description or "").lower()
-                    and query_lower
-                    not in (active_info.get("user_query", "") or "").lower()
+                    and query_lower not in (active_info.get("user_query", "") or "").lower()
                 ):
                     continue
 
@@ -217,9 +212,7 @@ class SessionControl:
                     session_state.metadata.get("created_at", datetime.now().isoformat())
                 ),
                 last_activity=datetime.fromisoformat(
-                    session_state.metadata.get(
-                        "last_accessed", datetime.now().isoformat()
-                    )
+                    session_state.metadata.get("last_accessed", datetime.now().isoformat())
                 ),
                 metadata=session_state.metadata,
                 tags=session_state.metadata.get("tags", []),
@@ -276,8 +269,7 @@ class SessionControl:
             paused_at = self.active_sessions[session_id]["paused_at"]
             pause_duration = (datetime.now() - paused_at).total_seconds()
             self.active_sessions[session_id]["total_pause_time"] = (
-                self.active_sessions[session_id].get("total_pause_time", 0)
-                + pause_duration
+                self.active_sessions[session_id].get("total_pause_time", 0) + pause_duration
             )
             del self.active_sessions[session_id]["paused_at"]
 
@@ -315,9 +307,7 @@ class SessionControl:
         logger.info(f"Session cancelled: {session_id}")
         return True
 
-    async def delete_session(
-        self, session_id: str, delete_storage: bool = True
-    ) -> bool:
+    async def delete_session(self, session_id: str, delete_storage: bool = True) -> bool:
         """세션 삭제.
 
         Args:

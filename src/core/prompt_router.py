@@ -10,9 +10,6 @@ from typing import Iterable
 from src.core.execution_registry import (
     ExecutionRegistry,
     RegisteredCommand,
-    RegisteredSkill,
-    RegisteredTool,
-    RegisteredTrigger,
 )
 from src.core.trust_gate import TrustContext
 
@@ -101,7 +98,9 @@ class PromptRouter:
         for skill in registry.skills:
             score, matched = self._score_tokens(
                 prompt_tokens,
-                self._tokenize(" ".join((skill.skill_id, skill.name, skill.description, " ".join(skill.tags)))),
+                self._tokenize(
+                    " ".join((skill.skill_id, skill.name, skill.description, " ".join(skill.tags)))
+                ),
             )
             if score > 0:
                 results.append(
@@ -135,7 +134,12 @@ class PromptRouter:
                 prompt_tokens,
                 self._tokenize(
                     " ".join(
-                        (trigger.name, trigger.schedule_id, trigger.cron_expression, trigger.description)
+                        (
+                            trigger.name,
+                            trigger.schedule_id,
+                            trigger.cron_expression,
+                            trigger.description,
+                        )
                     )
                 ),
             )

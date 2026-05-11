@@ -53,9 +53,7 @@ class PromptManager:
         self._load_module_if_needed(category)
 
         if category not in self._prompts or prompt_name not in self._prompts[category]:
-            raise ValueError(
-                f"Prompt '{prompt_name}' not found in category '{category}'"
-            )
+            raise ValueError(f"Prompt '{prompt_name}' not found in category '{category}'")
 
         prompt_config = self._prompts[category][prompt_name]
         template_str = prompt_config["template"]
@@ -72,9 +70,7 @@ class PromptManager:
         self._load_module_if_needed(category)
 
         if category not in self._prompts or prompt_name not in self._prompts[category]:
-            raise ValueError(
-                f"Prompt '{prompt_name}' not found in category '{category}'"
-            )
+            raise ValueError(f"Prompt '{prompt_name}' not found in category '{category}'")
 
         return self._prompts[category][prompt_name].get("system_message", "")
 
@@ -83,9 +79,7 @@ class PromptManager:
         self._load_module_if_needed(category)
 
         if category not in self._prompts or prompt_name not in self._prompts[category]:
-            raise ValueError(
-                f"Prompt '{prompt_name}' not found in category '{category}'"
-            )
+            raise ValueError(f"Prompt '{prompt_name}' not found in category '{category}'")
 
         return self._prompts[category][prompt_name]
 

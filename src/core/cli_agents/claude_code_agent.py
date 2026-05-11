@@ -129,12 +129,8 @@ class ClaudeCodeAgent(BaseCLIAgent):
                 response = result.output.strip()
 
                 # 신뢰도 추출 (선택적)
-                confidence_match = re.search(
-                    r"confidence:?\s*([0-9.]+)", response, re.IGNORECASE
-                )
-                confidence = (
-                    float(confidence_match.group(1)) if confidence_match else 0.8
-                )
+                confidence_match = re.search(r"confidence:?\s*([0-9.]+)", response, re.IGNORECASE)
+                confidence = float(confidence_match.group(1)) if confidence_match else 0.8
 
                 return {
                     "success": True,

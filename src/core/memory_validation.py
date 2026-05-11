@@ -75,16 +75,11 @@ class MemoryValidator:
         self.use_llm_validation = use_llm_validation
         # Pre-compile patterns for better performance
         self.patterns = [
-            (re.compile(pattern, re.IGNORECASE), name)
-            for pattern, name in MALICIOUS_PATTERNS
+            (re.compile(pattern, re.IGNORECASE), name) for pattern, name in MALICIOUS_PATTERNS
         ]
-        logger.info(
-            f"MemoryValidator initialized (LLM validation: {use_llm_validation})"
-        )
+        logger.info(f"MemoryValidator initialized (LLM validation: {use_llm_validation})")
 
-    async def validate_memory(
-        self, memory: BaseMemory, user_id: str
-    ) -> ValidationResult:
+    async def validate_memory(self, memory: BaseMemory, user_id: str) -> ValidationResult:
         """메모리 검증 수행.
 
         Args:
@@ -112,10 +107,7 @@ class MemoryValidator:
             llm_result = await self._validate_with_llm(memory, user_id)
 
             # LLM 검증이 더 엄격하면 그것을 사용
-            if (
-                not llm_result.is_valid
-                or llm_result.confidence < pattern_result.confidence
-            ):
+            if not llm_result.is_valid or llm_result.confidence < pattern_result.confidence:
                 return llm_result
 
         return pattern_result
@@ -144,9 +136,7 @@ class MemoryValidator:
             issues=[],
         )
 
-    async def _validate_with_llm(
-        self, memory: BaseMemory, user_id: str
-    ) -> ValidationResult:
+    async def _validate_with_llm(self, memory: BaseMemory, user_id: str) -> ValidationResult:
         """LLM 기반 검증."""
         try:
             user_prompt = VALIDATION_USER_PROMPT_TEMPLATE.format(
@@ -180,9 +170,7 @@ class MemoryValidator:
             )
 
         except Exception as e:
-            logger.error(
-                f"LLM validation failed: {e}, falling back to pattern validation"
-            )
+            logger.error(f"LLM validation failed: {e}, falling back to pattern validation")
             # LLM 검증 실패 시 패턴 기반 결과 반환
             return self._validate_with_patterns(memory.content)
 
