@@ -129,30 +129,20 @@ class SkillManager:
                         category=reg_data.get("category", "general"),
                         tags=reg_data.get("tags", []),
                         author=reg_data.get("author", "Unknown"),
-                        created_at=reg_data.get(
-                            "created_at", datetime.now().isoformat()
-                        ),
-                        updated_at=reg_data.get(
-                            "updated_at", datetime.now().isoformat()
-                        ),
+                        created_at=reg_data.get("created_at", datetime.now().isoformat()),
+                        updated_at=reg_data.get("updated_at", datetime.now().isoformat()),
                         path=reg_data.get("path", f"skills/{skill_id}"),
                         enabled=reg_data.get("enabled", True),
                         dependencies=reg_data.get("dependencies", []),
                         required_tools=reg_data.get("required_tools", []),
-                        capabilities=reg_data.get("metadata", {}).get(
-                            "capabilities", []
-                        ),
+                        capabilities=reg_data.get("metadata", {}).get("capabilities", []),
                         allowed_tools=[str(x) for x in reg_allowed],
                         compatibility=comp,
                     )
                 else:
-                    skill_content = self.loader.read_text_for_metadata_scan(
-                        skill_md_path
-                    )
+                    skill_content = self.loader.read_text_for_metadata_scan(skill_md_path)
                     parsed = self.loader._parse_skill_md(skill_content)
-                    metadata = self.loader._extract_metadata(
-                        skill_id, skill_dir, parsed
-                    )
+                    metadata = self.loader._extract_metadata(skill_id, skill_dir, parsed)
 
                 self.skill_metadata_cache[skill_id] = metadata
                 scanned_count += 1
@@ -231,16 +221,12 @@ class SkillManager:
     def get_skills_by_category(self, category: str) -> List[SkillMetadata]:
         """카테고리로 Skills 필터링."""
         return [
-            s
-            for s in self.skill_metadata_cache.values()
-            if s.category == category and s.enabled
+            s for s in self.skill_metadata_cache.values() if s.category == category and s.enabled
         ]
 
     def get_skills_by_tag(self, tag: str) -> List[SkillMetadata]:
         """태그로 Skills 필터링."""
-        return [
-            s for s in self.skill_metadata_cache.values() if tag in s.tags and s.enabled
-        ]
+        return [s for s in self.skill_metadata_cache.values() if tag in s.tags and s.enabled]
 
     def load_skill(self, skill_id: str, force_reload: bool = False) -> Skill | None:
         """Skill을 로드 (lazy loading with caching)."""
@@ -316,9 +302,7 @@ class SkillManager:
     def get_available_skills(self) -> List[str]:
         """사용 가능한 Skill ID 목록 반환."""
         return [
-            skill_id
-            for skill_id, metadata in self.skill_metadata_cache.items()
-            if metadata.enabled
+            skill_id for skill_id, metadata in self.skill_metadata_cache.items() if metadata.enabled
         ]
 
     def get_skill_dependency_graph(self) -> Dict[str, List[str]]:

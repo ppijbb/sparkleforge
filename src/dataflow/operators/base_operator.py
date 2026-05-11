@@ -53,11 +53,8 @@ class SparkleForgeOperatorABC(DataFlowOperatorABC):
         Returns:
             실행 결과 메시지 (선택사항)
         """
-        pass
 
-    def validate_input_keys(
-        self, storage: DataFlowStorage, required_keys: List[str]
-    ) -> bool:
+    def validate_input_keys(self, storage: DataFlowStorage, required_keys: List[str]) -> bool:
         """입력 키를 검증합니다.
 
         Args:
@@ -75,8 +72,7 @@ class SparkleForgeOperatorABC(DataFlowOperatorABC):
 
         if missing_keys:
             raise ValueError(
-                f"Missing required input keys: {missing_keys}. "
-                f"Available keys: {available_keys}"
+                f"Missing required input keys: {missing_keys}. " f"Available keys: {available_keys}"
             )
 
         return True
@@ -98,9 +94,7 @@ class SparkleForgeOperatorABC(DataFlowOperatorABC):
 
         return df[input_key]
 
-    def set_output_data(
-        self, storage: DataFlowStorage, output_key: str, data: Any
-    ) -> None:
+    def set_output_data(self, storage: DataFlowStorage, output_key: str, data: Any) -> None:
         """출력 데이터를 설정합니다.
 
         Args:

@@ -77,9 +77,7 @@ class CompactionManager:
     - Hybrid Strategy (Prune + Summarize)
     """
 
-    def __init__(
-        self, config: CompactionConfig | None = None, llm_client: Any | None = None
-    ):
+    def __init__(self, config: CompactionConfig | None = None, llm_client: Any | None = None):
         """초기화.
 
         Args:
@@ -137,9 +135,7 @@ class CompactionManager:
         if token_count is None:
             token_count = self._estimate_tokens(messages)
 
-        threshold_tokens = int(
-            self.config.max_context_tokens * self.config.trigger_threshold
-        )
+        threshold_tokens = int(self.config.max_context_tokens * self.config.trigger_threshold)
 
         should_compact = token_count >= threshold_tokens
 
@@ -212,12 +208,12 @@ class CompactionManager:
         archived_count = original_count - compressed_count
 
         metadata: Dict[str, Any] = {
-            "compression_ratio": compressed_tokens / original_tokens
-            if original_tokens > 0
-            else 0.0,
-            "token_reduction_percent": (tokens_saved / original_tokens * 100)
-            if original_tokens > 0
-            else 0.0,
+            "compression_ratio": (
+                compressed_tokens / original_tokens if original_tokens > 0 else 0.0
+            ),
+            "token_reduction_percent": (
+                (tokens_saved / original_tokens * 100) if original_tokens > 0 else 0.0
+            ),
         }
 
         # Probe-Based Evaluation (옵션)
@@ -302,14 +298,16 @@ class CompactionManager:
             records = list(_current_turn_compaction.get())
         except LookupError:
             records = []
-        records.append({
-            "session_id": session_id,
-            "turn_id": turn_id,
-            "tokens_saved": tokens_saved,
-            "original_tokens": original_tokens,
-            "compressed_tokens": compressed_tokens,
-            "strategy": strategy_name,
-        })
+        records.append(
+            {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "tokens_saved": tokens_saved,
+                "original_tokens": original_tokens,
+                "compressed_tokens": compressed_tokens,
+                "strategy": strategy_name,
+            }
+        )
         _current_turn_compaction.set(records)
         return compressed
 

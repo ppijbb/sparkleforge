@@ -29,9 +29,7 @@ class YAMLConfigLoader:
             config_dir: 설정 파일 디렉토리 (None이면 프로젝트 루트의 configs 디렉토리 사용)
         """
         if not YAML_AVAILABLE:
-            logger.warning(
-                "YAML support not available. Install PyYAML to use YAML config loading."
-            )
+            logger.warning("YAML support not available. Install PyYAML to use YAML config loading.")
 
         # 프로젝트 루트 찾기
         if config_dir:
@@ -130,18 +128,12 @@ class YAMLConfigLoader:
 
         return copy.deepcopy(d)
 
-    def _deep_merge(
-        self, base: Dict[str, Any], update: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _deep_merge(self, base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
         """재귀적 딕셔너리 병합"""
         result = base.copy()
 
         for key, value in update.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 # 둘 다 딕셔너리면 재귀적 병합
                 result[key] = self._deep_merge(result[key], value)
             else:

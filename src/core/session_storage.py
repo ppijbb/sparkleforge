@@ -31,7 +31,7 @@ class SessionMetadata:
     context_size: int
     memory_size: int
     tags: List[str]
-    total_cost: float = 0.0 # Phase 6: Cost tracking
+    total_cost: float = 0.0  # Phase 6: Cost tracking
     description: str | None = None
 
 
@@ -96,7 +96,8 @@ class SessionStorage:
             cursor = conn.cursor()
 
             # 세션 메타데이터 테이블
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS session_metadata (
                     session_id TEXT PRIMARY KEY,
                     user_id TEXT,
@@ -109,17 +110,22 @@ class SessionStorage:
                     description TEXT,
                     file_path TEXT NOT NULL
                 )
-            """)
+            """
+            )
 
             # 인덱스 생성
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_user_id 
                 ON session_metadata(user_id)
-            """)
-            cursor.execute("""
+            """
+            )
+            cursor.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_last_accessed 
                 ON session_metadata(last_accessed)
-            """)
+            """
+            )
 
             conn.commit()
             conn.close()
@@ -205,9 +211,11 @@ class SessionStorage:
             session_metadata = SessionMetadata(
                 session_id=session_id,
                 user_id=metadata_safe.get("user_id") if metadata_safe else None,
-                created_at=metadata_safe.get("created_at", datetime.now().isoformat())
-                if metadata_safe
-                else datetime.now().isoformat(),
+                created_at=(
+                    metadata_safe.get("created_at", datetime.now().isoformat())
+                    if metadata_safe
+                    else datetime.now().isoformat()
+                ),
                 last_accessed=datetime.now().isoformat(),
                 state_version=metadata_safe.get("state_version", 1) if metadata_safe else 1,
                 context_size=len(json.dumps(context_safe, ensure_ascii=False)),
@@ -256,9 +264,7 @@ class SessionStorage:
         try:
             # 트랜잭션 사용 여부 결정
             should_use_tx = (
-                use_transaction
-                if use_transaction is not None
-                else self.enable_transactions
+                use_transaction if use_transaction is not None else self.enable_transactions
             )
 
             if should_use_tx and self.tx_manager:
@@ -274,9 +280,7 @@ class SessionStorage:
                     )
             else:
                 # 트랜잭션 없이 저장 (기존 동작)
-                return self.save_session(
-                    session_id, state, context, memory, metadata, tx=None
-                )
+                return self.save_session(session_id, state, context, memory, metadata, tx=None)
         except Exception as e:
             logger.error(f"Failed to save session {session_id} (async): {e}")
             return False
@@ -319,9 +323,11 @@ class SessionStorage:
         session_metadata = SessionMetadata(
             session_id=session_id,
             user_id=metadata.get("user_id") if metadata else None,
-            created_at=metadata.get("created_at", datetime.now().isoformat())
-            if metadata
-            else datetime.now().isoformat(),
+            created_at=(
+                metadata.get("created_at", datetime.now().isoformat())
+                if metadata
+                else datetime.now().isoformat()
+            ),
             last_accessed=datetime.now().isoformat(),
             state_version=metadata.get("state_version", 1) if metadata else 1,
             context_size=len(json.dumps(context, ensure_ascii=False)),
@@ -330,9 +336,7 @@ class SessionStorage:
             description=metadata.get("description") if metadata else None,
         )
 
-        await self._save_metadata_in_transaction_async(
-            session_metadata, str(file_path), tx
-        )
+        await self._save_metadata_in_transaction_async(session_metadata, str(file_path), tx)
 
         logger.info(f"Session saved (transaction): {session_id}")
         return True
@@ -395,9 +399,7 @@ class SessionStorage:
             if self.use_database:
                 conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
-                cursor.execute(
-                    "DELETE FROM session_metadata WHERE session_id = ?", (session_id,)
-                )
+                cursor.execute("DELETE FROM session_metadata WHERE session_id = ?", (session_id,))
                 conn.commit()
                 conn.close()
 
@@ -430,13 +432,9 @@ class SessionStorage:
         """
         try:
             if self.use_database:
-                return self._list_sessions_from_db(
-                    user_id, limit, offset, order_by, order_desc
-                )
+                return self._list_sessions_from_db(user_id, limit, offset, order_by, order_desc)
             else:
-                return self._list_sessions_from_files(
-                    user_id, limit, offset, order_by, order_desc
-                )
+                return self._list_sessions_from_files(user_id, limit, offset, order_by, order_desc)
         except Exception as e:
             logger.error(f"Failed to list sessions: {e}")
             return []
@@ -514,22 +512,16 @@ class SessionStorage:
                     SessionMetadata(
                         session_id=session_id,
                         user_id=metadata.get("user_id"),
-                        created_at=metadata.get(
-                            "created_at", session_data.get("saved_at", "")
-                        ),
+                        created_at=metadata.get("created_at", session_data.get("saved_at", "")),
                         last_accessed=metadata.get(
                             "last_accessed", session_data.get("saved_at", "")
                         ),
                         state_version=metadata.get("state_version", 1),
                         context_size=len(
-                            json.dumps(
-                                session_data.get("context", {}), ensure_ascii=False
-                            )
+                            json.dumps(session_data.get("context", {}), ensure_ascii=False)
                         ),
                         memory_size=len(
-                            json.dumps(
-                                session_data.get("memory", {}), ensure_ascii=False
-                            )
+                            json.dumps(session_data.get("memory", {}), ensure_ascii=False)
                         ),
                         tags=metadata.get("tags", []),
                         description=metadata.get("description"),

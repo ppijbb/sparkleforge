@@ -91,9 +91,7 @@ class AcademicSearchTool(BaseResearchTool):
         self.enable_confidence_scoring = config.get("enable_confidence_scoring", True)
 
         # MCP-only provider priority
-        self.primary_provider = config.get(
-            "primary_provider", AcademicProvider.ARXIV_MCP
-        )
+        self.primary_provider = config.get("primary_provider", AcademicProvider.ARXIV_MCP)
         self.alternative_providers = config.get(
             "alternative_providers",
             [
@@ -128,9 +126,7 @@ class AcademicSearchTool(BaseResearchTool):
 
     async def arun(self, query: str, **kwargs) -> ToolResponse:
         """Run academic search with MCP priority and production-grade reliability."""
-        return await execute_with_reliability(
-            self._execute_academic_search, query=query, **kwargs
-        )
+        return await execute_with_reliability(self._execute_academic_search, query=query, **kwargs)
 
     async def _execute_academic_search(self, query: str, **kwargs) -> ToolResponse:
         """Execute academic search with MCP-first approach and continuous verification."""
@@ -141,9 +137,7 @@ class AcademicSearchTool(BaseResearchTool):
                 if mcp_result.success and mcp_result.data:
                     # Apply continuous verification (Innovation 4)
                     if self.enable_verification:
-                        verified_result = await self._verify_results(
-                            mcp_result.data, query
-                        )
+                        verified_result = await self._verify_results(mcp_result.data, query)
                         return verified_result
                     return mcp_result
 
@@ -180,9 +174,7 @@ class AcademicSearchTool(BaseResearchTool):
             # Get best MCP tool for academic search
             best_tool = get_best_tool_for_task("academic_search")
             if not best_tool:
-                return ToolResponse(
-                    success=False, data=[], error="No MCP academic tools available"
-                )
+                return ToolResponse(success=False, data=[], error="No MCP academic tools available")
 
             # Execute MCP tool
             mcp_result = await execute_tool(
@@ -251,13 +243,9 @@ class AcademicSearchTool(BaseResearchTool):
                 },
             )
         else:
-            return ToolResponse(
-                success=False, data=[], error="All MCP providers failed"
-            )
+            return ToolResponse(success=False, data=[], error="All MCP providers failed")
 
-    async def _search_with_provider(
-        self, provider: AcademicProvider, query: str
-    ) -> ToolResponse:
+    async def _search_with_provider(self, provider: AcademicProvider, query: str) -> ToolResponse:
         """Search with specific MCP provider using circuit breaker pattern."""
         try:
             if provider == AcademicProvider.ARXIV_MCP:
@@ -269,16 +257,12 @@ class AcademicSearchTool(BaseResearchTool):
             elif provider == AcademicProvider.IEEE_MCP:
                 return await self._ieee_mcp_search(query)
             else:
-                return ToolResponse(
-                    success=False, data=[], error=f"Unknown provider: {provider}"
-                )
+                return ToolResponse(success=False, data=[], error=f"Unknown provider: {provider}")
         except Exception as e:
             self.logger.error(f"Provider {provider.value} search failed: {e}")
             return ToolResponse(success=False, data=[], error=str(e))
 
-    async def _verify_results(
-        self, results: List[AcademicResult], query: str
-    ) -> ToolResponse:
+    async def _verify_results(self, results: List[AcademicResult], query: str) -> ToolResponse:
         """Apply continuous verification to search results (Innovation 4)."""
         try:
             if not self.enable_verification or not results:
@@ -307,9 +291,7 @@ class AcademicSearchTool(BaseResearchTool):
             verified_results = []
             for i, result in enumerate(results):
                 if i < len(verification_result.get("confidence_scores", [])):
-                    result.confidence_score = verification_result["confidence_scores"][
-                        i
-                    ]
+                    result.confidence_score = verification_result["confidence_scores"][i]
                     result.verification_status = verification_result.get(
                         "verification_status", ["unverified"]
                     )[i]
@@ -320,18 +302,14 @@ class AcademicSearchTool(BaseResearchTool):
                 data=verified_results,
                 metadata={
                     "verification_applied": True,
-                    "average_confidence": sum(
-                        r.confidence_score for r in verified_results
-                    )
+                    "average_confidence": sum(r.confidence_score for r in verified_results)
                     / len(verified_results),
                     "timestamp": datetime.now().isoformat(),
                 },
             )
 
         except Exception as e:
-            self.logger.warning(
-                f"Verification failed: {e}, returning unverified results"
-            )
+            self.logger.warning(f"Verification failed: {e}, returning unverified results")
             return ToolResponse(success=True, data=results)
 
     def _convert_to_academic_results(
@@ -451,9 +429,7 @@ class AcademicSearchTool(BaseResearchTool):
             "successful_searches": getattr(self, "_successful_searches", 0),
             "mcp_usage_ratio": getattr(self, "_mcp_usage_ratio", 0.0),
             "average_response_time": getattr(self, "_average_response_time", 0.0),
-            "verification_success_rate": getattr(
-                self, "_verification_success_rate", 0.0
-            ),
+            "verification_success_rate": getattr(self, "_verification_success_rate", 0.0),
         }
 
     async def search(self, query: str, **kwargs) -> List[SearchResult]:
@@ -469,15 +445,15 @@ class AcademicSearchTool(BaseResearchTool):
                         url=item.url,
                         snippet=item.abstract,
                         source=item.source,
-                        published_date=datetime.strptime(item.published, "%Y-%m-%d")
-                        if item.published
-                        else None,
+                        published_date=(
+                            datetime.strptime(item.published, "%Y-%m-%d")
+                            if item.published
+                            else None
+                        ),
                         relevance_score=item.confidence_score,
                         confidence_score=item.confidence_score,
                         mcp_tool_used=item.source,
-                        verification_score=1.0
-                        if item.verification_status == "verified"
-                        else 0.0,
+                        verification_score=1.0 if item.verification_status == "verified" else 0.0,
                     )
                     search_results.append(search_result)
                 return search_results

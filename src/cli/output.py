@@ -41,9 +41,7 @@ class SparkleForgeOutput:
         """정보 메시지 출력."""
         self.console.print(f"[cyan]ℹ️  {message}[/cyan]")
 
-    def print_table(
-        self, title: str, headers: List[str], rows: List[List[str]], **kwargs
-    ):
+    def print_table(self, title: str, headers: List[str], rows: List[List[str]], **kwargs):
         """테이블 출력."""
         table = Table(title=title, show_header=True, header_style="bold cyan", **kwargs)
 
@@ -60,9 +58,7 @@ class SparkleForgeOutput:
         panel = Panel(content, title=title, border_style=border_style)
         self.console.print(panel)
 
-    def create_progress(
-        self, description: str = "Processing...", total: float | None = None
-    ):
+    def create_progress(self, description: str = "Processing...", total: float | None = None):
         """진행 바 생성."""
         columns = [
             SpinnerColumn(),

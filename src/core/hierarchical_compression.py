@@ -1,10 +1,10 @@
 """Hierarchical compression module - thin wrapper over src.core.compression."""
 
 from src.core.compression import (
+    CompressionHistory,
     CompressionLevel,
     CompressionResult,
     CompressionValidator,
-    CompressionHistory,
     HierarchicalCompressor,
     compress_data,
 )

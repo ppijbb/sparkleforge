@@ -28,6 +28,7 @@ class ModalSandboxBackend(BaseSandboxBackend):
             return
         try:
             from langchain_modal.sandbox import ModalSandbox
+
             self._sandbox = ModalSandbox()
         except ImportError as e:
             raise ImportError(
@@ -42,6 +43,7 @@ class ModalSandboxBackend(BaseSandboxBackend):
         else:
             command = code
         import asyncio
+
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,

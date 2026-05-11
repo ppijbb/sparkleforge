@@ -90,20 +90,12 @@ class WorkflowProgress:
     @property
     def completed_agents(self) -> List[AgentProgress]:
         """완료된 에이전트 목록."""
-        return [
-            agent
-            for agent in self.agents.values()
-            if agent.status == AgentStatus.COMPLETED
-        ]
+        return [agent for agent in self.agents.values() if agent.status == AgentStatus.COMPLETED]
 
     @property
     def failed_agents(self) -> List[AgentProgress]:
         """실패한 에이전트 목록."""
-        return [
-            agent
-            for agent in self.agents.values()
-            if agent.status == AgentStatus.FAILED
-        ]
+        return [agent for agent in self.agents.values() if agent.status == AgentStatus.FAILED]
 
 
 class ProgressTracker:
@@ -266,9 +258,9 @@ class ProgressTracker:
                 if "generator" in agent.agent_type.lower()
             ]
             if generating_agents:
-                stage_progress = sum(
-                    agent.progress for agent in generating_agents
-                ) / len(generating_agents)
+                stage_progress = sum(agent.progress for agent in generating_agents) / len(
+                    generating_agents
+                )
                 base_progress += stage_progress * 0.10
 
         return min(base_progress, 1.0)
@@ -282,12 +274,8 @@ class ProgressTracker:
             WorkflowStage.GENERATING: ["generator"],
         }
 
-        current_stage_types = stage_agent_types.get(
-            self.workflow_progress.current_stage, []
-        )
-        return any(
-            agent_type in agent.agent_type.lower() for agent_type in current_stage_types
-        )
+        current_stage_types = stage_agent_types.get(self.workflow_progress.current_stage, [])
+        return any(agent_type in agent.agent_type.lower() for agent_type in current_stage_types)
 
     def _estimate_completion_time(self) -> float | None:
         """예상 완료 시간 추정."""
@@ -324,9 +312,7 @@ class ProgressTracker:
     # 에이전트 관리 메서드들
     def register_agent(self, agent_id: str, agent_type: str) -> AgentProgress:
         """새 에이전트 등록."""
-        agent = AgentProgress(
-            agent_id=agent_id, agent_type=agent_type, status=AgentStatus.PENDING
-        )
+        agent = AgentProgress(agent_id=agent_id, agent_type=agent_type, status=AgentStatus.PENDING)
 
         self.workflow_progress.agents[agent_id] = agent
         self.stats["total_agents_created"] += 1
@@ -395,9 +381,7 @@ class ProgressTracker:
             agent.current_task = current_task
 
     # 워크플로우 관리 메서드들
-    def set_workflow_stage(
-        self, stage: WorkflowStage, metadata: Dict[str, Any] | None = None
-    ):
+    def set_workflow_stage(self, stage: WorkflowStage, metadata: Dict[str, Any] | None = None):
         """워크플로우 단계 설정."""
         old_stage = self.workflow_progress.current_stage
         self.workflow_progress.current_stage = stage
@@ -493,9 +477,11 @@ class ProgressTracker:
         return {
             **self.stats,
             "current_time": time.time(),
-            "uptime": time.time() - self.workflow_progress.start_time
-            if self.workflow_progress.start_time
-            else 0,
+            "uptime": (
+                time.time() - self.workflow_progress.start_time
+                if self.workflow_progress.start_time
+                else 0
+            ),
         }
 
 

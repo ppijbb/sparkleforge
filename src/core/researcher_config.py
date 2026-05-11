@@ -57,25 +57,17 @@ class LLMConfig(BaseModel):
     )
 
     # Claude Code settings
-    claude_code_api_key: str | None = Field(
-        default=None, description="Claude Code API key"
-    )
+    claude_code_api_key: str | None = Field(default=None, description="Claude Code API key")
 
     # OpenCode settings
-    open_code_model_path: str | None = Field(
-        default=None, description="OpenCode model path"
-    )
+    open_code_model_path: str | None = Field(default=None, description="OpenCode model path")
 
     # Gemini CLI settings
-    gemini_cli_api_key: str | None = Field(
-        default=None, description="Gemini CLI API key"
-    )
+    gemini_cli_api_key: str | None = Field(default=None, description="Gemini CLI API key")
     gemini_cli_model: str = Field(default="gemini-pro", description="Gemini CLI model")
 
     # Cline CLI settings
-    cline_cli_config_path: str | None = Field(
-        default=None, description="Cline CLI config path"
-    )
+    cline_cli_config_path: str | None = Field(default=None, description="Cline CLI config path")
 
     @field_validator("openrouter_api_key")
     @classmethod
@@ -112,9 +104,7 @@ class LLMConfig(BaseModel):
                 missing_vars.append(f"{var}: {message}")
 
         if missing_vars:
-            raise ValueError(
-                "Missing required environment variables:\n" + "\n".join(missing_vars)
-            )
+            raise ValueError("Missing required environment variables:\n" + "\n".join(missing_vars))
 
         # OpenRouter API 키 형식 검증
         api_key = os.getenv("OPENROUTER_API_KEY")
@@ -136,9 +126,7 @@ class AgentConfig(BaseModel):
     enable_agent_communication: bool = Field(description="Enable agent communication")
 
     # Adaptive Supervisor (혁신 1) - NO DEFAULTS
-    max_concurrent_research_units: int = Field(
-        gt=0, description="Max concurrent research units"
-    )
+    max_concurrent_research_units: int = Field(gt=0, description="Max concurrent research units")
     min_researchers: int = Field(gt=0, description="Min researchers")
     max_researchers: int = Field(gt=0, description="Max researchers")
     enable_fast_track: bool = Field(description="Enable fast track")
@@ -244,9 +232,7 @@ class ResearchConfig:
     enable_parallel_verification: bool
 
     # Adaptive Research Depth (혁신 9) - Optional with defaults
-    research_depth: AdaptiveResearchDepthConfig = field(
-        default_factory=AdaptiveResearchDepthConfig
-    )
+    research_depth: AdaptiveResearchDepthConfig = field(default_factory=AdaptiveResearchDepthConfig)
 
 
 @dataclass
@@ -524,11 +510,15 @@ class AgentSecurityPolicyEntry(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     input_max_length: int = Field(
-        default=20_000, ge=500, le=500_000,
+        default=20_000,
+        ge=500,
+        le=500_000,
         description="이 에이전트에 전달할 입력 최대 길이",
     )
     output_max_length: int = Field(
-        default=50_000, ge=500, le=1_000_000,
+        default=50_000,
+        ge=500,
+        le=1_000_000,
         description="이 에이전트 출력 최대 길이",
     )
     allowed_topics: List[str] = Field(
@@ -548,7 +538,9 @@ class AgentSecurityPolicyEntry(BaseModel):
         description="MVI: 이 에이전트가 접근 가능한 state 키 (빈 리스트 = 전체 접근)",
     )
     max_llm_calls_per_execution: int = Field(
-        default=50, ge=1, le=500,
+        default=50,
+        ge=1,
+        le=500,
         description="단일 실행에서 허용되는 최대 LLM 호출 수",
     )
     enable_pii_redaction: bool = Field(
@@ -582,8 +574,14 @@ class AgentSecurityConfig(BaseModel):
                 r"(?i)(rm\s+-rf|DROP\s+TABLE|DELETE\s+FROM)",
             ],
             allowed_tool_categories=["planning", "search", "utility"],
-            context_scope=["user_query", "messages", "session_id", "metadata",
-                           "research_plan", "pending_questions"],
+            context_scope=[
+                "user_query",
+                "messages",
+                "session_id",
+                "metadata",
+                "research_plan",
+                "pending_questions",
+            ],
             max_llm_calls_per_execution=20,
         ),
         description="PlannerAgent 보안 정책",
@@ -596,11 +594,28 @@ class AgentSecurityConfig(BaseModel):
                 r"(?i)(SYSTEM\s*:\s*You\s+are)",
                 r"(?i)(API[_\s]?KEY\s*[:=]\s*\S+)",
             ],
-            allowed_tool_categories=["search", "data", "academic", "business", "code", "browser", "file"],
-            context_scope=["user_query", "messages", "session_id", "metadata",
-                           "research_plan", "research_tasks", "research_results",
-                           "pending_questions", "waiting_for_user",
-                           "approved_tool_results", "rejected_tool_approvals"],
+            allowed_tool_categories=[
+                "search",
+                "data",
+                "academic",
+                "business",
+                "code",
+                "browser",
+                "file",
+            ],
+            context_scope=[
+                "user_query",
+                "messages",
+                "session_id",
+                "metadata",
+                "research_plan",
+                "research_tasks",
+                "research_results",
+                "pending_questions",
+                "waiting_for_user",
+                "approved_tool_results",
+                "rejected_tool_approvals",
+            ],
             max_llm_calls_per_execution=50,
         ),
         description="ExecutorAgent 보안 정책",
@@ -612,9 +627,16 @@ class AgentSecurityConfig(BaseModel):
                 r"(?i)(exec\(|eval\(|__import__)",
             ],
             allowed_tool_categories=["verification", "search", "data", "academic"],
-            context_scope=["user_query", "messages", "session_id", "metadata",
-                           "research_plan", "research_tasks", "research_results",
-                           "verified_results"],
+            context_scope=[
+                "user_query",
+                "messages",
+                "session_id",
+                "metadata",
+                "research_plan",
+                "research_tasks",
+                "research_results",
+                "verified_results",
+            ],
             max_llm_calls_per_execution=30,
         ),
         description="VerifierAgent 보안 정책",
@@ -629,9 +651,17 @@ class AgentSecurityConfig(BaseModel):
                 r"(?i)(password\s*[:=]\s*\S+)",
             ],
             allowed_tool_categories=["generation", "utility", "search", "document", "file"],
-            context_scope=["user_query", "messages", "session_id", "metadata",
-                           "research_plan", "research_tasks", "verified_results",
-                           "final_report", "a2ui_json"],
+            context_scope=[
+                "user_query",
+                "messages",
+                "session_id",
+                "metadata",
+                "research_plan",
+                "research_tasks",
+                "verified_results",
+                "final_report",
+                "a2ui_json",
+            ],
             max_llm_calls_per_execution=15,
         ),
         description="GeneratorAgent 보안 정책",
@@ -684,17 +714,11 @@ class AgentToolConfig(BaseModel):
     )
 
     # 도구 할당 제한
-    max_tools_per_agent: int = Field(
-        default=5, ge=1, le=20, description="에이전트당 최대 도구 수"
-    )
-    enable_auto_discovery: bool = Field(
-        default=True, description="자동 도구 발견 활성화"
-    )
+    max_tools_per_agent: int = Field(default=5, ge=1, le=20, description="에이전트당 최대 도구 수")
+    enable_auto_discovery: bool = Field(default=True, description="자동 도구 발견 활성화")
 
     # Cross-Agent 통신 설정
-    enable_cross_agent_tools: bool = Field(
-        default=True, description="Cross-Agent 도구 활성화"
-    )
+    enable_cross_agent_tools: bool = Field(default=True, description="Cross-Agent 도구 활성화")
     cross_agent_timeout: float = Field(
         default=30.0, ge=5.0, le=300.0, description="Cross-Agent 호출 타임아웃(초)"
     )
@@ -715,9 +739,7 @@ class ResearcherSystemConfig(BaseModel):
     # Innovation configurations - NO DEFAULTS
     compression: CompressionConfig = Field(description="Compression configuration")
     verification: VerificationConfig = Field(description="Verification configuration")
-    context_window: ContextWindowConfig = Field(
-        description="Context window configuration"
-    )
+    context_window: ContextWindowConfig = Field(description="Context window configuration")
     reliability: ReliabilityConfig = Field(description="Reliability configuration")
     council: CouncilConfig = Field(description="Council configuration")
     cascade: CascadeConfig = Field(
@@ -755,9 +777,7 @@ class ResearcherSystemConfig(BaseModel):
 
         # Validate researcher limits
         if self.agent.min_researchers > self.agent.max_researchers:
-            raise ValueError(
-                "min_researchers must be less than or equal to max_researchers"
-            )
+            raise ValueError("min_researchers must be less than or equal to max_researchers")
 
         # Validate confidence thresholds
         if not 0.0 <= self.verification.confidence_threshold <= 1.0:
@@ -774,18 +794,14 @@ config = None
 def get_llm_config() -> LLMConfig:
     """Get LLM configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.llm
 
 
 def get_cli_agents_config() -> Dict[str, Any]:
     """Get CLI agents configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
 
     cli_config = {}
 
@@ -795,32 +811,21 @@ def get_cli_agents_config() -> Dict[str, Any]:
     # 각 CLI 에이전트 설정
     cli_config["agents"] = {
         "claude_code": {
-            "enabled": bool(
-                os.getenv("CLAUDE_CODE_API_KEY") or config.llm.claude_code_api_key
-            ),
-            "api_key": os.getenv("CLAUDE_CODE_API_KEY")
-            or config.llm.claude_code_api_key,
+            "enabled": bool(os.getenv("CLAUDE_CODE_API_KEY") or config.llm.claude_code_api_key),
+            "api_key": os.getenv("CLAUDE_CODE_API_KEY") or config.llm.claude_code_api_key,
         },
         "open_code": {
-            "enabled": bool(
-                os.getenv("OPEN_CODE_MODEL_PATH") or config.llm.open_code_model_path
-            ),
-            "model_path": os.getenv("OPEN_CODE_MODEL_PATH")
-            or config.llm.open_code_model_path,
+            "enabled": bool(os.getenv("OPEN_CODE_MODEL_PATH") or config.llm.open_code_model_path),
+            "model_path": os.getenv("OPEN_CODE_MODEL_PATH") or config.llm.open_code_model_path,
         },
         "gemini_cli": {
-            "enabled": bool(
-                os.getenv("GEMINI_CLI_API_KEY") or config.llm.gemini_cli_api_key
-            ),
+            "enabled": bool(os.getenv("GEMINI_CLI_API_KEY") or config.llm.gemini_cli_api_key),
             "api_key": os.getenv("GEMINI_CLI_API_KEY") or config.llm.gemini_cli_api_key,
             "model": os.getenv("GEMINI_CLI_MODEL", config.llm.gemini_cli_model),
         },
         "cline_cli": {
-            "enabled": bool(
-                os.getenv("CLINE_CLI_CONFIG_PATH") or config.llm.cline_cli_config_path
-            ),
-            "config_path": os.getenv("CLINE_CLI_CONFIG_PATH")
-            or config.llm.cline_cli_config_path,
+            "enabled": bool(os.getenv("CLINE_CLI_CONFIG_PATH") or config.llm.cline_cli_config_path),
+            "config_path": os.getenv("CLINE_CLI_CONFIG_PATH") or config.llm.cline_cli_config_path,
         },
     }
 
@@ -857,63 +862,49 @@ def initialize_cli_agents():
 def get_agent_config() -> AgentConfig:
     """Get agent configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.agent
 
 
 def get_research_config() -> ResearchConfig:
     """Get research configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.research
 
 
 def get_mcp_config() -> MCPConfig:
     """Get MCP configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.mcp
 
 
 def get_output_config() -> OutputConfig:
     """Get output configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.output
 
 
 def get_compression_config() -> CompressionConfig:
     """Get compression configuration (혁신 2)."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.compression
 
 
 def get_verification_config() -> VerificationConfig:
     """Get verification configuration (혁신 4)."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.verification
 
 
 def get_agent_security_config() -> AgentSecurityConfig:
     """Get per-agent security configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.agent_security
 
 
@@ -932,45 +923,35 @@ def get_agent_security_policy(agent_name: str) -> AgentSecurityPolicyEntry:
 def get_context_window_config() -> ContextWindowConfig:
     """Get context window configuration (혁신 7)."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.context_window
 
 
 def get_reliability_config() -> ReliabilityConfig:
     """Get reliability configuration (혁신 8)."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.reliability
 
 
 def get_cascade_config() -> CascadeConfig:
     """Get Cascade configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.cascade
 
 
 def get_council_config() -> CouncilConfig:
     """Get council configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.council
 
 
 def get_prompt_refiner_config() -> PromptRefinerConfig:
     """Get prompt refiner configuration."""
     if config is None:
-        raise RuntimeError(
-            "Configuration not loaded. Call load_config_from_env() first."
-        )
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.prompt_refiner
 
 
@@ -1001,16 +982,12 @@ def load_config_from_env() -> ResearcherSystemConfig:
             try:
                 return int(value)
             except ValueError:
-                raise ValueError(
-                    f"Environment variable {key} must be an integer, got: {value}"
-                )
+                raise ValueError(f"Environment variable {key} must be an integer, got: {value}")
         elif var_type == float:
             try:
                 return float(value)
             except ValueError:
-                raise ValueError(
-                    f"Environment variable {key} must be a float, got: {value}"
-                )
+                raise ValueError(f"Environment variable {key} must be a float, got: {value}")
         return value
 
     def get_required_list_env(key: str, separator: str = ","):
@@ -1038,9 +1015,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
                 return default_value
         return value
 
-    def get_optional_list_env(
-        key: str, default_value: List[str] = None, separator: str = ","
-    ):
+    def get_optional_list_env(key: str, default_value: List[str] = None, separator: str = ","):
         """Get optional environment variable as list with default."""
         if default_value is None:
             default_value = []
@@ -1093,9 +1068,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
         timeout_seconds=get_optional_env("AGENT_TIMEOUT", 300, int),
         enable_self_planning=get_optional_env("ENABLE_SELF_PLANNING", True, bool),
         enable_agent_communication=get_optional_env("ENABLE_AGENT_COMMUNICATION", True, bool),
-        max_concurrent_research_units=get_optional_env(
-            "MAX_CONCURRENT_RESEARCH_UNITS", 5, int
-        ),
+        max_concurrent_research_units=get_optional_env("MAX_CONCURRENT_RESEARCH_UNITS", 5, int),
         min_researchers=get_optional_env("MIN_RESEARCHERS", 1, int),
         max_researchers=get_optional_env("MAX_RESEARCHERS", 10, int),
         enable_fast_track=get_optional_env("ENABLE_FAST_TRACK", True, bool),
@@ -1114,16 +1087,10 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enable_browser_automation=get_optional_env("ENABLE_BROWSER_AUTOMATION", True, bool),
         enable_streaming=get_optional_env("ENABLE_STREAMING", True, bool),
         stream_chunk_size=get_optional_env("STREAM_CHUNK_SIZE", 1024, int),
-        enable_progressive_reporting=get_optional_env(
-            "ENABLE_PROGRESSIVE_REPORTING", True, bool
-        ),
+        enable_progressive_reporting=get_optional_env("ENABLE_PROGRESSIVE_REPORTING", True, bool),
         enable_incremental_save=get_optional_env("ENABLE_INCREMENTAL_SAVE", True, bool),
-        enable_parallel_compression=get_optional_env(
-            "ENABLE_PARALLEL_COMPRESSION", True, bool
-        ),
-        enable_parallel_verification=get_optional_env(
-            "ENABLE_PARALLEL_VERIFICATION", True, bool
-        ),
+        enable_parallel_compression=get_optional_env("ENABLE_PARALLEL_COMPRESSION", True, bool),
+        enable_parallel_verification=get_optional_env("ENABLE_PARALLEL_VERIFICATION", True, bool),
     )
 
     # Load MCP configuration (기본값 있음)
@@ -1131,29 +1098,27 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enabled=get_optional_env("MCP_ENABLED", True, bool),
         server_names=get_optional_list_env(
             "MCP_SERVER_NAMES",
-            ["g-search", "tavily", "exa", "fetch", "filesystem", "python_coder", "code_interpreter", "arxiv", "scholar"],
+            [
+                "g-search",
+                "tavily",
+                "exa",
+                "fetch",
+                "filesystem",
+                "python_coder",
+                "code_interpreter",
+                "arxiv",
+                "scholar",
+            ],
         ),
         connection_timeout=get_optional_env("MCP_TIMEOUT", 30, int),
         enable_plugin_architecture=get_optional_env("ENABLE_PLUGIN_ARCHITECTURE", True, bool),
-        enable_smart_tool_selection=get_optional_env(
-            "ENABLE_SMART_TOOL_SELECTION", True, bool
-        ),
+        enable_smart_tool_selection=get_optional_env("ENABLE_SMART_TOOL_SELECTION", True, bool),
         enable_auto_fallback=get_optional_env("ENABLE_AUTO_FALLBACK", False, bool),
-        search_tools=get_optional_list_env(
-            "MCP_SEARCH_TOOLS", ["g-search", "tavily", "exa"]
-        ),
-        data_tools=get_optional_list_env(
-            "MCP_DATA_TOOLS", ["fetch", "filesystem"]
-        ),
-        code_tools=get_optional_list_env(
-            "MCP_CODE_TOOLS", ["python_coder", "code_interpreter"]
-        ),
-        academic_tools=get_optional_list_env(
-            "MCP_ACADEMIC_TOOLS", ["arxiv", "scholar"]
-        ),
-        business_tools=get_optional_list_env(
-            "MCP_BUSINESS_TOOLS", ["g-search"]
-        ),
+        search_tools=get_optional_list_env("MCP_SEARCH_TOOLS", ["g-search", "tavily", "exa"]),
+        data_tools=get_optional_list_env("MCP_DATA_TOOLS", ["fetch", "filesystem"]),
+        code_tools=get_optional_list_env("MCP_CODE_TOOLS", ["python_coder", "code_interpreter"]),
+        academic_tools=get_optional_list_env("MCP_ACADEMIC_TOOLS", ["arxiv", "scholar"]),
+        business_tools=get_optional_list_env("MCP_BUSINESS_TOOLS", ["g-search"]),
         builder_enabled=get_optional_env("MCP_BUILDER_ENABLED", True, bool),
         builder_temp_dir=get_optional_env("MCP_BUILDER_TEMP_DIR", "temp/mcp_servers"),
         builder_auto_cleanup=get_optional_env("MCP_BUILDER_AUTO_CLEANUP", True, bool),
@@ -1168,12 +1133,8 @@ def load_config_from_env() -> ResearcherSystemConfig:
         ),
         compression_levels=get_optional_env("COMPRESSION_LEVELS", 3, int),
         preserve_important_info=get_optional_env("PRESERVE_IMPORTANT_INFO", True, bool),
-        enable_compression_validation=get_optional_env(
-            "ENABLE_COMPRESSION_VALIDATION", True, bool
-        ),
-        compression_history_enabled=get_optional_env(
-            "COMPRESSION_HISTORY_ENABLED", True, bool
-        ),
+        enable_compression_validation=get_optional_env("ENABLE_COMPRESSION_VALIDATION", True, bool),
+        compression_history_enabled=get_optional_env("COMPRESSION_HISTORY_ENABLED", True, bool),
         min_compression_ratio=get_optional_env("MIN_COMPRESSION_RATIO", 0.05, float),
         target_compression_ratio=get_optional_env("TARGET_COMPRESSION_RATIO", 0.2, float),
     )
@@ -1198,9 +1159,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enable_adaptive_context=get_optional_env("ENABLE_ADAPTIVE_CONTEXT", True, bool),
         min_tokens=get_optional_env("MIN_TOKENS", 2000, int),
         max_tokens=get_optional_env("MAX_TOKENS", 1000000, int),
-        importance_based_preservation=get_optional_env(
-            "IMPORTANCE_BASED_PRESERVATION", True, bool
-        ),
+        importance_based_preservation=get_optional_env("IMPORTANCE_BASED_PRESERVATION", True, bool),
         enable_auto_compression=get_optional_env("ENABLE_AUTO_COMPRESSION", True, bool),
         enable_long_term_memory=False,
         memory_refresh_interval=get_optional_env("MEMORY_REFRESH_INTERVAL", 3600, int),
@@ -1213,9 +1172,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enable_exponential_backoff=get_optional_env("ENABLE_EXPONENTIAL_BACKOFF", True, bool),
         enable_state_persistence=False,
         enable_health_check=get_optional_env("ENABLE_HEALTH_CHECK", True, bool),
-        enable_graceful_degradation=get_optional_env(
-            "ENABLE_GRACEFUL_DEGRADATION", False, bool
-        ),
+        enable_graceful_degradation=get_optional_env("ENABLE_GRACEFUL_DEGRADATION", False, bool),
         enable_detailed_logging=get_optional_env("ENABLE_DETAILED_LOGGING", True, bool),
         failure_threshold=get_optional_env("FAILURE_THRESHOLD", 5, int),
         recovery_timeout=get_optional_env("RECOVERY_TIMEOUT", 60, int),
@@ -1284,18 +1241,10 @@ def load_config_from_env() -> ResearcherSystemConfig:
         ),
         min_complexity_for_auto=get_optional_env("COUNCIL_MIN_COMPLEXITY", 0.6, float),
         enable_for_planning=get_optional_env("COUNCIL_ENABLE_FOR_PLANNING", True, bool),
-        enable_for_execution=get_optional_env(
-            "COUNCIL_ENABLE_FOR_EXECUTION", True, bool
-        ),
-        enable_for_evaluation=get_optional_env(
-            "COUNCIL_ENABLE_FOR_EVALUATION", True, bool
-        ),
-        enable_for_verification=get_optional_env(
-            "COUNCIL_ENABLE_FOR_VERIFICATION", True, bool
-        ),
-        enable_for_synthesis=get_optional_env(
-            "COUNCIL_ENABLE_FOR_SYNTHESIS", True, bool
-        ),
+        enable_for_execution=get_optional_env("COUNCIL_ENABLE_FOR_EXECUTION", True, bool),
+        enable_for_evaluation=get_optional_env("COUNCIL_ENABLE_FOR_EVALUATION", True, bool),
+        enable_for_verification=get_optional_env("COUNCIL_ENABLE_FOR_VERIFICATION", True, bool),
+        enable_for_synthesis=get_optional_env("COUNCIL_ENABLE_FOR_SYNTHESIS", True, bool),
         openrouter_api_key=openrouter_api_key,
         openrouter_api_url=get_optional_env(
             "OPENROUTER_API_URL", "https://openrouter.ai/api/v1/chat/completions"
@@ -1306,43 +1255,33 @@ def load_config_from_env() -> ResearcherSystemConfig:
     # Load Cascade configuration (Optional with defaults)
     cascade_config = CascadeConfig(
         enabled=get_optional_env("CASCADE_ENABLED", True, bool),
-        confidence_threshold=get_optional_env(
-            "CASCADE_CONFIDENCE_THRESHOLD", 0.75, float
-        ),
+        confidence_threshold=get_optional_env("CASCADE_CONFIDENCE_THRESHOLD", 0.75, float),
         min_models_for_cascade=get_optional_env("CASCADE_MIN_MODELS", 2, int),
-        enable_adaptive_threshold=get_optional_env(
-            "CASCADE_ENABLE_ADAPTIVE_THRESHOLD", True, bool
-        ),
-        drafter_cost_threshold=get_optional_env(
-            "CASCADE_DRAFTER_COST_THRESHOLD", 0.0002, float
-        ),
+        enable_adaptive_threshold=get_optional_env("CASCADE_ENABLE_ADAPTIVE_THRESHOLD", True, bool),
+        drafter_cost_threshold=get_optional_env("CASCADE_DRAFTER_COST_THRESHOLD", 0.0002, float),
         verifier_quality_threshold=get_optional_env(
             "CASCADE_VERIFIER_QUALITY_THRESHOLD", 8.0, float
         ),
-        drafter_speed_threshold=get_optional_env(
-            "CASCADE_DRAFTER_SPEED_THRESHOLD", 7.0, float
-        ),
-        domain_validation_enabled=get_optional_env(
-            "CASCADE_DOMAIN_VALIDATION_ENABLED", True, bool
-        ),
+        drafter_speed_threshold=get_optional_env("CASCADE_DRAFTER_SPEED_THRESHOLD", 7.0, float),
+        domain_validation_enabled=get_optional_env("CASCADE_DOMAIN_VALIDATION_ENABLED", True, bool),
         semantic_agreement_enabled=get_optional_env(
             "CASCADE_SEMANTIC_AGREEMENT_ENABLED", False, bool
         ),
         semantic_agreement_threshold=get_optional_env(
             "CASCADE_SEMANTIC_AGREEMENT_THRESHOLD", 0.7, float
         ),
-        cost_cap_per_run=get_optional_env(
-            "CASCADE_COST_CAP_PER_RUN", None, float
-        ),
+        cost_cap_per_run=get_optional_env("CASCADE_COST_CAP_PER_RUN", None, float),
     )
 
     # Load PromptRefiner configuration (Optional with defaults)
     prompt_refiner_config = PromptRefinerConfig(
         enabled=get_optional_env("PROMPT_REFINER_ENABLED", True, bool),
         strategy=get_optional_env("PROMPT_REFINER_STRATEGY", "aggressive"),
-        max_tokens=get_optional_env("PROMPT_REFINER_MAX_TOKENS", None, int)
-        if get_optional_env("PROMPT_REFINER_MAX_TOKENS")
-        else None,
+        max_tokens=(
+            get_optional_env("PROMPT_REFINER_MAX_TOKENS", None, int)
+            if get_optional_env("PROMPT_REFINER_MAX_TOKENS")
+            else None
+        ),
         collect_stats=get_optional_env("PROMPT_REFINER_COLLECT_STATS", True, bool),
     )
 
@@ -1350,15 +1289,11 @@ def load_config_from_env() -> ResearcherSystemConfig:
     overseer_config = OverseerConfig(
         enabled=get_optional_env("OVERSEER_ENABLED", True, bool),
         max_iterations=get_optional_env("OVERSEER_MAX_ITERATIONS", 5, int),
-        completeness_threshold=get_optional_env(
-            "OVERSEER_COMPLETENESS_THRESHOLD", 0.9, float
-        ),
+        completeness_threshold=get_optional_env("OVERSEER_COMPLETENESS_THRESHOLD", 0.9, float),
         quality_threshold=get_optional_env("OVERSEER_QUALITY_THRESHOLD", 0.85, float),
         min_academic_sources=get_optional_env("OVERSEER_MIN_ACADEMIC_SOURCES", 3, int),
         min_verified_sources=get_optional_env("OVERSEER_MIN_VERIFIED_SOURCES", 5, int),
-        require_cross_validation=get_optional_env(
-            "OVERSEER_REQUIRE_CROSS_VALIDATION", True, bool
-        ),
+        require_cross_validation=get_optional_env("OVERSEER_REQUIRE_CROSS_VALIDATION", True, bool),
         enable_human_loop=get_optional_env("OVERSEER_ENABLE_HUMAN_LOOP", True, bool),
     )
 

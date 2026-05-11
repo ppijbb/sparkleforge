@@ -165,9 +165,7 @@ class SkillsComposer:
 
         return result
 
-    def communicate(
-        self, from_skill_id: str, to_skill_id: str, message: Dict[str, Any]
-    ):
+    def communicate(self, from_skill_id: str, to_skill_id: str, message: Dict[str, Any]):
         """Skills 간 통신."""
         channel = f"{from_skill_id}->{to_skill_id}"
         self.communication_bus[channel] = message
@@ -212,9 +210,7 @@ class SkillsComposer:
                 and skill_categories[category] != skill.metadata.skill_id
             ):
                 # 같은 카테고리에 여러 skill이 있으면 경고 (충돌 가능성)
-                logger.debug(
-                    f"Multiple skills in category {category}: potential conflict"
-                )
+                logger.debug(f"Multiple skills in category {category}: potential conflict")
 
         is_valid = len(issues) == 0
         return is_valid, issues
@@ -226,9 +222,7 @@ class SkillsComposer:
 
         # Skills 재정렬
         skill_map = {s.metadata.skill_id: s for s in stack.skills}
-        optimized_skills = [
-            skill_map[sid] for sid in optimized_order if sid in skill_map
-        ]
+        optimized_skills = [skill_map[sid] for sid in optimized_order if sid in skill_map]
 
         return SkillStack(
             skills=optimized_skills,

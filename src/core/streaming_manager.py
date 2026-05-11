@@ -105,12 +105,10 @@ class AgentProgress:
             "status": self.status.value,
             "progress_percentage": self.progress_percentage,
             "current_task": self.current_task,
-            "estimated_completion": self.estimated_completion.isoformat()
-            if self.estimated_completion
-            else None,
-            "last_activity": self.last_activity.isoformat()
-            if self.last_activity
-            else None,
+            "estimated_completion": (
+                self.estimated_completion.isoformat() if self.estimated_completion else None
+            ),
+            "last_activity": self.last_activity.isoformat() if self.last_activity else None,
         }
 
 
@@ -148,9 +146,7 @@ class StreamingManager:
         # Circuit breaker for reliability
         self.circuit_breaker = CircuitBreaker(
             name="streaming_manager",
-            config=CircuitBreakerConfig(
-                failure_threshold=10, recovery_timeout=30, timeout=5.0
-            ),
+            config=CircuitBreakerConfig(failure_threshold=10, recovery_timeout=30, timeout=5.0),
         )
 
         # 백프레셔 제어
@@ -158,9 +154,7 @@ class StreamingManager:
         self.is_backpressured = False
 
         # 스레드 풀 for CPU-intensive tasks
-        self.executor = ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="streaming"
-        )
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="streaming")
 
         # 이벤트 통계
         self.stats = {
@@ -243,10 +237,7 @@ class StreamingManager:
             await self._broadcast_event(event)
 
             # 백프레셔 해제 체크
-            if (
-                self.is_backpressured
-                and len(self.event_queue) < self.backpressure_threshold * 0.5
-            ):
+            if self.is_backpressured and len(self.event_queue) < self.backpressure_threshold * 0.5:
                 logger.info("Backpressure released")
                 self.is_backpressured = False
 
@@ -476,9 +467,7 @@ class StreamingManager:
         if not agent_progresses:
             return {"total_agents": 0, "completed_agents": 0, "overall_progress": 0.0}
 
-        completed = sum(
-            1 for ap in agent_progresses if ap.status == AgentStatus.COMPLETED
-        )
+        completed = sum(1 for ap in agent_progresses if ap.status == AgentStatus.COMPLETED)
         overall_progress = sum(ap.progress_percentage for ap in agent_progresses) / len(
             agent_progresses
         )
@@ -524,9 +513,7 @@ class StreamingManager:
         if workflow_id in self.workflow_agents:
             del self.workflow_agents[workflow_id]
 
-        logger.info(
-            f"Cleaned up workflow {workflow_id}: removed {len(agents_to_remove)} agents"
-        )
+        logger.info(f"Cleaned up workflow {workflow_id}: removed {len(agents_to_remove)} agents")
 
     async def shutdown(self) -> None:
         """스트리밍 매니저를 종료합니다."""
@@ -553,7 +540,7 @@ class StreamingManager:
             start_time = time.time()
             while time.time() - start_time < 5.0:
                 # 활성 스레드 수 확인
-                active_threads = threading.active_count()
+                threading.active_count()
                 # executor의 스레드가 종료되었는지 간접적으로 확인
                 # (executor 내부 스레드 추적이 어려우므로 짧은 대기 후 종료)
                 if time.time() - start_time >= 2.0:  # 최소 2초 대기

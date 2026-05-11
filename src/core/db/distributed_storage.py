@@ -61,9 +61,7 @@ class DistributedStorage:
         """Redis 연결."""
         if self.enable_cache and self._redis is None:
             try:
-                self._redis = await aioredis.from_url(
-                    self.redis_url, decode_responses=True
-                )
+                self._redis = await aioredis.from_url(self.redis_url, decode_responses=True)
                 await self._redis.ping()
                 logger.info("Redis connected")
             except Exception as e:
@@ -77,9 +75,7 @@ class DistributedStorage:
             self._redis = None
             logger.info("Redis disconnected")
 
-    async def get_session(
-        self, session_id: str, use_cache: bool = True
-    ) -> Dict[str, Any] | None:
+    async def get_session(self, session_id: str, use_cache: bool = True) -> Dict[str, Any] | None:
         """세션 조회 (캐시 우선).
 
         Args:
@@ -183,9 +179,7 @@ class DistributedStorage:
             return
 
         try:
-            await self._redis.setex(
-                key, self.cache_ttl, json.dumps(value, ensure_ascii=False)
-            )
+            await self._redis.setex(key, self.cache_ttl, json.dumps(value, ensure_ascii=False))
         except Exception as e:
             logger.debug(f"Cache set failed: {e}")
 
@@ -199,9 +193,7 @@ class DistributedStorage:
         except Exception as e:
             logger.debug(f"Cache delete failed: {e}")
 
-    async def acquire_lock(
-        self, lock_key: str, timeout: int = 10, expire: int = 30
-    ) -> bool:
+    async def acquire_lock(self, lock_key: str, timeout: int = 10, expire: int = 30) -> bool:
         """분산 락 획득.
 
         Args:

@@ -174,9 +174,11 @@ class Scheduler:
                     schedule_id=exec_data["schedule_id"],
                     session_id=exec_data["session_id"],
                     started_at=datetime.fromisoformat(exec_data["started_at"]),
-                    completed_at=datetime.fromisoformat(exec_data["completed_at"])
-                    if exec_data.get("completed_at")
-                    else None,
+                    completed_at=(
+                        datetime.fromisoformat(exec_data["completed_at"])
+                        if exec_data.get("completed_at")
+                        else None
+                    ),
                     status=exec_data.get("status", "completed"),
                     result=exec_data.get("result"),
                     error=exec_data.get("error"),
@@ -198,9 +200,7 @@ class Scheduler:
                         "schedule_id": e.schedule_id,
                         "session_id": e.session_id,
                         "started_at": e.started_at.isoformat(),
-                        "completed_at": e.completed_at.isoformat()
-                        if e.completed_at
-                        else None,
+                        "completed_at": e.completed_at.isoformat() if e.completed_at else None,
                         "status": e.status,
                         "result": e.result,
                         "error": e.error,
@@ -284,9 +284,7 @@ class Scheduler:
         except Exception:
             return False
 
-    def _calculate_next_run(
-        self, cron_expr: str, base_time: datetime | None = None
-    ) -> datetime:
+    def _calculate_next_run(self, cron_expr: str, base_time: datetime | None = None) -> datetime:
         """다음 실행 시간 계산."""
         if base_time is None:
             base_time = datetime.now()
@@ -379,9 +377,7 @@ class Scheduler:
 
         if enabled is not None:
             schedule.enabled = enabled
-            schedule.status = (
-                ScheduleStatus.ACTIVE if enabled else ScheduleStatus.DISABLED
-            )
+            schedule.status = ScheduleStatus.ACTIVE if enabled else ScheduleStatus.DISABLED
 
         if metadata is not None:
             schedule.metadata.update(metadata)
@@ -507,7 +503,8 @@ class Scheduler:
                         task = asyncio.create_task(self._execute_schedule(schedule))
                         self.running_tasks[schedule.schedule_id] = task
                         task.add_done_callback(
-                            lambda t, sid=schedule.schedule_id: self.running_tasks.pop(sid, None))
+                            lambda t, sid=schedule.schedule_id: self.running_tasks.pop(sid, None)
+                        )
 
                 # 1분마다 체크
                 await asyncio.sleep(60)
@@ -520,12 +517,8 @@ class Scheduler:
 
     async def _execute_schedule(self, schedule: ScheduleConfig):
         """스케줄 실행."""
-        execution_id = (
-            f"exec_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-        )
-        session_id = (
-            f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-        )
+        execution_id = f"exec_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
         execution = ScheduleExecution(
             execution_id=execution_id,
@@ -540,9 +533,7 @@ class Scheduler:
                 if self.execution_callback:
                     # Ensure we handle potential CancelledError here if needed
                     # or let it propagate to the caller
-                    result = await self.execution_callback(
-                        schedule.user_query, session_id
-                    )
+                    result = await self.execution_callback(schedule.user_query, session_id)
                     execution.status = "completed"
                     execution.result = result
                 else:
@@ -636,15 +627,9 @@ class Scheduler:
     def get_schedule_statistics(self) -> Dict[str, Any]:
         """스케줄 통계 조회."""
         total = len(self.schedules)
-        active = len(
-            [s for s in self.schedules.values() if s.status == ScheduleStatus.ACTIVE]
-        )
-        paused = len(
-            [s for s in self.schedules.values() if s.status == ScheduleStatus.PAUSED]
-        )
-        disabled = len(
-            [s for s in self.schedules.values() if s.status == ScheduleStatus.DISABLED]
-        )
+        active = len([s for s in self.schedules.values() if s.status == ScheduleStatus.ACTIVE])
+        paused = len([s for s in self.schedules.values() if s.status == ScheduleStatus.PAUSED])
+        disabled = len([s for s in self.schedules.values() if s.status == ScheduleStatus.DISABLED])
 
         total_runs = sum(s.run_count for s in self.schedules.values())
         total_success = sum(s.success_count for s in self.schedules.values())

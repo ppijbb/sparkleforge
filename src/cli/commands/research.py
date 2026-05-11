@@ -122,9 +122,7 @@ async def research_command(cli, args: List[str]):
                         clean_msg = msg
                         # 로그 레벨 제거
                         clean_msg = (
-                            clean_msg.split(" - ", 1)[-1]
-                            if " - " in clean_msg
-                            else clean_msg
+                            clean_msg.split(" - ", 1)[-1] if " - " in clean_msg else clean_msg
                         )
                         # Research Request 중복 제거
                         if "Research Request:" in clean_msg:
@@ -159,14 +157,10 @@ async def research_command(cli, args: List[str]):
             if "final_synthesis" in result:
                 content = result["final_synthesis"].get("content", "")
                 if content:
-                    cli.console.print(
-                        Panel(content, title="Research Result", border_style="green")
-                    )
+                    cli.console.print(Panel(content, title="Research Result", border_style="green"))
             elif "content" in result:
                 cli.console.print(
-                    Panel(
-                        result["content"], title="Research Result", border_style="green"
-                    )
+                    Panel(result["content"], title="Research Result", border_style="green")
                 )
             elif "deliverable" in result:
                 deliverable = result.get("deliverable", {})
@@ -176,17 +170,13 @@ async def research_command(cli, args: List[str]):
                     else str(deliverable)
                 )
                 if content:
-                    cli.console.print(
-                        Panel(content, title="Research Result", border_style="green")
-                    )
+                    cli.console.print(Panel(content, title="Research Result", border_style="green"))
                 else:
                     cli.console.print("[green]✅ Research completed[/green]")
             else:
                 cli.console.print("[green]✅ Research completed[/green]")
                 if result:
-                    cli.console.print(
-                        f"[dim]Result keys: {list(result.keys())[:5]}...[/dim]"
-                    )
+                    cli.console.print(f"[dim]Result keys: {list(result.keys())[:5]}...[/dim]")
         else:
             cli.console.print("[green]✅ Research completed[/green]")
             if result:

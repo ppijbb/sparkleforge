@@ -80,9 +80,7 @@ class SensitiveDataMasker:
         """Mask sensitive data in a message."""
         masked_message = message
         for pattern, replacement in cls.SENSITIVE_PATTERNS:
-            masked_message = re.sub(
-                pattern, replacement, masked_message, flags=re.IGNORECASE
-            )
+            masked_message = re.sub(pattern, replacement, masked_message, flags=re.IGNORECASE)
         return masked_message
 
     @classmethod
@@ -103,8 +101,7 @@ class SensitiveDataMasker:
                 masked_data[key] = cls.mask_dict_values(value)
             elif isinstance(value, list):
                 masked_data[key] = [
-                    cls.mask_dict_values(item) if isinstance(item, dict) else item
-                    for item in value
+                    cls.mask_dict_values(item) if isinstance(item, dict) else item for item in value
                 ]
             else:
                 masked_data[key] = value
@@ -122,9 +119,7 @@ class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-            if self.include_timestamp
-            else None,
+            "timestamp": datetime.utcnow().isoformat() + "Z" if self.include_timestamp else None,
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -140,9 +135,7 @@ class JSONFormatter(logging.Formatter):
             log_data["exception"] = {
                 "type": record.exc_info[0].__name__ if record.exc_info[0] else None,
                 "message": str(record.exc_info[1]) if record.exc_info[1] else None,
-                "traceback": self.formatException(record.exc_info)
-                if record.exc_info
-                else None,
+                "traceback": self.formatException(record.exc_info) if record.exc_info else None,
             }
 
         # Add extra fields from record
@@ -200,7 +193,9 @@ class ColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record with colors."""
         if record.levelname in self.COLORS:
-            record.levelname = f"{self.COLORS[record.levelname]}{record.levelname}{self.COLORS['RESET']}"
+            record.levelname = (
+                f"{self.COLORS[record.levelname]}{record.levelname}{self.COLORS['RESET']}"
+            )
         return super().format(record)
 
 
@@ -249,9 +244,11 @@ def setup_logging(
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
-                structlog.processors.JSONRenderer()
-                if log_format == "json"
-                else structlog.dev.ConsoleRenderer(),
+                (
+                    structlog.processors.JSONRenderer()
+                    if log_format == "json"
+                    else structlog.dev.ConsoleRenderer()
+                ),
             ],
             context_class=dict,
             logger_factory=LoggerFactory(),
@@ -270,9 +267,7 @@ def setup_logging(
             console_handler.setFormatter(ColoredFormatter())
         else:
             console_handler.setFormatter(
-                logging.Formatter(
-                    "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-                )
+                logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
             )
 
         root_logger.addHandler(console_handler)

@@ -62,9 +62,7 @@ class ResearchAgent:
         try:
             api_key = os.getenv("GEMINI_API_KEY")
             if not api_key:
-                logger.warning(
-                    "Gemini API key not found. Research functionality will be limited."
-                )
+                logger.warning("Gemini API key not found. Research functionality will be limited.")
                 return None
 
             genai.configure(api_key=api_key)
@@ -110,9 +108,7 @@ class ResearchAgent:
                         await asyncio.sleep(retry_delay)
                         continue
                     else:
-                        logger.error(
-                            f"LLM call failed after {max_retries} attempts: {e}"
-                        )
+                        logger.error(f"LLM call failed after {max_retries} attempts: {e}")
                         return f"LLM call failed: {e}"
                 else:
                     logger.error(f"LLM call failed: {e}")
@@ -330,9 +326,7 @@ class ResearchAgent:
             task_id = task.get("task_id", str(uuid.uuid4()))
             task_type = task.get("task_type", "general")
 
-            logger.info(
-                f"Executing LLM-based research task: {task_id} (type: {task_type})"
-            )
+            logger.info(f"Executing LLM-based research task: {task_id} (type: {task_type})")
 
             # Track active task
             self.active_tasks[task_id] = {
@@ -416,9 +410,7 @@ class ResearchAgent:
                         research_results.append(step_result)
 
             # Use LLM to analyze and synthesize results
-            analysis_result = await self._llm_analyze_research_results(
-                research_results, task
-            )
+            analysis_result = await self._llm_analyze_research_results(research_results, task)
 
             # Ensure analysis_result is a dict
             if not isinstance(analysis_result, dict):
@@ -516,9 +508,7 @@ class ResearchAgent:
                 "success_metrics": ["정보 수집 완료", "기본 분석 완료"],
             }
 
-    async def _generate_basic_research_plan(
-        self, task_description: str
-    ) -> Dict[str, Any]:
+    async def _generate_basic_research_plan(self, task_description: str) -> Dict[str, Any]:
         """Generate basic research plan without LLM."""
         try:
             # Create basic research plan with actual tool calls
@@ -569,9 +559,7 @@ class ResearchAgent:
             }
 
             # Execute the basic research plan
-            research_results = await self._execute_llm_research_plan(
-                basic_plan, task_description
-            )
+            research_results = await self._execute_llm_research_plan(basic_plan, task_description)
             return research_results
 
         except Exception as e:
@@ -622,9 +610,7 @@ class ResearchAgent:
 
             for tool in mcp_tools:
                 try:
-                    result = await execute_tool(
-                        tool, {"query": query, "max_results": 10}
-                    )
+                    result = await execute_tool(tool, {"query": query, "max_results": 10})
 
                     if result.get("success", False):
                         results = result.get("data", {}).get("results", [])
@@ -711,9 +697,7 @@ class ResearchAgent:
             from exa_py import Exa
 
             client = Exa(api_key=exa_key)
-            response = client.search_and_contents(
-                query, num_results=5, text=True, highlights=True
-            )
+            response = client.search_and_contents(query, num_results=5, text=True, highlights=True)
 
             formatted_results = []
             for result in response.results:
@@ -753,9 +737,7 @@ class ResearchAgent:
 
             # 블로킹 I/O는 스레드로 위임하고, 단일 계층 타임아웃으로 보호
             response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    requests.get, url, headers=headers, params=params, timeout=10
-                ),
+                asyncio.to_thread(requests.get, url, headers=headers, params=params, timeout=10),
                 timeout=10,
             )
             response.raise_for_status()
@@ -797,9 +779,7 @@ class ResearchAgent:
             payload = {"q": query, "num": 5, "gl": "kr", "hl": "ko"}
 
             response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    requests.post, url, headers=headers, json=payload, timeout=10
-                ),
+                asyncio.to_thread(requests.post, url, headers=headers, json=payload, timeout=10),
                 timeout=10,
             )
             response.raise_for_status()
@@ -919,9 +899,7 @@ class ResearchAgent:
                             "title": item.get("title", ""),
                             "authors": item.get("authors", []),
                             "journal": item.get("journal", ""),
-                            "year": item.get("published", "")[:4]
-                            if item.get("published")
-                            else "",
+                            "year": item.get("published", "")[:4] if item.get("published") else "",
                             "abstract": item.get("abstract", ""),
                             "source": item.get("source", "academic_database"),
                             "url": item.get("url", ""),
@@ -941,9 +919,7 @@ class ResearchAgent:
                     "timestamp": datetime.now().isoformat(),
                 }
             else:
-                logger.warning(
-                    f"Academic search failed: {result.get('error', 'Unknown error')}"
-                )
+                logger.warning(f"Academic search failed: {result.get('error', 'Unknown error')}")
                 return {
                     "method": "academic_search",
                     "query": query,
@@ -964,9 +940,7 @@ class ResearchAgent:
                 "timestamp": datetime.now().isoformat(),
             }
 
-    async def _perform_data_analysis(
-        self, query: str, task: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _perform_data_analysis(self, query: str, task: Dict[str, Any]) -> Dict[str, Any]:
         """Perform data analysis."""
         try:
             # Use LLM to analyze data
@@ -1015,9 +989,7 @@ class ResearchAgent:
                 "timestamp": datetime.now().isoformat(),
             }
 
-    async def _perform_content_analysis(
-        self, query: str, task: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _perform_content_analysis(self, query: str, task: Dict[str, Any]) -> Dict[str, Any]:
         """Perform content analysis."""
         try:
             # Use LLM for content analysis
@@ -1142,9 +1114,7 @@ class ResearchAgent:
             # Collect data from each source
             collected_data = []
             for source in data_sources:
-                source_data = await self._collect_from_source(
-                    source, task, objective_id
-                )
+                source_data = await self._collect_from_source(source, task, objective_id)
                 if source_data:
                     collected_data.append(source_data)
 
@@ -1195,24 +1165,18 @@ class ResearchAgent:
             analysis_method = await self._select_analysis_method(task, objective_id)
 
             # Perform analysis
-            analysis_result = await self._perform_analysis(
-                analysis_method, task, objective_id
-            )
+            analysis_result = await self._perform_analysis(analysis_method, task, objective_id)
 
             # Generate insights
             insights = await self._generate_insights(analysis_result, task)
 
             # Create analysis report
-            analysis_report = await self._create_analysis_report(
-                analysis_result, insights, task
-            )
+            analysis_report = await self._create_analysis_report(analysis_result, insights, task)
 
             result = {
                 "analysis_result": {
                     "method_used": analysis_method,
-                    "analysis_quality": self._calculate_analysis_quality(
-                        analysis_result
-                    ),
+                    "analysis_quality": self._calculate_analysis_quality(analysis_result),
                     "insights_generated": len(insights),
                     "analysis_timestamp": datetime.now().isoformat(),
                 },
@@ -1222,9 +1186,7 @@ class ResearchAgent:
                 "metadata": {
                     "task_description": task.get("description", ""),
                     "analysis_type": task.get("task_type", "analysis"),
-                    "confidence_score": self._calculate_confidence_score(
-                        analysis_result
-                    ),
+                    "confidence_score": self._calculate_confidence_score(analysis_result),
                 },
             }
 
@@ -1256,9 +1218,7 @@ class ResearchAgent:
             synthesis_result = await self._perform_synthesis(synthesis_data, task)
 
             # Generate recommendations
-            recommendations = await self._generate_recommendations(
-                synthesis_result, task
-            )
+            recommendations = await self._generate_recommendations(synthesis_result, task)
 
             # Create synthesis report
             synthesis_report = await self._create_synthesis_report(
@@ -1268,9 +1228,7 @@ class ResearchAgent:
             result = {
                 "synthesis_result": {
                     "sources_synthesized": len(synthesis_data),
-                    "synthesis_quality": self._calculate_synthesis_quality(
-                        synthesis_result
-                    ),
+                    "synthesis_quality": self._calculate_synthesis_quality(synthesis_result),
                     "recommendations_generated": len(recommendations),
                     "synthesis_timestamp": datetime.now().isoformat(),
                 },
@@ -1280,9 +1238,7 @@ class ResearchAgent:
                 "metadata": {
                     "task_description": task.get("description", ""),
                     "synthesis_type": task.get("task_type", "synthesis"),
-                    "completeness_score": self._calculate_completeness_score(
-                        synthesis_result
-                    ),
+                    "completeness_score": self._calculate_completeness_score(synthesis_result),
                 },
             }
 
@@ -1314,9 +1270,7 @@ class ResearchAgent:
             validation_result = await self._perform_validation(validation_data, task)
 
             # Generate validation report
-            validation_report = await self._create_validation_report(
-                validation_result, task
-            )
+            validation_report = await self._create_validation_report(validation_result, task)
 
             result = {
                 "validation_result": {
@@ -1329,9 +1283,7 @@ class ResearchAgent:
                 "metadata": {
                     "task_description": task.get("description", ""),
                     "validation_type": task.get("task_type", "validation"),
-                    "reliability_score": self._calculate_reliability_score(
-                        validation_result
-                    ),
+                    "reliability_score": self._calculate_reliability_score(validation_result),
                 },
             }
 
@@ -1360,16 +1312,12 @@ class ResearchAgent:
             research_result = await self._perform_general_research(task, objective_id)
 
             # Generate research summary
-            research_summary = await self._generate_research_summary(
-                research_result, task
-            )
+            research_summary = await self._generate_research_summary(research_result, task)
 
             result = {
                 "research_result": {
                     "research_scope": task.get("description", ""),
-                    "research_quality": self._calculate_research_quality(
-                        research_result
-                    ),
+                    "research_quality": self._calculate_research_quality(research_result),
                     "research_timestamp": datetime.now().isoformat(),
                 },
                 "research_data": research_result,
@@ -1407,8 +1355,7 @@ class ResearchAgent:
 
             # Web sources
             if any(
-                keyword in task_description
-                for keyword in ["web", "online", "internet", "website"]
+                keyword in task_description for keyword in ["web", "online", "internet", "website"]
             ):
                 sources.append(
                     {
@@ -1681,18 +1628,14 @@ class ResearchAgent:
             Data summary
         """
         try:
-            total_data_points = sum(
-                len(item.get("data_points", [])) for item in processed_data
-            )
+            total_data_points = sum(len(item.get("data_points", [])) for item in processed_data)
             avg_quality = (
-                sum(item.get("quality_score", 0) for item in processed_data)
-                / len(processed_data)
+                sum(item.get("quality_score", 0) for item in processed_data) / len(processed_data)
                 if processed_data
                 else 0
             )
             avg_relevance = (
-                sum(item.get("relevance_score", 0) for item in processed_data)
-                / len(processed_data)
+                sum(item.get("relevance_score", 0) for item in processed_data) / len(processed_data)
                 if processed_data
                 else 0
             )
@@ -1743,9 +1686,7 @@ class ResearchAgent:
             logger.error(f"Data quality calculation failed: {e}")
             return 0.5
 
-    def _calculate_relevance_score(
-        self, data: Dict[str, Any], task: Dict[str, Any]
-    ) -> float:
+    def _calculate_relevance_score(self, data: Dict[str, Any], task: Dict[str, Any]) -> float:
         """Calculate relevance score for data.
 
         Args:
@@ -1770,9 +1711,7 @@ class ResearchAgent:
             logger.error(f"Relevance score calculation failed: {e}")
             return 0.5
 
-    def _calculate_quality_metrics(
-        self, data: List[Dict[str, Any]]
-    ) -> Dict[str, float]:
+    def _calculate_quality_metrics(self, data: List[Dict[str, Any]]) -> Dict[str, float]:
         """Calculate comprehensive quality metrics.
 
         Args:
@@ -1785,9 +1724,7 @@ class ResearchAgent:
             return {
                 "completeness": self._calculate_completeness_score(data),
                 "accuracy": self._calculate_accuracy_score(data),
-                "relevance": self._calculate_relevance_score(data[0], {})
-                if data
-                else 0.5,
+                "relevance": self._calculate_relevance_score(data[0], {}) if data else 0.5,
                 "timeliness": self._calculate_timeliness_score(data),
                 "consistency": self._calculate_consistency_score(data),
             }
@@ -1813,21 +1750,15 @@ class ResearchAgent:
     def _calculate_timeliness_score(self, data: List[Dict[str, Any]]) -> float:
         """Calculate timeliness score."""
         # Implement actual timeliness calculation
-        raise NotImplementedError(
-            "_calculate_timeliness_score requires actual implementation"
-        )
+        raise NotImplementedError("_calculate_timeliness_score requires actual implementation")
 
     def _calculate_consistency_score(self, data: List[Dict[str, Any]]) -> float:
         """Calculate consistency score."""
         # Implement actual consistency calculation
-        raise NotImplementedError(
-            "_calculate_consistency_score requires actual implementation"
-        )
+        raise NotImplementedError("_calculate_consistency_score requires actual implementation")
 
     # Analysis, synthesis, and validation methods using LLM
-    async def _select_analysis_method(
-        self, task: Dict[str, Any], objective_id: str
-    ) -> str:
+    async def _select_analysis_method(self, task: Dict[str, Any], objective_id: str) -> str:
         """Select appropriate analysis method using LLM."""
         from src.core.llm_manager import TaskType, execute_llm_task
 
@@ -1852,8 +1783,7 @@ class ResearchAgent:
             method = result.content.strip().lower()
             return (
                 method
-                if method
-                in ["quantitative", "qualitative", "mixed", "comparative", "predictive"]
+                if method in ["quantitative", "qualitative", "mixed", "comparative", "predictive"]
                 else "mixed"
             )
         except Exception as e:
@@ -1920,9 +1850,7 @@ class ResearchAgent:
             result = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.REASONING,
-                system_message=self.config.prompts["search_execution"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["search_execution"]["system_message"],
             )
 
             try:
@@ -1933,9 +1861,7 @@ class ResearchAgent:
                     return [insights] if isinstance(insights, str) else [result.content]
             except:
                 # Fallback: parse as newline-separated list
-                insights = [
-                    line.strip() for line in result.content.split("\n") if line.strip()
-                ]
+                insights = [line.strip() for line in result.content.split("\n") if line.strip()]
                 return insights[:5]  # Max 5 insights
         except Exception as e:
             logger.error(f"Insight generation failed: {e}")
@@ -1961,9 +1887,7 @@ class ResearchAgent:
             result = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.GENERATION,
-                system_message=self.config.prompts["content_analysis"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["content_analysis"]["system_message"],
             )
 
             try:
@@ -2039,9 +1963,7 @@ class ResearchAgent:
             result = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.SYNTHESIS,
-                system_message=self.config.prompts["synthesis_report"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["synthesis_report"]["system_message"],
             )
 
             try:
@@ -2073,9 +1995,7 @@ class ResearchAgent:
             result = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.REASONING,
-                system_message=self.config.prompts["recommendation_generation"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["recommendation_generation"]["system_message"],
             )
 
             try:
@@ -2084,9 +2004,7 @@ class ResearchAgent:
                     return recommendations
                 else:
                     return (
-                        [recommendations]
-                        if isinstance(recommendations, str)
-                        else [result.content]
+                        [recommendations] if isinstance(recommendations, str) else [result.content]
                     )
             except:
                 recommendations = [
@@ -2189,9 +2107,7 @@ class ResearchAgent:
             result = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message=self.config.prompts["quality_validation"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["quality_validation"]["system_message"],
             )
 
             try:
@@ -2229,9 +2145,7 @@ class ResearchAgent:
             result = await execute_llm_task(
                 prompt=prompt,
                 task_type=TaskType.GENERATION,
-                system_message=self.config.prompts["final_assessment"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["final_assessment"]["system_message"],
             )
 
             try:
@@ -2268,16 +2182,22 @@ class ResearchAgent:
             # Prepare data for LLM analysis
             data_summary = {
                 "query": query,
-                "search_success": search_results.get("success", False)
-                if isinstance(search_results, dict)
-                else False,
-                "results_count": len(search_results.get("results", []))
-                if isinstance(search_results, dict)
-                else 0,
+                "search_success": (
+                    search_results.get("success", False)
+                    if isinstance(search_results, dict)
+                    else False
+                ),
+                "results_count": (
+                    len(search_results.get("results", []))
+                    if isinstance(search_results, dict)
+                    else 0
+                ),
                 "collected_data_count": len(collected_data) if collected_data else 0,
-                "research_data": search_results.get("research_data", {})
-                if isinstance(search_results, dict)
-                else {},
+                "research_data": (
+                    search_results.get("research_data", {})
+                    if isinstance(search_results, dict)
+                    else {}
+                ),
             }
 
             prompt = f"""
@@ -2346,9 +2266,7 @@ class ResearchAgent:
             task_description = task.get("description", "")
             if not task_description:
                 task_description = "general research"
-            research_query = str(task_description).replace(
-                "Research task for objective: ", ""
-            )
+            research_query = str(task_description).replace("Research task for objective: ", "")
 
             # 1. Perform web search
             search_results = await self._perform_web_search(research_query)
@@ -2381,9 +2299,7 @@ class ResearchAgent:
                                 continue
 
             # 3. Perform additional research using different methods
-            additional_research = await self._perform_additional_research(
-                research_query
-            )
+            additional_research = await self._perform_additional_research(research_query)
             if not isinstance(additional_research, dict):
                 additional_research = {"sources": []}
 
@@ -2429,9 +2345,7 @@ class ResearchAgent:
                     "metadata": {
                         "research_method": "web_search_and_analysis",
                         "data_quality": "high" if len(collected_data) > 0 else "low",
-                        "completeness": "partial"
-                        if len(collected_data) < 3
-                        else "complete",
+                        "completeness": "partial" if len(collected_data) < 3 else "complete",
                     },
                 },
             }
@@ -2461,17 +2375,13 @@ class ResearchAgent:
 
                 # Clean up text
                 lines = (line.strip() for line in text.splitlines())
-                chunks = (
-                    phrase.strip() for line in lines for phrase in line.split("  ")
-                )
+                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
                 text = " ".join(chunk for chunk in chunks if chunk)
 
                 # Limit content length
                 return text[:5000] if len(text) > 5000 else text
             else:
-                logger.error(
-                    f"MCP fetch failed for {url}: {result.get('error', 'Unknown error')}"
-                )
+                logger.error(f"MCP fetch failed for {url}: {result.get('error', 'Unknown error')}")
                 return ""
 
         except Exception as e:
@@ -2574,9 +2484,7 @@ class ResearchAgent:
         """Search social media sources."""
         try:
             # Try social media search
-            social_query = (
-                f"{query} site:twitter.com OR site:reddit.com OR site:linkedin.com"
-            )
+            social_query = f"{query} site:twitter.com OR site:reddit.com OR site:linkedin.com"
             search_results = await self._perform_web_search(social_query)
 
             social_sources = []
@@ -2610,9 +2518,7 @@ class ResearchAgent:
                 quality_score += 0.4
 
                 # Bonus for content length
-                total_content_length = sum(
-                    len(item.get("content", "")) for item in collected_data
-                )
+                total_content_length = sum(len(item.get("content", "")) for item in collected_data)
                 if total_content_length > 1000:
                     quality_score += 0.2
                 elif total_content_length > 500:
@@ -2624,9 +2530,7 @@ class ResearchAgent:
                 quality_score += 0.2
 
                 # Bonus for diverse source types
-                source_types = set(
-                    source.get("source_type", "") for source in additional_sources
-                )
+                source_types = set(source.get("source_type", "") for source in additional_sources)
                 if len(source_types) > 1:
                     quality_score += 0.1
 
@@ -2685,9 +2589,7 @@ class ResearchAgent:
                         content = item.get("content", "")
                         if title and content:
                             # Extract first 200 characters as insight
-                            insight = (
-                                content[:200] + "..." if len(content) > 200 else content
-                            )
+                            insight = content[:200] + "..." if len(content) > 200 else content
                             key_insights.append(f"• {title}: {insight}")
 
                 if key_insights:
@@ -2729,9 +2631,7 @@ class ResearchAgent:
         """Calculate research quality score."""
         return 0.8
 
-    def _calculate_comprehensiveness_score(
-        self, research_result: Dict[str, Any]
-    ) -> float:
+    def _calculate_comprehensiveness_score(self, research_result: Dict[str, Any]) -> float:
         """Calculate comprehensiveness score."""
         return 0.75
 
@@ -2745,7 +2645,7 @@ class ResearchAgent:
             True if agent can handle the task
         """
         try:
-            task_type = task.get("task_type", "general")
+            task.get("task_type", "general")
             required_skills = task.get("required_skills", [])
 
             # Check if agent has required skills
@@ -2785,9 +2685,7 @@ class ResearchAgent:
                     task_info["cancelled_at"] = datetime.now()
                     cancelled_count += 1
 
-            logger.info(
-                f"Cancelled {cancelled_count} tasks for objective: {objective_id}"
-            )
+            logger.info(f"Cancelled {cancelled_count} tasks for objective: {objective_id}")
             return True
 
         except Exception as e:
@@ -2808,9 +2706,7 @@ class ResearchAgent:
         except Exception as e:
             logger.error(f"Research Agent cleanup failed: {e}")
 
-    async def update_capabilities(
-        self, evaluation_result: Dict[str, Any], iteration: int
-    ) -> None:
+    async def update_capabilities(self, evaluation_result: Dict[str, Any], iteration: int) -> None:
         """Update agent capabilities based on evaluation feedback.
 
         Args:
@@ -2864,9 +2760,7 @@ class ResearchAgent:
         except Exception as e:
             logger.error(f"Research capability update failed: {e}")
 
-    async def _update_successful_research_patterns(
-        self, evaluation_result: Dict[str, Any]
-    ) -> None:
+    async def _update_successful_research_patterns(self, evaluation_result: Dict[str, Any]) -> None:
         """Update research patterns based on successful evaluations."""
         try:
             # Extract successful patterns from evaluation
@@ -2927,12 +2821,8 @@ class ResearchAgent:
                 # Enhance data collection if insufficient
                 if "insufficient_data" in str(latest_feedback):
                     enhanced_result["data_enhanced"] = True
-                    enhanced_result["search_depth"] = self.adaptive_strategies[
-                        "search_depth"
-                    ]
-                    enhanced_result["content_length"] = self.adaptive_strategies[
-                        "content_length"
-                    ]
+                    enhanced_result["search_depth"] = self.adaptive_strategies["search_depth"]
+                    enhanced_result["content_length"] = self.adaptive_strategies["content_length"]
 
                 # Enhance source diversity if needed
                 if "insufficient_diversity" in str(latest_feedback):
@@ -2959,9 +2849,7 @@ class ResearchAgent:
 
     # Browser automation methods are now handled by BrowserManager
 
-    async def browser_navigate_and_extract(
-        self, url: str, extraction_goal: str
-    ) -> Dict[str, Any]:
+    async def browser_navigate_and_extract(self, url: str, extraction_goal: str) -> Dict[str, Any]:
         """Navigate to URL and extract content using enhanced browser manager.
 
         Args:
@@ -2981,9 +2869,7 @@ class ResearchAgent:
                 await self.browser_manager.initialize_browser()
 
             # Use browser manager for extraction
-            result = await self.browser_manager.navigate_and_extract(
-                url, extraction_goal, self.llm
-            )
+            result = await self.browser_manager.navigate_and_extract(url, extraction_goal, self.llm)
 
             logger.info(
                 f"Content extraction completed for {url} using {result.get('method', 'unknown')} method"
@@ -3071,9 +2957,7 @@ class ResearchAgent:
                 research_results["steps_completed"].append(step_result)
 
                 if step_result.get("data_collected"):
-                    research_results["data_collected"].extend(
-                        step_result["data_collected"]
-                    )
+                    research_results["data_collected"].extend(step_result["data_collected"])
 
             return research_results
 

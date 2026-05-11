@@ -101,9 +101,7 @@ class ImportanceAnalyzer:
             position_score = self._calculate_position_score(i, len(sentences))
 
             # 종합 중요도 점수
-            total_score = (
-                keyword_score * 0.4 + category_score * 0.4 + position_score * 0.2
-            )
+            total_score = keyword_score * 0.4 + category_score * 0.4 + position_score * 0.2
 
             if total_score > 0.3:  # 임계값 이상만 중요 정보로 간주
                 important_info.append(
@@ -158,24 +156,15 @@ class ImportanceAnalyzer:
         """문장 카테고리 분류."""
         sentence_lower = sentence.lower()
 
-        if any(
-            word in sentence_lower for word in ["결론", "conclusion", "요약", "summary"]
-        ):
+        if any(word in sentence_lower for word in ["결론", "conclusion", "요약", "summary"]):
             return "conclusion"
         elif any(word in sentence_lower for word in ["핵심", "key", "주요", "main"]):
             return "key_findings"
-        elif any(
-            word in sentence_lower for word in ["데이터", "data", "수치", "number"]
-        ):
+        elif any(word in sentence_lower for word in ["데이터", "data", "수치", "number"]):
             return "data"
-        elif any(
-            word in sentence_lower
-            for word in ["방법", "method", "방법론", "methodology"]
-        ):
+        elif any(word in sentence_lower for word in ["방법", "method", "방법론", "methodology"]):
             return "methodology"
-        elif any(
-            word in sentence_lower for word in ["참고문헌", "reference", "인용", "cite"]
-        ):
+        elif any(word in sentence_lower for word in ["참고문헌", "reference", "인용", "cite"]):
             return "references"
         else:
             return "background"
@@ -196,16 +185,12 @@ class CompressionValidator:
         # 1. 압축률 검증
         compression_ratio = len(compressed) / len(original) if len(original) > 0 else 0
         if compression_ratio < self.config.min_compression_ratio:
-            validation_issues.append(
-                f"Compression too aggressive: {compression_ratio:.2%}"
-            )
+            validation_issues.append(f"Compression too aggressive: {compression_ratio:.2%}")
 
         # 2. 중요 정보 보존 검증
         preserved_info = []
         for info in important_info:
-            if info.content in compressed or self._is_similar_content(
-                info.content, compressed
-            ):
+            if info.content in compressed or self._is_similar_content(info.content, compressed):
                 preserved_info.append(info.content)
             else:
                 validation_issues.append(f"Important info lost: {info.content[:50]}...")
@@ -271,9 +256,7 @@ class CompressionValidator:
             return 0.0
 
         # 문단 수 비율
-        paragraph_ratio = min(
-            len(compressed_paragraphs) / len(original_paragraphs), 1.0
-        )
+        paragraph_ratio = min(len(compressed_paragraphs) / len(original_paragraphs), 1.0)
 
         # 문장 수 비율
         original_sentences = original.count(".")
@@ -302,9 +285,7 @@ class CompressionHistory:
         """압축 히스토리 반환."""
         return self.history[-limit:]
 
-    def get_best_compression(
-        self, target_ratio: float = 0.5
-    ) -> CompressionResult | None:
+    def get_best_compression(self, target_ratio: float = 0.5) -> CompressionResult | None:
         """목표 압축률에 가장 가까운 결과 반환."""
         if not self.history:
             return None
@@ -332,9 +313,7 @@ class HierarchicalCompressor:
         self.validator = CompressionValidator()
         self.history = CompressionHistory()
 
-    async def compress_with_validation(
-        self, data: Union[str, Dict[str, Any]]
-    ) -> CompressionResult:
+    async def compress_with_validation(self, data: Union[str, Dict[str, Any]]) -> CompressionResult:
         """검증과 함께 압축."""
         if isinstance(data, dict):
             text = json.dumps(data, ensure_ascii=False, indent=2)
@@ -360,9 +339,7 @@ class HierarchicalCompressor:
                 compressed_size=intermediate_size,
                 compression_ratio=intermediate_size / original_size,
                 important_info_preserved=[
-                    info.content
-                    for info in important_info
-                    if info.content in intermediate
+                    info.content for info in important_info if info.content in intermediate
                 ],
                 validation_score=1.0,
                 timestamp=datetime.now(),
@@ -380,9 +357,7 @@ class HierarchicalCompressor:
                 compressed_size=compressed_size,
                 compression_ratio=compressed_size / original_size,
                 important_info_preserved=[
-                    info.content
-                    for info in important_info
-                    if info.content in compressed
+                    info.content for info in important_info if info.content in compressed
                 ],
                 validation_score=1.0,
                 timestamp=datetime.now(),
@@ -428,9 +403,7 @@ class HierarchicalCompressor:
 
         return final_result
 
-    async def _remove_redundant(
-        self, text: str, important_info: List[ImportantInfo]
-    ) -> str:
+    async def _remove_redundant(self, text: str, important_info: List[ImportantInfo]) -> str:
         """불필요한 정보 제거."""
         # 중요하지 않은 문장들 제거
         sentences = text.split(". ")
@@ -445,22 +418,16 @@ class HierarchicalCompressor:
             if (
                 sentence.strip() in important_sentences
                 or len(sentence.strip()) < 50
-                or any(
-                    keyword in sentence.lower() for keyword in ["결론", "요약", "핵심"]
-                )
+                or any(keyword in sentence.lower() for keyword in ["결론", "요약", "핵심"])
             ):
                 filtered_sentences.append(sentence.strip())
 
         return ". ".join(filtered_sentences)
 
-    async def _extract_key_info(
-        self, text: str, important_info: List[ImportantInfo]
-    ) -> str:
+    async def _extract_key_info(self, text: str, important_info: List[ImportantInfo]) -> str:
         """핵심 정보 추출."""
         # 중요도 순으로 정렬된 정보만 추출
-        important_sentences = [
-            info.content for info in important_info[:10]
-        ]  # 상위 10개만
+        important_sentences = [info.content for info in important_info[:10]]  # 상위 10개만
 
         # 원본 텍스트에서 해당 문장들 찾기
         result_sentences = []
@@ -470,9 +437,7 @@ class HierarchicalCompressor:
 
         return ". ".join(result_sentences)
 
-    async def _final_compression(
-        self, text: str, important_info: List[ImportantInfo]
-    ) -> str:
+    async def _final_compression(self, text: str, important_info: List[ImportantInfo]) -> str:
         """최종 압축."""
         # 문장 단위로 압축
         sentences = text.split(". ")

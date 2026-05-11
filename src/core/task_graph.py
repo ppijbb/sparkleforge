@@ -5,10 +5,10 @@
 """
 
 import logging
-import uuid
-from typing import Dict, Any, List, Set, Optional
-from dataclasses import dataclass, field
 import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -16,18 +16,19 @@ logger = logging.getLogger(__name__)
 @dataclass
 class UnifiedTask:
     """통합된 단일 타스크 인스턴스"""
+
     task_id: str
     description: str
     phase: str = "execution"  # analysis | execution | verification
     priority: int = 1
     dependencies: List[str] = field(default_factory=list)
-    status: str = "pending"   # pending | ready | running | completed | failed
-    assigned_agent: Optional[str] = None
-    result: Optional[Any] = None
-    error: Optional[str] = None
+    status: str = "pending"  # pending | ready | running | completed | failed
+    assigned_agent: str | None = None
+    result: Any | None = None
+    error: str | None = None
     created_at: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "UnifiedTask":
         task_id = data.get("task_id", str(uuid.uuid4()))
@@ -38,7 +39,7 @@ class UnifiedTask:
             priority=data.get("priority", 1),
             dependencies=data.get("dependencies", []),
             status=data.get("status", "pending"),
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -51,31 +52,31 @@ class UnifiedTask:
             "status": self.status,
             "assigned_agent": self.assigned_agent,
             "result": self.result,
-            "error": self.error
+            "error": self.error,
         }
 
 
 class TaskGraph:
     """DAG 기반 의존성 관리 및 통합 큐"""
-    
+
     def __init__(self):
         self.tasks: Dict[str, UnifiedTask] = {}
         # task_id -> set of task_ids that depend on it
         self.dependents: Dict[str, Set[str]] = {}
-        
+
     def add_task(self, task: UnifiedTask) -> None:
         """태스크 추가 및 DAG 검증"""
         self.tasks[task.task_id] = task
         if task.task_id not in self.dependents:
             self.dependents[task.task_id] = set()
-            
+
         for dep_id in task.dependencies:
             if dep_id not in self.dependents:
                 self.dependents[dep_id] = set()
             self.dependents[dep_id].add(task.task_id)
-            
+
         self._update_task_status(task.task_id)
-        
+
     def add_task_from_dict(self, task_dict: Dict[str, Any]) -> str:
         """딕셔너리에서 태스크 생성 및 추가"""
         task = UnifiedTask.from_dict(task_dict)
@@ -86,7 +87,7 @@ class TaskGraph:
         """실행 중 새 태스크를 동적으로 생성"""
         task_id = new_task_dict.get("task_id", str(uuid.uuid4()))
         new_task_dict["task_id"] = task_id
-        
+
         # 새 태스크는 부모에 종속되지 않지만, 다른 태스크가 이걸 기다리게 수정 가능
         task = UnifiedTask.from_dict(new_task_dict)
         self.add_task(task)
@@ -98,7 +99,7 @@ class TaskGraph:
         task = self.tasks.get(task_id)
         if not task or task.status not in ("pending", "ready"):
             return
-            
+
         # 모든 의존 태스크가 'completed'인지 확인
         all_resolved = True
         for dep_id in task.dependencies:
@@ -106,20 +107,20 @@ class TaskGraph:
             if not dep_task or dep_task.status != "completed":
                 all_resolved = False
                 break
-                
+
         if all_resolved:
             task.status = "ready"
         else:
             task.status = "pending"
 
-    def get_ready_tasks(self, phase: Optional[str] = None) -> List[UnifiedTask]:
+    def get_ready_tasks(self, phase: str | None = None) -> List[UnifiedTask]:
         """실행 준비가 된 태스크 반환 (우선순위 정렬)"""
         ready_tasks = []
         for task in self.tasks.values():
             if task.status == "ready":
                 if phase is None or task.phase == phase:
                     ready_tasks.append(task)
-                    
+
         # 우선순위가 높은 것(숫자가 작은 것) 먼저
         return sorted(ready_tasks, key=lambda t: t.priority)
 
@@ -134,10 +135,10 @@ class TaskGraph:
         task = self.tasks.get(task_id)
         if not task:
             return
-            
+
         task.status = "completed"
         task.result = result
-        
+
         # 이 태스크를 기다리던 태스크들 업데이트
         if task_id in self.dependents:
             for dependent_id in self.dependents[task_id]:
@@ -154,7 +155,7 @@ class TaskGraph:
         levels = []
         in_degree = {task_id: len(task.dependencies) for task_id, task in self.tasks.items()}
         queue = [task_id for task_id, degree in in_degree.items() if degree == 0]
-        
+
         while queue:
             levels.append(queue)
             next_queue = []
@@ -164,11 +165,11 @@ class TaskGraph:
                     if in_degree[dependent_id] == 0:
                         next_queue.append(dependent_id)
             queue = next_queue
-            
+
         return levels
 
     # --- Legacy Compatibility Methods ---
-    
+
     def has_pending_tasks(self) -> bool:
         """대기 중이거나 실행 중인 태스크가 있는지 확인"""
         for task in self.tasks.values():
@@ -181,7 +182,7 @@ class TaskGraph:
         ready = self.get_ready_tasks()
         return [t.task_id for t in ready[:max_group_size]]
 
-    def get_task(self, task_id: str) -> Optional[UnifiedTask]:
+    def get_task(self, task_id: str) -> UnifiedTask | None:
         """태스크 객체 반환"""
         return self.tasks.get(task_id)
 
@@ -194,5 +195,5 @@ class TaskGraph:
             "total": total,
             "completed": completed,
             "failed": failed,
-            "percent": (completed / total * 100) if total > 0 else 0
+            "percent": (completed / total * 100) if total > 0 else 0,
         }

@@ -52,9 +52,7 @@ class SparkleForgeCompleter(Completer):
             "clear": [],
         }
 
-    def get_completions(
-        self, document: Document, complete_event
-    ) -> Iterable[Completion]:
+    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
         """자동완성 제공."""
         text = document.text_before_cursor
         words = text.split()
@@ -81,14 +79,11 @@ class SparkleForgeCompleter(Completer):
                     current = words[1].lower()
                     for subcmd in subcommands:
                         if subcmd.startswith(current):
-                            yield Completion(
-                                subcmd, start_position=-len(current), display=subcmd
-                            )
+                            yield Completion(subcmd, start_position=-len(current), display=subcmd)
                 elif (
                     len(words) == 3
                     and first_word == "session"
-                    and words[1]
-                    in ["show", "pause", "resume", "cancel", "delete", "tasks"]
+                    and words[1] in ["show", "pause", "resume", "cancel", "delete", "tasks"]
                 ):
                     # 세션 ID 자동완성
                     session_ids = self._get_session_ids()
@@ -119,7 +114,17 @@ class SparkleForgeCompleter(Completer):
                     len(words) == 3
                     and first_word == "schedule"
                     and words[1]
-                    in ["show", "pause", "resume", "delete", "history", "run", "remove", "enable", "disable"]
+                    in [
+                        "show",
+                        "pause",
+                        "resume",
+                        "delete",
+                        "history",
+                        "run",
+                        "remove",
+                        "enable",
+                        "disable",
+                    ]
                 ):
                     # 스케줄 ID 자동완성
                     schedule_ids = self._get_schedule_ids()
@@ -169,11 +174,7 @@ class SparkleForgeCompleter(Completer):
                     self.cli.checkpoint_manager.list_checkpoints()
                 )
                 return (
-                    [
-                        cp.get("checkpoint_id")
-                        for cp in checkpoints
-                        if cp.get("checkpoint_id")
-                    ]
+                    [cp.get("checkpoint_id") for cp in checkpoints if cp.get("checkpoint_id")]
                     if checkpoints
                     else []
                 )

@@ -27,7 +27,6 @@ sys.path.insert(0, str(project_root))
 from src.core.a2ui_handler import get_a2ui_handler
 from src.core.agent_orchestrator import AgentOrchestrator
 from src.core.prompt_security import REJECTION_MESSAGE, validate_user_input
-from src.core.researcher_config import config
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +73,7 @@ class StreamlitLogHandler(logging.Handler):
     def __init__(self, queue: queue.Queue):
         super().__init__()
         self.queue = queue
-        self.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
+        self.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 
     def emit(self, record):
         try:
@@ -195,9 +192,7 @@ def main():
         with st.expander("⚙️ Settings"):
             st.checkbox("Enable Streaming", value=True, key="enable_streaming")
             st.checkbox("Show Debug Info", value=False, key="show_debug")
-            st.selectbox(
-                "Response Format", ["markdown", "json", "html"], key="response_format"
-            )
+            st.selectbox("Response Format", ["markdown", "json", "html"], key="response_format")
 
         # Docker 관리 (Docker가 사용 가능한 경우)
         if check_docker_available():
@@ -220,6 +215,7 @@ def main():
         with st.expander("🛡️ Agent Security"):
             try:
                 from src.core.agent_security import get_agent_security_manager
+
                 sec_mgr = get_agent_security_manager()
                 summary = sec_mgr.get_security_summary()
 
@@ -242,6 +238,7 @@ def main():
 
                 try:
                     from src.core.researcher_config import get_agent_security_config
+
                     sec_cfg = get_agent_security_config()
                     st.caption(
                         f"Enabled: {'✅' if sec_cfg.enabled else '❌'}  |  "
@@ -254,8 +251,14 @@ def main():
                     log_entries = sec_mgr.get_audit_log(limit=20)
                     if log_entries:
                         for entry in reversed(log_entries):
-                            icon = "🔴" if entry.severity == "critical" else "🟡" if entry.severity == "warning" else "🔵"
-                            st.text(f"{icon} [{entry.agent_name}] {entry.violation_type}: {entry.detail}")
+                            icon = (
+                                "🔴"
+                                if entry.severity == "critical"
+                                else "🟡" if entry.severity == "warning" else "🔵"
+                            )
+                            st.text(
+                                f"{icon} [{entry.agent_name}] {entry.violation_type}: {entry.detail}"
+                            )
                     else:
                         st.info("No audit entries")
             except Exception as e:
@@ -263,9 +266,7 @@ def main():
 
         # 샌드박스 테스트
         with st.expander("🧪 Code Sandbox"):
-            sandbox_code = st.text_area(
-                "Test Code", "print('Hello from sandbox!')", height=100
-            )
+            sandbox_code = st.text_area("Test Code", "print('Hello from sandbox!')", height=100)
             if st.button("▶️ Run in Sandbox"):
                 with st.spinner("Running code..."):
                     result = test_sandbox_execution(sandbox_code)
@@ -464,9 +465,7 @@ def activity_panel():
     with activity_container:
         if st.session_state.agent_activity_log:
             # 최근 활동부터 표시
-            for activity in reversed(
-                st.session_state.agent_activity_log[-50:]
-            ):  # 최근 50개
+            for activity in reversed(st.session_state.agent_activity_log[-50:]):  # 최근 50개
                 agent_name = activity.get("agent", "Unknown")
                 activity_type = activity.get("type", "info")
                 message = activity.get("message", "")
@@ -488,21 +487,13 @@ def activity_panel():
                     display_message = display_message[:200] + "..."
 
                 if activity_type == "start":
-                    st.success(
-                        f"{agent_icon} **[{agent_name.upper()}]** 시작: {display_message}"
-                    )
+                    st.success(f"{agent_icon} **[{agent_name.upper()}]** 시작: {display_message}")
                 elif activity_type == "progress":
-                    st.info(
-                        f"{agent_icon} **[{agent_name.upper()}]** 진행: {display_message}"
-                    )
+                    st.info(f"{agent_icon} **[{agent_name.upper()}]** 진행: {display_message}")
                 elif activity_type == "complete":
-                    st.success(
-                        f"{agent_icon} **[{agent_name.upper()}]** 완료: {display_message}"
-                    )
+                    st.success(f"{agent_icon} **[{agent_name.upper()}]** 완료: {display_message}")
                 elif activity_type == "error":
-                    st.error(
-                        f"{agent_icon} **[{agent_name.upper()}]** 오류: {display_message}"
-                    )
+                    st.error(f"{agent_icon} **[{agent_name.upper()}]** 오류: {display_message}")
                 else:
                     # 일반 로그는 코드 블록으로 표시
                     st.code(f"[{agent_name.upper()}] {display_message}", language=None)
@@ -543,9 +534,7 @@ def add_activity_log(agent: str, message: str, activity_type: str = "info"):
         st.session_state.agent_activity_log.append(log_entry)
         # 최대 100개까지만 유지
         if len(st.session_state.agent_activity_log) > 100:
-            st.session_state.agent_activity_log = st.session_state.agent_activity_log[
-                -100:
-            ]
+            st.session_state.agent_activity_log = st.session_state.agent_activity_log[-100:]
         # 업데이트 플래그 설정
         st.session_state.update_flag = True
         st.session_state.last_update_time = time.time()
@@ -651,12 +640,8 @@ async def execute_research_stream(query: str, session_id: str):
             return
 
         # 큐에 업데이트 추가 (스레드 안전)
-        st.session_state.streaming_queue.put(
-            ("log", "system", f"연구 시작: {query}", "start")
-        )
-        st.session_state.streaming_queue.put(
-            ("log", "system", "Orchestrator 초기화 완료", "start")
-        )
+        st.session_state.streaming_queue.put(("log", "system", f"연구 시작: {query}", "start"))
+        st.session_state.streaming_queue.put(("log", "system", "Orchestrator 초기화 완료", "start"))
 
         # 스트리밍 실행
         event_count = 0
@@ -666,9 +651,7 @@ async def execute_research_stream(query: str, session_id: str):
         if st.session_state.get("user_responses"):
             initial_state["user_responses"] = st.session_state["user_responses"]
         if st.session_state.get("clarification_context"):
-            initial_state["clarification_context"] = st.session_state[
-                "clarification_context"
-            ]
+            initial_state["clarification_context"] = st.session_state["clarification_context"]
 
         async for state_update in orchestrator.stream(
             query, session_id=session_id, initial_state=initial_state
@@ -787,14 +770,10 @@ async def execute_research_stream(query: str, session_id: str):
 
                             for question in pending_questions:
                                 # A2UI 형식으로 질문 생성
-                                question_a2ui = a2ui_generator.generate_question_a2ui(
-                                    question
-                                )
+                                question_a2ui = a2ui_generator.generate_question_a2ui(question)
 
                                 # 질문 텍스트
-                                question_text = (
-                                    f"❓ {question.get('text', '질문이 있습니다.')}"
-                                )
+                                question_text = f"❓ {question.get('text', '질문이 있습니다.')}"
 
                                 st.session_state.streaming_queue.put(
                                     (
@@ -828,9 +807,7 @@ async def execute_research_stream(query: str, session_id: str):
                                     "complete",
                                 )
                             )
-                            st.session_state.streaming_queue.put(
-                                ("status", "completed")
-                            )
+                            st.session_state.streaming_queue.put(("status", "completed"))
 
                             # A2UI 우선 확인 (GeneratorAgent가 생성한 A2UI)
                             a2ui_json = final_report_a2ui
@@ -916,13 +893,9 @@ async def execute_research_stream(query: str, session_id: str):
         error_detail = traceback.format_exc()
         logger.error(f"Error details: {error_detail}")
         st.session_state.streaming_queue.put(("status", "error"))
-        st.session_state.streaming_queue.put(
-            ("log", "system", f"오류 발생: {str(e)}", "error")
-        )
+        st.session_state.streaming_queue.put(("log", "system", f"오류 발생: {str(e)}", "error"))
         # 채팅에 오류 메시지 추가
-        st.session_state.streaming_queue.put(
-            ("chat", "system", None, f"❌ 오류 발생: {str(e)}")
-        )
+        st.session_state.streaming_queue.put(("chat", "system", None, f"❌ 오류 발생: {str(e)}"))
 
 
 def display_pending_questions():
@@ -943,9 +916,7 @@ def display_pending_questions():
                     for question in questions:
                         with st.container():
                             question_id = question.get("id", "")
-                            question_text = question.get(
-                                "message", question.get("text", "")
-                            )
+                            question_text = question.get("message", question.get("text", ""))
                             question_type = question.get("type", "")
                             question_format = question.get("format", "natural_language")
 
@@ -961,23 +932,17 @@ def display_pending_questions():
                                     ):
                                         if "user_responses" not in st.session_state:
                                             st.session_state["user_responses"] = {}
-                                        st.session_state["user_responses"][
-                                            question_id
-                                        ] = {"response": "approved"}
+                                        st.session_state["user_responses"][question_id] = {
+                                            "response": "approved"
+                                        }
                                         if "pending_questions" in st.session_state:
                                             st.session_state["pending_questions"] = [
                                                 q
-                                                for q in st.session_state[
-                                                    "pending_questions"
-                                                ]
+                                                for q in st.session_state["pending_questions"]
                                                 if q.get("id") != question_id
                                             ]
-                                        if not st.session_state.get(
-                                            "pending_questions"
-                                        ):
-                                            st.session_state[
-                                                "waiting_for_user"
-                                            ] = False
+                                        if not st.session_state.get("pending_questions"):
+                                            st.session_state["waiting_for_user"] = False
                                         st.session_state["workflow_resume"] = True
                                         st.rerun()
                                 with col2:
@@ -987,23 +952,17 @@ def display_pending_questions():
                                     ):
                                         if "user_responses" not in st.session_state:
                                             st.session_state["user_responses"] = {}
-                                        st.session_state["user_responses"][
-                                            question_id
-                                        ] = {"response": "rejected"}
+                                        st.session_state["user_responses"][question_id] = {
+                                            "response": "rejected"
+                                        }
                                         if "pending_questions" in st.session_state:
                                             st.session_state["pending_questions"] = [
                                                 q
-                                                for q in st.session_state[
-                                                    "pending_questions"
-                                                ]
+                                                for q in st.session_state["pending_questions"]
                                                 if q.get("id") != question_id
                                             ]
-                                        if not st.session_state.get(
-                                            "pending_questions"
-                                        ):
-                                            st.session_state[
-                                                "waiting_for_user"
-                                            ] = False
+                                        if not st.session_state.get("pending_questions"):
+                                            st.session_state["waiting_for_user"] = False
                                         st.session_state["workflow_resume"] = True
                                         st.rerun()
                                 continue
@@ -1014,12 +973,10 @@ def display_pending_questions():
                             if question_format == "choice":
                                 options = question.get("options", [])
                                 option_labels = [
-                                    opt.get("label", opt.get("value", ""))
-                                    for opt in options
+                                    opt.get("label", opt.get("value", "")) for opt in options
                                 ]
                                 option_values = [
-                                    opt.get("value", opt.get("label", ""))
-                                    for opt in options
+                                    opt.get("value", opt.get("label", "")) for opt in options
                                 ]
 
                                 selected_index = st.radio(
@@ -1043,16 +1000,12 @@ def display_pending_questions():
                                     st.session_state[response_key] = user_response
 
                             # 제출 버튼
-                            if st.button(
-                                "제출", key=f"submit_{question_id}", type="primary"
-                            ):
+                            if st.button("제출", key=f"submit_{question_id}", type="primary"):
                                 response = st.session_state.get(response_key)
 
                                 if response:
                                     # 응답 처리
-                                    submit_question_response(
-                                        question_id, response, question
-                                    )
+                                    submit_question_response(question_id, response, question)
                                     st.success("✅ 응답이 제출되었습니다.")
                                     st.rerun()
                                 else:
@@ -1120,9 +1073,7 @@ def save_research_result(query: str, report: str, session_id: str):
         with open(filepath, "w", encoding="utf-8") as f:
             f.write("# 연구 보고서\n\n")
             f.write(f"**주제:** {query}\n\n")
-            f.write(
-                f"**생성 시간:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-            )
+            f.write(f"**생성 시간:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             f.write(f"**세션 ID:** {session_id}\n\n")
             f.write("---\n\n")
             f.write(report)
@@ -1215,14 +1166,9 @@ def handle_chat_message(prompt: str):
 
     if any(keyword in prompt.lower() for keyword in ["검색", "찾아", "search", "find"]):
         agent_type = "executor"
-    elif any(
-        keyword in prompt.lower() for keyword in ["검증", "확인", "verify", "check"]
-    ):
+    elif any(keyword in prompt.lower() for keyword in ["검증", "확인", "verify", "check"]):
         agent_type = "verifier"
-    elif any(
-        keyword in prompt.lower()
-        for keyword in ["보고서", "생성", "report", "generate"]
-    ):
+    elif any(keyword in prompt.lower() for keyword in ["보고서", "생성", "report", "generate"]):
         agent_type = "generator"
 
     # 활동 로그 추가
@@ -1252,17 +1198,11 @@ def handle_chat_message(prompt: str):
                     ("chat", "agent", agent_type.upper(), response)
                 )
 
-            st.session_state.streaming_queue.put(
-                ("log", agent_type, "응답 생성 완료", "complete")
-            )
+            st.session_state.streaming_queue.put(("log", agent_type, "응답 생성 완료", "complete"))
         except Exception as e:
             error_msg = f"⚠️ 오류 발생: {str(e)}"
-            st.session_state.streaming_queue.put(
-                ("chat", "agent", agent_type.upper(), error_msg)
-            )
-            st.session_state.streaming_queue.put(
-                ("log", agent_type, f"오류: {str(e)}", "error")
-            )
+            st.session_state.streaming_queue.put(("chat", "agent", agent_type.upper(), error_msg))
+            st.session_state.streaming_queue.put(("log", agent_type, f"오류: {str(e)}", "error"))
         finally:
             loop.close()
 
@@ -1277,9 +1217,7 @@ async def get_agent_response(prompt: str, agent_type: str) -> str:
         if not orchestrator:
             return "⚠️ Orchestrator가 초기화되지 않았습니다."
 
-        st.session_state.streaming_queue.put(
-            ("log", agent_type, "응답 생성 시작", "start")
-        )
+        st.session_state.streaming_queue.put(("log", agent_type, "응답 생성 시작", "start"))
 
         # LLM을 직접 호출하여 Agent 역할에 맞는 응답 생성
         from src.core.llm_manager import TaskType, execute_llm_task
@@ -1312,16 +1250,12 @@ async def get_agent_response(prompt: str, agent_type: str) -> str:
             agent_type, f"질문: {prompt}\n\n이 질문에 대해 답변해주세요."
         )
 
-        st.session_state.streaming_queue.put(
-            ("log", agent_type, "LLM 호출 중...", "progress")
-        )
+        st.session_state.streaming_queue.put(("log", agent_type, "LLM 호출 중...", "progress"))
 
         # LLM 실행
         result = await execute_llm_task(
             prompt=agent_prompt,
-            task_type=TaskType.PLANNING
-            if agent_type == "planner"
-            else TaskType.GENERATION,
+            task_type=TaskType.PLANNING if agent_type == "planner" else TaskType.GENERATION,
             model_name=None,
             system_message=None,
         )
@@ -1332,9 +1266,7 @@ async def get_agent_response(prompt: str, agent_type: str) -> str:
             else f"[{agent_type.upper()}] 응답을 생성하지 못했습니다."
         )
 
-        st.session_state.streaming_queue.put(
-            ("log", agent_type, "응답 생성 완료", "complete")
-        )
+        st.session_state.streaming_queue.put(("log", agent_type, "응답 생성 완료", "complete"))
 
         return response
 
@@ -1380,9 +1312,7 @@ def check_tools_status() -> Dict[str, Any]:
         return {
             "mcp_servers": len(server_status.get("servers", {})),
             "connected_servers": server_status.get("connected_servers", 0),
-            "total_tools": server_status.get("summary", {}).get(
-                "total_tools_available", 0
-            ),
+            "total_tools": server_status.get("summary", {}).get("total_tools_available", 0),
             "local_tools": {
                 "browser_tools": ["navigate", "extract", "screenshot", "interact"],
                 "file_tools": ["create", "read", "write", "edit", "list", "delete"],
@@ -1411,9 +1341,7 @@ def start_docker_services():
         import subprocess
 
         # docker compose up -d 실행
-        result = subprocess.run(
-            ["docker", "compose", "up", "-d"], cwd=str(project_root)
-        )
+        result = subprocess.run(["docker", "compose", "up", "-d"], cwd=str(project_root))
         return result.returncode == 0
     except Exception as e:
         st.error(f"Docker start failed: {e}")

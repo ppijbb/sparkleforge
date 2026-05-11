@@ -116,9 +116,7 @@ async def checkpoint_delete_command(cli, args: List[str]):
         if success:
             cli.console.print(f"[green]✅ Checkpoint deleted: {checkpoint_id}[/green]")
         else:
-            cli.console.print(
-                f"[red]❌ Failed to delete checkpoint: {checkpoint_id}[/red]"
-            )
+            cli.console.print(f"[red]❌ Failed to delete checkpoint: {checkpoint_id}[/red]")
 
     except Exception as e:
         logger.error(f"Failed to delete checkpoint: {e}", exc_info=True)

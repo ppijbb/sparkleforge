@@ -18,12 +18,8 @@ from typing import Any, Dict, List
 
 # Context variables for agent-specific logging
 current_agent_id: ContextVar[str | None] = ContextVar("current_agent_id", default=None)
-current_session_id: ContextVar[str | None] = ContextVar(
-    "current_session_id", default=None
-)
-current_workflow_stage: ContextVar[str | None] = ContextVar(
-    "current_workflow_stage", default=None
-)
+current_session_id: ContextVar[str | None] = ContextVar("current_session_id", default=None)
+current_workflow_stage: ContextVar[str | None] = ContextVar("current_workflow_stage", default=None)
 
 
 @dataclass
@@ -158,9 +154,7 @@ class ColoredFormatter(logging.Formatter):
             )
 
         if agent_color and record.name in self.AGENT_COLORS:
-            formatted = formatted.replace(
-                record.name, f"{agent_color}{record.name}{reset_color}"
-            )
+            formatted = formatted.replace(record.name, f"{agent_color}{record.name}{reset_color}")
 
         return formatted
 
@@ -531,9 +525,7 @@ class EnhancedLogger(logging.Logger):
 
     def log_tool_execution(self, tool_log: ToolExecutionLog, level: int = logging.INFO):
         """Log tool execution with structured data."""
-        message = (
-            f"Tool '{tool_log.tool_name}' executed in {tool_log.execution_time:.2f}s"
-        )
+        message = f"Tool '{tool_log.tool_name}' executed in {tool_log.execution_time:.2f}s"
         if tool_log.success:
             message += f" (success, confidence: {tool_log.confidence:.2f})"
         else:
@@ -554,9 +546,7 @@ class EnhancedLogger(logging.Logger):
             },
         )
 
-    def log_agent_communication(
-        self, comm_log: AgentCommunicationLog, level: int = logging.INFO
-    ):
+    def log_agent_communication(self, comm_log: AgentCommunicationLog, level: int = logging.INFO):
         """Log agent communication with structured data."""
         message = f"Agent {comm_log.from_agent}"
         if comm_log.to_agent:
@@ -590,9 +580,7 @@ class EnhancedLogger(logging.Logger):
 class AgentContextManager:
     """Context manager for agent-specific logging."""
 
-    def __init__(
-        self, logger: EnhancedLogger, agent_id: str, session_id: str | None = None
-    ):
+    def __init__(self, logger: EnhancedLogger, agent_id: str, session_id: str | None = None):
         self.logger = logger
         self.agent_id = agent_id
         self.session_id = session_id

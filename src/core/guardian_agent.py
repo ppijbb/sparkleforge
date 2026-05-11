@@ -176,9 +176,7 @@ class GuardianAgent:
             f"stuck_threshold={stuck_threshold_seconds}s, auto_recovery={auto_recovery}"
         )
 
-    def register_agent(
-        self, agent_id: str, initial_metrics: Dict[str, Any] | None = None
-    ):
+    def register_agent(self, agent_id: str, initial_metrics: Dict[str, Any] | None = None):
         """에이전트 등록."""
         if agent_id in self.agent_metrics:
             logger.warning(f"Agent {agent_id} already registered")
@@ -246,9 +244,7 @@ class GuardianAgent:
             if metrics.avg_response_time == 0:
                 metrics.avg_response_time = response_time
             else:
-                metrics.avg_response_time = (
-                    0.9 * metrics.avg_response_time + 0.1 * response_time
-                )
+                metrics.avg_response_time = 0.9 * metrics.avg_response_time + 0.1 * response_time
 
         # 오류율 계산
         total_tasks = metrics.tasks_completed + metrics.tasks_failed
@@ -291,9 +287,7 @@ class GuardianAgent:
         # 상태 변경 시 콜백
         if old_status != metrics.status and self.on_health_change:
             asyncio.create_task(
-                self._safe_callback(
-                    self.on_health_change, agent_id, old_status, metrics.status
-                )
+                self._safe_callback(self.on_health_change, agent_id, old_status, metrics.status)
             )
 
     async def check_health(self, agent_id: str) -> HealthCheckResult:
@@ -375,9 +369,7 @@ class GuardianAgent:
         """복구 수행."""
         import uuid
 
-        event = RecoveryEvent(
-            event_id=str(uuid.uuid4())[:8], agent_id=agent_id, action=action
-        )
+        event = RecoveryEvent(event_id=str(uuid.uuid4())[:8], agent_id=agent_id, action=action)
 
         start_time = datetime.now()
 
@@ -399,9 +391,7 @@ class GuardianAgent:
 
                 # 궤적 리셋
                 if agent_id in self.agent_trajectories:
-                    self.agent_trajectories[agent_id] = AgentTrajectory(
-                        agent_id=agent_id
-                    )
+                    self.agent_trajectories[agent_id] = AgentTrajectory(agent_id=agent_id)
 
             elif action == RecoveryAction.REASSIGN:
                 if recovery_handler:
@@ -465,9 +455,7 @@ class GuardianAgent:
             return
 
         self._monitoring = True
-        self._monitor_task = asyncio.create_task(
-            self._monitoring_loop(recovery_handler)
-        )
+        self._monitor_task = asyncio.create_task(self._monitoring_loop(recovery_handler))
         logger.info("Guardian monitoring started")
 
     async def stop_monitoring(self):
@@ -492,13 +480,8 @@ class GuardianAgent:
                     result = await self.check_health(agent_id)
 
                     # 자동 복구
-                    if (
-                        self.auto_recovery
-                        and result.recommended_action != RecoveryAction.NONE
-                    ):
-                        await self.recover(
-                            agent_id, result.recommended_action, recovery_handler
-                        )
+                    if self.auto_recovery and result.recommended_action != RecoveryAction.NONE:
+                        await self.recover(agent_id, result.recommended_action, recovery_handler)
 
                 await asyncio.sleep(self.check_interval)
 
@@ -541,9 +524,7 @@ class GuardianAgent:
             "status": system_status,
             "total_agents": total_agents,
             "status_breakdown": {
-                status.value: count
-                for status, count in status_counts.items()
-                if count > 0
+                status.value: count for status, count in status_counts.items() if count > 0
             },
             "recent_recoveries": len(
                 [

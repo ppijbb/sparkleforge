@@ -33,9 +33,7 @@ class ProvenanceEvent:
     memory_id: str
     source_session_id: str | None = None
     source_turn: int | None = None
-    source_memory_ids: List[str] = field(
-        default_factory=list
-    )  # 통합/병합 시 원본 메모리 ID들
+    source_memory_ids: List[str] = field(default_factory=list)  # 통합/병합 시 원본 메모리 ID들
     agent_id: str | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -60,15 +58,9 @@ class MemoryProvenance:
 
     memory_id: str
     creation_event: ProvenanceEvent
-    lineage: List[ProvenanceEvent] = field(
-        default_factory=list
-    )  # 계보 (이벤트 히스토리)
-    source_memories: List[str] = field(
-        default_factory=list
-    )  # 이 메모리를 생성한 원본 메모리들
-    derived_memories: List[str] = field(
-        default_factory=list
-    )  # 이 메모리에서 파생된 메모리들
+    lineage: List[ProvenanceEvent] = field(default_factory=list)  # 계보 (이벤트 히스토리)
+    source_memories: List[str] = field(default_factory=list)  # 이 메모리를 생성한 원본 메모리들
+    derived_memories: List[str] = field(default_factory=list)  # 이 메모리에서 파생된 메모리들
 
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환."""
@@ -89,9 +81,7 @@ class ProvenanceTracker:
 
     def __init__(self):
         """초기화."""
-        self.provenance_records: Dict[
-            str, MemoryProvenance
-        ] = {}  # memory_id -> Provenance
+        self.provenance_records: Dict[str, MemoryProvenance] = {}  # memory_id -> Provenance
         self.event_log: List[ProvenanceEvent] = []
 
         logger.info("ProvenanceTracker initialized")
@@ -136,9 +126,7 @@ class ProvenanceTracker:
             self.provenance_records[memory_id].lineage.append(event)
 
         self.event_log.append(event)
-        logger.debug(
-            f"Recorded extraction event: {memory_id} from session {source_session_id}"
-        )
+        logger.debug(f"Recorded extraction event: {memory_id} from session {source_session_id}")
 
         return event
 
@@ -185,9 +173,7 @@ class ProvenanceTracker:
         for source_id in source_memory_ids:
             if source_id in self.provenance_records:
                 if memory_id not in self.provenance_records[source_id].derived_memories:
-                    self.provenance_records[source_id].derived_memories.append(
-                        memory_id
-                    )
+                    self.provenance_records[source_id].derived_memories.append(memory_id)
 
         self.event_log.append(event)
         logger.debug(

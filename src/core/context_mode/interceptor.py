@@ -7,15 +7,17 @@ Achieves 95%+ token reduction for all LLMs (Gemini, OpenRouter, Groq, etc.).
 import logging
 from typing import Any, Dict, List, Optional
 
-from src.core.context_mode.snippet import extract_snippet
 from src.core.context_mode.stats import get_session_stats
 
 logger = logging.getLogger(__name__)
 
 INTENT_SEARCH_THRESHOLD_BYTES = 5_000  # ~80–100 lines
+
+
 def _get_store():
     """Lazy ContentStore singleton (avoids FTS5 overhead until first index/search)."""
     from src.core.context_mode.store import get_store
+
     return get_store()
 
 
@@ -78,7 +80,7 @@ def _intent_search(stdout: str, intent: str, source: str, max_results: int = 5) 
 def process(
     tool_name: str,
     result: Dict[str, Any],
-    intent: Optional[str] = None,
+    intent: str | None = None,
     threshold_bytes: int = INTENT_SEARCH_THRESHOLD_BYTES,
 ) -> Dict[str, Any]:
     """Intercept tool result: if large, index and return summary. Track stats."""
@@ -113,4 +115,5 @@ def process(
 def get_store_for_tests():
     """Return the lazy store (for tests that need to reset or inspect)."""
     from src.core.context_mode.store import _store_instance
+
     return _store_instance

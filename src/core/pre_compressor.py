@@ -39,9 +39,7 @@ class CompressionResult(BaseModel):
     original_tokens: int = Field(description="원본 토큰 수")
     compressed_tokens: int = Field(description="압축 후 토큰 수")
     compression_ratio: float = Field(description="압축률")
-    preserved_keywords: List[str] = Field(
-        default_factory=list, description="보존된 키워드"
-    )
+    preserved_keywords: List[str] = Field(default_factory=list, description="보존된 키워드")
     removed_phrases: List[str] = Field(default_factory=list, description="제거된 구문")
 
 
@@ -142,9 +140,7 @@ class PreCompressor:
         sentences = self._split_sentences(text)
 
         # 문장별 중요도 계산
-        scored_sentences = [
-            (s, self._score_sentence(s, preserve_keywords)) for s in sentences
-        ]
+        scored_sentences = [(s, self._score_sentence(s, preserve_keywords)) for s in sentences]
 
         # 중요도 기반 압축
         compressed_text, preserved, removed = self._compress_by_importance(
@@ -158,16 +154,12 @@ class PreCompressor:
             compressed_text=compressed_text,
             original_tokens=original_tokens,
             compressed_tokens=compressed_tokens,
-            compression_ratio=compressed_tokens / original_tokens
-            if original_tokens > 0
-            else 1.0,
+            compression_ratio=compressed_tokens / original_tokens if original_tokens > 0 else 1.0,
             preserved_keywords=preserved,
             removed_phrases=removed,
         )
 
-    def compress_for_context(
-        self, text: str, max_tokens: int, query: str | None = None
-    ) -> str:
+    def compress_for_context(self, text: str, max_tokens: int, query: str | None = None) -> str:
         """컨텍스트 윈도우에 맞춰 압축.
 
         Args:
@@ -219,9 +211,7 @@ class PreCompressor:
         sentences = re.split(sentence_endings, text)
         return [s.strip() for s in sentences if s.strip()]
 
-    def _score_sentence(
-        self, sentence: str, preserve_keywords: List[str] | None = None
-    ) -> float:
+    def _score_sentence(self, sentence: str, preserve_keywords: List[str] | None = None) -> float:
         """문장 중요도 점수 계산."""
         score = 0.5  # 기본 점수
 
@@ -302,9 +292,7 @@ class PreCompressor:
             else:
                 # 제거된 문장 기록 (중요도가 낮은 문장)
                 if score < 0.4:
-                    removed.append(
-                        sentence[:50] + "..." if len(sentence) > 50 else sentence
-                    )
+                    removed.append(sentence[:50] + "..." if len(sentence) > 50 else sentence)
 
         # 원래 순서로 재정렬
         original_order = {s: i for i, (s, _) in enumerate(scored_sentences)}

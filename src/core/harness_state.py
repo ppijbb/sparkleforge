@@ -6,12 +6,14 @@
 """
 
 from typing import Annotated, Any, Dict, List, Optional, Set
+
 from typing_extensions import TypedDict
-import operator
+
 
 def override_reducer(a: Any, b: Any) -> Any:
     """새로운 값으로 덮어쓰는 리듀서"""
     return b
+
 
 def add_messages(left: list, right: list) -> list:
     """메시지 리스트 병합 (LangGraph의 표준 동작 모사)"""
@@ -20,18 +22,20 @@ def add_messages(left: list, right: list) -> list:
 
 class TaskState(TypedDict):
     """개별 단위 Task 상태"""
+
     task_id: str
     description: str
     status: str  # pending | running | completed | failed
-    assigned_agent: Optional[str]
-    tool_used: Optional[str]
-    result: Optional[Any]
-    error: Optional[str]
+    assigned_agent: str | None
+    tool_used: str | None
+    result: Any | None
+    error: str | None
     execution_time: float
 
 
 class WorkflowState(TypedDict):
     """전체 워크플로우 추적 상태"""
+
     session_id: str
     user_query: str
     phase: str  # start | classify | plan | execute | verify | synthesize | output
@@ -39,14 +43,15 @@ class WorkflowState(TypedDict):
     tasks: List[TaskState]
     completed_task_ids: Set[str]
     failed_task_ids: Set[str]
-    final_output: Optional[str]
+    final_output: str | None
 
 
 class ContextState(TypedDict):
     """도메인 분석 및 검색 결과 등 컨텍스트 상태"""
-    domain: Optional[str]
-    domain_analysis: Optional[Dict[str, Any]]
-    financial_analysis: Optional[Dict[str, Any]]
+
+    domain: str | None
+    domain_analysis: Dict[str, Any] | None
+    financial_analysis: Dict[str, Any] | None
     search_queries: List[str]
     search_results: List[Dict[str, Any]]
     synthesized_insights: List[str]
@@ -62,6 +67,7 @@ class HILState(TypedDict):
     resolved_clarifications: 해소된 명확화 정보 (LLM 추론 또는 사용자 응답)
     inference_log: 자율 추론 시 LLM의 추론 근거 기록 (디버깅용)
     """
+
     interaction_mode: str  # 'autonomous' | 'interactive'
     pending_questions: List[Dict[str, Any]]
     resolved_clarifications: Dict[str, Any]
@@ -71,6 +77,7 @@ class HILState(TypedDict):
 
 class GovernanceState(TypedDict):
     """보안 및 거버넌스 관련 상태"""
+
     trust_level: str
     is_economic_request: bool
     requires_approval: bool
@@ -81,6 +88,7 @@ class GovernanceState(TypedDict):
 
 class MetaState(TypedDict):
     """실행 메타데이터 (성능, 토큰, 루프 카운트 등)"""
+
     iteration_count: int
     max_iterations: int
     start_time: float
@@ -95,9 +103,10 @@ class HarnessState(TypedDict):
 
     LangGraph StateGraph에서 사용되는 메인 스키마.
     """
+
     # LangGraph 표준 메시지 추적
     messages: Annotated[list, add_messages]
-    
+
     # 계층화된 하위 상태들 (덮어쓰기 방식으로 갱신)
     workflow: Annotated[WorkflowState, override_reducer]
     context: Annotated[ContextState, override_reducer]
@@ -113,8 +122,9 @@ def _detect_interaction_mode() -> str:
         'interactive': UI/Streamlit 환경에서 사용자와 상호작용 가능
         'autonomous': CLI/batch/background 환경에서 LLM이 자율 추론
     """
-    import sys
     import os
+    import sys
+
     # Streamlit UI 환경
     if "streamlit" in sys.modules:
         return "interactive"
@@ -129,16 +139,14 @@ def _detect_interaction_mode() -> str:
 
 
 def create_initial_harness_state(
-    session_id: Optional[str], 
-    user_query: str, 
-    max_iterations: int = 10
+    session_id: str | None, user_query: str, max_iterations: int = 10
 ) -> HarnessState:
     """초기 HarnessState 객체를 생성합니다."""
     import time
-    
+
     # 세션 ID가 없으면 기본값 설정
     safe_session_id = session_id if session_id else "default"
-    
+
     return {
         "messages": [],
         "workflow": {
@@ -149,7 +157,7 @@ def create_initial_harness_state(
             "tasks": [],
             "completed_task_ids": set(),
             "failed_task_ids": set(),
-            "final_output": None
+            "final_output": None,
         },
         "context": {
             "domain": None,
@@ -157,7 +165,7 @@ def create_initial_harness_state(
             "financial_analysis": None,
             "search_queries": [],
             "search_results": [],
-            "synthesized_insights": []
+            "synthesized_insights": [],
         },
         "governance": {
             "trust_level": "medium",
@@ -165,7 +173,7 @@ def create_initial_harness_state(
             "requires_approval": False,
             "approved": False,
             "tool_calls_count": 0,
-            "tool_failures": 0
+            "tool_failures": 0,
         },
         "meta": {
             "iteration_count": 0,
@@ -174,7 +182,7 @@ def create_initial_harness_state(
             "total_tokens_used": 0,
             "warnings": [],
             "current_agent": "system",
-            "output_dir": f"output/{time.strftime('%Y%m%d_%H%M%S')}_{safe_session_id[:8]}"
+            "output_dir": f"output/{time.strftime('%Y%m%d_%H%M%S')}_{safe_session_id[:8]}",
         },
         "hil": {
             "interaction_mode": _detect_interaction_mode(),
@@ -182,5 +190,5 @@ def create_initial_harness_state(
             "resolved_clarifications": {},
             "inference_log": [],
             "waiting_for_user": False,
-        }
+        },
     }

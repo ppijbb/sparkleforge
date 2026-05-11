@@ -24,9 +24,11 @@ class GeminiCLIAgent(BaseCLIAgent):
             name="gemini_cli",
             command="gemini",
             args=["--format", "json"],
-            env={"GEMINI_API_KEY": api_key, "GEMINI_MODEL": model}
-            if api_key
-            else {"GEMINI_MODEL": model},
+            env=(
+                {"GEMINI_API_KEY": api_key, "GEMINI_MODEL": model}
+                if api_key
+                else {"GEMINI_MODEL": model}
+            ),
             timeout=180,
             output_format="json",
         )
@@ -136,12 +138,8 @@ class GeminiCLIAgent(BaseCLIAgent):
                 response = result.output.strip()
 
                 # 신뢰도 추출
-                confidence_match = re.search(
-                    r"confidence:?\s*([0-9.]+)", response, re.IGNORECASE
-                )
-                confidence = (
-                    float(confidence_match.group(1)) if confidence_match else 0.8
-                )
+                confidence_match = re.search(r"confidence:?\s*([0-9.]+)", response, re.IGNORECASE)
+                confidence = float(confidence_match.group(1)) if confidence_match else 0.8
 
                 return {
                     "success": True,

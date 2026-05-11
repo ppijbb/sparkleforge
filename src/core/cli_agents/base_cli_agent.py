@@ -63,7 +63,6 @@ class BaseCLIAgent(ABC):
         Returns:
             표준화된 결과 딕셔너리
         """
-        pass
 
     @abstractmethod
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
@@ -75,7 +74,6 @@ class BaseCLIAgent(ABC):
         Returns:
             파싱된 결과
         """
-        pass
 
     async def _execute_command(
         self, command: Union[str, List[str]], input_text: str | None = None
@@ -135,9 +133,9 @@ class BaseCLIAgent(ABC):
                 execution_time=execution_time,
                 metadata={
                     "command": cmd,
-                    "working_dir": str(self.config.working_dir)
-                    if self.config.working_dir
-                    else None,
+                    "working_dir": (
+                        str(self.config.working_dir) if self.config.working_dir else None
+                    ),
                 },
             )
 

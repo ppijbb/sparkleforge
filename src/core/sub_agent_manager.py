@@ -11,7 +11,7 @@ import time
 import uuid
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Set
@@ -210,9 +210,7 @@ class CollaborationNetwork:
             f"Agent {agent.agent_id} ({agent.config.role.value}) added to network {self.network_id}"
         )
 
-    def connect_agents(
-        self, agent1_id: str, agent2_id: str, bidirectional: bool = True
-    ):
+    def connect_agents(self, agent1_id: str, agent2_id: str, bidirectional: bool = True):
         """에이전트 연결."""
         self.connections[agent1_id].add(agent2_id)
         if bidirectional:
@@ -319,9 +317,7 @@ class SubAgentManager:
         Returns:
             생성된 네트워크
         """
-        network = CollaborationNetwork(
-            network_id=network_id, root_agent=root_agent_config.name
-        )
+        network = CollaborationNetwork(network_id=network_id, root_agent=root_agent_config.name)
 
         # 루트 에이전트 생성 및 추가
         root_agent = SubAgentContext(
@@ -421,14 +417,15 @@ class SubAgentManager:
 
         # SubAgentExecutor를 통해 격리된 컨텍스트에서 실제 실행 예약
         from src.core.subagent_executor import get_subagent_executor
+
         executor = get_subagent_executor()
-        
+
         async def _execute_and_notify():
             result_task = await executor.execute_isolated(task, target_agent.config)
             target_agent.complete_task(task.get("task_id"), result_task.get("result", {}))
-            
+
             # 발신자에게 결과 통보 로직 추가 가능
-            
+
         asyncio.create_task(_execute_and_notify())
 
         logger.info(
@@ -645,9 +642,7 @@ class SubAgentManager:
                 "estimated_completion": time.time() + 300,  # 5분 예상
             }
         else:
-            logger.info(
-                f"Agent {agent.agent_id} declined task delegation: expertise mismatch"
-            )
+            logger.info(f"Agent {agent.agent_id} declined task delegation: expertise mismatch")
             return {"action": "task_declined", "reason": "expertise_mismatch"}
 
     async def _handle_knowledge_sharing(
@@ -671,9 +666,7 @@ class SubAgentManager:
                 }
             )
 
-        logger.info(
-            f"Agent {agent.agent_id} received knowledge sharing from {message.from_agent}"
-        )
+        logger.info(f"Agent {agent.agent_id} received knowledge sharing from {message.from_agent}")
         return {"action": "knowledge_received", "items_count": len(knowledge)}
 
     async def _handle_result_synthesis(
@@ -710,7 +703,7 @@ class SubAgentManager:
         message: ExchangeMessage,
     ) -> Dict[str, Any]:
         """검증 요청 처리."""
-        data_to_validate = message.content.get("data", {})
+        message.content.get("data", {})
 
         # 검증 로직 (간단한 구현)
         validation_result = {
@@ -730,7 +723,7 @@ class SubAgentManager:
     ) -> Dict[str, Any]:
         """협업 제안 처리."""
         collaboration_type = message.content.get("collaboration_type", "")
-        requirements = message.content.get("requirements", {})
+        message.content.get("requirements", {})
 
         # 참여 의사 결정 (역할 기반)
         interested = False
@@ -739,15 +732,9 @@ class SubAgentManager:
             SubAgentRole.SPECIALIST,
         ]:
             interested = True
-        elif (
-            collaboration_type == "analysis"
-            and agent.config.role == SubAgentRole.ANALYZER
-        ):
+        elif collaboration_type == "analysis" and agent.config.role == SubAgentRole.ANALYZER:
             interested = True
-        elif (
-            collaboration_type == "validation"
-            and agent.config.role == SubAgentRole.VALIDATOR
-        ):
+        elif collaboration_type == "validation" and agent.config.role == SubAgentRole.VALIDATOR:
             interested = True
 
         if interested:
@@ -870,12 +857,10 @@ class SubAgentPerformanceStore:
         """파일에 레코드 저장."""
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            records_list = [
-                asdict(r) for r in self._records.values()
-            ]
+            records_list = [asdict(r) for r in self._records.values()]
             with open(self.store_path, "w", encoding="utf-8") as f:
                 json.dump(
-                    {"records": records_list, "updated_at": datetime.now(timezone.utc).isoformat()},
+                    {"records": records_list, "updated_at": datetime.now(UTC).isoformat()},
                     f,
                     ensure_ascii=False,
                     indent=2,
@@ -890,17 +875,13 @@ class SubAgentPerformanceStore:
         total = len(agent.completed_tasks)
         if total == 0:
             return
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         execution_times = []
         for t in agent.completed_tasks:
             if t.get("completed_at") and t.get("assigned_at"):
-                execution_times.append(
-                    t["completed_at"] - t["assigned_at"]
-                )
+                execution_times.append(t["completed_at"] - t["assigned_at"])
         avg_time = sum(execution_times) / len(execution_times) if execution_times else 0.0
-        quality_scores = [
-            1.0 if t.get("success") else 0.0 for t in agent.completed_tasks
-        ]
+        quality_scores = [1.0 if t.get("success") else 0.0 for t in agent.completed_tasks]
         rec = SubAgentPerformanceRecord(
             agent_name=agent.agent_id,
             role=agent.config.role.value,
@@ -973,10 +954,7 @@ class SubAgentPerformanceStore:
 
     def get_top_agents(self, role: str, limit: int = 5) -> List[SubAgentPerformanceRecord]:
         """역할별 고성과 에이전트 목록 (success_rate 내림차순)."""
-        candidates = [
-            r for r in self._records.values()
-            if r.role == role and r.total_tasks >= 1
-        ]
+        candidates = [r for r in self._records.values() if r.role == role and r.total_tasks >= 1]
         candidates.sort(key=lambda x: (x.success_rate, x.total_tasks), reverse=True)
         return candidates[:limit]
 
@@ -999,8 +977,7 @@ class SubAgentPerformanceStore:
     def prune_low_performers(self, threshold: float = 0.3) -> int:
         """success_rate가 threshold 미만인 레코드 제거. 제거된 개수 반환."""
         to_remove = [
-            k for k, r in self._records.items()
-            if r.total_tasks >= 3 and r.success_rate < threshold
+            k for k, r in self._records.items() if r.total_tasks >= 3 and r.success_rate < threshold
         ]
         for k in to_remove:
             del self._records[k]

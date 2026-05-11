@@ -19,7 +19,6 @@ import asyncio
 import json
 import logging
 import os
-from dataclasses import dataclass, field
 from typing import Any
 
 from .base_cli_agent import BaseCLIAgent, CLIAgentConfig, CLIExecutionResult
@@ -87,9 +86,7 @@ class ComputerUseAgent(BaseCLIAgent):
             self._client = anthropic.Anthropic(api_key=self.api_key)
             return self._client
         except ImportError:
-            raise RuntimeError(
-                "anthropic SDK not installed. Run: pip install anthropic>=0.40.0"
-            )
+            raise RuntimeError("anthropic SDK not installed. Run: pip install anthropic>=0.40.0")
 
     # ------------------------------------------------------------------
     # computer_use_server helpers (direct Python import for efficiency)
@@ -405,6 +402,7 @@ class ComputerUseAgent(BaseCLIAgent):
             return False
         try:
             import src.core.mcp_servers.computer_use_server  # noqa: F401
+
             return True
         except ImportError:
             return False

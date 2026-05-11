@@ -32,8 +32,8 @@ class HookDef:
     """Single hook definition (command or inline)."""
 
     type: str
-    command: Optional[str] = None
-    matcher: Optional[str] = None
+    command: str | None = None
+    matcher: str | None = None
 
 
 @dataclass
@@ -44,7 +44,7 @@ class HooksConfig:
     hooks: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, hooks_path: Path) -> Optional["HooksConfig"]:
+    def load(cls, hooks_path: Path) -> HooksConfig | None:
         """Load hooks.json from path."""
         if not hooks_path.is_file():
             return None
@@ -61,7 +61,7 @@ class HooksConfig:
 class HookRunner:
     """Runs lifecycle hooks from registered plugins."""
 
-    def __init__(self, plugin_roots: Optional[List[Path]] = None) -> None:
+    def __init__(self, plugin_roots: List[Path] | None = None) -> None:
         self.plugin_roots = list(plugin_roots or [])
         self._hooks_cache: Dict[str, List[tuple[Path, HooksConfig]]] = {}
 
@@ -71,7 +71,9 @@ class HookRunner:
             self.plugin_roots.append(root)
         self._hooks_cache.clear()
 
-    def _get_hooks_for_phase(self, phase: HookPhase) -> List[tuple[Path, HooksConfig, Dict[str, Any]]]:
+    def _get_hooks_for_phase(
+        self, phase: HookPhase
+    ) -> List[tuple[Path, HooksConfig, Dict[str, Any]]]:
         """Discover and return (plugin_root, config, hook_entry) for phase."""
         if phase.value not in self._hooks_cache:
             entries: List[tuple[Path, HooksConfig]] = []
@@ -96,7 +98,7 @@ class HookRunner:
             "${CLAUDE_PLUGIN_ROOT}", root_str
         )
 
-    def _matches_matcher(self, matcher: Optional[str], context: Dict[str, Any]) -> bool:
+    def _matches_matcher(self, matcher: str | None, context: Dict[str, Any]) -> bool:
         """Return True if context matches matcher (e.g. tool name pattern)."""
         if not matcher:
             return True
@@ -107,7 +109,7 @@ class HookRunner:
         return any(tool_name == p or (p in tool_name) for p in parts)
 
     async def run_pre_task_run(
-        self, session_id: str, task_description: Optional[str] = None
+        self, session_id: str, task_description: str | None = None
     ) -> None:
         """Run all PreTaskRun hooks."""
         context = {
@@ -125,9 +127,9 @@ class HookRunner:
     async def run_post_task_run(
         self,
         session_id: str,
-        task_description: Optional[str] = None,
+        task_description: str | None = None,
         success: bool = True,
-        result_summary: Optional[str] = None,
+        result_summary: str | None = None,
     ) -> None:
         """Run all PostTaskRun hooks."""
         context = {
@@ -198,7 +200,7 @@ class HookRunner:
         plugin_root: Path,
         context: Dict[str, Any],
         wait: bool = True,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Run a shell command hook with env and optional stdin JSON. Returns exit code if wait."""
         env = os.environ.copy()
         env["SPARKLEFORGE_PLUGIN_ROOT"] = str(plugin_root.resolve())

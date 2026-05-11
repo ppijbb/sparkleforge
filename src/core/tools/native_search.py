@@ -23,16 +23,17 @@ USER_AGENTS = [
 ]
 
 
-from src.core.tools.registry import tool, ToolCategory
+from src.core.tools.registry import ToolCategory, tool
+
 
 @tool(
     name="ddg_search",
     description="Search DuckDuckGo natively (no MCP required). Robust fallback for failing MCP servers.",
     parameters={
         "query": {"type": "string", "description": "Search query"},
-        "max_results": {"type": "integer", "description": "Max results (default: 5)"}
+        "max_results": {"type": "integer", "description": "Max results (default: 5)"},
     },
-    category=ToolCategory.SEARCH
+    category=ToolCategory.SEARCH,
 )
 def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, str]]:
     """Search DuckDuckGo using HTML frontend (no JS/API key required).

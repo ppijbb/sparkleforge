@@ -135,9 +135,7 @@ class NetworkError(BaseResearcherException):
             message,
             category=ErrorCategory.NETWORK,
             severity=ErrorSeverity.MEDIUM,
-            details={"url": url, "status_code": status_code}
-            if url or status_code
-            else {},
+            details={"url": url, "status_code": status_code} if url or status_code else {},
             suggestions=[
                 "Check your internet connection",
                 "Verify the API endpoint is accessible",
@@ -226,9 +224,7 @@ class InvalidAPIKeyError(AuthenticationError):
 class ValidationError(BaseResearcherException):
     """Data validation errors."""
 
-    def __init__(
-        self, message: str, field: str | None = None, value: Any | None = None, **kwargs
-    ):
+    def __init__(self, message: str, field: str | None = None, value: Any | None = None, **kwargs):
         super().__init__(
             message,
             category=ErrorCategory.VALIDATION,

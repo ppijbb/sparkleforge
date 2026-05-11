@@ -212,20 +212,14 @@ class SynthesisAgent:
 
         # Phase 6: Multi-Format Generation (Universal MCP Hub)
         logger.info("6. 📄 Generating multi-format deliverables with Universal MCP Hub")
-        deliverables = await self._generate_deliverables(
-            compressed_content, deliverable_type
-        )
+        deliverables = await self._generate_deliverables(compressed_content, deliverable_type)
 
         # Phase 7: Quality Validation
         logger.info("7. ✅ Validating synthesis quality")
-        validation_results = await self._validate_synthesis(
-            compressed_content, deliverables
-        )
+        validation_results = await self._validate_synthesis(compressed_content, deliverables)
 
         # Council 활성화 확인 및 적용 (최종 보고서 생성 시 - 기본 활성화)
-        use_council = (
-            context.get("use_council", None) if context else None
-        )  # 수동 활성화 옵션
+        use_council = context.get("use_council", None) if context else None  # 수동 활성화 옵션
         if use_council is None:
             # 자동 활성화 판단 (기본 활성화)
             from src.core.council_activator import get_council_activator
@@ -234,9 +228,11 @@ class SynthesisAgent:
 
             activation_decision = activator.should_activate(
                 process_type="synthesis",
-                query=str(original_objectives[0].get("description", ""))
-                if original_objectives
-                else "",
+                query=(
+                    str(original_objectives[0].get("description", ""))
+                    if original_objectives
+                    else ""
+                ),
                 context={"important_conclusion": True},  # 종합은 항상 중요한 결론 도출
             )
             use_council = activation_decision.should_activate
@@ -305,9 +301,7 @@ Provide a review with:
                         "review_report": review_report,
                     }
             except Exception as e:
-                logger.warning(
-                    f"📝 Council review failed: {e}. Using original synthesis results."
-                )
+                logger.warning(f"📝 Council review failed: {e}. Using original synthesis results.")
                 # Council 실패 시 원본 종합 결과 사용 (fallback 제거 - 명확한 로깅만)
 
         synthesis_result = {
@@ -365,16 +359,13 @@ Provide a review with:
 
         content_length = len(total_content)
         max_tokens = self.context_window_config.max_tokens
-        min_tokens = self.context_window_config.min_tokens
+        self.context_window_config.min_tokens
 
         # 컨텍스트 사용률 계산
         usage_ratio = content_length / max_tokens if max_tokens > 0 else 1.0
 
         # 중요도 기반 보존
-        if (
-            usage_ratio > 0.8
-            and self.context_window_config.importance_based_preservation
-        ):
+        if usage_ratio > 0.8 and self.context_window_config.importance_based_preservation:
             # 중요한 정보 우선 보존
             important_content = await self._extract_important_content(
                 execution_results, evaluation_results
@@ -455,9 +446,7 @@ Provide a review with:
 
         return insights
 
-    async def _analyze_patterns(
-        self, integrated_data: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+    async def _analyze_patterns(self, integrated_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """패턴 분석."""
         analysis_prompt = f"""
         Analyze the following research data to identify patterns and trends:
@@ -512,9 +501,7 @@ Provide a review with:
         result = await execute_llm_task(
             prompt=analysis_prompt,
             task_type=TaskType.ANALYSIS,
-            system_message=self.config.prompts["comparative_analysis"][
-                "system_message"
-            ],
+            system_message=self.config.prompts["comparative_analysis"]["system_message"],
         )
 
         return [
@@ -643,9 +630,7 @@ Provide a review with:
             "timestamp": datetime.now().isoformat(),
         }
 
-    async def _compress_content(
-        self, synthesized_content: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _compress_content(self, synthesized_content: Dict[str, Any]) -> Dict[str, Any]:
         """콘텐츠 압축 (Hierarchical Compression)."""
         try:
             compressed = await compress_data(synthesized_content["content"])

@@ -30,9 +30,7 @@ class SkillsMarketplace:
         self.marketplace_config = self.project_root / ".skills_marketplace.json"
         self.skill_manager = get_skill_manager()
 
-    def install_skill_from_github(
-        self, repo_url: str, skill_name: str | None = None
-    ) -> bool:
+    def install_skill_from_github(self, repo_url: str, skill_name: str | None = None) -> bool:
         """GitHub 저장소에서 Skill 설치."""
         try:
             # 저장소 이름 추출

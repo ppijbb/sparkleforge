@@ -8,10 +8,10 @@ import json
 import logging
 import os
 import re
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin, urlparse
+from typing import Dict, List
+from urllib.parse import urlparse
 
 import httpx
 
@@ -149,6 +149,7 @@ class OpenSkillProvider:
             return results
         try:
             from composio import Composio
+
             client = Composio(api_key=api_key)
             entities = getattr(client, "get_entities", None) or getattr(client, "entities", None)
             if entities is None:
@@ -161,13 +162,29 @@ class OpenSkillProvider:
                 try:
                     ent_list = entities() if callable(entities) else entities
                     for ent in (ent_list or [])[:limit]:
-                        app_name = getattr(ent, "name", None) or (ent.get("name") if isinstance(ent, dict) else str(ent))
-                        actions_list = getattr(ent, "actions", None) or (ent.get("actions", []) if isinstance(ent, dict) else [])
+                        app_name = getattr(ent, "name", None) or (
+                            ent.get("name") if isinstance(ent, dict) else str(ent)
+                        )
+                        actions_list = getattr(ent, "actions", None) or (
+                            ent.get("actions", []) if isinstance(ent, dict) else []
+                        )
                         for act in (actions_list or [])[:20]:
                             if isinstance(act, dict):
-                                actions.append({"app": app_name, "name": act.get("name", ""), "description": act.get("description", "")})
+                                actions.append(
+                                    {
+                                        "app": app_name,
+                                        "name": act.get("name", ""),
+                                        "description": act.get("description", ""),
+                                    }
+                                )
                             else:
-                                actions.append({"app": app_name, "name": getattr(act, "name", ""), "description": getattr(act, "description", "")})
+                                actions.append(
+                                    {
+                                        "app": app_name,
+                                        "name": getattr(act, "name", ""),
+                                        "description": getattr(act, "description", ""),
+                                    }
+                                )
                 except Exception as e:
                     logger.debug("Composio entities iteration: %s", e)
             if not actions and hasattr(client, "get_actions"):
@@ -183,12 +200,18 @@ class OpenSkillProvider:
                         desc = act.get("description", "")
                         app = act.get("app", "composio")
                     else:
-                        name = getattr(act, "name", "") or getattr(act, "action", "") or f"composio_{i}"
+                        name = (
+                            getattr(act, "name", "")
+                            or getattr(act, "action", "")
+                            or f"composio_{i}"
+                        )
                         desc = getattr(act, "description", "")
                         app = getattr(act, "app", "composio")
                     skill_id = _safe_filename(f"composio_{app}_{name}")
                     category = self.auto_categorize_from_text(f"{name} {desc}")
-                    meta = _default_metadata(skill_id=skill_id, name=name, description=desc, category=category)
+                    meta = _default_metadata(
+                        skill_id=skill_id, name=name, description=desc, category=category
+                    )
                     meta.tags = [app, "composio"]
                     results.append(meta)
             logger.info("Fetched %d skills from Composio", len(results))

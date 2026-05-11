@@ -1,16 +1,17 @@
-import logging
 import json
+import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
 
 class DoclingProcessor:
     """Document processing using IBM Docling for high-quality extraction."""
 
-    def __init__(self, output_dir: Optional[str] = None):
+    def __init__(self, output_dir: str | None = None):
         self.output_dir = Path(output_dir or "./storage/processed_documents")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._converter = None
@@ -20,18 +21,20 @@ class DoclingProcessor:
         if self._converter is None:
             try:
                 from docling.document_converter import DocumentConverter
+
                 self._converter = DocumentConverter()
                 logger.info("Docling DocumentConverter initialized.")
             except ImportError:
-                logger.error("Docling library not installed. Please install it with 'pip install docling'.")
+                logger.error(
+                    "Docling library not installed. Please install it with 'pip install docling'."
+                )
                 raise ImportError("Docling not installed.")
         return self._converter
 
     def _infer_extraction_plan(
-        self, instruction: Optional[str]
-    ) -> Tuple[str, Optional[int], Dict[str, bool]]:
-        """
-        Decide what to keep based on user instruction.
+        self, instruction: str | None
+    ) -> Tuple[str, int | None, Dict[str, bool]]:
+        """Decide what to keep based on user instruction.
 
         Returns:
           - extraction_mode: human readable string
@@ -79,7 +82,11 @@ class DoclingProcessor:
             return "tables_and_text", 2500 if wants_summary else None, keep
 
         # no explicit extraction intent -> keep everything
-        return "full", 2500 if wants_summary else None, {"text": True, "tables": True, "key_value": True}
+        return (
+            "full",
+            2500 if wants_summary else None,
+            {"text": True, "tables": True, "key_value": True},
+        )
 
     def _table_to_markdown(self, doc: Any, table_item: Any) -> str:
         """Convert Docling TableItem into a markdown table (best-effort)."""
@@ -126,15 +133,15 @@ class DoclingProcessor:
         self,
         source: str,
         user_id: str = "default_user",
-        instruction: Optional[str] = None,
+        instruction: str | None = None,
     ) -> Dict[str, Any]:
         """Process a document (file path or URL) and extract resources."""
         logger.info(f"Processing document: {source}")
-        
+
         try:
             converter = self._get_converter()
             result = converter.convert(source)
-            
+
             doc = result.document
             document_dict = doc.export_to_dict()
             extraction_mode, max_chars, keep_flags = self._infer_extraction_plan(instruction)
@@ -154,12 +161,19 @@ class DoclingProcessor:
                 markdown_content = doc.export_to_markdown()
             else:
                 # Selective extraction: reconstruct Markdown from chosen item types.
-                from docling_core.types.doc import ContentLayer, KeyValueItem, TableItem, TextItem
-                from docling_core.transforms.serializer.markdown import MarkdownDocSerializer
+                from docling_core.transforms.serializer.markdown import (
+                    MarkdownDocSerializer,
+                )
+                from docling_core.types.doc import (
+                    ContentLayer,
+                    KeyValueItem,
+                    TableItem,
+                    TextItem,
+                )
 
                 parts: List[str] = []
                 total_len = 0
-                key_value_serializer: Optional[MarkdownDocSerializer] = None
+                key_value_serializer: MarkdownDocSerializer | None = None
                 if keep_flags.get("key_value"):
                     key_value_serializer = MarkdownDocSerializer(doc=doc, traverse_pictures=False)
 
@@ -200,10 +214,10 @@ class DoclingProcessor:
                         break
 
                 markdown_content = "\n".join([p.strip() for p in parts if p.strip()])
-            
+
             # Generate a unique ID for this processing session
             doc_id = f"doc_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+
             # Extract metadata
             metadata = {
                 "source": source,
@@ -214,14 +228,14 @@ class DoclingProcessor:
                 "title": document_dict.get("metadata", {}).get("title", Path(source).stem),
                 "extraction_mode": extraction_mode,
             }
-            
+
             # Extract tables if any
             try:
                 # Prefer doc.tables since it is the canonical representation.
                 tables = list(getattr(doc, "tables", []) or [])
             except Exception:
                 tables = []
-            
+
             table_entries: List[Dict[str, Any]] = []
             if tables and keep_flags.get("tables"):
                 for i, table_item in enumerate(tables):
@@ -260,22 +274,26 @@ class DoclingProcessor:
                         {
                             "table_index": i,
                             "markdown": md_table,
-                            "num_rows": getattr(getattr(table_item, "data", None), "num_rows", None),
-                            "num_cols": getattr(getattr(table_item, "data", None), "num_cols", None),
+                            "num_rows": getattr(
+                                getattr(table_item, "data", None), "num_rows", None
+                            ),
+                            "num_cols": getattr(
+                                getattr(table_item, "data", None), "num_cols", None
+                            ),
                             "provenance": prov_info,
                         }
                     )
-            
+
             # Save results to disk
             doc_dir = self.output_dir / doc_id
             doc_dir.mkdir(parents=True, exist_ok=True)
-            
+
             with open(doc_dir / "content.md", "w", encoding="utf-8") as f:
                 f.write(markdown_content)
-            
+
             with open(doc_dir / "metadata.json", "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2, ensure_ascii=False)
-            
+
             # Prepare summarized response
             return {
                 "success": True,
@@ -287,20 +305,16 @@ class DoclingProcessor:
                 "extraction_mode": extraction_mode,
                 "table_entries": table_entries,
             }
-            
+
         except Exception as e:
             logger.error(f"Docling processing failed: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "source": source
-            }
+            return {"success": False, "error": str(e), "source": source}
 
     async def store_to_history(self, storage: Any, process_result: Dict[str, Any]):
         """Store the processed document result into HybridStorage history."""
         if not process_result.get("success"):
             return False
-            
+
         metadata = process_result["metadata"]
         res = await storage.store_research(
             research_id=process_result["doc_id"],
@@ -310,9 +324,9 @@ class DoclingProcessor:
             results={"tables_count": process_result["tables_count"]},
             metadata=metadata,
             summary=f"Processed document from {metadata['source']}.",
-            keywords=[metadata["file_type"], "docling_processed"]
+            keywords=[metadata["file_type"], "docling_processed"],
         )
-        
+
         # Store each table as a separate history entry for finer retrieval.
         # This is intentionally best-effort: if table_entries is absent, we only store the doc-level record.
         table_entries: List[Dict[str, Any]] = process_result.get("table_entries", []) or []

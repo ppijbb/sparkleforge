@@ -1,12 +1,11 @@
 import logging
-from datetime import datetime
-from typing import Any, Dict, List
 
-from src.core.orchestrator.state import ResearchState
-from src.core.orchestrator.base_node import BaseNode
 from src.core.hierarchical_compression import compress_data
+from src.core.orchestrator.base_node import BaseNode
+from src.core.orchestrator.state import ResearchState
 
 logger = logging.getLogger(__name__)
+
 
 class CompressionNode(BaseNode):
     """Handler for hierarchical data compression."""
@@ -34,26 +33,32 @@ class CompressionNode(BaseNode):
 
             try:
                 compressed = await compress_data(result_data)
-                compression_results.append({
-                    "task_id": task_id,
-                    "original_size": len(str(result_data)),
-                    "compressed_size": len(str(compressed.data)),
-                    "compression_ratio": compressed.compression_ratio,
-                    "compressed_data": compressed.data,
-                    "status": "compressed",
-                })
+                compression_results.append(
+                    {
+                        "task_id": task_id,
+                        "original_size": len(str(result_data)),
+                        "compressed_size": len(str(compressed.data)),
+                        "compression_ratio": compressed.compression_ratio,
+                        "compressed_data": compressed.data,
+                        "status": "compressed",
+                    }
+                )
             except Exception as e:
                 logger.warning(f"Compression failed for {task_id}: {e}")
-                compression_results.append({"task_id": task_id, "compressed_data": result_data, "status": "failed"})
+                compression_results.append(
+                    {"task_id": task_id, "compressed_data": result_data, "status": "failed"}
+                )
 
         # Summary stats
         total_orig = sum(c.get("original_size", 0) for c in compression_results)
         total_comp = sum(c.get("compressed_size", 0) for c in compression_results)
         ratio = total_comp / max(total_orig, 1)
 
-        state.update({
-            "compression_results": compression_results,
-            "compression_metadata": {"overall_compression_ratio": ratio},
-            "current_step": "continuous_verification",
-        })
+        state.update(
+            {
+                "compression_results": compression_results,
+                "compression_metadata": {"overall_compression_ratio": ratio},
+                "current_step": "continuous_verification",
+            }
+        )
         return state

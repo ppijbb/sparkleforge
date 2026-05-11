@@ -9,7 +9,11 @@ from typing import List
 from rich.panel import Panel
 from rich.table import Table
 
-from src.core.scheduler import ScheduleConfig, ScheduleExecution, configure_scheduler_execution
+from src.core.scheduler import (
+    ScheduleConfig,
+    ScheduleExecution,
+    configure_scheduler_execution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +241,9 @@ async def schedule_history_command(cli, args: List[str]):
             cli.console.print("[yellow]No schedule execution history found[/yellow]")
             return
 
-        table = Table(title="Schedule Execution History", show_header=True, header_style="bold cyan")
+        table = Table(
+            title="Schedule Execution History", show_header=True, header_style="bold cyan"
+        )
         table.add_column("Execution ID", width=26)
         table.add_column("Schedule ID", width=34)
         table.add_column("Status", width=12)

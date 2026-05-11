@@ -40,9 +40,7 @@ def parse_search_results(html: str, num_results: int = 10) -> List[Dict[str, str
     return results
 
 
-async def search_duckduckgo(
-    query: str, num_results: int = 10, timeout: int = 30
-) -> Dict[str, Any]:
+async def search_duckduckgo(query: str, num_results: int = 10, timeout: int = 30) -> Dict[str, Any]:
     """Search using DuckDuckGo HTML interface.
 
     Args:

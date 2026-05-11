@@ -285,9 +285,7 @@ Available commands:
             if sessions:
                 print(f"\n🔍 Found {len(sessions)} sessions:")
                 for s in sessions:
-                    print(
-                        f"  {s.session_id} | {s.status.value} | {s.user_query or 'N/A'}"
-                    )
+                    print(f"  {s.session_id} | {s.status.value} | {s.user_query or 'N/A'}")
             else:
                 print("No sessions found")
 
@@ -308,9 +306,7 @@ Available commands:
                     print(f"Query: {session_info.user_query}")
                 if session_info.current_task:
                     print(f"Current Task: {session_info.current_task}")
-                print(
-                    f"Errors: {session_info.error_count}, Warnings: {session_info.warning_count}"
-                )
+                print(f"Errors: {session_info.error_count}, Warnings: {session_info.warning_count}")
             else:
                 print(f"Session not found: {session_id}")
 
@@ -480,9 +476,7 @@ Available commands:
             return
 
         if len(parts) < 2:
-            print(
-                "Usage: schedule <create|list|show|pause|resume|delete|history|stats|run>"
-            )
+            print("Usage: schedule <create|list|show|pause|resume|delete|history|stats|run>")
             return
 
         handlers = {
@@ -517,9 +511,7 @@ Available commands:
         session_control = get_session_control()
 
         # 세션 ID 생성
-        session_id = (
-            f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-        )
+        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
         # 활성 세션 등록
         session_control.register_active_session(session_id, request)
@@ -548,9 +540,7 @@ Available commands:
 
             # 스트리밍 출력을 위한 간단한 콜백
             async def progress_callback(message: str):
-                session_control.update_session_progress(
-                    session_id, current_task=message
-                )
+                session_control.update_session_progress(session_id, current_task=message)
                 print(f"  {message}")
 
             result = await orchestrator.execute_full_research_workflow(request)
@@ -561,9 +551,7 @@ Available commands:
             # 세션 상태 업데이트
             session_control.update_session_progress(session_id, progress=100.0)
             if session_id in session_control.active_sessions:
-                session_control.active_sessions[session_id]["status"] = (
-                    SessionStatus.COMPLETED
-                )
+                session_control.active_sessions[session_id]["status"] = SessionStatus.COMPLETED
 
             print("\n" + "=" * 80)
             print("✅ Research Complete")
@@ -588,9 +576,7 @@ Available commands:
         except Exception as e:
             logger.error(f"Research request failed: {e}", exc_info=True)
             if session_id in session_control.active_sessions:
-                session_control.active_sessions[session_id]["status"] = (
-                    SessionStatus.FAILED
-                )
+                session_control.active_sessions[session_id]["status"] = SessionStatus.FAILED
                 session_control.active_sessions[session_id]["error_count"] += 1
             print(f"❌ Error: {e}")
 

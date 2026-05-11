@@ -68,21 +68,15 @@ class SkillTriggerOptimizer:
             "summary": {"passed": passed, "total": len(results)},
         }
 
-    async def improve_description(
-        self, skill_id: str, eval_results: Dict[str, Any]
-    ) -> str:
+    async def improve_description(self, skill_id: str, eval_results: Dict[str, Any]) -> str:
         """LLM으로 description 개선 제안."""
         skill = self.skill_manager.load_skill(skill_id)
         if not skill:
             return ""
         current_description = skill.metadata.description or ""
         results = eval_results.get("results", [])
-        failed_triggers = [
-            r for r in results if r.get("should_trigger") and not r.get("pass")
-        ]
-        false_triggers = [
-            r for r in results if not r.get("should_trigger") and not r.get("pass")
-        ]
+        failed_triggers = [r for r in results if r.get("should_trigger") and not r.get("pass")]
+        false_triggers = [r for r in results if not r.get("should_trigger") and not r.get("pass")]
 
         prompt = f"""You are optimizing a skill description for trigger accuracy.
 Skill ID: {skill_id}
@@ -121,7 +115,7 @@ Output a single improved description (one paragraph, max 1024 chars) that:
     async def optimize_loop(
         self, skill_id: str, test_queries: List[Dict[str, Any]], iterations: int = 3
     ) -> str:
-        """eval -> improve 반복 루프. 최종 description 반환."""
+        """Eval -> improve 반복 루프. 최종 description 반환."""
         best_description = None
         skill = self.skill_manager.load_skill(skill_id)
         if skill:

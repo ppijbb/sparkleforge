@@ -169,17 +169,13 @@ class ConcurrencyManager:
         # CPU-based adjustment
         if metrics.cpu_percent > self.config.cpu_threshold_high:
             # High CPU - reduce concurrency
-            optimal = max(
-                self.config.min_concurrency, optimal - self.config.adjustment_step
-            )
+            optimal = max(self.config.min_concurrency, optimal - self.config.adjustment_step)
             logger.debug(
                 f"High CPU ({metrics.cpu_percent:.1f}%), reducing concurrency to {optimal}"
             )
         elif metrics.cpu_percent < self.config.cpu_threshold_low:
             # Low CPU - can increase concurrency
-            optimal = min(
-                self.config.max_concurrency, optimal + self.config.adjustment_step
-            )
+            optimal = min(self.config.max_concurrency, optimal + self.config.adjustment_step)
             logger.debug(
                 f"Low CPU ({metrics.cpu_percent:.1f}%), increasing concurrency to {optimal}"
             )
@@ -187,17 +183,13 @@ class ConcurrencyManager:
         # Memory-based adjustment
         if metrics.memory_percent > self.config.memory_threshold_high:
             # High memory - reduce concurrency
-            optimal = max(
-                self.config.min_concurrency, optimal - self.config.adjustment_step
-            )
+            optimal = max(self.config.min_concurrency, optimal - self.config.adjustment_step)
             logger.debug(
                 f"High memory ({metrics.memory_percent:.1f}%), reducing concurrency to {optimal}"
             )
         elif metrics.memory_percent < self.config.memory_threshold_low:
             # Low memory - can increase concurrency
-            optimal = min(
-                self.config.max_concurrency, optimal + self.config.adjustment_step
-            )
+            optimal = min(self.config.max_concurrency, optimal + self.config.adjustment_step)
             logger.debug(
                 f"Low memory ({metrics.memory_percent:.1f}%), increasing concurrency to {optimal}"
             )
@@ -205,25 +197,19 @@ class ConcurrencyManager:
         # Active tasks adjustment
         if metrics.active_tasks > self.current_concurrency * 1.5:
             # Too many active tasks - increase concurrency
-            optimal = min(
-                self.config.max_concurrency, optimal + self.config.adjustment_step
-            )
+            optimal = min(self.config.max_concurrency, optimal + self.config.adjustment_step)
             logger.debug(
                 f"High active tasks ({metrics.active_tasks}), increasing concurrency to {optimal}"
             )
         elif metrics.active_tasks < self.current_concurrency * 0.5:
             # Few active tasks - can reduce concurrency
-            optimal = max(
-                self.config.min_concurrency, optimal - self.config.adjustment_step
-            )
+            optimal = max(self.config.min_concurrency, optimal - self.config.adjustment_step)
             logger.debug(
                 f"Low active tasks ({metrics.active_tasks}), reducing concurrency to {optimal}"
             )
 
         # Ensure within bounds
-        optimal = max(
-            self.config.min_concurrency, min(self.config.max_concurrency, optimal)
-        )
+        optimal = max(self.config.min_concurrency, min(self.config.max_concurrency, optimal))
 
         # Apply monitoring-based task processing level (cap or nudge)
         try:
@@ -309,9 +295,7 @@ class ConcurrencyManager:
                 concurrency_throughput[concurrency].append(perf["throughput"])
 
             # Calculate average throughput per concurrency
-            avg_throughput = {
-                c: sum(t) / len(t) for c, t in concurrency_throughput.items()
-            }
+            avg_throughput = {c: sum(t) / len(t) for c, t in concurrency_throughput.items()}
 
             if avg_throughput:
                 best_concurrency = max(avg_throughput.items(), key=lambda x: x[1])[0]
@@ -331,12 +315,8 @@ class ConcurrencyManager:
             }
 
         latest = self.metrics_history[-1]
-        avg_cpu = sum(m.cpu_percent for m in self.metrics_history) / len(
-            self.metrics_history
-        )
-        avg_memory = sum(m.memory_percent for m in self.metrics_history) / len(
-            self.metrics_history
-        )
+        avg_cpu = sum(m.cpu_percent for m in self.metrics_history) / len(self.metrics_history)
+        avg_memory = sum(m.memory_percent for m in self.metrics_history) / len(self.metrics_history)
 
         return {
             "current_concurrency": self.current_concurrency,

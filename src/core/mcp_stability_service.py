@@ -17,9 +17,7 @@ class TokenRefresher:
     """토큰 갱신 관리자"""
 
     def __init__(self):
-        self.token_cache: Dict[
-            str, Dict[str, Any]
-        ] = {}  # server_name -> {token, expires_at}
+        self.token_cache: Dict[str, Dict[str, Any]] = {}  # server_name -> {token, expires_at}
         self.refresh_threshold = timedelta(minutes=5)  # 만료 5분 전 갱신
 
     async def ensure_valid_token(self, mcp_hub, server_name: str | None = None):
@@ -46,13 +44,9 @@ class TokenRefresher:
                 if hasattr(mcp_hub, "mcp_sessions"):
                     for srv_name in list(mcp_hub.mcp_sessions.keys()):
                         if hasattr(mcp_hub, "_check_connection_health"):
-                            is_healthy = await mcp_hub._check_connection_health(
-                                srv_name
-                            )
+                            is_healthy = await mcp_hub._check_connection_health(srv_name)
                             if not is_healthy:
-                                logger.warning(
-                                    f"Token refresh: Server {srv_name} is unhealthy"
-                                )
+                                logger.warning(f"Token refresh: Server {srv_name} is unhealthy")
         except Exception as e:
             logger.debug(f"Token refresh check failed: {e}")
 
@@ -75,9 +69,7 @@ class HealthMonitor:
             if not hasattr(mcp_hub, "mcp_sessions"):
                 return
 
-            servers_to_check = (
-                [server_name] if server_name else list(mcp_hub.mcp_sessions.keys())
-            )
+            servers_to_check = [server_name] if server_name else list(mcp_hub.mcp_sessions.keys())
 
             for srv_name in servers_to_check:
                 if srv_name not in mcp_hub.mcp_sessions:
@@ -103,9 +95,7 @@ class HealthMonitor:
                             # 재연결 시도
                             if srv_name in mcp_hub.mcp_server_configs:
                                 server_config = mcp_hub.mcp_server_configs[srv_name]
-                                await mcp_hub._connect_to_mcp_server(
-                                    srv_name, server_config
-                                )
+                                await mcp_hub._connect_to_mcp_server(srv_name, server_config)
         except Exception as e:
             logger.debug(f"Health check failed: {e}")
 
@@ -114,9 +104,7 @@ class SearchThrottler:
     """검색 도구 스로틀링 관리자"""
 
     def __init__(self):
-        self.last_request_time: Dict[
-            str, float
-        ] = {}  # tool_name -> last_request_timestamp
+        self.last_request_time: Dict[str, float] = {}  # tool_name -> last_request_timestamp
         self.min_interval = 1.0  # 최소 요청 간격 (초)
         self.search_tools = [
             "ddg_search",
@@ -132,9 +120,7 @@ class SearchThrottler:
             tool_name: 도구 이름
         """
         # 검색 도구인지 확인
-        is_search_tool = any(
-            search_tool in tool_name.lower() for search_tool in self.search_tools
-        )
+        is_search_tool = any(search_tool in tool_name.lower() for search_tool in self.search_tools)
         if not is_search_tool:
             return
 
@@ -144,9 +130,7 @@ class SearchThrottler:
 
         if elapsed < self.min_interval:
             wait_time = self.min_interval - elapsed
-            logger.debug(
-                f"Throttling: Waiting {wait_time:.2f}s before {tool_name} request"
-            )
+            logger.debug(f"Throttling: Waiting {wait_time:.2f}s before {tool_name} request")
             await asyncio.sleep(wait_time)
 
         self.last_request_time[tool_name] = time.time()

@@ -104,9 +104,7 @@ class RefinerStats:
         savings = original - refined
         self.total_token_savings += savings
         if original > 0:
-            self.reduction_percentage = (
-                self.total_token_savings / self.original_tokens
-            ) * 100
+            self.reduction_percentage = (self.total_token_savings / self.original_tokens) * 100
 
 
 class PromptRefinerWrapper:
@@ -167,9 +165,7 @@ class PromptRefinerWrapper:
             refiner = refiner.pipe(StripHTML(to_markdown=True))
             refiner = refiner.pipe(NormalizeWhitespace())
             refiner = refiner.pipe(
-                Deduplicate(
-                    similarity_threshold=0.85, method="jaccard", granularity="paragraph"
-                )
+                Deduplicate(similarity_threshold=0.85, method="jaccard", granularity="paragraph")
             )
 
         elif strategy == "aggressive":
@@ -177,9 +173,7 @@ class PromptRefinerWrapper:
             refiner = refiner.pipe(StripHTML(to_markdown=True))
             refiner = refiner.pipe(NormalizeWhitespace())
             refiner = refiner.pipe(
-                Deduplicate(
-                    similarity_threshold=0.85, method="jaccard", granularity="paragraph"
-                )
+                Deduplicate(similarity_threshold=0.85, method="jaccard", granularity="paragraph")
             )
             # TruncateTokens는 max_tokens가 설정된 경우에만 추가
             if self.max_tokens:
@@ -200,9 +194,7 @@ class PromptRefinerWrapper:
             refiner = refiner.pipe(StripHTML(to_markdown=True))
             refiner = refiner.pipe(NormalizeWhitespace())
             refiner = refiner.pipe(
-                Deduplicate(
-                    similarity_threshold=0.85, method="jaccard", granularity="paragraph"
-                )
+                Deduplicate(similarity_threshold=0.85, method="jaccard", granularity="paragraph")
             )
             if self.max_tokens:
                 refiner = refiner.pipe(
@@ -277,9 +269,7 @@ class PromptRefinerWrapper:
             if self.collect_stats:
                 self.stats.update(original_tokens, refined_tokens)
                 if original_tokens > 0:
-                    reduction = (
-                        (original_tokens - refined_tokens) / original_tokens
-                    ) * 100
+                    reduction = ((original_tokens - refined_tokens) / original_tokens) * 100
                     if reduction > 0:
                         logger.debug(
                             f"Prompt refined: {original_tokens} -> {refined_tokens} tokens "
@@ -310,9 +300,7 @@ class PromptRefinerWrapper:
         refined_messages = []
         for message in messages:
             if isinstance(message, dict) and "content" in message:
-                refined_content = self.refine_prompt(
-                    message["content"], model_max_tokens
-                )
+                refined_content = self.refine_prompt(message["content"], model_max_tokens)
                 refined_message = {**message, "content": refined_content}
                 refined_messages.append(refined_message)
             else:
@@ -338,13 +326,9 @@ class PromptRefinerWrapper:
             (최적화된 system_message, 최적화된 prompt) 튜플
         """
         refined_system = (
-            self.refine_prompt(system_message, model_max_tokens)
-            if system_message
-            else None
+            self.refine_prompt(system_message, model_max_tokens) if system_message else None
         )
-        refined_prompt = (
-            self.refine_prompt(prompt, model_max_tokens) if prompt else None
-        )
+        refined_prompt = self.refine_prompt(prompt, model_max_tokens) if prompt else None
         return refined_system, refined_prompt
 
     def get_stats(self) -> Dict[str, Any]:
@@ -402,9 +386,7 @@ def get_refiner_wrapper() -> PromptRefinerWrapper:
             enabled = os.getenv("PROMPT_REFINER_ENABLED", "true").lower() == "true"
             max_tokens_str = os.getenv("PROMPT_REFINER_MAX_TOKENS")
             max_tokens = int(max_tokens_str) if max_tokens_str else None
-            collect_stats = (
-                os.getenv("PROMPT_REFINER_COLLECT_STATS", "true").lower() == "true"
-            )
+            collect_stats = os.getenv("PROMPT_REFINER_COLLECT_STATS", "true").lower() == "true"
 
         _refiner_wrapper = PromptRefinerWrapper(
             strategy=strategy,
@@ -578,9 +560,7 @@ def refine_prompt_args(
                             model_name.replace("_langchain", "") if model_name else None
                         )
                         if model_name_clean and model_name_clean in orchestrator.models:
-                            model_max_tokens = orchestrator.models[
-                                model_name_clean
-                            ].max_tokens
+                            model_max_tokens = orchestrator.models[model_name_clean].max_tokens
                     except Exception:
                         pass
                 else:
@@ -590,9 +570,7 @@ def refine_prompt_args(
 
             # prompt 최적화
             if prompt_param in kwargs and kwargs[prompt_param]:
-                kwargs[prompt_param] = refiner.refine_prompt(
-                    kwargs[prompt_param], model_max_tokens
-                )
+                kwargs[prompt_param] = refiner.refine_prompt(kwargs[prompt_param], model_max_tokens)
 
             # system_message 최적화
             if (
@@ -622,9 +600,7 @@ def refine_prompt_args(
                             model_name.replace("_langchain", "") if model_name else None
                         )
                         if model_name_clean and model_name_clean in orchestrator.models:
-                            model_max_tokens = orchestrator.models[
-                                model_name_clean
-                            ].max_tokens
+                            model_max_tokens = orchestrator.models[model_name_clean].max_tokens
                     except Exception:
                         pass
                 else:
@@ -633,9 +609,7 @@ def refine_prompt_args(
                 model_max_tokens = kwargs["model_max_tokens"]
 
             if prompt_param in kwargs and kwargs[prompt_param]:
-                kwargs[prompt_param] = refiner.refine_prompt(
-                    kwargs[prompt_param], model_max_tokens
-                )
+                kwargs[prompt_param] = refiner.refine_prompt(kwargs[prompt_param], model_max_tokens)
 
             if (
                 system_message_param

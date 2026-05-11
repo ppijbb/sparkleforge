@@ -106,12 +106,8 @@ class CitationManager:
         # 9대 혁신: 체계적인 ID 생성 시스템
         self.research_id = research_id or f"research_{int(datetime.now().timestamp())}"
         self._plan_counter = 0  # PLAN-XX 형식 (Planning 단계)
-        self._block_counters: Dict[
-            str, int
-        ] = {}  # CIT-X-XX 형식 (Research 단계, X=block 번호)
-        self._ref_number_map: Dict[
-            str, int
-        ] = {}  # citation_id -> ref_number (1-based) 매핑
+        self._block_counters: Dict[str, int] = {}  # CIT-X-XX 형식 (Research 단계, X=block 번호)
+        self._ref_number_map: Dict[str, int] = {}  # citation_id -> ref_number (1-based) 매핑
         self._lock = asyncio.Lock()  # Thread-safe 병렬 실행 지원
 
         # 인용 스타일별 포맷터
@@ -192,9 +188,7 @@ class CitationManager:
             return "No references available."
 
         # 출처를 알파벳 순으로 정렬
-        sorted_sources = sorted(
-            self.sources.values(), key=lambda s: self._get_sort_key(s)
-        )
+        sorted_sources = sorted(self.sources.values(), key=lambda s: self._get_sort_key(s))
 
         # References 섹션 생성
         references = ["## References\n"]
@@ -236,9 +230,7 @@ class CitationManager:
             for incomplete in validation_results["incomplete_sources"]
         )
 
-        validation_results["validation_score"] = max(
-            0.0, 1.0 - (missing_fields / total_fields)
-        )
+        validation_results["validation_score"] = max(0.0, 1.0 - (missing_fields / total_fields))
 
         return validation_results
 
@@ -261,11 +253,7 @@ class CitationManager:
         if inline:
             # 인라인 인용: (Author, Year)
             authors = self._format_authors_apa(source.authors)
-            year = (
-                source.publication_date.strftime("%Y")
-                if source.publication_date
-                else "n.d."
-            )
+            year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
             citation = f"({authors}, {year}"
             if page_number:
@@ -276,11 +264,7 @@ class CitationManager:
         else:
             # 참조 항목
             authors = self._format_authors_apa(source.authors)
-            year = (
-                source.publication_date.strftime("%Y")
-                if source.publication_date
-                else "n.d."
-            )
+            year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
             title = source.title
 
             if source.source_type == "journal":
@@ -302,9 +286,7 @@ class CitationManager:
                 url = source.url or ""
                 access_date = datetime.now(UTC).strftime("%B %d, %Y")
 
-                return (
-                    f"{authors} ({year}). {title}. Retrieved {access_date}, from {url}"
-                )
+                return f"{authors} ({year}). {title}. Retrieved {access_date}, from {url}"
 
             else:
                 return f"{authors} ({year}). {title}."
@@ -331,23 +313,17 @@ class CitationManager:
                 journal = source.journal or "Unknown Journal"
                 volume = source.volume or ""
                 issue = source.issue or ""
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
                 pages = source.pages or ""
                 url = source.url or ""
 
-                return f'"{title}." {journal}, vol. {volume}, no. {issue}, {year}, pp. {pages}. {url}'
+                return (
+                    f'"{title}." {journal}, vol. {volume}, no. {issue}, {year}, pp. {pages}. {url}'
+                )
 
             elif source.source_type == "book":
                 publisher = source.publisher or "Unknown Publisher"
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
                 return f"{title}. {publisher}, {year}."
 
@@ -361,11 +337,7 @@ class CitationManager:
         if inline:
             # 인라인 인용: (Author Year, Page)
             authors = self._format_authors_chicago(source.authors)
-            year = (
-                source.publication_date.strftime("%Y")
-                if source.publication_date
-                else "n.d."
-            )
+            year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
             citation = f"({authors} {year}"
             if page_number:
@@ -382,11 +354,7 @@ class CitationManager:
                 journal = source.journal or "Unknown Journal"
                 volume = source.volume or ""
                 issue = source.issue or ""
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
                 pages = source.pages or ""
                 url = source.url or ""
 
@@ -395,11 +363,7 @@ class CitationManager:
             elif source.source_type == "book":
                 publisher = source.publisher or "Unknown Publisher"
                 place = source.place or "Unknown Place"
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
                 return f"{authors}. {title}. {place}: {publisher}, {year}."
 
@@ -413,11 +377,7 @@ class CitationManager:
         if inline:
             # 인라인 인용: (Author Year: Page)
             authors = self._format_authors_harvard(source.authors)
-            year = (
-                source.publication_date.strftime("%Y")
-                if source.publication_date
-                else "n.d."
-            )
+            year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
             citation = f"({authors} {year}"
             if page_number:
@@ -428,11 +388,7 @@ class CitationManager:
         else:
             # 참조 항목
             authors = self._format_authors_harvard(source.authors)
-            year = (
-                source.publication_date.strftime("%Y")
-                if source.publication_date
-                else "n.d."
-            )
+            year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
             title = source.title
 
             if source.source_type == "journal":
@@ -468,11 +424,7 @@ class CitationManager:
                 journal = source.journal or "Unknown Journal"
                 volume = source.volume or ""
                 issue = source.issue or ""
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
                 pages = source.pages or ""
 
                 return f'{authors}, "{title}," {journal}, vol. {volume}, no. {issue}, pp. {pages}, {year}.'
@@ -480,11 +432,7 @@ class CitationManager:
             elif source.source_type == "book":
                 publisher = source.publisher or "Unknown Publisher"
                 place = source.place or "Unknown Place"
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
                 return f"{authors}, {title}. {place}: {publisher}, {year}."
 
@@ -498,11 +446,7 @@ class CitationManager:
         if inline:
             # 인라인 인용: (Author, Year)
             authors = self._format_authors_nature(source.authors)
-            year = (
-                source.publication_date.strftime("%Y")
-                if source.publication_date
-                else "n.d."
-            )
+            year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
             citation = f"({authors}, {year}"
             if page_number:
@@ -518,11 +462,7 @@ class CitationManager:
             if source.source_type == "journal":
                 journal = source.journal or "Unknown Journal"
                 volume = source.volume or ""
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
                 pages = source.pages or ""
                 doi = f" https://doi.org/{source.doi}" if source.doi else ""
 
@@ -530,11 +470,7 @@ class CitationManager:
 
             elif source.source_type == "book":
                 publisher = source.publisher or "Unknown Publisher"
-                year = (
-                    source.publication_date.strftime("%Y")
-                    if source.publication_date
-                    else "n.d."
-                )
+                year = source.publication_date.strftime("%Y") if source.publication_date else "n.d."
 
                 return f"{authors} {title}. {publisher}, {year}."
 
@@ -628,9 +564,9 @@ class CitationManager:
                         "id": source.id,
                         "title": source.title,
                         "authors": source.authors,
-                        "publication_date": source.publication_date.isoformat()
-                        if source.publication_date
-                        else None,
+                        "publication_date": (
+                            source.publication_date.isoformat() if source.publication_date else None
+                        ),
                         "url": source.url,
                         "doi": source.doi,
                         "journal": source.journal,
@@ -764,9 +700,7 @@ class CitationManager:
 
     # ========== ref_number 매핑 시스템 ==========
 
-    def _get_citation_dedup_key(
-        self, citation: Citation, source: Source | None = None
-    ) -> str:
+    def _get_citation_dedup_key(self, citation: Citation, source: Source | None = None) -> str:
         """Citation 중복 제거를 위한 고유 키 생성.
 
         Paper citation의 경우 title + first author로 중복 제거.
@@ -823,9 +757,7 @@ class CitationManager:
             return self._ref_number_map
 
         # 모든 citation ID를 숫자 부분으로 정렬
-        sorted_citation_ids = sorted(
-            self.citations.keys(), key=self._extract_citation_sort_key
-        )
+        sorted_citation_ids = sorted(self.citations.keys(), key=self._extract_citation_sort_key)
 
         # 중복 제거 키와 할당된 ref_number 추적
         seen_keys: Dict[str, int] = {}
@@ -900,9 +832,7 @@ class CitationManager:
         async with self._lock:
             return self.generate_research_citation_id(block_id)
 
-    async def get_next_citation_id_async(
-        self, stage: str = "research", block_id: str = ""
-    ) -> str:
+    async def get_next_citation_id_async(self, stage: str = "research", block_id: str = "") -> str:
         """Thread-safe async version of get_next_citation_id.
 
         Args:

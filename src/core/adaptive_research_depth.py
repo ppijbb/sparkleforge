@@ -5,8 +5,8 @@
 Preset Modes (quick/medium/deep/auto), Progressive Deepening, Self-Adjusting, Dynamic Iteration Control.
 """
 
-import logging
 import asyncio
+import logging
 import threading
 from dataclasses import dataclass
 from enum import Enum
@@ -134,17 +134,11 @@ class AdaptiveResearchDepth:
             self._preset_configs = default_presets
             return default_presets
 
-    def _deep_merge(
-        self, base: Dict[str, Any], override: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _deep_merge(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
         """딥 머지."""
         result = base.copy()
         for key, value in override.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._deep_merge(result[key], value)
             else:
                 result[key] = value
@@ -183,9 +177,7 @@ class AdaptiveResearchDepth:
         if preset == ResearchPreset.AUTO:
             complexity = self._analyze_complexity(user_request, context)
             preset = self._auto_determine_preset(complexity)
-            logger.info(
-                f"Auto mode: complexity={complexity:.2f}, selected preset={preset.value}"
-            )
+            logger.info(f"Auto mode: complexity={complexity:.2f}, selected preset={preset.value}")
         else:
             complexity = self._estimate_complexity_for_preset(preset)
 
@@ -201,9 +193,7 @@ class AdaptiveResearchDepth:
             complexity_score=complexity,
         )
 
-    def _analyze_complexity(
-        self, request: str, context: Dict[str, Any] | None = None
-    ) -> float:
+    def _analyze_complexity(self, request: str, context: Dict[str, Any] | None = None) -> float:
         """요청 복잡도 분석.
 
         Args:
@@ -334,7 +324,7 @@ class AdaptiveResearchDepth:
         current_depth: DepthConfig,
         progress: Dict[str, Any],
         goals_achieved: bool = False,
-    ) -> Optional[DepthConfig]:
+    ) -> DepthConfig | None:
         """Progressive Deepening: 연구 진행에 따라 깊이를 점진적으로 증가.
 
         Args:
@@ -347,10 +337,7 @@ class AdaptiveResearchDepth:
         """
         try:
             # 목표 달성 시 조기 종료
-            if (
-                goals_achieved
-                and current_depth.researching.get("iteration_mode") == "flexible"
-            ):
+            if goals_achieved and current_depth.researching.get("iteration_mode") == "flexible":
                 logger.info("Goals achieved, no depth adjustment needed")
                 return None
 

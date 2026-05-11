@@ -76,9 +76,7 @@ class AdaptiveMemory:
         # Provenance 추적기
         self.provenance_tracker = get_provenance_tracker()
 
-        logger.info(
-            "AdaptiveMemory initialized (with Memory Types and Provenance support)"
-        )
+        logger.info("AdaptiveMemory initialized (with Memory Types and Provenance support)")
 
     def store(
         self,
@@ -105,9 +103,7 @@ class AdaptiveMemory:
             # 메모리 타입 자동 결정
             if memory_type is None:
                 memory_type = (
-                    "long_term"
-                    if importance >= self.importance_threshold
-                    else "short_term"
+                    "long_term" if importance >= self.importance_threshold else "short_term"
                 )
 
             # 기존 항목 업데이트 또는 새 항목 생성
@@ -175,9 +171,11 @@ class AdaptiveMemory:
             key = memory.memory_id
             value = {
                 "content": memory.content,
-                "memory_type": memory.memory_type.value
-                if hasattr(memory.memory_type, "value")
-                else str(memory.memory_type),
+                "memory_type": (
+                    memory.memory_type.value
+                    if hasattr(memory.memory_type, "value")
+                    else str(memory.memory_type)
+                ),
                 "metadata": memory.metadata if hasattr(memory, "metadata") else {},
             }
             importance = memory.importance if hasattr(memory, "importance") else 0.7
@@ -188,9 +186,7 @@ class AdaptiveMemory:
             logger.error(f"Failed to store memory object: {e}")
             return False
 
-    async def store_memory_async(
-        self, memory: BaseMemory, tx: Transaction | None = None
-    ) -> bool:
+    async def store_memory_async(self, memory: BaseMemory, tx: Transaction | None = None) -> bool:
         """BaseMemory 객체를 비동기로 저장 (트랜잭션 지원).
 
         Args:
@@ -212,17 +208,17 @@ class AdaptiveMemory:
             logger.error(f"Failed to store memory object (async): {e}")
             return False
 
-    async def _store_memory_in_transaction(
-        self, memory: BaseMemory, tx: Transaction
-    ) -> bool:
+    async def _store_memory_in_transaction(self, memory: BaseMemory, tx: Transaction) -> bool:
         """트랜잭션 내에서 메모리 저장."""
         # BaseMemory를 일반 메모리 형식으로 변환
         key = memory.memory_id
         value = {
             "content": memory.content,
-            "memory_type": memory.memory_type.value
-            if hasattr(memory.memory_type, "value")
-            else str(memory.memory_type),
+            "memory_type": (
+                memory.memory_type.value
+                if hasattr(memory.memory_type, "value")
+                else str(memory.memory_type)
+            ),
             "metadata": memory.metadata if hasattr(memory, "metadata") else {},
         }
         importance = memory.importance if hasattr(memory, "importance") else 0.7
@@ -234,9 +230,7 @@ class AdaptiveMemory:
             logger.debug(f"Memory stored in transaction: {key}")
         return result
 
-    def retrieve_for_session(
-        self, session_id: str, limit: int = 20
-    ) -> List[Dict[str, Any]]:
+    def retrieve_for_session(self, session_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Retrieve memory items relevant to a session (for prompt injection).
 
         Returns items whose key contains session_id or whose tags include session:session_id.
@@ -250,9 +244,7 @@ class AdaptiveMemory:
         """
         out: List[Dict[str, Any]] = []
         session_tag = f"session:{session_id}"
-        for key, item in list(self.long_term_memory.items()) + list(
-            self.short_term_memory.items()
-        ):
+        for key, item in list(self.long_term_memory.items()) + list(self.short_term_memory.items()):
             if session_tag in item.tags or session_id in key:
                 out.append(
                     {
@@ -368,9 +360,7 @@ class AdaptiveMemory:
                 success=False,
             )
 
-    def extract_important_info(
-        self, session_data: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+    def extract_important_info(self, session_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """세션 데이터에서 중요 정보 자동 추출.
 
         Args:
@@ -391,9 +381,7 @@ class AdaptiveMemory:
                         important_info.append(
                             {
                                 "type": "research_result",
-                                "content": result.get("content", "")[
-                                    :200
-                                ],  # 처음 200자
+                                "content": result.get("content", "")[:200],  # 처음 200자
                                 "importance": 0.8,
                                 "tags": {"research", "success"},
                             }
@@ -462,9 +450,7 @@ class AdaptiveMemory:
         cleaned_short = 0
         for key, item in list(self.short_term_memory.items()):
             if item.last_accessed < cutoff_date:
-                if not (
-                    keep_important and item.importance >= self.importance_threshold
-                ):
+                if not (keep_important and item.importance >= self.importance_threshold):
                     del self.short_term_memory[key]
                     cleaned_short += 1
 
@@ -487,9 +473,7 @@ class AdaptiveMemory:
         self.long_term_memory[key] = item
         if key in self.short_term_memory:
             del self.short_term_memory[key]
-        logger.debug(
-            f"Promoted {key} to long-term memory (importance: {item.importance})"
-        )
+        logger.debug(f"Promoted {key} to long-term memory (importance: {item.importance})")
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """메모리 통계."""
@@ -497,18 +481,18 @@ class AdaptiveMemory:
             "short_term_count": len(self.short_term_memory),
             "long_term_count": len(self.long_term_memory),
             "total_transfers": len(self.knowledge_transfers),
-            "average_importance_short": sum(
-                item.importance for item in self.short_term_memory.values()
-            )
-            / len(self.short_term_memory)
-            if self.short_term_memory
-            else 0.0,
-            "average_importance_long": sum(
-                item.importance for item in self.long_term_memory.values()
-            )
-            / len(self.long_term_memory)
-            if self.long_term_memory
-            else 0.0,
+            "average_importance_short": (
+                sum(item.importance for item in self.short_term_memory.values())
+                / len(self.short_term_memory)
+                if self.short_term_memory
+                else 0.0
+            ),
+            "average_importance_long": (
+                sum(item.importance for item in self.long_term_memory.values())
+                / len(self.long_term_memory)
+                if self.long_term_memory
+                else 0.0
+            ),
         }
 
 

@@ -102,9 +102,7 @@ class MemoryAccessControl:
                 AccessLevel.ADMIN: 3,
             }
 
-            return level_hierarchy.get(user_access, 0) >= level_hierarchy.get(
-                required_level, 0
-            )
+            return level_hierarchy.get(user_access, 0) >= level_hierarchy.get(required_level, 0)
 
         # 기본 정책: 다른 사용자의 메모리는 접근 불가
         return False

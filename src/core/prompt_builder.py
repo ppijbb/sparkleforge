@@ -1,8 +1,9 @@
 import logging
 from enum import Enum
-from typing import Dict, Any, List, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
 
 class AgentIdentity(Enum):
     RESEARCHER = "researcher"
@@ -10,12 +11,13 @@ class AgentIdentity(Enum):
     ORCHESTRATOR = "orchestrator"
     GENERAL = "general"
 
+
 class PromptBuilder:
     """Centralized Prompt Engineering for SparkleForge (Phase 5).
-    
+
     Standardizes agent identities and enforces best practices (CoT, Tool Guidance).
     """
-    
+
     BASE_INSTRUCTIONS = """
     You are an autonomous agent capable of using a variety of tools via the Model Context Protocol (MCP).
     Follow these core principles:
@@ -40,24 +42,25 @@ class PromptBuilder:
         Identity: System Architect & Orchestrator
         Goal: Decompose complex user requests into smaller, actionable tasks and coordinate execution.
         Specialty: Planning, Error Recovery, and Resource Management.
-        """
+        """,
     }
 
     @classmethod
     def build_system_prompt(
-        cls, 
+        cls,
         identity: AgentIdentity = AgentIdentity.GENERAL,
-        additional_instructions: Optional[str] = None
+        additional_instructions: str | None = None,
     ) -> str:
         """Constructs a standardized system prompt."""
         identity_text = cls.IDENTITIES.get(identity, "Identity: Versatile Autonomous Agent")
-        
+
         prompt = f"{identity_text}\n\n{cls.BASE_INSTRUCTIONS}"
-        
+
         if additional_instructions:
             prompt += f"\n\nAdditional Instructions:\n{additional_instructions}"
-            
+
         return prompt.strip()
+
 
 # Utility function for quick access
 def get_system_prompt(identity_key: str = "general", extras: str = None) -> str:
@@ -65,5 +68,5 @@ def get_system_prompt(identity_key: str = "general", extras: str = None) -> str:
         identity = AgentIdentity(identity_key.lower())
     except ValueError:
         identity = AgentIdentity.GENERAL
-        
+
     return PromptBuilder.build_system_prompt(identity, extras)

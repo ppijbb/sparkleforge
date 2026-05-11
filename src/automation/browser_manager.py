@@ -15,22 +15,21 @@ import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
-from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import markdownify
 
 # Playwright imports
 try:
+    from playwright.async_api import Browser as PlaywrightBrowser
+    from playwright.async_api import BrowserContext as PlaywrightContext
+    from playwright.async_api import Error as PlaywrightError
+    from playwright.async_api import Page as PlaywrightPage
     from playwright.async_api import (
-        Browser as PlaywrightBrowser,
-        BrowserContext as PlaywrightContext,
-        Page as PlaywrightPage,
         async_playwright,
-        Error as PlaywrightError,
     )
+
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -46,6 +45,7 @@ try:
     from browser_use import BrowserConfig
     from browser_use.browser.context import BrowserContext, BrowserContextConfig
     from browser_use.dom.service import DomService
+
     BROWSER_USE_AVAILABLE = True
 except ImportError:
     BROWSER_USE_AVAILABLE = False
@@ -60,6 +60,7 @@ logger = logging.getLogger(__name__)
 
 class BrowserAction(Enum):
     """지원되는 브라우저 액션 타입."""
+
     NAVIGATE = "navigate"
     CLICK = "click"
     TYPE = "type"
@@ -75,6 +76,7 @@ class BrowserAction(Enum):
 @dataclass
 class PageState:
     """페이지 상태 스냅샷."""
+
     url: str
     title: str
     content_text: str
@@ -88,17 +90,19 @@ class PageState:
 @dataclass
 class ActionResult:
     """브라우저 액션 실행 결과."""
+
     success: bool
     action: str
     data: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     execution_time: float = 0.0
-    page_state_after: Optional[PageState] = None
+    page_state_after: PageState | None = None
 
 
 @dataclass
 class VerificationResult:
     """브라우저 결과 검증 결과."""
+
     verified: bool
     checks: List[Dict[str, Any]] = field(default_factory=list)
     confidence: float = 0.0
@@ -114,9 +118,9 @@ class PlaywrightController:
     def __init__(self):
         """PlaywrightController 초기화."""
         self._playwright = None
-        self._browser: Optional[PlaywrightBrowser] = None
-        self._context: Optional[PlaywrightContext] = None
-        self._page: Optional[PlaywrightPage] = None
+        self._browser: PlaywrightBrowser | None = None
+        self._context: PlaywrightContext | None = None
+        self._page: PlaywrightPage | None = None
         self._lock = asyncio.Lock()
         self._initialized = False
         self._action_history: List[ActionResult] = []
@@ -205,7 +209,9 @@ class PlaywrightController:
     # 핵심 API: navigate
     # ============================
 
-    async def navigate(self, url: str, wait_until: str = "networkidle", timeout: int = 30000) -> PageState:
+    async def navigate(
+        self, url: str, wait_until: str = "networkidle", timeout: int = 30000
+    ) -> PageState:
         """URL로 이동하고 페이지 상태를 반환합니다.
 
         Args:
@@ -221,11 +227,13 @@ class PlaywrightController:
         await page.goto(url, wait_until=wait_until, timeout=timeout)
         state = await self.get_page_state()
 
-        self._action_history.append(ActionResult(
-            success=True,
-            action=f"navigate:{url}",
-            data={"url": state.url, "title": state.title},
-        ))
+        self._action_history.append(
+            ActionResult(
+                success=True,
+                action=f"navigate:{url}",
+                data={"url": state.url, "title": state.title},
+            )
+        )
         return state
 
     # ============================
@@ -246,6 +254,7 @@ class PlaywrightController:
 
         for action_spec in actions:
             import time as _time
+
             start = _time.monotonic()
             action_type = action_spec.get("action", "").lower()
 
@@ -267,7 +276,9 @@ class PlaywrightController:
 
         return results
 
-    async def _execute_action(self, page: PlaywrightPage, action_type: str, spec: Dict[str, Any]) -> ActionResult:
+    async def _execute_action(
+        self, page: PlaywrightPage, action_type: str, spec: Dict[str, Any]
+    ) -> ActionResult:
         """개별 액션을 실행합니다."""
         selector = spec.get("selector", "")
         value = spec.get("value", "")
@@ -279,14 +290,18 @@ class PlaywrightController:
 
         elif action_type == BrowserAction.TYPE.value:
             await page.fill(selector, value, timeout=timeout)
-            return ActionResult(success=True, action="type", data={"selector": selector, "value": value})
+            return ActionResult(
+                success=True, action="type", data={"selector": selector, "value": value}
+            )
 
         elif action_type == BrowserAction.SCROLL.value:
             direction = spec.get("direction", "down")
             amount = spec.get("amount", 500)
             delta_y = amount if direction == "down" else -amount
             await page.mouse.wheel(0, delta_y)
-            return ActionResult(success=True, action="scroll", data={"direction": direction, "amount": amount})
+            return ActionResult(
+                success=True, action="scroll", data={"direction": direction, "amount": amount}
+            )
 
         elif action_type == BrowserAction.WAIT.value:
             wait_for = spec.get("wait_for", "networkidle")
@@ -297,7 +312,9 @@ class PlaywrightController:
             return ActionResult(success=True, action="wait", data={"wait_for": wait_for})
 
         elif action_type == BrowserAction.SCREENSHOT.value:
-            filename = spec.get("filename", f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+            filename = spec.get(
+                "filename", f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            )
             full_page = spec.get("full_page", True)
             await page.screenshot(path=filename, full_page=full_page)
             return ActionResult(success=True, action="screenshot", data={"filename": filename})
@@ -309,7 +326,9 @@ class PlaywrightController:
 
         elif action_type == BrowserAction.SELECT.value:
             await page.select_option(selector, value, timeout=timeout)
-            return ActionResult(success=True, action="select", data={"selector": selector, "value": value})
+            return ActionResult(
+                success=True, action="select", data={"selector": selector, "value": value}
+            )
 
         elif action_type == BrowserAction.HOVER.value:
             await page.hover(selector, timeout=timeout)
@@ -426,7 +445,9 @@ class PlaywrightController:
                     if element:
                         text = await element.text_content()
                         check_result["passed"] = expectation["value"] in (text or "")
-                        check_result["detail"] = f"Found text match in {expectation.get('selector', 'body')}"
+                        check_result["detail"] = (
+                            f"Found text match in {expectation.get('selector', 'body')}"
+                        )
                     else:
                         check_result["detail"] = f"Element not found: {expectation.get('selector')}"
 
@@ -452,7 +473,9 @@ class PlaywrightController:
                             has_error = True
                             break
                     check_result["passed"] = not has_error
-                    check_result["detail"] = "No error elements found" if not has_error else "Error element detected"
+                    check_result["detail"] = (
+                        "No error elements found" if not has_error else "Error element detected"
+                    )
 
                 else:
                     check_result["detail"] = f"Unknown check type: {check_type}"
@@ -493,7 +516,7 @@ class PlaywrightController:
             content_markdown=markdown[:10000],
         )
 
-    async def take_screenshot(self, filename: Optional[str] = None, full_page: bool = True) -> str:
+    async def take_screenshot(self, filename: str | None = None, full_page: bool = True) -> str:
         """스크린샷을 캡처합니다."""
         page = await self._ensure_initialized()
         if filename is None:
@@ -501,7 +524,7 @@ class PlaywrightController:
         await page.screenshot(path=filename, full_page=full_page)
         return filename
 
-    async def generate_pdf(self, filename: Optional[str] = None) -> str:
+    async def generate_pdf(self, filename: str | None = None) -> str:
         """PDF를 생성합니다."""
         page = await self._ensure_initialized()
         if filename is None:
@@ -551,7 +574,7 @@ class PlaywrightController:
 
 
 # ===== 모듈 수준 싱글톤 =====
-_controller_instance: Optional[PlaywrightController] = None
+_controller_instance: PlaywrightController | None = None
 
 
 def get_playwright_controller() -> PlaywrightController:
@@ -568,17 +591,20 @@ class BrowserBackend(Enum):
     CDP = "cdp"
     AUTO = "auto"
 
+
 def get_browser_backend(preference: BrowserBackend = BrowserBackend.AUTO) -> Any:
     """Returns the appropriate browser controller instance."""
     if preference == BrowserBackend.PLAYWRIGHT:
         return get_playwright_controller()
     elif preference == BrowserBackend.CDP:
         from src.automation.cdp_browser_controller import get_cdp_controller
+
         return get_cdp_controller()
     else:
         # AUTO logic: try CDP first, fallback to Playwright
         try:
             from src.automation.cdp_browser_controller import get_cdp_controller
+
             cdp_ctrl = get_cdp_controller()
             if cdp_ctrl.is_available:
                 return cdp_ctrl
@@ -586,13 +612,16 @@ def get_browser_backend(preference: BrowserBackend = BrowserBackend.AUTO) -> Any
             pass
         return get_playwright_controller()
 
+
 class BrowserManager:
     """하위 호환을 위한 BrowserManager 래퍼.
 
     내부적으로 PlaywrightController 또는 CDPBrowserController를 사용합니다.
     """
 
-    def __init__(self, config_path: str | None = None, backend: BrowserBackend = BrowserBackend.AUTO):
+    def __init__(
+        self, config_path: str | None = None, backend: BrowserBackend = BrowserBackend.AUTO
+    ):
         self._controller = get_browser_backend(backend)
         self.config_path = config_path
 
@@ -613,8 +642,8 @@ class BrowserManager:
     ) -> Dict[str, Any]:
         """URL로 이동하여 콘텐츠를 추출합니다."""
         try:
-            page_state = await self._controller.navigate(url)
-            
+            await self._controller.navigate(url)
+
             # Use universal extract format which both controllers support
             extracted = await self._controller.extract({"full_text": True, "metadata": True})
 
@@ -673,9 +702,7 @@ class BrowserManager:
         """웹 검색 후 콘텐츠를 추출합니다."""
         from src.core.mcp_integration import execute_tool
 
-        search_result = await execute_tool(
-            "g-search", {"query": query, "max_results": max_results}
-        )
+        search_result = await execute_tool("g-search", {"query": query, "max_results": max_results})
         if not search_result.get("success", False):
             raise RuntimeError(f"Web search failed: {search_result.get('error', 'Unknown')}")
 
@@ -720,9 +747,7 @@ class BrowserManager:
     async def execute_javascript(self, url: str, script: str) -> Dict[str, Any]:
         """JavaScript를 실행합니다."""
         await self._controller.navigate(url)
-        results = await self._controller.interact([
-            {"action": "execute_js", "script": script}
-        ])
+        results = await self._controller.interact([{"action": "execute_js", "script": script}])
         if results and results[0].success:
             return {
                 "success": True,
@@ -731,7 +756,9 @@ class BrowserManager:
                 "script": script,
                 "timestamp": datetime.now().isoformat(),
             }
-        raise RuntimeError(f"JavaScript execution failed: {results[0].error if results else 'No result'}")
+        raise RuntimeError(
+            f"JavaScript execution failed: {results[0].error if results else 'No result'}"
+        )
 
     async def fill_form(self, url: str, form_data: Dict[str, str]) -> Dict[str, Any]:
         """폼을 채우고 제출합니다."""
@@ -739,12 +766,14 @@ class BrowserManager:
         actions = []
         for field_name, value in form_data.items():
             # name 또는 id 기반 셀렉터
-            actions.append({
-                "action": "type",
-                "selector": f'input[name="{field_name}"], input[id="{field_name}"], '
-                            f'textarea[name="{field_name}"], textarea[id="{field_name}"]',
-                "value": value,
-            })
+            actions.append(
+                {
+                    "action": "type",
+                    "selector": f'input[name="{field_name}"], input[id="{field_name}"], '
+                    f'textarea[name="{field_name}"], textarea[id="{field_name}"]',
+                    "value": value,
+                }
+            )
         results = await self._controller.interact(actions)
         return {
             "success": all(r.success for r in results),
@@ -764,7 +793,9 @@ class BrowserManager:
             "timestamp": datetime.now().isoformat(),
         }
 
-    async def monitor_page_changes(self, url: str, interval: int = 5, duration: int = 60) -> Dict[str, Any]:
+    async def monitor_page_changes(
+        self, url: str, interval: int = 5, duration: int = 60
+    ) -> Dict[str, Any]:
         """페이지 변경 모니터링."""
         page_state = await self._controller.navigate(url)
         prev_text = page_state.content_text
@@ -775,11 +806,13 @@ class BrowserManager:
             await asyncio.sleep(interval)
             current_state = await self._controller.get_page_state()
             changed = current_state.content_text != prev_text
-            changes.append({
-                "timestamp": datetime.now().isoformat(),
-                "change_detected": changed,
-                "content_length": len(current_state.content_text),
-            })
+            changes.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "change_detected": changed,
+                    "content_length": len(current_state.content_text),
+                }
+            )
             if changed:
                 prev_text = current_state.content_text
 

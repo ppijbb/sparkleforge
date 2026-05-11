@@ -68,9 +68,7 @@ class AutonomousResearcherAgent:
         self.mcp_config = get_mcp_config()
 
         self.name = "autonomous_researcher"
-        self.instruction = (
-            "Autonomous researcher agent that self-plans and executes research tasks"
-        )
+        self.instruction = "Autonomous researcher agent that self-plans and executes research tasks"
 
         # Initialize specialized agents
         self._initialize_agents()
@@ -212,9 +210,7 @@ class AutonomousResearcherAgent:
 
         # 2. 학술 검색
         try:
-            academic_tool = await get_best_tool_for_task(
-                "academic", ToolCategory.ACADEMIC
-            )
+            academic_tool = await get_best_tool_for_task("academic", ToolCategory.ACADEMIC)
             if academic_tool:
                 academic_result = await execute_tool(
                     academic_tool,
@@ -258,9 +254,7 @@ class AutonomousResearcherAgent:
             "status": "executed",
         }
 
-    async def evaluate_research(
-        self, research_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def evaluate_research(self, research_results: Dict[str, Any]) -> Dict[str, Any]:
         """연구 결과를 평가합니다 (Continuous Verification)."""
         # Lazy import
         execute_llm_task, TaskType, _, _, _, _, _, _ = get_core_functions()
@@ -368,9 +362,7 @@ class AutonomousResearcherAgent:
         # Lazy import
         _, _, _, _, _, _, execute_with_reliability, _ = get_core_functions()
 
-        print(
-            f"🚀 Starting autonomous research with 8 core innovations for: {user_request}"
-        )
+        print(f"🚀 Starting autonomous research with 8 core innovations for: {user_request}")
 
         # Production-Grade Reliability로 전체 프로세스 실행
         return await execute_with_reliability(
@@ -390,9 +382,7 @@ class AutonomousResearcherAgent:
                 f"✅ Research plan created: {research_plan['status']} (Model: {research_plan.get('model_used', 'N/A')})"
             )
         else:
-            raise ValueError(
-                "Self-planning is disabled but required for autonomous operation"
-            )
+            raise ValueError("Self-planning is disabled but required for autonomous operation")
 
         # 2. 연구 실행 (Universal MCP Hub + Streaming Pipeline)
         print("2. 🔍 Executing research with Universal MCP Hub...")
@@ -410,9 +400,7 @@ class AutonomousResearcherAgent:
 
         # 4. 결과 종합 (Adaptive Context Window + Hierarchical Compression)
         print("4. 📊 Synthesizing findings with Hierarchical Compression...")
-        synthesis_results = await self.synthesize_findings(
-            research_results, evaluation_results
-        )
+        synthesis_results = await self.synthesize_findings(research_results, evaluation_results)
         print(
             f"✅ Findings synthesized: {synthesis_results['status']} (Compression: {synthesis_results.get('compression_info', {}).get('compression_ratio', 1.0):.2%})"
         )
@@ -437,9 +425,9 @@ class AutonomousResearcherAgent:
                     evaluation_results.get("confidence", 0.8),
                     synthesis_results.get("confidence", 0.8),
                 ),
-                "compression_applied": synthesis_results.get(
-                    "compression_info", {}
-                ).get("compression_ratio", 1.0),
+                "compression_applied": synthesis_results.get("compression_info", {}).get(
+                    "compression_ratio", 1.0
+                ),
                 "mcp_tools_used": len(research_results.get("raw_data", [])),
                 "verification_score": evaluation_results.get("verification_score", 0.8),
             },
@@ -458,9 +446,7 @@ class AutonomousResearcherAgent:
         print(
             f"   - Compression Ratio: {final_result['innovation_stats']['compression_applied']:.2%}"
         )
-        print(
-            f"   - MCP Tools Used: {final_result['innovation_stats']['mcp_tools_used']}"
-        )
+        print(f"   - MCP Tools Used: {final_result['innovation_stats']['mcp_tools_used']}")
         print(
             f"   - Verification Score: {final_result['innovation_stats']['verification_score']:.2%}"
         )

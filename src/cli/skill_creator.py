@@ -31,12 +31,7 @@ class SkillCreator:
         print("=" * 60)
 
         # 1. 기본 정보 입력
-        skill_id = (
-            input("\nSkill ID (lowercase, underscore): ")
-            .strip()
-            .lower()
-            .replace(" ", "_")
-        )
+        skill_id = input("\nSkill ID (lowercase, underscore): ").strip().lower().replace(" ", "_")
         if not skill_id:
             print("❌ Skill ID is required")
             return None
@@ -44,8 +39,7 @@ class SkillCreator:
         skill_name = input("Skill Name: ").strip() or skill_id.replace("_", " ").title()
         description = input("Description: ").strip()
         category = (
-            input("Category (planning/execution/evaluation/synthesis): ").strip()
-            or "general"
+            input("Category (planning/execution/evaluation/synthesis): ").strip() or "general"
         )
 
         # 2. Capabilities 입력
@@ -70,20 +64,12 @@ class SkillCreator:
         # 4. Dependencies 입력
         print("\nEnter dependency skill IDs (comma-separated, empty if none):")
         deps_input = input("  Dependencies: ").strip()
-        dependencies = (
-            [d.strip() for d in deps_input.split(",") if d.strip()]
-            if deps_input
-            else []
-        )
+        dependencies = [d.strip() for d in deps_input.split(",") if d.strip()] if deps_input else []
 
         # 5. Tags 입력
         print("\nEnter tags (comma-separated):")
         tags_input = input("  Tags: ").strip()
-        tags = (
-            [t.strip() for t in tags_input.split(",") if t.strip()]
-            if tags_input
-            else []
-        )
+        tags = [t.strip() for t in tags_input.split(",") if t.strip()] if tags_input else []
 
         # 6. Skill 생성
         skill_path = self.create_skill(
@@ -158,9 +144,7 @@ class SkillCreator:
         """SKILL.md 템플릿 생성."""
         capabilities_text = "\n".join([f"- {cap}" for cap in capabilities])
         dependencies_text = (
-            "\n".join([f"- {dep}" for dep in dependencies])
-            if dependencies
-            else "- None"
+            "\n".join([f"- {dep}" for dep in dependencies]) if dependencies else "- None"
         )
 
         metadata_json = json.dumps(

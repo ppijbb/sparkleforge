@@ -11,7 +11,7 @@ import os
 import re
 import shutil
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 try:
     from fastmcp import FastMCP
@@ -28,13 +28,15 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("cli-anything")
 
+
 def _is_autonomy_mode() -> bool:
-    return (
-        os.getenv("SPARKLEFORGE_AUTONOMY_MODE", "false")
-        .strip()
-        .lower()
-        in {"1", "true", "yes", "y", "on"}
-    )
+    return os.getenv("SPARKLEFORGE_AUTONOMY_MODE", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
 
 
 def _env_csv(name: str) -> List[str]:
@@ -188,8 +190,7 @@ def _run_cli_anything_sync(
     error_str = (out + err).lower()
     is_npm_not_found = "not found" in error_str or "not in this registry" in error_str
     is_npm_server_error = "server error" in error_str
-    is_npm_404 = is_npm_not_found or is_npm_server_error
-    is_server_error = is_npm_server_error
+    is_npm_not_found or is_npm_server_error
 
     if is_npm_not_found:
         logger.warning("Package not found (npm 404)")

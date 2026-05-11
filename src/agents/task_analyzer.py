@@ -214,9 +214,7 @@ class TaskAnalyzerAgent:
             logger.info(f"Starting LLM-based analysis for objective: {objective_id}")
 
             # Use LLM for comprehensive analysis
-            analysis_result = await self._llm_analyze_request(
-                user_request, context, objective_id
-            )
+            analysis_result = await self._llm_analyze_request(user_request, context, objective_id)
 
             # Store analysis in history for learning
             self.analysis_history.append(
@@ -382,24 +380,13 @@ class TaskAnalyzerAgent:
 
         # Determine research type based on keywords
         research_type = "exploratory"
-        if any(
-            word in request_lower for word in ["compare", "vs", "versus", "difference"]
-        ):
+        if any(word in request_lower for word in ["compare", "vs", "versus", "difference"]):
             research_type = "comparative"
-        elif any(
-            word in request_lower
-            for word in ["trend", "trends", "evolution", "development"]
-        ):
+        elif any(word in request_lower for word in ["trend", "trends", "evolution", "development"]):
             research_type = "trend_analysis"
-        elif any(
-            word in request_lower
-            for word in ["analyze", "analysis", "examine", "study"]
-        ):
+        elif any(word in request_lower for word in ["analyze", "analysis", "examine", "study"]):
             research_type = "analytical"
-        elif any(
-            word in request_lower
-            for word in ["review", "survey", "overview", "summary"]
-        ):
+        elif any(word in request_lower for word in ["review", "survey", "overview", "summary"]):
             research_type = "comprehensive"
 
         # Extract key topics
@@ -424,22 +411,17 @@ class TaskAnalyzerAgent:
         # Determine scope
         scope = "medium"
         if any(
-            word in request_lower
-            for word in ["comprehensive", "detailed", "thorough", "complete"]
+            word in request_lower for word in ["comprehensive", "detailed", "thorough", "complete"]
         ):
             scope = "broad"
-        elif any(
-            word in request_lower for word in ["brief", "quick", "summary", "overview"]
-        ):
+        elif any(word in request_lower for word in ["brief", "quick", "summary", "overview"]):
             scope = "narrow"
 
         # Determine urgency
         urgency = "normal"
         if any(word in request_lower for word in ["urgent", "asap", "quickly", "fast"]):
             urgency = "high"
-        elif any(
-            word in request_lower for word in ["when possible", "no rush", "eventually"]
-        ):
+        elif any(word in request_lower for word in ["when possible", "no rush", "eventually"]):
             urgency = "low"
 
         return {
@@ -484,9 +466,7 @@ class TaskAnalyzerAgent:
             }
 
             # Pattern matching for intent detection
-            for pattern_type, patterns in self.analysis_patterns[
-                "research_intent"
-            ].items():
+            for pattern_type, patterns in self.analysis_patterns["research_intent"].items():
                 for pattern in patterns:
                     if re.search(pattern, user_request.lower()):
                         if pattern_type == "analyze":
@@ -511,9 +491,7 @@ class TaskAnalyzerAgent:
                 intent_analysis["research_type"] = "developmental"
 
             # Normalize confidence score
-            intent_analysis["intent_confidence"] = min(
-                intent_analysis["intent_confidence"], 1.0
-            )
+            intent_analysis["intent_confidence"] = min(intent_analysis["intent_confidence"], 1.0)
 
             return intent_analysis
 
@@ -622,10 +600,7 @@ class TaskAnalyzerAgent:
                         break
 
             # Determine scope type
-            if (
-                "compare" in user_request.lower()
-                or "comparison" in user_request.lower()
-            ):
+            if "compare" in user_request.lower() or "comparison" in user_request.lower():
                 scope_analysis["scope_type"] = "comparative"
             elif "trend" in user_request.lower() or "trends" in user_request.lower():
                 scope_analysis["scope_type"] = "trend_analysis"
@@ -666,20 +641,11 @@ class TaskAnalyzerAgent:
                 if matches:
                     # Categorize constraints
                     for match in matches:
-                        if any(
-                            word in match
-                            for word in ["time", "deadline", "by", "before"]
-                        ):
+                        if any(word in match for word in ["time", "deadline", "by", "before"]):
                             constraint_analysis["time_constraints"].append(match)
-                        elif any(
-                            word in match
-                            for word in ["budget", "cost", "resource", "limit"]
-                        ):
+                        elif any(word in match for word in ["budget", "cost", "resource", "limit"]):
                             constraint_analysis["resource_constraints"].append(match)
-                        elif any(
-                            word in match
-                            for word in ["quality", "accuracy", "precision"]
-                        ):
+                        elif any(word in match for word in ["quality", "accuracy", "precision"]):
                             constraint_analysis["quality_constraints"].append(match)
                         else:
                             constraint_analysis["scope_constraints"].append(match)
@@ -811,9 +777,7 @@ class TaskAnalyzerAgent:
                 "priority": 1.0,
                 "constraints": constraint_analysis,
                 "success_criteria": success_criteria,
-                "estimated_effort": self._estimate_effort(
-                    scope_analysis, domain_analysis
-                ),
+                "estimated_effort": self._estimate_effort(scope_analysis, domain_analysis),
                 "dependencies": [],
             }
             objectives.append(primary_objective)
@@ -832,9 +796,7 @@ class TaskAnalyzerAgent:
                     "priority": 0.7,
                     "constraints": constraint_analysis,
                     "success_criteria": success_criteria,
-                    "estimated_effort": self._estimate_effort(
-                        scope_analysis, domain_analysis
-                    )
+                    "estimated_effort": self._estimate_effort(scope_analysis, domain_analysis)
                     * 0.5,
                     "dependencies": [primary_objective["objective_id"]],
                 }
@@ -853,9 +815,7 @@ class TaskAnalyzerAgent:
                     "priority": 0.8,
                     "constraints": constraint_analysis,
                     "success_criteria": success_criteria,
-                    "estimated_effort": self._estimate_effort(
-                        scope_analysis, domain_analysis
-                    )
+                    "estimated_effort": self._estimate_effort(scope_analysis, domain_analysis)
                     * 0.3,
                     "dependencies": [primary_objective["objective_id"]],
                 }
@@ -881,9 +841,7 @@ class TaskAnalyzerAgent:
         """
         try:
             # Sort objectives by priority (highest first)
-            prioritized_objectives = sorted(
-                objectives, key=lambda x: x["priority"], reverse=True
-            )
+            prioritized_objectives = sorted(objectives, key=lambda x: x["priority"], reverse=True)
 
             # Adjust priorities based on context
             if context:
@@ -984,9 +942,7 @@ class TaskAnalyzerAgent:
         except Exception as e:
             logger.error(f"Task Analyzer Agent cleanup failed: {e}")
 
-    async def update_capabilities(
-        self, evaluation_result: Dict[str, Any], iteration: int
-    ) -> None:
+    async def update_capabilities(self, evaluation_result: Dict[str, Any], iteration: int) -> None:
         """Update agent capabilities based on evaluation feedback.
 
         Args:
@@ -1038,16 +994,12 @@ class TaskAnalyzerAgent:
             if quality_metrics.get("overall_score", 0) > 0.8:
                 await self._update_successful_patterns(evaluation_result)
 
-            logger.info(
-                f"TaskAnalyzerAgent capabilities updated for iteration {iteration}"
-            )
+            logger.info(f"TaskAnalyzerAgent capabilities updated for iteration {iteration}")
 
         except Exception as e:
             logger.error(f"Capability update failed: {e}")
 
-    async def _update_successful_patterns(
-        self, evaluation_result: Dict[str, Any]
-    ) -> None:
+    async def _update_successful_patterns(self, evaluation_result: Dict[str, Any]) -> None:
         """Update analysis patterns based on successful evaluations."""
         try:
             # Extract successful patterns from evaluation
