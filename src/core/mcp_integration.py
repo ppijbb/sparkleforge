@@ -2762,7 +2762,14 @@ class UniversalMCPHub:
                         content_parts = []
                         for item in result.content:
                             if isinstance(item, TextContent):
-                                content_parts.append(item.text)
+                                try:
+                                    # Try to parse as JSON to ensure it's a valid payload
+                                    json.loads(item.text)
+                                    content_parts.append(item.text)
+                                except json.JSONDecodeError:
+                                    # If not JSON, treat as raw text but log a warning
+                                    logger.warning(f"Tool {tool_name} returned non-JSON content")
+                                    content_parts.append(item.text)
                             else:
                                 # 다른 타입의 content도 처리
                                 content_parts.append(str(item))
