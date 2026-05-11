@@ -456,27 +456,30 @@ class MultiModelOrchestrator:
             # 예외를 raise하지 않음 - Gemini만 사용하도록 함
 
     def _fetch_openrouter_models(self):
-        """OpenRouter API에서 모델 목록을 가져옴."""
+        """Fetch model list from OpenRouter API.
+
+        Returns:
+            List of model dictionaries.
+
+        Raises:
+            RuntimeError: If API request fails or returns an error.
+        """
         api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
-            raise ValueError("OPENROUTER_API_KEY not found")
+            raise RuntimeError("OPENROUTER_API_KEY not found")
 
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
-        response = requests.get(
-            "https://openrouter.ai/api/v1/models", headers=headers, timeout=10
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("data", [])
-        else:
-            raise Exception(
-                f"OpenRouter API error: {response.status_code} - {response.text}"
-            )
+        try:
+            response = requests.get("https://openrouter.ai/api/v1/models", headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json().get("data", [])
+        except requests.RequestException as e:
+            logger.error(f"OpenRouter API error: {e}")
+            raise RuntimeError(f"OpenRouter API request failed: {e}")
 
     def _is_free_model(self, model_data):
         """모델이 무료인지 확인."""
