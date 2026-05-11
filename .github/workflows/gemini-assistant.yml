@@ -194,9 +194,22 @@ jobs:
           # 두 리뷰를 하나로 합침
           COMBINED_REVIEW="OpenRouter Review:\n$OPENROUTER_REVIEW\n\nCerebras Review:\n$CEREBRAS_REVIEW"
           
+          CURRENT_DATE=$(date +"%Y-%m-%d %H:%M:%S")
+          
           # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용 생성
           jq -n --arg review "$COMBINED_REVIEW" \
-            --arg system_msg "You are a senior developer talking to a teammate. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys. Set should_create_issue to true only when the review identifies a concrete correctness, security, packaging, workflow, or test failure that needs a code change. Set should_create_issue to false for skipped reviews, empty reviews, no-issue findings, praise, style-only feedback, vague suggestions, or uncertain problems. If should_create_issue is false, title and body must be empty strings. If true, the title must use the repository's emoji conventional prefix style, such as '🔧 fix: missing error handling in auth flow', '✨ feature: add retry controls', '♻️ refactor: simplify workflow dispatch', or '🧹 chore: update automation config'. The body should naturally explain what's wrong and how to fix it with code. No robotic headers. Just clear, peer-to-peer communication." \
+            --arg current_date "$CURRENT_DATE" \
+            --arg system_msg "You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
+CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
+If should_create_issue is true, the title MUST use the repository's emoji conventional prefix style (e.g. '🔧 fix: ...', '✨ feature: ...').
+The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
+> **Date**: \($current_date)
+> **Issue Type**: [Classify as Parent Issue or Sub-issue]
+> **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
+> **Metrics & Justification**: [Provide a concrete, logical proof or metric of why this code must be changed. Do not use simple judgments.]
+
+Below the header, provide a highly specific explanation of what is wrong and an actionable plan to fix it. 
+If should_create_issue is false, title and body must be empty strings." \
             '{
               model: "llama-3.3-70b-versatile",
               messages: [
