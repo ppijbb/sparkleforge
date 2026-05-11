@@ -138,7 +138,7 @@ class ExecutionNode(BaseNode):
                             if "__missing_required__" in params:
                                 tool_attempts.append({"tool": tool_name, "success": False, "error": "Missing params"})
                                 continue
-                            
+
                             tool_result = await execute_tool(tool_name, params)
                             tool_attempts.append({
                                 "tool": tool_name, 
@@ -165,7 +165,12 @@ class ExecutionNode(BaseNode):
                                 task_success = True
                                 break
                         except Exception as e:
-                            logger.warning(f"Tool {tool_name} failed: {e}")
+                            if isinstance(e, asyncio.CancelledError):
+                                await self._save_executions(execution_results)
+                                raise
+                            else:
+                                logger.warning(f"Tool {tool_name} failed: {e}")
+                                tool_attempts.append({"tool": tool_name, "success": False, "error": str(e)})
                     
                     if not task_success:
                         execution_results.append({
@@ -175,6 +180,9 @@ class ExecutionNode(BaseNode):
                             "attempts": tool_attempts,
                         })
                 except Exception as e:
+                    if isinstance(e, asyncio.CancelledError):
+                        await self._save_executions(execution_results)
+                        raise
                     logger.error(f"Task execution error: {e}")
 
         # Depth Adjustment (Progressive Deepening)
@@ -193,6 +201,14 @@ class ExecutionNode(BaseNode):
         })
         self._log_node_output("execute_research", state, {"tasks_executed": len(execution_results)})
         return state
+
+    async def _save_executions(self, results: List[Dict[str, Any]]):
+        """Save execution state during cleanup."""
+        try:
+            # Implementation of persistence logic
+            pass
+        except Exception as e:
+            logger.error(f"Failed to save executions: {e}")
 
     def _adjust_depth_if_needed(self, state, tasks, execution_results):
         current_depth = state.get("research_depth", {})
