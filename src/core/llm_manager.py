@@ -1656,6 +1656,15 @@ class MultiModelOrchestrator:
         data = response.json()
         message = data["choices"][0]["message"]
         content = message.get("content", "")
+        
+        # Validate JSON fragments if present in content
+        if content and content.strip().startswith("{") and content.strip().endswith("}"):
+            try:
+                import json
+                json.loads(content)
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"OpenRouter returned invalid JSON content: {e}")
+
         tool_calls = message.get("tool_calls", [])
 
         return {
