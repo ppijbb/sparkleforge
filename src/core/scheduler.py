@@ -505,9 +505,9 @@ class Scheduler:
                     if schedule.next_run and schedule.next_run <= now:
                         # 실행
                         task = asyncio.create_task(self._execute_schedule(schedule))
+                        def _make_cb(sid): return lambda t: self.running_tasks.pop(sid, None)
                         self.running_tasks[schedule.schedule_id] = task
-                        task.add_done_callback(
-                            lambda t: self.running_tasks.pop(schedule.schedule_id, None))
+                        task.add_done_callback(_make_cb(schedule.schedule_id))
 
                 # 1분마다 체크
                 await asyncio.sleep(60)
