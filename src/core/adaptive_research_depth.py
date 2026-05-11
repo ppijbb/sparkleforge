@@ -6,6 +6,7 @@ Preset Modes (quick/medium/deep/auto), Progressive Deepening, Self-Adjusting, Dy
 """
 
 import logging
+import asyncio
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict
@@ -381,3 +382,13 @@ class AdaptiveResearchDepth:
             )
 
         return None
+
+    async def run_depth_adjustment(self, *args, **kwargs):
+        try:
+            return self.adjust_depth_progressively(*args, **kwargs)
+        except asyncio.CancelledError:
+            logger.warning("Depth adjustment task was cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error during depth adjustment: {e}")
+            return None
