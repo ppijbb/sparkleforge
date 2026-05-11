@@ -1565,7 +1565,7 @@ class MultiModelOrchestrator:
                     logger.warning(
                         "OpenRouter rate-limited (429), will use next provider in rotation"
                     )
-                    # Rate limit은 재시도하지 않고 즉시 다음 Provider로 전환
+                    # Rate limit is not retried; immediately switch to the next provider.
                     raise RuntimeError(
                         f"OpenRouter API rate-limited (429): {error_msg}"
                     )
@@ -1644,10 +1644,8 @@ class MultiModelOrchestrator:
                     await asyncio.sleep(wait_time)
                     continue
                 else:
-                    logger.error(
-                        f"OpenRouter API request failed after {max_retries} attempts: {e}"
-                    )
-                    raise RuntimeError(f"OpenRouter API request failed: {e}")
+                    logger.error("OpenRouter API request failed after %d attempts: %s", max_retries, e)
+                    raise
 
         # 마지막 시도 결과 확인
         if not response or response.status_code != 200:
