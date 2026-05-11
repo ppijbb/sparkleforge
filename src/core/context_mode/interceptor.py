@@ -5,7 +5,7 @@ Achieves 95%+ token reduction for all LLMs (Gemini, OpenRouter, Groq, etc.).
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from src.core.context_mode.stats import get_session_stats
 

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from src.core.llm_manager import MultiModelOrchestrator, TaskType
 from src.core.pre_compressor import get_pre_compressor

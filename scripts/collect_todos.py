@@ -115,11 +115,7 @@ def categorize_todo(content: str) -> str:
 
     if "memory" in content_lower or "storage" in content_lower:
         return "Memory/Storage"
-    elif (
-        "rag" in content_lower
-        or "vector" in content_lower
-        or "embedding" in content_lower
-    ):
+    elif "rag" in content_lower or "vector" in content_lower or "embedding" in content_lower:
         return "RAG/Vector"
     elif "llm" in content_lower or "model" in content_lower:
         return "LLM/Model"
@@ -158,9 +154,7 @@ def extract_todos(file_path: Path) -> List[TodoItem]:
             for pattern, issue_type in patterns:
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
-                    content = (
-                        match.group(2) if len(match.groups()) > 1 else match.group(1)
-                    )
+                    content = match.group(2) if len(match.groups()) > 1 else match.group(1)
                     content = content.strip()
 
                     # Determine priority and category
@@ -233,9 +227,7 @@ def generate_inventory(todos: List[TodoItem]) -> str:
             report.append(f"\n#### `{file_path}`\n")
 
             for todo in file_todos:
-                report.append(
-                    f"- **Line {todo.line_number}** ({todo.category}): {todo.content}\n"
-                )
+                report.append(f"- **Line {todo.line_number}** ({todo.category}): {todo.content}\n")
 
     # Issue tracking format
     report.append("\n## 이슈 트래킹 형식\n")

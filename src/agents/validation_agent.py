@@ -157,10 +157,10 @@ class ValidationAgent:
             logger.info(f"Starting enhanced autonomous validation for objective: {objective_id}")
 
             # Phase 1: Cross-Validation Analysis
-            cross_validation_results = await self._perform_cross_validation(execution_results)
+            await self._perform_cross_validation(execution_results)
 
             # Phase 2: Source Credibility Analysis
-            source_credibility = await self._analyze_source_credibility(execution_results)
+            await self._analyze_source_credibility(execution_results)
 
             # Phase 3: Bias Detection Analysis
             await self._detect_bias(execution_results)

@@ -58,9 +58,7 @@ def measure_complexity(file_path: Path) -> Dict[str, Any]:
         def count_complexity(node):
             nonlocal complexity, function_count, class_count
 
-            if isinstance(node, ast.FunctionDef) or isinstance(
-                node, ast.AsyncFunctionDef
-            ):
+            if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
                 function_count += 1
                 # Base complexity is 1
                 func_complexity = 1
@@ -118,9 +116,7 @@ def measure_test_coverage() -> Dict[str, Any]:
                     coverage_data = json.load(f)
                 return {
                     "available": True,
-                    "total_coverage": coverage_data.get("totals", {}).get(
-                        "percent_covered", 0
-                    ),
+                    "total_coverage": coverage_data.get("totals", {}).get("percent_covered", 0),
                     "files_covered": len(coverage_data.get("files", {})),
                 }
     except Exception:
@@ -140,9 +136,7 @@ def measure_memory_usage() -> Dict[str, Any]:
 
         process = psutil.Process(os.getpid())
         memory_info["current_memory_mb"] = process.memory_info().rss / 1024 / 1024
-        memory_info["available_memory_mb"] = (
-            psutil.virtual_memory().available / 1024 / 1024
-        )
+        memory_info["available_memory_mb"] = psutil.virtual_memory().available / 1024 / 1024
         memory_info["total_memory_mb"] = psutil.virtual_memory().total / 1024 / 1024
     except ImportError:
         memory_info["available"] = False
@@ -175,9 +169,7 @@ def benchmark_import_time() -> Dict[str, float]:
     return import_times
 
 
-def analyze_large_files(
-    file_sizes: Dict[str, int], threshold: int = 1000
-) -> List[Dict[str, Any]]:
+def analyze_large_files(file_sizes: Dict[str, int], threshold: int = 1000) -> List[Dict[str, Any]]:
     """Analyze large files that need modularization."""
     large_files = []
 
@@ -209,9 +201,7 @@ def generate_baseline_report(
 
     report.append("## 1. 코드 규모\n")
     report.append(f"- 총 라인 수: {file_sizes.get('_total', 0):,}\n")
-    report.append(
-        f"- 총 파일 수: {len([f for f in file_sizes.keys() if f != '_total'])}\n"
-    )
+    report.append(f"- 총 파일 수: {len([f for f in file_sizes.keys() if f != '_total'])}\n")
 
     report.append("\n## 2. 큰 파일 분석 (1000+ 라인)\n")
     if large_files:
@@ -225,14 +215,10 @@ def generate_baseline_report(
 
     report.append("\n## 3. 코드 복잡도\n")
     total_complexity = sum(
-        c.get("total_complexity", 0)
-        for c in complexity_data.values()
-        if isinstance(c, dict)
+        c.get("total_complexity", 0) for c in complexity_data.values() if isinstance(c, dict)
     )
     total_functions = sum(
-        c.get("function_count", 0)
-        for c in complexity_data.values()
-        if isinstance(c, dict)
+        c.get("function_count", 0) for c in complexity_data.values() if isinstance(c, dict)
     )
     avg_complexity = total_complexity / total_functions if total_functions > 0 else 0
 
@@ -262,12 +248,8 @@ def generate_baseline_report(
 
     report.append("\n## 5. 메모리 사용량\n")
     if memory_info.get("available") is not False:
-        report.append(
-            f"- 현재 메모리 사용: {memory_info.get('current_memory_mb', 0):.2f} MB\n"
-        )
-        report.append(
-            f"- 사용 가능 메모리: {memory_info.get('available_memory_mb', 0):.2f} MB\n"
-        )
+        report.append(f"- 현재 메모리 사용: {memory_info.get('current_memory_mb', 0):.2f} MB\n")
+        report.append(f"- 사용 가능 메모리: {memory_info.get('available_memory_mb', 0):.2f} MB\n")
         report.append(f"- 총 메모리: {memory_info.get('total_memory_mb', 0):.2f} MB\n")
     else:
         report.append(f"- 상태: {memory_info.get('reason', 'Unknown')}\n")
@@ -275,9 +257,7 @@ def generate_baseline_report(
     report.append("\n## 6. 모듈 Import 시간\n")
     for module, import_time in import_times.items():
         if isinstance(import_time, dict):
-            report.append(
-                f"- `{module}`: Error - {import_time.get('error', 'Unknown')}\n"
-            )
+            report.append(f"- `{module}`: Error - {import_time.get('error', 'Unknown')}\n")
         else:
             report.append(f"- `{module}`: {import_time:.4f}초\n")
 

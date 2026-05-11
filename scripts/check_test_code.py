@@ -71,10 +71,7 @@ def check_test_code_in_production() -> List[Dict]:
 
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if (
-                        node.name.startswith("test_")
-                        and node.name != "test_mcp_connection"
-                    ):
+                    if node.name.startswith("test_") and node.name != "test_mcp_connection":
                         issues.append(
                             {
                                 "file": str(py_file.relative_to(project_root)),
@@ -100,9 +97,7 @@ def main():
     debug_usage = check_debug_validator_usage()
     if debug_usage.get("exists"):
         if debug_usage.get("is_used"):
-            print(
-                f"✅ debug_validator.py는 {len(debug_usage['imported_by'])}개 파일에서 사용 중"
-            )
+            print(f"✅ debug_validator.py는 {len(debug_usage['imported_by'])}개 파일에서 사용 중")
             for importer in debug_usage["imported_by"]:
                 print(f"   - {importer}")
         else:

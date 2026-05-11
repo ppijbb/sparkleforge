@@ -11,9 +11,9 @@ import re
 import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List
 
 if TYPE_CHECKING:
     from src.core.skills_manager import SkillManager

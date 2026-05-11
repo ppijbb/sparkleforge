@@ -28,8 +28,7 @@ def run(cmd: list[str], *, input_text: str | None = None) -> subprocess.Complete
         cmd,
         input=input_text,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
 
@@ -93,7 +92,11 @@ def read_full_file(path: str, limit: int = 200_000) -> str:
     if len(content) > limit:
         lines = content[:limit].splitlines()
         numbered = [f"{i+1:5d}: {line}" for i, line in enumerate(lines)]
-        return f"--- {path} (truncated to {limit} chars) ---\n" + "\n".join(numbered) + "\n...[truncated]\n"
+        return (
+            f"--- {path} (truncated to {limit} chars) ---\n"
+            + "\n".join(numbered)
+            + "\n...[truncated]\n"
+        )
     lines = content.splitlines()
     numbered = [f"{i+1:5d}: {line}" for i, line in enumerate(lines)]
     return f"--- {path} ---\n" + "\n".join(numbered) + "\n"
@@ -209,7 +212,7 @@ def _normalize_diff_paths(diff_text: str) -> str:
         return diff_text  # already in standard format
 
     def _add_prefix(m: re.Match) -> str:
-        sign = m.group(1)          # '---' or '+++'
+        sign = m.group(1)  # '---' or '+++'
         prefix = "a" if sign == "---" else "b"
         path = m.group(2)
         rest = m.group(3) or ""
@@ -324,13 +327,16 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
     errors: list[str] = []
 
     for p in sorted({strip, 1 - strip}):
-        proc = run([
-            "git", "apply",
-            f"-p{p}",
-            "--3way",
-            "--ignore-whitespace",
-            str(tmp),
-        ])
+        proc = run(
+            [
+                "git",
+                "apply",
+                f"-p{p}",
+                "--3way",
+                "--ignore-whitespace",
+                str(tmp),
+            ]
+        )
         if proc.returncode == 0:
             tmp.unlink(missing_ok=True)
             return True, ""
@@ -380,13 +386,16 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
 
     # ── Step 2: try whole patch at once (fast path) ────────────────────────
     for p in sorted({strip, 1 - strip}):
-        proc = run([
-            "git", "apply",
-            f"-p{p}",
-            "--3way",
-            "--ignore-whitespace",
-            str(patch_path),
-        ])
+        proc = run(
+            [
+                "git",
+                "apply",
+                f"-p{p}",
+                "--3way",
+                "--ignore-whitespace",
+                str(patch_path),
+            ]
+        )
         if proc.returncode == 0:
             print("[patch] Whole-patch git apply succeeded.", file=sys.stderr)
             return True, ""
@@ -451,7 +460,9 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
 
     file_contents_str = "\n\n".join(relevant_contents[:5])
     if file_contents_str:
-        file_contents_str = f"Relevant File Contents (with exact line numbers):\n{file_contents_str}\n"
+        file_contents_str = (
+            f"Relevant File Contents (with exact line numbers):\n{file_contents_str}\n"
+        )
 
     agent = OpenCodeAgent()
     tool_context = ""
@@ -473,7 +484,9 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         )
         result = await agent.execute_query(prompt, system_message=system_message)
         if not result.get("success"):
-            print(result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr)
+            print(
+                result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr
+            )
             return 1
 
         response = result.get("response", "")
