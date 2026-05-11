@@ -81,9 +81,7 @@ class ContentProcessor:
                 return self._create_empty_result(url, title, "Content too short")
 
             if len(cleaned_content) > self.max_content_length:
-                logger.warning(
-                    f"Content too long, truncating: {len(cleaned_content)} characters"
-                )
+                logger.warning(f"Content too long, truncating: {len(cleaned_content)} characters")
                 cleaned_content = cleaned_content[: self.max_content_length]
 
             # Extract title if not provided
@@ -179,9 +177,7 @@ class ContentProcessor:
         # Fallback to first 50 characters
         return content[:50].strip() + "..."
 
-    def _create_empty_result(
-        self, url: str, title: str, error: str
-    ) -> ProcessedContent:
+    def _create_empty_result(self, url: str, title: str, error: str) -> ProcessedContent:
         """Create empty result for failed processing.
 
         Args:
@@ -207,9 +203,7 @@ class ContentProcessor:
             processed_at=datetime.now(),
         )
 
-    async def batch_process(
-        self, contents: List[Dict[str, Any]]
-    ) -> List[ProcessedContent]:
+    async def batch_process(self, contents: List[Dict[str, Any]]) -> List[ProcessedContent]:
         """Process multiple contents in batch.
 
         Args:
@@ -305,10 +299,6 @@ class ContentProcessor:
             "urls": [],
         }
 
-    def _generate_insights(
-        self, content: str, context: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
+    def _generate_insights(self, content: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate insights from content."""
-        return [
-            {"type": "summary", "content": content[:200] + "...", "confidence": 0.8}
-        ]
+        return [{"type": "summary", "content": content[:200] + "...", "confidence": 0.8}]

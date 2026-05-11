@@ -140,10 +140,10 @@ class REPLCLI:
             session_tasks_command,
         )
         from src.cli.commands.work import (
-            work_command,
             actions_command,
             approve_command,
             deny_command,
+            work_command,
         )
 
         self.command_handlers = {
@@ -205,9 +205,7 @@ class REPLCLI:
         await self._show_banner()
 
         # 로딩 표시와 함께 컨텍스트 로드
-        with self.console.status(
-            "[bold cyan]Initializing SparkleForge...", spinner="dots"
-        ):
+        with self.console.status("[bold cyan]Initializing SparkleForge...", spinner="dots"):
             if self.context_loader:
                 try:
                     context = await self.context_loader.load_context()
@@ -231,9 +229,7 @@ class REPLCLI:
                 await self.handle_command(text)
 
             except KeyboardInterrupt:
-                self.console.print(
-                    "\n[yellow]Interrupted. Type 'exit' to quit.[/yellow]"
-                )
+                self.console.print("\n[yellow]Interrupted. Type 'exit' to quit.[/yellow]")
                 continue
             except EOFError:
                 # exit 명령어 또는 Ctrl+D로 종료
@@ -389,9 +385,7 @@ Generate the greeting:"""
         commands_text.append("exit", style="cyan")
         commands_text.append("             - Exit REPL\n", style="dim")
         commands_text.append("\n", style="dim")
-        commands_text.append(
-            "Type 'help' for detailed command information", style="dim"
-        )
+        commands_text.append("Type 'help' for detailed command information", style="dim")
 
         # 전체 내용 합치기
         full_content = Text()
@@ -439,21 +433,15 @@ Generate the greeting:"""
                     # 서브 명령어
                     if len(parts) < 2:
                         self.console.print(f"[red]Usage: {command} <subcommand>[/red]")
-                        self.console.print(
-                            f"[dim]Type '{command} help' for subcommands[/dim]"
-                        )
+                        self.console.print(f"[dim]Type '{command} help' for subcommands[/dim]")
                         return
 
                     subcommand = parts[1].lower()
                     if subcommand in handler:
                         await handler[subcommand](self, parts[2:])
                     else:
-                        self.console.print(
-                            f"[red]Unknown subcommand: {subcommand}[/red]"
-                        )
-                        self.console.print(
-                            f"[dim]Available: {', '.join(handler.keys())}[/dim]"
-                        )
+                        self.console.print(f"[red]Unknown subcommand: {subcommand}[/red]")
+                        self.console.print(f"[dim]Available: {', '.join(handler.keys())}[/dim]")
                 else:
                     # 직접 명령어
                     await handler(self, parts[1:])

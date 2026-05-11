@@ -6,21 +6,21 @@
 
 import json
 import logging
-import os
 import time
 from pathlib import Path
-from typing import Dict, Any
-
-from src.core.harness_state import HarnessState
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
+
 
 class WorkflowAuditLogger:
     def __init__(self, log_dir: str = "logs/audit"):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        
-    def log_state_transition(self, session_id: str, old_phase: str, new_phase: str, state_subset: Dict[str, Any]):
+
+    def log_state_transition(
+        self, session_id: str, old_phase: str, new_phase: str, state_subset: Dict[str, Any]
+    ):
         """상태 전이 기록"""
         entry = {
             "timestamp": time.time(),
@@ -28,11 +28,19 @@ class WorkflowAuditLogger:
             "session_id": session_id,
             "old_phase": old_phase,
             "new_phase": new_phase,
-            "state_metadata": state_subset
+            "state_metadata": state_subset,
         }
         self._write_log(session_id, entry)
 
-    def log_tool_execution(self, session_id: str, agent_id: str, tool_name: str, parameters: Dict[str, Any], success: bool, duration: float):
+    def log_tool_execution(
+        self,
+        session_id: str,
+        agent_id: str,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        success: bool,
+        duration: float,
+    ):
         """도구 사용 기록 (Governance 증명)"""
         entry = {
             "timestamp": time.time(),
@@ -43,10 +51,10 @@ class WorkflowAuditLogger:
             # 주의: 보안상 민감 파라미터는 마스킹 처리할 수 있음
             "parameters": parameters,
             "success": success,
-            "duration": duration
+            "duration": duration,
         }
         self._write_log(session_id, entry)
-        
+
     def _write_log(self, session_id: str, entry: Dict[str, Any]):
         try:
             log_file = self.log_dir / f"audit_{session_id}.jsonl"
@@ -55,7 +63,9 @@ class WorkflowAuditLogger:
         except Exception as e:
             logger.error(f"Failed to write audit log: {e}")
 
+
 _audit_logger = None
+
 
 def get_audit_logger() -> WorkflowAuditLogger:
     global _audit_logger

@@ -90,16 +90,12 @@ class ToolTrace:
                             isinstance(data[field_name], str)
                             and len(data[field_name]) > max_size // 2
                         ):
-                            data[field_name] = (
-                                data[field_name][: max_size // 2] + "... [truncated]"
-                            )
+                            data[field_name] = data[field_name][: max_size // 2] + "... [truncated]"
                         elif isinstance(data[field_name], list):
                             # 처음 몇 개 항목만 유지
                             data[field_name] = data[field_name][:3]
                             if data[field_name]:
-                                data[field_name].append(
-                                    {"note": "... additional items truncated"}
-                                )
+                                data[field_name].append({"note": "... additional items truncated"})
 
                 truncated = json.dumps(data, ensure_ascii=False)
                 if len(truncated) <= max_size:
@@ -108,9 +104,7 @@ class ToolTrace:
             pass
 
         # Fallback: 간단한 잘라내기
-        truncation_marker = (
-            f"\n... [content truncated, original size: {len(raw_answer)} bytes]"
-        )
+        truncation_marker = f"\n... [content truncated, original size: {len(raw_answer)} bytes]"
         return raw_answer[: max_size - len(truncation_marker)] + truncation_marker
 
     def to_dict(self) -> Dict[str, Any]:
@@ -198,9 +192,7 @@ class ToolTraceManager:
         self.research_id = research_id or f"research_{int(datetime.now().timestamp())}"
         self.traces: List[ToolTrace] = []
         self.trace_by_id: Dict[str, ToolTrace] = {}  # tool_id -> ToolTrace
-        self.trace_by_citation: Dict[
-            str, List[ToolTrace]
-        ] = {}  # citation_id -> List[ToolTrace]
+        self.trace_by_citation: Dict[str, List[ToolTrace]] = {}  # citation_id -> List[ToolTrace]
 
     def add_trace(self, trace: ToolTrace) -> None:
         """ToolTrace 추가.
@@ -258,9 +250,7 @@ class ToolTraceManager:
         """ToolTrace 통계 반환."""
         tool_type_counts = {}
         for trace in self.traces:
-            tool_type_counts[trace.tool_type] = (
-                tool_type_counts.get(trace.tool_type, 0) + 1
-            )
+            tool_type_counts[trace.tool_type] = tool_type_counts.get(trace.tool_type, 0) + 1
 
         total_size = sum(t.raw_answer_original_size for t in self.traces)
         truncated_count = sum(1 for t in self.traces if t.raw_answer_truncated)

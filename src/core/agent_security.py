@@ -16,8 +16,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Generator, List, Optional, Set, Tuple
 
 from src.core.prompt_security import (
-    REJECTION_MESSAGE,
-    PromptInjectionFilter,
     get_input_filter,
 )
 
@@ -55,7 +53,7 @@ class AgentSecurityResult:
     is_allowed: bool
     violations: List[SecurityViolation] = field(default_factory=list)
     filtered_text: str = ""
-    filtered_state: Optional[Dict[str, Any]] = None
+    filtered_state: Dict[str, Any] | None = None
 
 
 class AgentSecurityManager:
@@ -72,6 +70,7 @@ class AgentSecurityManager:
     @staticmethod
     def _get_config():
         from src.core.researcher_config import get_agent_security_config
+
         try:
             return get_agent_security_config()
         except RuntimeError:
@@ -80,10 +79,12 @@ class AgentSecurityManager:
     @staticmethod
     def _get_policy(agent_name: str):
         from src.core.researcher_config import get_agent_security_policy
+
         try:
             return get_agent_security_policy(agent_name)
         except RuntimeError:
             from src.core.researcher_config import AgentSecurityPolicyEntry
+
             return AgentSecurityPolicyEntry()
 
     def _is_enabled(self) -> bool:
@@ -93,9 +94,7 @@ class AgentSecurityManager:
     # ------------------------------------------------------------------
     # Input enforcement
     # ------------------------------------------------------------------
-    def enforce_input(
-        self, agent_name: str, text: str
-    ) -> AgentSecurityResult:
+    def enforce_input(self, agent_name: str, text: str) -> AgentSecurityResult:
         if not self._is_enabled():
             return AgentSecurityResult(is_allowed=True, filtered_text=text)
 
@@ -105,23 +104,27 @@ class AgentSecurityManager:
 
         if len(out) > policy.input_max_length:
             out = out[: policy.input_max_length]
-            violations.append(SecurityViolation(
-                agent_name=agent_name,
-                violation_type="input_truncated",
-                detail=f"Input truncated to {policy.input_max_length} chars",
-                severity="info",
-            ))
+            violations.append(
+                SecurityViolation(
+                    agent_name=agent_name,
+                    violation_type="input_truncated",
+                    detail=f"Input truncated to {policy.input_max_length} chars",
+                    severity="info",
+                )
+            )
 
         if policy.enable_injection_scan:
             flt = get_input_filter()
             detected, reason = flt.detect_injection(out)
             if detected:
-                self._record(SecurityViolation(
-                    agent_name=agent_name,
-                    violation_type="injection_detected",
-                    detail=f"Injection pattern: {reason}",
-                    severity="critical",
-                ))
+                self._record(
+                    SecurityViolation(
+                        agent_name=agent_name,
+                        violation_type="injection_detected",
+                        detail=f"Injection pattern: {reason}",
+                        severity="critical",
+                    )
+                )
                 return AgentSecurityResult(
                     is_allowed=False,
                     violations=self._audit_log[-1:],
@@ -145,16 +148,12 @@ class AgentSecurityManager:
         for v in violations:
             self._record(v)
 
-        return AgentSecurityResult(
-            is_allowed=True, violations=violations, filtered_text=out
-        )
+        return AgentSecurityResult(is_allowed=True, violations=violations, filtered_text=out)
 
     # ------------------------------------------------------------------
     # Output enforcement
     # ------------------------------------------------------------------
-    def enforce_output(
-        self, agent_name: str, text: str
-    ) -> AgentSecurityResult:
+    def enforce_output(self, agent_name: str, text: str) -> AgentSecurityResult:
         if not self._is_enabled():
             return AgentSecurityResult(is_allowed=True, filtered_text=text)
 
@@ -164,12 +163,14 @@ class AgentSecurityManager:
 
         if len(out) > policy.output_max_length:
             out = out[: policy.output_max_length]
-            violations.append(SecurityViolation(
-                agent_name=agent_name,
-                violation_type="output_truncated",
-                detail=f"Output truncated to {policy.output_max_length} chars",
-                severity="info",
-            ))
+            violations.append(
+                SecurityViolation(
+                    agent_name=agent_name,
+                    violation_type="output_truncated",
+                    detail=f"Output truncated to {policy.output_max_length} chars",
+                    severity="info",
+                )
+            )
 
         patterns = self._get_compiled_output_patterns(agent_name, policy.blocked_output_patterns)
         for pat in patterns:
@@ -198,9 +199,7 @@ class AgentSecurityManager:
     # ------------------------------------------------------------------
     # MVI context scoping
     # ------------------------------------------------------------------
-    def filter_state_mvi(
-        self, agent_name: str, state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def filter_state_mvi(self, agent_name: str, state: Dict[str, Any]) -> Dict[str, Any]:
         if not self._is_enabled():
             return state
 
@@ -222,12 +221,14 @@ class AgentSecurityManager:
                 denied_keys,
             )
             if self._get_config() and self._get_config().audit_logging:
-                self._record(SecurityViolation(
-                    agent_name=agent_name,
-                    violation_type="mvi_context_filter",
-                    detail=f"Filtered state keys: {sorted(denied_keys)}",
-                    severity="info",
-                ))
+                self._record(
+                    SecurityViolation(
+                        agent_name=agent_name,
+                        violation_type="mvi_context_filter",
+                        detail=f"Filtered state keys: {sorted(denied_keys)}",
+                        severity="info",
+                    )
+                )
 
         return filtered
 
@@ -247,12 +248,14 @@ class AgentSecurityManager:
         cat_lower = (tool_category or "").lower()
         allowed = {c.lower() for c in policy.allowed_tool_categories}
         if cat_lower and cat_lower not in allowed:
-            self._record(SecurityViolation(
-                agent_name=agent_name,
-                violation_type="tool_access_denied",
-                detail=f"Tool '{tool_name}' (category: {cat_lower}) not in allowed: {sorted(allowed)}",
-                severity="warning",
-            ))
+            self._record(
+                SecurityViolation(
+                    agent_name=agent_name,
+                    violation_type="tool_access_denied",
+                    detail=f"Tool '{tool_name}' (category: {cat_lower}) not in allowed: {sorted(allowed)}",
+                    severity="warning",
+                )
+            )
             return False
         return True
 
@@ -266,12 +269,14 @@ class AgentSecurityManager:
         policy = self._get_policy(agent_name)
         count = self._call_counters.get(agent_name, 0)
         if count >= policy.max_llm_calls_per_execution:
-            self._record(SecurityViolation(
-                agent_name=agent_name,
-                violation_type="rate_limit_exceeded",
-                detail=f"LLM calls ({count}) >= limit ({policy.max_llm_calls_per_execution})",
-                severity="critical",
-            ))
+            self._record(
+                SecurityViolation(
+                    agent_name=agent_name,
+                    violation_type="rate_limit_exceeded",
+                    detail=f"LLM calls ({count}) >= limit ({policy.max_llm_calls_per_execution})",
+                    severity="critical",
+                )
+            )
             return False
         self._call_counters[agent_name] = count + 1
         return True
@@ -314,7 +319,9 @@ class AgentSecurityManager:
         self._audit_log.append(violation)
         cfg = self._get_config()
         if cfg and cfg.audit_logging:
-            log_fn = logger.warning if violation.severity in ("warning", "critical") else logger.info
+            log_fn = (
+                logger.warning if violation.severity in ("warning", "critical") else logger.info
+            )
             log_fn(
                 "[SECURITY:%s] %s — %s (severity=%s)",
                 violation.agent_name,
@@ -354,7 +361,7 @@ class AgentSecurityManager:
 # ---------------------------------------------------------------------------
 # Singleton
 # ---------------------------------------------------------------------------
-_manager: Optional[AgentSecurityManager] = None
+_manager: AgentSecurityManager | None = None
 
 
 def get_agent_security_manager() -> AgentSecurityManager:
@@ -379,7 +386,8 @@ def get_current_agent_name() -> str | None:
 @contextmanager
 def agent_security_context(agent_name: str) -> Generator[None, None, None]:
     """Context manager that sets the active agent name for downstream
-    security checks (rate limit, output enforcement) via contextvars."""
+    security checks (rate limit, output enforcement) via contextvars.
+    """
     token = _current_agent_name.set(agent_name)
     try:
         yield

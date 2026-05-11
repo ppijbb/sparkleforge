@@ -129,9 +129,7 @@ class CouncilActivator:
         }
         return process_map.get(process_type, False)
 
-    def _calculate_complexity(
-        self, query: str | None, context: Dict[str, Any] | None
-    ) -> float:
+    def _calculate_complexity(self, query: str | None, context: Dict[str, Any] | None) -> float:
         """복잡도 점수 계산 (0.0-1.0).
 
         Args:
@@ -191,9 +189,7 @@ class CouncilActivator:
 
         return min(complexity, 1.0)
 
-    def _needs_multi_facet_review(
-        self, query: str | None, context: Dict[str, Any] | None
-    ) -> bool:
+    def _needs_multi_facet_review(self, query: str | None, context: Dict[str, Any] | None) -> bool:
         """다방면 검토 필요성 판단.
 
         Args:
@@ -225,9 +221,7 @@ class CouncilActivator:
         ]
 
         query_lower = query.lower()
-        has_multi_facet_keywords = any(
-            keyword in query_lower for keyword in multi_facet_keywords
-        )
+        has_multi_facet_keywords = any(keyword in query_lower for keyword in multi_facet_keywords)
 
         # 컨텍스트에서 다방면 검토 필요성 확인
         if context:
@@ -238,9 +232,7 @@ class CouncilActivator:
 
         return has_multi_facet_keywords
 
-    def _assess_risk_level(
-        self, query: str | None, context: Dict[str, Any] | None
-    ) -> float:
+    def _assess_risk_level(self, query: str | None, context: Dict[str, Any] | None) -> float:
         """위험도 평가 (0.0-1.0).
 
         Args:
@@ -278,9 +270,7 @@ class CouncilActivator:
         ]
 
         query_lower = query.lower()
-        risk_keyword_count = sum(
-            1 for keyword in high_risk_keywords if keyword in query_lower
-        )
+        risk_keyword_count = sum(1 for keyword in high_risk_keywords if keyword in query_lower)
         risk += min(risk_keyword_count * 0.15, 0.6)
 
         # 컨텍스트 기반 위험도

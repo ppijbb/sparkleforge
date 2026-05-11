@@ -42,9 +42,7 @@ class TopicSegment(BaseModel):
     topic_label: str = Field(default="", description="토픽 레이블")
     content: str = Field(description="세그먼트 내용")
     keywords: List[str] = Field(default_factory=list, description="핵심 키워드")
-    embedding_vector: List[float] | None = Field(
-        default=None, description="임베딩 벡터"
-    )
+    embedding_vector: List[float] | None = Field(default=None, description="임베딩 벡터")
 
     # 메타데이터
     created_at: datetime = Field(default_factory=datetime.now)
@@ -53,12 +51,8 @@ class TopicSegment(BaseModel):
 
     # 연결 정보
     parent_segment_id: str | None = Field(default=None, description="부모 세그먼트")
-    child_segment_ids: List[str] = Field(
-        default_factory=list, description="자식 세그먼트들"
-    )
-    related_segment_ids: List[str] = Field(
-        default_factory=list, description="관련 세그먼트들"
-    )
+    child_segment_ids: List[str] = Field(default_factory=list, description="자식 세그먼트들")
+    related_segment_ids: List[str] = Field(default_factory=list, description="관련 세그먼트들")
 
     class Config:
         arbitrary_types_allowed = True
@@ -83,9 +77,7 @@ class SensoryBuffer:
 
         버퍼가 가득 차면 flush하여 세그먼트 반환.
         """
-        self.buffer.append(
-            {"content": content, "tokens": token_count, "timestamp": datetime.now()}
-        )
+        self.buffer.append({"content": content, "tokens": token_count, "timestamp": datetime.now()})
         self.current_tokens += token_count
 
         # 버퍼 오버플로우 시 flush
@@ -125,9 +117,7 @@ class TopicBoundaryDetector:
     텍스트 흐름에서 토픽 전환점을 감지.
     """
 
-    def __init__(
-        self, similarity_threshold: float = 0.3, min_segment_tokens: int = 100
-    ):
+    def __init__(self, similarity_threshold: float = 0.3, min_segment_tokens: int = 100):
         self.similarity_threshold = similarity_threshold
         self.min_segment_tokens = min_segment_tokens
         self.previous_keywords: List[str] = []
@@ -149,9 +139,7 @@ class TopicBoundaryDetector:
             return False, 1.0
 
         # 키워드 기반 유사도 계산
-        similarity = self._calculate_keyword_similarity(
-            self.previous_keywords, current_keywords
-        )
+        similarity = self._calculate_keyword_similarity(self.previous_keywords, current_keywords)
 
         # 토픽 전환 감지
         is_boundary = similarity < self.similarity_threshold
@@ -161,9 +149,7 @@ class TopicBoundaryDetector:
 
         return is_boundary, similarity
 
-    def _calculate_keyword_similarity(
-        self, keywords1: List[str], keywords2: List[str]
-    ) -> float:
+    def _calculate_keyword_similarity(self, keywords1: List[str], keywords2: List[str]) -> float:
         """Jaccard 유사도 계산."""
         if not keywords1 or not keywords2:
             return 0.0
@@ -237,9 +223,7 @@ class TopicSegmenter:
         keywords = self._extract_keywords(content)
 
         # 토픽 경계 감지
-        is_boundary, similarity = self.boundary_detector.detect_boundary(
-            content, keywords
-        )
+        is_boundary, similarity = self.boundary_detector.detect_boundary(content, keywords)
 
         # 새 세그먼트 생성 조건
         should_create_segment = (
@@ -315,9 +299,7 @@ class TopicSegmenter:
             self.topic_clusters[topic_label] = []
         self.topic_clusters[topic_label].append(segment_id)
 
-        logger.debug(
-            f"Created segment {segment_id}: {topic_label} ({segment.token_count} tokens)"
-        )
+        logger.debug(f"Created segment {segment_id}: {topic_label} ({segment.token_count} tokens)")
 
         return segment
 
@@ -495,9 +477,7 @@ class TopicSegmenter:
     def get_recent_segments(self, n: int = 10) -> List[TopicSegment]:
         """최근 n개 세그먼트 조회."""
         recent_ids = self.segment_order[-n:] if self.segment_order else []
-        return [
-            self.segments[sid] for sid in reversed(recent_ids) if sid in self.segments
-        ]
+        return [self.segments[sid] for sid in reversed(recent_ids) if sid in self.segments]
 
     def search_segments(
         self, query: str, top_k: int = 5, topic_filter: str | None = None
@@ -519,9 +499,7 @@ class TopicSegmenter:
 
         if topic_filter:
             segment_ids = self.topic_clusters.get(topic_filter, [])
-            segments_to_search = [
-                self.segments[sid] for sid in segment_ids if sid in self.segments
-            ]
+            segments_to_search = [self.segments[sid] for sid in segment_ids if sid in self.segments]
 
         for segment in segments_to_search:
             # 키워드 매칭 점수
@@ -549,9 +527,7 @@ class TopicSegmenter:
             "total_tokens": total_tokens,
             "topic_clusters": len(self.topic_clusters),
             "topics": list(self.topic_clusters.keys()),
-            "avg_tokens_per_segment": total_tokens / total_segments
-            if total_segments > 0
-            else 0,
+            "avg_tokens_per_segment": total_tokens / total_segments if total_segments > 0 else 0,
             "buffer_fill_ratio": self.sensory_buffer.fill_ratio,
         }
 

@@ -106,9 +106,7 @@ class ContextCache:
                 # LRU: 가장 최근 사용으로 이동
                 self.cache.move_to_end(cache_key)
 
-                logger.debug(
-                    f"Cache hit: {cache_key} (access_count={cached.access_count})"
-                )
+                logger.debug(f"Cache hit: {cache_key} (access_count={cached.access_count})")
                 return cached
 
             # 유사 쿼리 검색 (쿼리가 제공된 경우)
@@ -191,9 +189,7 @@ class ContextCache:
                 import re
 
                 pattern_re = re.compile(pattern)
-                keys_to_remove = [
-                    key for key in self.cache.keys() if pattern_re.search(key)
-                ]
+                keys_to_remove = [key for key in self.cache.keys() if pattern_re.search(key)]
                 for key in keys_to_remove:
                     del self.cache[key]
                 logger.info(
@@ -216,9 +212,7 @@ class ContextCache:
         try:
             cutoff_time = datetime.now() - timedelta(hours=self.ttl_hours)
             expired_keys = [
-                key
-                for key, cached in self.cache.items()
-                if cached.created_at < cutoff_time
+                key for key, cached in self.cache.items() if cached.created_at < cutoff_time
             ]
 
             for key in expired_keys:
@@ -243,16 +237,16 @@ class ContextCache:
             "max_size": self.max_size,
             "total_accesses": total_accesses,
             "average_accesses": avg_access,
-            "oldest_entry": min(
-                (cached.created_at for cached in self.cache.values()), default=None
-            ).isoformat()
-            if self.cache
-            else None,
-            "newest_entry": max(
-                (cached.created_at for cached in self.cache.values()), default=None
-            ).isoformat()
-            if self.cache
-            else None,
+            "oldest_entry": (
+                min((cached.created_at for cached in self.cache.values()), default=None).isoformat()
+                if self.cache
+                else None
+            ),
+            "newest_entry": (
+                max((cached.created_at for cached in self.cache.values()), default=None).isoformat()
+                if self.cache
+                else None
+            ),
         }
 
     def _generate_query_signature(self, query: str) -> str:
@@ -264,9 +258,7 @@ class ContextCache:
         sig_str = " ".join(sorted(set(words)))
         return hashlib.md5(sig_str.encode()).hexdigest()[:16]
 
-    def _find_similar_context(
-        self, query: str, exclude_key: str
-    ) -> CachedContext | None:
+    def _find_similar_context(self, query: str, exclude_key: str) -> CachedContext | None:
         """유사한 컨텍스트 찾기."""
         try:
             query_sig = self._generate_query_signature(query)
@@ -275,9 +267,7 @@ class ContextCache:
             for key, cached in self.cache.items():
                 if key != exclude_key and cached.query_signature == query_sig:
                     # TTL 확인
-                    if datetime.now() - cached.created_at <= timedelta(
-                        hours=self.ttl_hours
-                    ):
+                    if datetime.now() - cached.created_at <= timedelta(hours=self.ttl_hours):
                         cached.last_accessed = datetime.now()
                         cached.access_count += 1
                         self.cache.move_to_end(key)

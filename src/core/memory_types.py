@@ -84,9 +84,9 @@ class EpisodicMemory(BaseMemory):
         base_dict = super().to_dict()
         base_dict.update(
             {
-                "event_timestamp": self.event_timestamp.isoformat()
-                if self.event_timestamp
-                else None,
+                "event_timestamp": (
+                    self.event_timestamp.isoformat() if self.event_timestamp else None
+                ),
                 "session_id": self.session_id,
                 "context": self.context,
             }
@@ -138,15 +138,15 @@ def create_memory_from_dict(data: Dict[str, Any]) -> BaseMemory:
     }
 
     if memory_type == MemoryType.SEMANTIC:
-        return SemanticMemory(
-            **base_fields, facts=data.get("facts", []), domain=data.get("domain")
-        )
+        return SemanticMemory(**base_fields, facts=data.get("facts", []), domain=data.get("domain"))
     elif memory_type == MemoryType.EPISODIC:
         return EpisodicMemory(
             **base_fields,
-            event_timestamp=datetime.fromisoformat(data["event_timestamp"])
-            if data.get("event_timestamp")
-            else None,
+            event_timestamp=(
+                datetime.fromisoformat(data["event_timestamp"])
+                if data.get("event_timestamp")
+                else None
+            ),
             session_id=data.get("session_id"),
             context=data.get("context", {}),
         )

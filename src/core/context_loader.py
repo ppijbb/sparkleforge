@@ -76,9 +76,7 @@ class ContextLoader:
                 for filename in self.CONTEXT_FILENAMES:
                     context_path = current / filename
                     if context_path.exists():
-                        context_file = await self._load_context_file(
-                            context_path, level
-                        )
+                        context_file = await self._load_context_file(context_path, level)
                         if context_file:
                             context_files.append(context_file)
                             break  # 한 디렉토리당 하나의 파일만
@@ -138,9 +136,7 @@ class ContextLoader:
             content = path.read_text(encoding="utf-8", errors="ignore")
             content_hash = hashlib.md5(content.encode()).hexdigest()
 
-            context_file = ContextFile(
-                path=path, content=content, level=level, hash=content_hash
-            )
+            context_file = ContextFile(path=path, content=content, level=level, hash=content_hash)
 
             # 캐시 저장
             self._cache[cache_key] = context_file

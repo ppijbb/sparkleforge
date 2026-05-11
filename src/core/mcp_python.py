@@ -29,7 +29,7 @@ def resolve_mcp_python_executable(configured: str | None) -> str:
 
 
 def normalize_mcp_servers_python_commands(mcp_servers: dict) -> dict:
-    """mcpServers dict의 각 항목에 대해 command를 정규화."""
+    """McpServers dict의 각 항목에 대해 command를 정규화."""
     out: dict = {}
     for name, cfg in mcp_servers.items():
         if not isinstance(cfg, dict):

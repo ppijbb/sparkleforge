@@ -39,9 +39,7 @@ class ResearchPipeline(AgentPipeline):
         if storage is None:
             if agent_state is None:
                 raise ValueError("Either storage or agent_state must be provided")
-            self.storage = StorageFactory.create_agent_state_storage(
-                agent_state, session_id
-            )
+            self.storage = StorageFactory.create_agent_state_storage(agent_state, session_id)
         else:
             self.storage = storage
 

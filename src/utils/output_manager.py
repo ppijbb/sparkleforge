@@ -219,9 +219,7 @@ class UserCenteredOutputManager:
         formatted_message = message
 
         if agent_name:
-            formatted_message = (
-                f"{self._format_agent_name(agent_name)} {formatted_message}"
-            )
+            formatted_message = f"{self._format_agent_name(agent_name)} {formatted_message}"
 
         if status_type:
             formatted_message = self._format_status(formatted_message, status_type)
@@ -257,9 +255,7 @@ class UserCenteredOutputManager:
             result_preview += "..."
 
         # 메시지 구성
-        message = (
-            f"{icon} 도구 '{tool_result.tool_name}' 실행 완료 ({exec_time}){confidence}"
-        )
+        message = f"{icon} 도구 '{tool_result.tool_name}' 실행 완료 ({exec_time}){confidence}"
         if result_preview:
             message += f"\n    결과: {result_preview}"
 
@@ -291,9 +287,7 @@ class UserCenteredOutputManager:
             topics = ", ".join(comm_info.discussion_topics)
             message += f" - 토론 주제: {topics}"
 
-        await self.output(
-            message, level=OutputLevel.SERVICE, agent_name=comm_info.agent_id
-        )
+        await self.output(message, level=OutputLevel.SERVICE, agent_name=comm_info.agent_id)
 
         # 통계 업데이트
         self.stats["agents_communicated"] += 1
@@ -382,17 +376,11 @@ class UserCenteredOutputManager:
             return
 
         progress = self.current_progress
-        percentage = (
-            (progress.current / progress.total * 100) if progress.total > 0 else 0
-        )
+        percentage = (progress.current / progress.total * 100) if progress.total > 0 else 0
 
         # 진행률 바
         bar_width = 40
-        filled = (
-            int(bar_width * progress.current / progress.total)
-            if progress.total > 0
-            else 0
-        )
+        filled = int(bar_width * progress.current / progress.total) if progress.total > 0 else 0
         bar = "█" * filled + "░" * (bar_width - filled)
 
         # 예상 시간
@@ -435,9 +423,7 @@ class UserCenteredOutputManager:
         )
 
         if self.stats["tools_executed"] > 0:
-            success_rate = (
-                self.stats["tools_successful"] / self.stats["tools_executed"] * 100
-            )
+            success_rate = self.stats["tools_successful"] / self.stats["tools_executed"] * 100
             await self.output(f"📈 성공률: {success_rate:.1f}%", level=OutputLevel.USER)
 
         await self.output(

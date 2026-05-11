@@ -36,13 +36,9 @@ class TaskDependencyGraph:
             tasks: 태스크 딕셔너리 리스트 (task_id, dependencies 필드 포함)
         """
         if not HAS_NETWORKX:
-            raise ImportError(
-                "networkx is required. Install with: pip install networkx"
-            )
+            raise ImportError("networkx is required. Install with: pip install networkx")
 
-        self.tasks = {
-            task.get("task_id", f"task_{i}"): task for i, task in enumerate(tasks)
-        }
+        self.tasks = {task.get("task_id", f"task_{i}"): task for i, task in enumerate(tasks)}
         self.graph = nx.DiGraph()
         self._build_graph()
 
@@ -69,9 +65,7 @@ class TaskDependencyGraph:
                     self.graph.add_edge(dep_id, task_id)
                     logger.debug(f"  Dependency: {dep_id} -> {task_id}")
                 else:
-                    logger.warning(
-                        f"  ⚠️ Unknown dependency: {dep_id} (referenced by {task_id})"
-                    )
+                    logger.warning(f"  ⚠️ Unknown dependency: {dep_id} (referenced by {task_id})")
 
         # 사이클 검증
         if not nx.is_directed_acyclic_graph(self.graph):
@@ -166,9 +160,9 @@ class TaskDependencyGraph:
             self.running_tasks.remove(task_id)
         self.completed_tasks.add(task_id)
         if result is not None:
-             # 결과 저장 (옵션)
-             if task_id in self.tasks:
-                 self.tasks[task_id]["result"] = result
+            # 결과 저장 (옵션)
+            if task_id in self.tasks:
+                self.tasks[task_id]["result"] = result
         logger.debug(f"  Task {task_id} marked as completed")
 
     def mark_running(self, task_id: str, agent_id: str = "unknown"):
@@ -212,9 +206,7 @@ class TaskDependencyGraph:
 
             if not current_level:
                 # 사이클이 있거나 의존성 문제
-                logger.warning(
-                    f"  ⚠️ Cannot determine next level. Remaining tasks: {remaining}"
-                )
+                logger.warning(f"  ⚠️ Cannot determine next level. Remaining tasks: {remaining}")
                 # 남은 태스크를 모두 현재 레벨에 추가
                 current_level = list(remaining)
 

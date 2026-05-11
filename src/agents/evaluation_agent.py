@@ -156,9 +156,7 @@ class EvaluationAgent:
         objective_id: str = None,
     ) -> Dict[str, Any]:
         """연구 결과 평가 (8대 혁신 통합)."""
-        logger.info(
-            f"🔬 Starting evaluation with 8 core innovations for objective: {objective_id}"
-        )
+        logger.info(f"🔬 Starting evaluation with 8 core innovations for objective: {objective_id}")
 
         # Production-Grade Reliability로 평가 실행
         return await execute_with_reliability(
@@ -186,9 +184,7 @@ class EvaluationAgent:
         )
 
         # Phase 2: Individual Result Evaluation (Multi-Model Orchestration)
-        logger.info(
-            "2. 📊 Evaluating individual results with Multi-Model Orchestration"
-        )
+        logger.info("2. 📊 Evaluating individual results with Multi-Model Orchestration")
         individual_evaluations = await self._evaluate_individual_results(
             execution_results, original_objectives
         )
@@ -210,9 +206,7 @@ class EvaluationAgent:
         gap_analysis = await self._analyze_gaps(execution_results, original_objectives)
 
         # Phase 6: Refinement Recommendations (Universal MCP Hub)
-        logger.info(
-            "6. 💡 Generating refinement recommendations with Universal MCP Hub"
-        )
+        logger.info("6. 💡 Generating refinement recommendations with Universal MCP Hub")
         refinement_recommendations = await self._generate_refinement_recommendations(
             individual_evaluations, overall_quality, alignment_assessment, gap_analysis
         )
@@ -240,9 +234,7 @@ class EvaluationAgent:
         )
 
         # Council 활성화 확인 및 적용 (품질 평가가 중요한 경우 - 기본 활성화)
-        use_council = (
-            context.get("use_council", None) if context else None
-        )  # 수동 활성화 옵션
+        use_council = context.get("use_council", None) if context else None  # 수동 활성화 옵션
         if use_council is None:
             # 자동 활성화 판단 (기본 활성화)
             from src.core.council_activator import get_council_activator
@@ -251,12 +243,12 @@ class EvaluationAgent:
 
             activation_decision = activator.should_activate(
                 process_type="evaluation",
-                query=str(original_objectives[0].get("description", ""))
-                if original_objectives
-                else "",
-                context={
-                    "requires_multi_perspective": True
-                },  # 평가는 항상 다방면 검토 필요
+                query=(
+                    str(original_objectives[0].get("description", ""))
+                    if original_objectives
+                    else ""
+                ),
+                context={"requires_multi_perspective": True},  # 평가는 항상 다방면 검토 필요
             )
             use_council = activation_decision.should_activate
             if use_council:
@@ -315,9 +307,7 @@ Provide a review with:
                 }
             except Exception as e:
                 council_review_data = None
-                logger.warning(
-                    f"🔬 Council review failed: {e}. Using original evaluation results."
-                )
+                logger.warning(f"🔬 Council review failed: {e}. Using original evaluation results.")
                 # Council 실패 시 원본 평가 결과 사용 (fallback 제거 - 명확한 로깅만)
         else:
             council_review_data = None
@@ -363,27 +353,20 @@ Provide a review with:
                     )
 
                     # 각 Executor 결과에 대해 논박 수행
-                    for executor_result in executor_shared_results[
-                        :5
-                    ]:  # 최대 5개 결과에 대해 논박
+                    for executor_result in executor_shared_results[:5]:  # 최대 5개 결과에 대해 논박
                         # 다른 Evaluator들의 평가 결과도 가져오기
-                        other_evaluators = (
-                            await shared_results_manager.get_shared_results(
-                                agent_id=None, exclude_agent_id=agent_id
-                            )
+                        other_evaluators = await shared_results_manager.get_shared_results(
+                            agent_id=None, exclude_agent_id=agent_id
                         )
                         other_evaluator_results = [
-                            r
-                            for r in other_evaluators
-                            if r.agent_id.startswith("evaluator")
+                            r for r in other_evaluators if r.agent_id.startswith("evaluator")
                         ]
 
                         # 논박 수행
                         debate_result = await discussion_manager.agent_discuss_result(
                             result_id=executor_result.task_id,
                             agent_id=agent_id,
-                            other_agent_results=other_evaluator_results[:3]
-                            + [executor_result],
+                            other_agent_results=other_evaluator_results[:3] + [executor_result],
                             discussion_type="evaluation",
                         )
 
@@ -416,14 +399,9 @@ Provide a review with:
             "innovation_stats": {
                 "verification_applied": len(verification_results.get("stages", [])),
                 "models_used": list(
-                    set(
-                        eval.get("model_used", "unknown")
-                        for eval in individual_evaluations
-                    )
+                    set(eval.get("model_used", "unknown") for eval in individual_evaluations)
                 ),
-                "compression_ratio": compressed_evaluation.get(
-                    "compression_ratio", 1.0
-                ),
+                "compression_ratio": compressed_evaluation.get("compression_ratio", 1.0),
                 "overall_confidence": overall_quality.get("overall_score", 0.8),
             },
             "evaluation_debates": evaluation_debates,  # 논박 결과 추가
@@ -468,11 +446,9 @@ Provide a review with:
                     "stage_2_cross": cross_score,
                     "stage_3_external": external_score,
                     "final_score": final_score,
-                    "confidence_level": "high"
-                    if final_score >= 0.8
-                    else "medium"
-                    if final_score >= 0.6
-                    else "low",
+                    "confidence_level": (
+                        "high" if final_score >= 0.8 else "medium" if final_score >= 0.6 else "low"
+                    ),
                 }
             )
 
@@ -517,9 +493,7 @@ Provide a review with:
             evaluation_result = await execute_llm_task(
                 prompt=evaluation_prompt,
                 task_type=TaskType.VERIFICATION,
-                system_message=self.config.prompts["quality_evaluation"][
-                    "system_message"
-                ],
+                system_message=self.config.prompts["quality_evaluation"]["system_message"],
                 use_ensemble=True,  # Weighted Ensemble 사용
             )
 
@@ -531,9 +505,7 @@ Provide a review with:
                     "result_id": result.get("task_id", str(uuid.uuid4())),
                     "result_type": result.get("agent", "unknown"),
                     "quality_score": evaluation_data.get("quality_score", 0.8),
-                    "completeness_score": evaluation_data.get(
-                        "completeness_score", 0.8
-                    ),
+                    "completeness_score": evaluation_data.get("completeness_score", 0.8),
                     "accuracy_score": evaluation_data.get("accuracy_score", 0.8),
                     "relevance_score": evaluation_data.get("relevance_score", 0.8),
                     "strengths": evaluation_data.get("strengths", []),
@@ -557,9 +529,7 @@ Provide a review with:
             return {"overall_score": 0.0, "quality_level": "poor"}
 
         # 가중 평균 계산
-        total_score = sum(
-            eval.get("quality_score", 0) for eval in individual_evaluations
-        )
+        total_score = sum(eval.get("quality_score", 0) for eval in individual_evaluations)
         overall_score = total_score / len(individual_evaluations)
 
         # quality_level 계산
@@ -587,9 +557,7 @@ Provide a review with:
             "total_evaluations": len(individual_evaluations),
             "aggregated_issues": list(set(all_issues)),
             "aggregated_strengths": list(set(all_strengths)),
-            "quality_distribution": self._calculate_quality_distribution(
-                individual_evaluations
-            ),
+            "quality_distribution": self._calculate_quality_distribution(individual_evaluations),
         }
 
     async def _check_objective_alignment(
@@ -602,7 +570,7 @@ Provide a review with:
 
         for objective in original_objectives:
             objective_id = objective.get("objective_id")
-            objective_description = objective.get("description", "")
+            objective.get("description", "")
 
             # 해당 목표와 관련된 결과 찾기
             related_results = [
@@ -621,19 +589,17 @@ Provide a review with:
 
             # 전체 정렬 계산
             overall_alignment = (
-                sum(alignment_scores) / len(alignment_scores)
-                if alignment_scores
-                else 0.0
+                sum(alignment_scores) / len(alignment_scores) if alignment_scores else 0.0
             )
 
             return {
                 "overall_alignment": overall_alignment,
                 "objective_scores": alignment_scores,
-                "alignment_level": "high"
-                if overall_alignment >= 0.8
-                else "medium"
-                if overall_alignment >= 0.6
-                else "low",
+                "alignment_level": (
+                    "high"
+                    if overall_alignment >= 0.8
+                    else "medium" if overall_alignment >= 0.6 else "low"
+                ),
                 "misaligned_objectives": [
                     i for i, score in enumerate(alignment_scores) if score < 0.6
                 ],
@@ -666,17 +632,13 @@ Provide a review with:
         gaps.extend(quality_gaps)
 
         # 완성도 갭 확인
-        completeness_gaps = self._identify_completeness_gaps(
-            execution_results, original_objectives
-        )
+        completeness_gaps = self._identify_completeness_gaps(execution_results, original_objectives)
         gaps.extend(completeness_gaps)
 
         return {
             "total_gaps": len(gaps),
             "high_severity_gaps": len([g for g in gaps if g.get("severity") == "high"]),
-            "medium_severity_gaps": len(
-                [g for g in gaps if g.get("severity") == "medium"]
-            ),
+            "medium_severity_gaps": len([g for g in gaps if g.get("severity") == "medium"]),
             "low_severity_gaps": len([g for g in gaps if g.get("severity") == "low"]),
             "gaps": gaps,
         }
@@ -780,9 +742,7 @@ Provide a review with:
             ),
         }
 
-    async def _compress_evaluation_results(
-        self, evaluation_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _compress_evaluation_results(self, evaluation_data: Dict[str, Any]) -> Dict[str, Any]:
         """평가 결과 압축 (Hierarchical Compression)."""
         try:
             compressed = await compress_data(evaluation_data)
@@ -839,9 +799,7 @@ Provide a review with:
         # 실제 구현에서는 더 정교한 정렬 점수 계산
         return 0.8
 
-    def _calculate_quality_distribution(
-        self, evaluations: List[Dict[str, Any]]
-    ) -> Dict[str, int]:
+    def _calculate_quality_distribution(self, evaluations: List[Dict[str, Any]]) -> Dict[str, int]:
         """품질 점수 분포 계산."""
         distribution = {"excellent": 0, "good": 0, "acceptable": 0, "poor": 0}
         for eval_result in evaluations:
@@ -856,9 +814,7 @@ Provide a review with:
                 distribution["poor"] += 1
         return distribution
 
-    def _identify_quality_gaps(
-        self, results: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _identify_quality_gaps(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """품질 갭 식별."""
         gaps = []
         for result in results:
@@ -895,9 +851,7 @@ Provide a review with:
 
         return gaps
 
-    def _calculate_recursion_confidence(
-        self, quality: float, alignment: float, gaps: int
-    ) -> float:
+    def _calculate_recursion_confidence(self, quality: float, alignment: float, gaps: int) -> float:
         """재귀 결정 신뢰도 계산."""
         # 임계값보다 명확히 낮을 때 더 높은 신뢰도
         confidence = 0.5

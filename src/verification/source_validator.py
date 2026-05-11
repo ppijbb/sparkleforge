@@ -198,9 +198,7 @@ class SourceValidator:
             "commerce.gov",
         ]
 
-    async def validate_source(
-        self, url: str, content: str | None = None
-    ) -> SourceCredibility:
+    async def validate_source(self, url: str, content: str | None = None) -> SourceCredibility:
         """출처를 종합적으로 검증합니다.
 
         Args:
@@ -252,21 +250,15 @@ class SourceValidator:
                 author=author,
                 institution=institution,
                 verification_status=verification_status,
-                confidence=self._calculate_confidence(
-                    overall_score, domain_trust, authority_score
-                ),
+                confidence=self._calculate_confidence(overall_score, domain_trust, authority_score),
                 metadata={
                     "validation_timestamp": datetime.now(UTC).isoformat(),
                     "domain_analysis": self._analyze_domain(url),
-                    "content_analysis": self._analyze_content(content)
-                    if content
-                    else None,
+                    "content_analysis": self._analyze_content(content) if content else None,
                 },
             )
 
-            logger.info(
-                f"Source validation completed: {url} - Score: {overall_score:.3f}"
-            )
+            logger.info(f"Source validation completed: {url} - Score: {overall_score:.3f}")
             return credibility
 
         except Exception as e:
@@ -405,9 +397,7 @@ class SourceValidator:
             logger.warning(f"Recency evaluation failed for {url}: {e}")
             return 0.5, None
 
-    async def _extract_publication_date(
-        self, url: str, content: str
-    ) -> datetime | None:
+    async def _extract_publication_date(self, url: str, content: str) -> datetime | None:
         """게시일을 추출합니다."""
         try:
             # newspaper3k를 사용한 메타데이터 추출
@@ -437,9 +427,7 @@ class SourceValidator:
                     if date_str:
                         try:
                             # ISO 형식 파싱
-                            return datetime.fromisoformat(
-                                date_str.replace("Z", "+00:00")
-                            )
+                            return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
                         except:
                             continue
 
@@ -474,8 +462,7 @@ class SourceValidator:
                 authority_score += 0.2
                 # 저자 이름에서 학위나 직책 확인
                 if any(
-                    title in author.lower()
-                    for title in ["dr.", "prof.", "professor", "phd", "md"]
+                    title in author.lower() for title in ["dr.", "prof.", "professor", "phd", "md"]
                 ):
                     authority_score += 0.2
 
@@ -513,9 +500,7 @@ class SourceValidator:
             logger.warning(f"Authority evaluation failed for {url}: {e}")
             return 0.5, AuthorityLevel.UNKNOWN, None, None
 
-    async def _extract_author_info(
-        self, url: str, content: str
-    ) -> Tuple[str | None, str | None]:
+    async def _extract_author_info(self, url: str, content: str) -> Tuple[str | None, str | None]:
         """저자 및 기관 정보를 추출합니다."""
         try:
             soup = BeautifulSoup(content, "html.parser")
@@ -581,9 +566,7 @@ class SourceValidator:
         """인용 횟수를 평가합니다."""
         try:
             # MCP 도구를 사용하여 학술 검색
-            search_result = await execute_tool(
-                "scholar", {"query": url, "max_results": 5}
-            )
+            search_result = await execute_tool("scholar", {"query": url, "max_results": 5})
 
             if search_result.get("success", False):
                 citations = search_result.get("data", [])
@@ -629,9 +612,7 @@ class SourceValidator:
         """신뢰도를 계산합니다."""
         # 점수 일관성 기반 신뢰도
         scores = [overall_score, domain_trust, authority_score]
-        variance = sum(
-            (score - sum(scores) / len(scores)) ** 2 for score in scores
-        ) / len(scores)
+        variance = sum((score - sum(scores) / len(scores)) ** 2 for score in scores) / len(scores)
         consistency = 1.0 - min(1.0, variance)
 
         # 기본 신뢰도
@@ -661,13 +642,9 @@ class SourceValidator:
 
         return {
             "word_count": len(content.split()),
-            "has_meta_description": bool(
-                soup.find("meta", attrs={"name": "description"})
-            ),
+            "has_meta_description": bool(soup.find("meta", attrs={"name": "description"})),
             "has_meta_keywords": bool(soup.find("meta", attrs={"name": "keywords"})),
-            "has_structured_data": bool(
-                soup.find("script", type="application/ld+json")
-            ),
+            "has_structured_data": bool(soup.find("script", type="application/ld+json")),
             "heading_count": len(soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])),
         }
 
@@ -697,9 +674,7 @@ class SourceValidator:
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 logger.error(f"Batch validation failed for {urls[i]}: {result}")
-                validated_results.append(
-                    self._create_failed_credibility(urls[i], str(result))
-                )
+                validated_results.append(self._create_failed_credibility(urls[i], str(result)))
             else:
                 validated_results.append(result)
 

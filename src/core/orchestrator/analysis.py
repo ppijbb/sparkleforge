@@ -1,16 +1,17 @@
 import asyncio
-import logging
 import json
+import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List
 
-from src.core.orchestrator.state import ResearchState
-from src.core.orchestrator.base_node import BaseNode
 from src.core.llm_manager import TaskType, execute_llm_task
+from src.core.orchestrator.base_node import BaseNode
+from src.core.orchestrator.state import ResearchState
 from src.core.streaming_manager import EventType
 
 logger = logging.getLogger(__name__)
+
 
 class AnalysisNode(BaseNode):
     """Handler for research objective analysis."""
@@ -76,9 +77,11 @@ class AnalysisNode(BaseNode):
             data={
                 "stage": "analysis",
                 "message": "Starting objective analysis",
-                "request": state["user_request"][:100] + "..."
-                if len(state["user_request"]) > 100
-                else state["user_request"],
+                "request": (
+                    state["user_request"][:100] + "..."
+                    if len(state["user_request"]) > 100
+                    else state["user_request"]
+                ),
             },
             priority=1,
         )
@@ -136,29 +139,21 @@ class AnalysisNode(BaseNode):
                         break
 
                     last_error = "LLM returned unparseable response"
-                    logger.warning(
-                        f"Analysis parse attempt {attempt + 1}/3 failed, retrying..."
-                    )
+                    logger.warning(f"Analysis parse attempt {attempt + 1}/3 failed, retrying...")
 
                 except Exception as e:
                     last_error = str(e)
                     logger.warning(f"Analysis attempt {attempt + 1}/3 failed: {e}")
 
                 if attempt < 2:
-                    await asyncio.sleep(1.0 * (2 ** attempt))
+                    await asyncio.sleep(1.0 * (2**attempt))
 
             if analysis_data is None:
-                raise RuntimeError(
-                    f"Analysis failed after 3 attempts. Last error: {last_error}"
-                )
+                raise RuntimeError(f"Analysis failed after 3 attempts. Last error: {last_error}")
 
-            logger.info(
-                f"🎯 Identified objectives: {len(analysis_data.get('objectives', []))}"
-            )
+            logger.info(f"🎯 Identified objectives: {len(analysis_data.get('objectives', []))}")
             logger.info(f"🧠 Complexity score: {analysis_data.get('complexity', 5.0)}")
-            logger.info(
-                f"🏷️ Domain: {analysis_data.get('domain', {}).get('fields', [])}"
-            )
+            logger.info(f"🏷️ Domain: {analysis_data.get('domain', {}).get('fields', [])}")
 
             # 유사 연구 검색
             similar_research = await self._search_similar_research(
@@ -240,9 +235,7 @@ class AnalysisNode(BaseNode):
         logger.warning("Analysis result is not JSON")
         return None
 
-    async def _search_similar_research(
-        self, query: str, user_id: str
-    ) -> List[Dict[str, Any]]:
+    async def _search_similar_research(self, query: str, user_id: str) -> List[Dict[str, Any]]:
         """유사한 과거 연구를 검색합니다."""
         try:
             similar_research = await self.hybrid_storage.search_similar_research(
@@ -258,9 +251,7 @@ class AnalysisNode(BaseNode):
                         "summary": research.summary,
                         "similarity_score": research.similarity_score,
                         "timestamp": research.timestamp.isoformat(),
-                        "confidence_score": research.metadata.get(
-                            "confidence_score", 0.0
-                        ),
+                        "confidence_score": research.metadata.get("confidence_score", 0.0),
                     }
                 )
 

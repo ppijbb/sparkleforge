@@ -51,23 +51,16 @@ class AgentPool:
         self.available_agents: Dict[str, List[str]] = defaultdict(
             list
         )  # {agent_type: [agent_id, ...]}
-        self.busy_agents: Dict[str, Set[str]] = defaultdict(
-            set
-        )  # {agent_type: {agent_id, ...}}
+        self.busy_agents: Dict[str, Set[str]] = defaultdict(set)  # {agent_type: {agent_id, ...}}
         self._lock = asyncio.Lock()
 
         logger.info(f"AgentPool initialized with max_pool_size={max_pool_size}")
 
-    async def get_agent(
-        self, agent_type: str, agent_factory: Callable | None = None
-    ) -> Any | None:
+    async def get_agent(self, agent_type: str, agent_factory: Callable | None = None) -> Any | None:
         """사용 가능한 agent 가져오기 또는 생성."""
         async with self._lock:
             # 사용 가능한 agent 확인
-            if (
-                agent_type in self.available_agents
-                and self.available_agents[agent_type]
-            ):
+            if agent_type in self.available_agents and self.available_agents[agent_type]:
                 agent_id = self.available_agents[agent_type].pop(0)
                 agent_item = self.agents[agent_type][agent_id]
                 agent_item.mark_used()
@@ -126,9 +119,7 @@ class AgentPool:
                     if agent_id in self.busy_agents[agent_type]:
                         self.busy_agents[agent_type].remove(agent_id)
                     self.available_agents[agent_type].append(agent_id)
-                    logger.debug(
-                        f"Returned agent {agent_id} of type {agent_type} to pool"
-                    )
+                    logger.debug(f"Returned agent {agent_id} of type {agent_type} to pool")
                     return True
 
             logger.warning(f"Agent instance not found in pool for type {agent_type}")

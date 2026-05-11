@@ -66,9 +66,7 @@ class DynamicTask(BaseModel):
 
     # 의존성
     depends_on: List[str] = Field(default_factory=list, description="의존 태스크 ID들")
-    blocks: List[str] = Field(
-        default_factory=list, description="이 태스크가 블록하는 태스크 ID들"
-    )
+    blocks: List[str] = Field(default_factory=list, description="이 태스크가 블록하는 태스크 ID들")
 
     # 실행 정보
     assigned_agent: str | None = Field(default=None, description="할당된 에이전트")
@@ -81,15 +79,11 @@ class DynamicTask(BaseModel):
     error: str | None = Field(default=None, description="오류 메시지")
 
     # 메타데이터
-    spawned_by: str | None = Field(
-        default=None, description="이 태스크를 생성한 태스크 ID"
-    )
+    spawned_by: str | None = Field(default=None, description="이 태스크를 생성한 태스크 ID")
     spawned_tasks: List[str] = Field(
         default_factory=list, description="이 태스크가 생성한 태스크 ID들"
     )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="추가 메타데이터"
-    )
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="추가 메타데이터")
 
     class Config:
         arbitrary_types_allowed = True
@@ -182,9 +176,7 @@ class PhaseManager:
     def __init__(self):
         self.current_phase = WorkflowPhase.ANALYSIS
         self.phase_history: List[PhaseTransition] = []
-        self.phase_tasks: Dict[WorkflowPhase, List[str]] = {
-            phase: [] for phase in WorkflowPhase
-        }
+        self.phase_tasks: Dict[WorkflowPhase, List[str]] = {phase: [] for phase in WorkflowPhase}
 
         # 단계별 완료 조건
         self.phase_completion_threshold = {
@@ -397,9 +389,7 @@ class TaskQueue:
         self.priority_queues[new_priority].insert(0, task_id)
         task.priority = new_priority
 
-        logger.info(
-            f"Priority bumped for {task_id}: {old_priority.value} -> {new_priority.value}"
-        )
+        logger.info(f"Priority bumped for {task_id}: {old_priority.value} -> {new_priority.value}")
 
     def get_pending_count(self, phase: WorkflowPhase | None = None) -> int:
         """대기 중인 태스크 수."""
@@ -436,9 +426,7 @@ class DynamicWorkflowEngine:
     Phase 기반 워크플로우 + 동적 태스크 생성을 통합 관리.
     """
 
-    def __init__(
-        self, max_concurrent_tasks: int = 5, auto_phase_transition: bool = True
-    ):
+    def __init__(self, max_concurrent_tasks: int = 5, auto_phase_transition: bool = True):
         if max_concurrent_tasks <= 0:
             raise ValueError("max_concurrent_tasks must be positive")
 
@@ -565,15 +553,11 @@ class DynamicWorkflowEngine:
 
                     if new_task:
                         self.task_queue.add(new_task)
-                        self.phase_manager.add_task_to_phase(
-                            new_task.task_id, new_task.phase
-                        )
+                        self.phase_manager.add_task_to_phase(new_task.task_id, new_task.phase)
                         task.spawned_tasks.append(new_task.task_id)
 
                         if self.on_task_spawned:
-                            await self._safe_callback(
-                                self.on_task_spawned, task, new_task
-                            )
+                            await self._safe_callback(self.on_task_spawned, task, new_task)
 
             logger.info(f"Task {task.task_id} completed successfully")
 

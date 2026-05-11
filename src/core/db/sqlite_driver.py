@@ -59,9 +59,7 @@ class SQLiteTransaction(Transaction):
         if self.parent:
             # 중첩 트랜잭션: Savepoint 해제
             if self.savepoint_name:
-                await self.connection.execute(
-                    f"RELEASE SAVEPOINT {self.savepoint_name}"
-                )
+                await self.connection.execute(f"RELEASE SAVEPOINT {self.savepoint_name}")
                 logger.debug(f"Savepoint released: {self.savepoint_name}")
         else:
             # 루트 트랜잭션: 커밋
@@ -80,9 +78,7 @@ class SQLiteTransaction(Transaction):
         if self.parent:
             # 중첩 트랜잭션: Savepoint로 롤백
             if self.savepoint_name:
-                await self.connection.execute(
-                    f"ROLLBACK TO SAVEPOINT {self.savepoint_name}"
-                )
+                await self.connection.execute(f"ROLLBACK TO SAVEPOINT {self.savepoint_name}")
                 logger.debug(f"Rolled back to savepoint: {self.savepoint_name}")
         else:
             # 루트 트랜잭션: 롤백
@@ -117,8 +113,7 @@ class SQLiteDriver(DatabaseDriver):
         """
         if not AIOSQLITE_AVAILABLE:
             raise ImportError(
-                "aiosqlite is required for SQLite driver. "
-                "Install it with: pip install aiosqlite"
+                "aiosqlite is required for SQLite driver. " "Install it with: pip install aiosqlite"
             )
 
         # SQLite는 파일 경로를 connection_string으로 사용
@@ -134,9 +129,7 @@ class SQLiteDriver(DatabaseDriver):
     async def connect(self) -> None:
         """데이터베이스 연결."""
         if self._connection is None:
-            self._connection = await aiosqlite.connect(
-                str(self.db_path), timeout=self.timeout
-            )
+            self._connection = await aiosqlite.connect(str(self.db_path), timeout=self.timeout)
             # 외래 키 제약 조건 활성화
             await self._connection.execute("PRAGMA foreign_keys = ON")
             await self._connection.commit()
@@ -149,9 +142,7 @@ class SQLiteDriver(DatabaseDriver):
             self._connection = None
             logger.info("SQLite disconnected")
 
-    async def begin(
-        self, isolation_level: TransactionIsolation | None = None
-    ) -> SQLiteTransaction:
+    async def begin(self, isolation_level: TransactionIsolation | None = None) -> SQLiteTransaction:
         """트랜잭션 시작.
 
         SQLite는 중첩 트랜잭션을 Savepoint로 구현합니다.
@@ -182,9 +173,7 @@ class SQLiteDriver(DatabaseDriver):
             logger.debug(f"SQLite savepoint created: {savepoint_name}")
         else:
             # 루트 트랜잭션
-            tx = SQLiteTransaction(
-                self, self._connection, isolation_level or self.isolation_level
-            )
+            tx = SQLiteTransaction(self, self._connection, isolation_level or self.isolation_level)
             logger.debug("SQLite root transaction started")
 
         return tx
@@ -192,12 +181,10 @@ class SQLiteDriver(DatabaseDriver):
     async def _commit_transaction(self, tx: SQLiteTransaction) -> None:
         """트랜잭션 커밋 (내부 메서드)."""
         # SQLiteTransaction.commit()에서 처리
-        pass
 
     async def _rollback_transaction(self, tx: SQLiteTransaction) -> None:
         """트랜잭션 롤백 (내부 메서드)."""
         # SQLiteTransaction.rollback()에서 처리
-        pass
 
     async def _execute_in_transaction(
         self, tx: SQLiteTransaction, query: str, params: Dict[str, Any] | None = None

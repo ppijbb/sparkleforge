@@ -16,6 +16,7 @@ from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
 # Configuration from environment (no hardcoded secrets)
 # ---------------------------------------------------------------------------
@@ -67,7 +68,13 @@ PUBLIC_INJECTION_PATTERNS: List[Tuple[str, str]] = list(INJECTION_PATTERNS)
 
 # Typoglycemia-style fuzzy target words (first/last letter match)
 FUZZY_DANGER_WORDS = [
-    "ignore", "bypass", "override", "reveal", "delete", "system", "prompt",
+    "ignore",
+    "bypass",
+    "override",
+    "reveal",
+    "delete",
+    "system",
+    "prompt",
 ]
 
 
@@ -76,7 +83,7 @@ class InputValidationResult:
     """Result of user input validation."""
 
     is_safe: bool
-    rejection_reason: Optional[str] = None  # Log-only; not shown to user
+    rejection_reason: str | None = None  # Log-only; not shown to user
     sanitized_text: str = ""
 
     def __post_init__(self) -> None:
@@ -91,16 +98,15 @@ class PromptInjectionFilter:
         self,
         max_length: int = MAX_USER_INPUT_LENGTH,
         enable_fuzzy: bool = True,
-        patterns: Optional[List[Tuple[str, str]]] = None,
+        patterns: List[Tuple[str, str]] | None = None,
     ) -> None:
         self.max_length = max_length
         self.enable_fuzzy = enable_fuzzy
         self._patterns = [
-            (re.compile(p, re.IGNORECASE), name)
-            for p, name in (patterns or INJECTION_PATTERNS)
+            (re.compile(p, re.IGNORECASE), name) for p, name in (patterns or INJECTION_PATTERNS)
         ]
 
-    def detect_injection(self, text: str) -> Tuple[bool, Optional[str]]:
+    def detect_injection(self, text: str) -> Tuple[bool, str | None]:
         """Returns (True, reason) if injection detected, else (False, None)."""
         if not text or not text.strip():
             return False, None
@@ -120,7 +126,7 @@ class PromptInjectionFilter:
                     return True, f"encoded_{name}"
         return False, None
 
-    def _fuzzy_match(self, text: str) -> Optional[str]:
+    def _fuzzy_match(self, text: str) -> str | None:
         """Typoglycemia-style: same first/last letter, scrambled middle."""
         words = re.findall(r"\b\w+\b", text.lower())
         for word in words:
@@ -134,7 +140,7 @@ class PromptInjectionFilter:
                         return "typoglycemia"
         return None
 
-    def _decode_and_scan(self, text: str) -> Optional[str]:
+    def _decode_and_scan(self, text: str) -> str | None:
         """If text looks like base64 or hex, decode and return for pattern scan."""
         stripped = text.strip()
         # Base64-ish (alphanumeric + /+=)
@@ -194,8 +200,8 @@ class OutputValidator:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-_input_filter: Optional[PromptInjectionFilter] = None
-_output_validator: Optional[OutputValidator] = None
+_input_filter: PromptInjectionFilter | None = None
+_output_validator: OutputValidator | None = None
 
 
 def get_input_filter() -> PromptInjectionFilter:

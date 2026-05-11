@@ -4,12 +4,11 @@ This module provides a foundation for creating FastMCP-based servers
 with consistent error handling, logging, and tool registration patterns.
 """
 
-import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 try:
     from fastmcp import FastMCP
@@ -43,12 +42,10 @@ class BaseMCPServer(ABC):
     @abstractmethod
     def register_tools(self):
         """Register all tools with the server. Must be implemented by subclasses."""
-        pass
 
     @abstractmethod
     def get_input_models(self) -> Dict[str, type]:
         """Return dict of tool_name -> Pydantic model class. Must be implemented by subclasses."""
-        pass
 
     def create_server(self) -> FastMCP:
         """Create and configure the FastMCP server."""
@@ -68,7 +65,6 @@ class BaseMCPServer(ABC):
 
     async def cleanup(self):
         """Cleanup resources. Override in subclasses if needed."""
-        pass
 
 
 def create_server_class(server_name: str, description: str = ""):
@@ -91,9 +87,7 @@ def create_server_class(server_name: str, description: str = ""):
 class MCPError(Exception):
     """Base error class for MCP server operations."""
 
-    def __init__(
-        self, message: str, code: str = "UNKNOWN_ERROR", details: Dict | None = None
-    ):
+    def __init__(self, message: str, code: str = "UNKNOWN_ERROR", details: Dict | None = None):
         self.message = message
         self.code = code
         self.details = details or {}
@@ -142,9 +136,7 @@ async def run_with_error_handling(func, *args, **kwargs) -> str:
     try:
         result = await func(*args, **kwargs)
         return (
-            result
-            if isinstance(result, str)
-            else json.dumps(result, ensure_ascii=False, indent=2)
+            result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2)
         )
     except ValidationError as e:
         logger.warning(f"Validation error: {e.message}")
@@ -181,9 +173,7 @@ def sanitize_path(path: str, base_dir: Path | None = None) -> Path:
         try:
             full_path.resolve().relative_to(base_dir.resolve())
         except ValueError:
-            raise ValidationError(
-                "Path escapes base directory", field="path", value=path
-            )
+            raise ValidationError("Path escapes base directory", field="path", value=path)
 
     return full_path
 

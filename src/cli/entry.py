@@ -16,4 +16,5 @@ def main_entry():
         sys.path.insert(0, str(project_root))
     # main 모듈은 프로젝트 루트의 main.py
     import main
+
     main.main_entry()

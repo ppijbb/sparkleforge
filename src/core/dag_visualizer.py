@@ -138,18 +138,10 @@ class DAGVisualizer:
             return {}
 
         total_tasks = len(self.task_states)
-        completed = sum(
-            1 for s in self.task_states.values() if s["status"] == TaskStatus.COMPLETED
-        )
-        running = sum(
-            1 for s in self.task_states.values() if s["status"] == TaskStatus.RUNNING
-        )
-        failed = sum(
-            1 for s in self.task_states.values() if s["status"] == TaskStatus.FAILED
-        )
-        pending = sum(
-            1 for s in self.task_states.values() if s["status"] == TaskStatus.PENDING
-        )
+        completed = sum(1 for s in self.task_states.values() if s["status"] == TaskStatus.COMPLETED)
+        running = sum(1 for s in self.task_states.values() if s["status"] == TaskStatus.RUNNING)
+        failed = sum(1 for s in self.task_states.values() if s["status"] == TaskStatus.FAILED)
+        pending = sum(1 for s in self.task_states.values() if s["status"] == TaskStatus.PENDING)
 
         # 실행 시간 계산
         total_execution_time = sum(
@@ -168,23 +160,16 @@ class DAGVisualizer:
                     if dep_id in self.task_states:
                         dep_completion = self.task_states[dep_id].get("completed_at")
                         if dep_completion:
-                            if (
-                                max_dep_completion is None
-                                or dep_completion > max_dep_completion
-                            ):
+                            if max_dep_completion is None or dep_completion > max_dep_completion:
                                 max_dep_completion = dep_completion
 
                 if max_dep_completion and state["started_at"]:
-                    wait_time = (
-                        state["started_at"] - max_dep_completion
-                    ).total_seconds()
+                    wait_time = (state["started_at"] - max_dep_completion).total_seconds()
                     if wait_time > 0:
                         dependency_wait_times.append(wait_time)
 
         avg_dependency_wait = (
-            sum(dependency_wait_times) / len(dependency_wait_times)
-            if dependency_wait_times
-            else 0
+            sum(dependency_wait_times) / len(dependency_wait_times) if dependency_wait_times else 0
         )
 
         return {
@@ -198,9 +183,11 @@ class DAGVisualizer:
             "average_dependency_wait_time": avg_dependency_wait,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
-            "duration": (self.end_time - self.start_time).total_seconds()
-            if self.start_time and self.end_time
-            else None,
+            "duration": (
+                (self.end_time - self.start_time).total_seconds()
+                if self.start_time and self.end_time
+                else None
+            ),
         }
 
     def get_task_status(self, task_id: str) -> Dict[str, Any] | None:
@@ -244,16 +231,16 @@ class DAGVisualizer:
                 {
                     "id": task_id,
                     "label": state["task"].get("name", task_id),
-                    "status": state["status"].value
-                    if isinstance(state["status"], TaskStatus)
-                    else str(state["status"]),
+                    "status": (
+                        state["status"].value
+                        if isinstance(state["status"], TaskStatus)
+                        else str(state["status"])
+                    ),
                     "type": state["task"].get("type", "research"),
-                    "started_at": state["started_at"].isoformat()
-                    if state["started_at"]
-                    else None,
-                    "completed_at": state["completed_at"].isoformat()
-                    if state["completed_at"]
-                    else None,
+                    "started_at": state["started_at"].isoformat() if state["started_at"] else None,
+                    "completed_at": (
+                        state["completed_at"].isoformat() if state["completed_at"] else None
+                    ),
                     "execution_time": state.get("execution_time"),
                     "error": state.get("error"),
                 }

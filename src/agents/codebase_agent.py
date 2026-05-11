@@ -251,9 +251,7 @@ class CodebaseAgent:
             dependencies.add(module.split("/")[0])
 
         # export 문 파싱
-        export_pattern = (
-            r"export\s+(?:default\s+)?(?:class|function|const|let|var)\s+(\w+)"
-        )
+        export_pattern = r"export\s+(?:default\s+)?(?:class|function|const|let|var)\s+(\w+)"
         for match in re.finditer(export_pattern, content):
             exports.append(match.group(1))
 
@@ -270,9 +268,7 @@ class CodebaseAgent:
         return CodeFile(
             path=file_path,
             content=content,
-            language="javascript"
-            if file_path.suffix in [".js", ".jsx"]
-            else "typescript",
+            language="javascript" if file_path.suffix in [".js", ".jsx"] else "typescript",
             imports=imports,
             exports=exports,
             classes=classes,
@@ -336,9 +332,9 @@ class CodebaseAgent:
 
         conventions["naming"] = {
             "class_style": "PascalCase" if pascal_case > snake_case else "snake_case",
-            "function_style": "snake_case"
-            if any("_" in name for name in function_names)
-            else "camelCase",
+            "function_style": (
+                "snake_case" if any("_" in name for name in function_names) else "camelCase"
+            ),
         }
 
         return conventions

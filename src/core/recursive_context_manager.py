@@ -55,12 +55,16 @@ class RecursiveContext:
             parent_context_id=data.get("parent_context_id"),
             context_data=data["context_data"],
             metadata=data.get("metadata", {}),
-            created_at=datetime.fromisoformat(data["created_at"])
-            if isinstance(data.get("created_at"), str)
-            else data.get("created_at", datetime.now()),
-            updated_at=datetime.fromisoformat(data["updated_at"])
-            if isinstance(data.get("updated_at"), str)
-            else data.get("updated_at", datetime.now()),
+            created_at=(
+                datetime.fromisoformat(data["created_at"])
+                if isinstance(data.get("created_at"), str)
+                else data.get("created_at", datetime.now())
+            ),
+            updated_at=(
+                datetime.fromisoformat(data["updated_at"])
+                if isinstance(data.get("updated_at"), str)
+                else data.get("updated_at", datetime.now())
+            ),
         )
 
 
@@ -346,9 +350,7 @@ class RecursiveContextManager:
         )
 
         self.context_cache[merged_context_id] = merged_context
-        logger.debug(
-            f"Contexts merged: {len(context_ids)} contexts -> {merged_context_id}"
-        )
+        logger.debug(f"Contexts merged: {len(context_ids)} contexts -> {merged_context_id}")
 
         return merged_context
 
@@ -465,9 +467,7 @@ class RecursiveContextManager:
             "execution_results",
         ]
 
-        present_fields = sum(
-            1 for field in required_fields if field in context.context_data
-        )
+        present_fields = sum(1 for field in required_fields if field in context.context_data)
         completeness = present_fields / len(required_fields) if required_fields else 1.0
 
         # 데이터 품질 평가

@@ -18,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader
 # PowerPoint imports
 try:
     from pptx import Presentation
-    from pptx.util import Inches, Pt
+    from pptx.util import Inches
 
     PPTX_AVAILABLE = True
 except ImportError:
@@ -44,9 +44,7 @@ class ReportGenerator:
         self.config_manager = ConfigManager(config_path)
 
         # Report settings
-        self.templates_dir = Path(
-            self.config_manager.get("templates.directory", "./templates")
-        )
+        self.templates_dir = Path(self.config_manager.get("templates.directory", "./templates"))
         self.output_dir = Path(self.config_manager.get("output.directory", "./outputs"))
         self.output_dir.mkdir(exist_ok=True)
 
@@ -128,9 +126,7 @@ class ReportGenerator:
             # Calculate metrics
             total_tasks = len(tasks)
             completed_tasks = len([t for t in tasks if t.get("status") == "completed"])
-            success_rate = (
-                (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-            )
+            success_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
             quality_score = evaluation.get("overall_score", 0)
             validation_score = validation.get("validation_score", 0)
@@ -157,9 +153,7 @@ class ReportGenerator:
                 "evaluation": evaluation,
                 "validation": validation,
                 "synthesis": synthesis,
-                "recommendations": self._extract_recommendations(
-                    evaluation, validation
-                ),
+                "recommendations": self._extract_recommendations(evaluation, validation),
                 "key_findings": self._extract_key_findings(results, synthesis),
             }
 
@@ -194,15 +188,11 @@ class ReportGenerator:
         template = self.jinja_env.get_template("comprehensive_report.j2")
         return template.render(report_data)
 
-    async def _generate_pdf_report(
-        self, content: str, report_data: Dict[str, Any]
-    ) -> str:
+    async def _generate_pdf_report(self, content: str, report_data: Dict[str, Any]) -> str:
         """Generate PDF report."""
         try:
             # Convert markdown to HTML
-            html_content = markdown.markdown(
-                content, extensions=["tables", "codehilite"]
-            )
+            html_content = markdown.markdown(content, extensions=["tables", "codehilite"])
 
             # Add CSS styling
             styled_html = f"""
@@ -252,15 +242,11 @@ class ReportGenerator:
             logger.error(f"Failed to generate PDF report: {e}")
             raise
 
-    async def _generate_html_report(
-        self, content: str, report_data: Dict[str, Any]
-    ) -> str:
+    async def _generate_html_report(self, content: str, report_data: Dict[str, Any]) -> str:
         """Generate HTML report."""
         try:
             # Convert markdown to HTML
-            html_content = markdown.markdown(
-                content, extensions=["tables", "codehilite"]
-            )
+            html_content = markdown.markdown(content, extensions=["tables", "codehilite"])
 
             # Add CSS styling
             styled_html = f"""
@@ -303,9 +289,7 @@ class ReportGenerator:
             logger.error(f"Failed to generate HTML report: {e}")
             raise
 
-    async def _generate_docx_report(
-        self, content: str, report_data: Dict[str, Any]
-    ) -> str:
+    async def _generate_docx_report(self, content: str, report_data: Dict[str, Any]) -> str:
         """Generate Word document report."""
         try:
             # Create new document
@@ -318,9 +302,7 @@ class ReportGenerator:
             # Add metadata
             doc.add_paragraph(f"Generated: {report_data['metadata']['generated_at']}")
             doc.add_paragraph(f"Report Type: {report_data['metadata']['report_type']}")
-            doc.add_paragraph(
-                f"Objective ID: {report_data['metadata']['objective_id']}"
-            )
+            doc.add_paragraph(f"Objective ID: {report_data['metadata']['objective_id']}")
 
             # Add summary section
             doc.add_heading("Executive Summary", level=1)
@@ -337,9 +319,7 @@ class ReportGenerator:
                 doc.add_heading("Research Objectives", level=1)
                 for i, objective in enumerate(report_data["objectives"], 1):
                     doc.add_heading(f"Objective {i}", level=2)
-                    doc.add_paragraph(
-                        f"Description: {objective.get('description', 'N/A')}"
-                    )
+                    doc.add_paragraph(f"Description: {objective.get('description', 'N/A')}")
                     doc.add_paragraph(f"Priority: {objective.get('priority', 'N/A')}")
                     doc.add_paragraph(f"Status: {objective.get('status', 'N/A')}")
 
@@ -377,9 +357,7 @@ class ReportGenerator:
             logger.error(f"Failed to generate DOCX report: {e}")
             raise
 
-    async def _generate_pptx_report(
-        self, content: str, report_data: Dict[str, Any]
-    ) -> str:
+    async def _generate_pptx_report(self, content: str, report_data: Dict[str, Any]) -> str:
         """Generate PowerPoint presentation report."""
         try:
             if not PPTX_AVAILABLE:
@@ -500,9 +478,7 @@ class ReportGenerator:
             logger.error(f"Failed to generate PPTX report: {e}")
             raise
 
-    async def _generate_markdown_report(
-        self, content: str, report_data: Dict[str, Any]
-    ) -> str:
+    async def _generate_markdown_report(self, content: str, report_data: Dict[str, Any]) -> str:
         """Generate Markdown report."""
         try:
             # Generate filename
@@ -536,9 +512,7 @@ class ReportGenerator:
         # Generate based on scores
         quality_score = evaluation.get("overall_score", 0)
         if quality_score < 0.7:
-            recommendations.append(
-                "Improve research quality through more thorough data collection"
-            )
+            recommendations.append("Improve research quality through more thorough data collection")
 
         validation_score = validation.get("validation_score", 0)
         if validation_score < 0.8:

@@ -112,9 +112,7 @@ class AgentVisualizer:
 
         with col3:
             overall_progress = workflow_status.get("overall_progress", 0)
-            st.metric(
-                label="Overall Progress", value=f"{overall_progress:.1f}%", delta=None
-            )
+            st.metric(label="Overall Progress", value=f"{overall_progress:.1f}%", delta=None)
 
         with col4:
             # 스트리밍 통계
@@ -283,9 +281,7 @@ class AgentVisualizer:
             yaxis_title="Progress (%)",
             yaxis=dict(range=[0, 100]),
             hovermode="x unified",
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             height=400,
         )
 
@@ -328,11 +324,7 @@ class AgentVisualizer:
 
         # 신뢰도에 따른 색상
         confidence_color = (
-            "#28A745"
-            if confidence > 0.7
-            else "#FFC107"
-            if confidence > 0.4
-            else "#DC3545"
+            "#28A745" if confidence > 0.7 else "#FFC107" if confidence > 0.4 else "#DC3545"
         )
 
         st.markdown(
@@ -386,11 +378,9 @@ class AgentVisualizer:
 
         # 최대 포인트 수 제한
         if len(st.session_state.agent_timeline[workflow_id]) > self.max_timeline_points:
-            st.session_state.agent_timeline[workflow_id] = (
-                st.session_state.agent_timeline[workflow_id][
-                    -self.max_timeline_points :
-                ]
-            )
+            st.session_state.agent_timeline[workflow_id] = st.session_state.agent_timeline[
+                workflow_id
+            ][-self.max_timeline_points :]
 
     def render_agent_flow_diagram(self, workflow_id: str) -> None:
         """에이전트 간 데이터 흐름 다이어그램을 렌더링합니다."""
@@ -413,9 +403,7 @@ class AgentVisualizer:
                         thickness=20,
                         line=dict(color="black", width=0.5),
                         label=[agent["agent_id"] for agent in agents],
-                        color=[
-                            self._get_agent_color(agent["status"]) for agent in agents
-                        ],
+                        color=[self._get_agent_color(agent["status"]) for agent in agents],
                     ),
                     link=dict(
                         source=[0, 1, 2],  # 간단한 연결 (실제로는 더 복잡한 로직 필요)

@@ -1,5 +1,12 @@
 """CDP WS holder + Unix socket relay. One daemon per BU_NAME."""
-import asyncio, json, os, socket, sys, time, urllib.request
+
+import asyncio
+import json
+import os
+import socket
+import sys
+import time
+import urllib.request
 from collections import deque
 from pathlib import Path
 
@@ -82,11 +89,14 @@ def get_ws_url():
             finally:
                 probe.close()
         return f"ws://127.0.0.1:{port.strip()}{path.strip()}"
-    raise RuntimeError(f"DevToolsActivePort not found in {[str(p) for p in PROFILES]} — enable chrome://inspect/#remote-debugging, or set BU_CDP_WS for a remote browser")
+    raise RuntimeError(
+        f"DevToolsActivePort not found in {[str(p) for p in PROFILES]} — enable chrome://inspect/#remote-debugging, or set BU_CDP_WS for a remote browser"
+    )
 
 
 def stop_remote():
-    if not REMOTE_ID or not API_KEY: return
+    if not REMOTE_ID or not API_KEY:
+        return
     try:
         req = urllib.request.Request(
             f"{BU_API}/browsers/{REMOTE_ID}",
@@ -118,18 +128,23 @@ class Daemon:
         pages = [t for t in targets if is_real_page(t)]
         if not pages:
             # No real pages — create one instead of attaching to omnibox popup
-            tid = (await self.cdp.send_raw("Target.createTarget", {"url": "about:blank"}))["targetId"]
+            tid = (await self.cdp.send_raw("Target.createTarget", {"url": "about:blank"}))[
+                "targetId"
+            ]
             log(f"no real pages found, created about:blank ({tid})")
             pages = [{"targetId": tid, "url": "about:blank", "type": "page"}]
-        self.session = (await self.cdp.send_raw(
-            "Target.attachToTarget", {"targetId": pages[0]["targetId"], "flatten": True}
-        ))["sessionId"]
-        log(f"attached {pages[0]['targetId']} ({pages[0].get('url','')[:80]}) session={self.session}")
+        self.session = (
+            await self.cdp.send_raw(
+                "Target.attachToTarget", {"targetId": pages[0]["targetId"], "flatten": True}
+            )
+        )["sessionId"]
+        log(
+            f"attached {pages[0]['targetId']} ({pages[0].get('url','')[:80]}) session={self.session}"
+        )
         for d in ("Page", "DOM", "Runtime", "Network"):
             try:
                 await asyncio.wait_for(
-                    self.cdp.send_raw(f"{d}.enable", session_id=self.session),
-                    timeout=5
+                    self.cdp.send_raw(f"{d}.enable", session_id=self.session), timeout=5
                 )
             except Exception as e:
                 log(f"enable {d}: {e}")
@@ -143,10 +158,13 @@ class Daemon:
         try:
             await self.cdp.start()
         except Exception as e:
-            raise RuntimeError(f"CDP WS handshake failed: {e} -- click Allow in Chrome if prompted, then retry")
+            raise RuntimeError(
+                f"CDP WS handshake failed: {e} -- click Allow in Chrome if prompted, then retry"
+            )
         await self.attach_first_page()
         orig = self.cdp._event_registry.handle_event
-        mark_js = "if(!document.title.startsWith('\U0001F7E2'))document.title='\U0001F7E2 '+document.title"
+        mark_js = "if(!document.title.startsWith('\U0001f7e2'))document.title='\U0001f7e2 '+document.title"
+
         async def tap(method, params, session_id=None):
             self.events.append({"method": method, "params": params, "session_id": session_id})
             if method == "Page.javascriptDialogOpening":
@@ -154,26 +172,51 @@ class Daemon:
             elif method == "Page.javascriptDialogClosed":
                 self.dialog = None
             elif method in ("Page.loadEventFired", "Page.domContentEventFired"):
-                try: await asyncio.wait_for(self.cdp.send_raw("Runtime.evaluate", {"expression": mark_js}, session_id=self.session), timeout=2)
-                except Exception: pass
+                try:
+                    await asyncio.wait_for(
+                        self.cdp.send_raw(
+                            "Runtime.evaluate", {"expression": mark_js}, session_id=self.session
+                        ),
+                        timeout=2,
+                    )
+                except Exception:
+                    pass
             return await orig(method, params, session_id)
+
         self.cdp._event_registry.handle_event = tap
 
     async def handle(self, req):
         meta = req.get("meta")
         if meta == "drain_events":
-            out = list(self.events); self.events.clear()
+            out = list(self.events)
+            self.events.clear()
             return {"events": out}
-        if meta == "session":     return {"session_id": self.session}
+        if meta == "session":
+            return {"session_id": self.session}
         if meta == "set_session":
             self.session = req.get("session_id")
             try:
-                await asyncio.wait_for(self.cdp.send_raw("Page.enable", session_id=self.session), timeout=3)
-                await asyncio.wait_for(self.cdp.send_raw("Runtime.evaluate", {"expression": "if(!document.title.startsWith('\U0001F7E2'))document.title='\U0001F7E2 '+document.title"}, session_id=self.session), timeout=2)
-            except Exception: pass
+                await asyncio.wait_for(
+                    self.cdp.send_raw("Page.enable", session_id=self.session), timeout=3
+                )
+                await asyncio.wait_for(
+                    self.cdp.send_raw(
+                        "Runtime.evaluate",
+                        {
+                            "expression": "if(!document.title.startsWith('\U0001f7e2'))document.title='\U0001f7e2 '+document.title"
+                        },
+                        session_id=self.session,
+                    ),
+                    timeout=2,
+                )
+            except Exception:
+                pass
             return {"session_id": self.session}
-        if meta == "pending_dialog": return {"dialog": self.dialog}
-        if meta == "shutdown":    self.stop.set(); return {"ok": True}
+        if meta == "pending_dialog":
+            return {"dialog": self.dialog}
+        if meta == "shutdown":
+            self.stop.set()
+            return {"ok": True}
 
         method = req["method"]
         params = req.get("params") or {}
@@ -187,7 +230,9 @@ class Daemon:
             if "Session with given id not found" in msg and sid == self.session and sid:
                 log(f"stale session {sid}, re-attaching")
                 if await self.attach_first_page():
-                    return {"result": await self.cdp.send_raw(method, params, session_id=self.session)}
+                    return {
+                        "result": await self.cdp.send_raw(method, params, session_id=self.session)
+                    }
             return {"error": msg}
 
 
@@ -198,7 +243,8 @@ async def serve(d):
     async def handler(reader, writer):
         try:
             line = await reader.readline()
-            if not line: return
+            if not line:
+                return
             resp = await d.handle(json.loads(line))
             writer.write((json.dumps(resp, default=str) + "\n").encode())
             await writer.drain()
@@ -227,9 +273,12 @@ async def main():
 
 def already_running():
     try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(1)
-        s.connect(SOCK); s.close(); return True
-    except (FileNotFoundError, ConnectionRefusedError, socket.timeout):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(1)
+        s.connect(SOCK)
+        s.close()
+        return True
+    except (TimeoutError, FileNotFoundError, ConnectionRefusedError):
         return False
 
 
@@ -248,5 +297,7 @@ if __name__ == "__main__":
         sys.exit(1)
     finally:
         stop_remote()
-        try: os.unlink(PID)
-        except FileNotFoundError: pass
+        try:
+            os.unlink(PID)
+        except FileNotFoundError:
+            pass

@@ -41,12 +41,10 @@ class BaseResearchTool(ABC):
     @abstractmethod
     async def run(self, query: str, **kwargs) -> ToolResponse:
         """Run the tool asynchronously."""
-        pass
 
     @abstractmethod
     def run_sync(self, query: str, **kwargs) -> ToolResponse:
         """Run the tool synchronously."""
-        pass
 
     def get_tool_category(self) -> ToolCategory:
         """Get tool category."""

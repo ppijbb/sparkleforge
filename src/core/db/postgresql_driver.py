@@ -58,9 +58,7 @@ class PostgreSQLTransaction(Transaction):
         if self.parent:
             # 중첩 트랜잭션: Savepoint 해제
             if self.savepoint_name:
-                await self.connection.execute(
-                    f"RELEASE SAVEPOINT {self.savepoint_name}"
-                )
+                await self.connection.execute(f"RELEASE SAVEPOINT {self.savepoint_name}")
                 logger.debug(f"Savepoint released: {self.savepoint_name}")
         else:
             # 루트 트랜잭션: 커밋
@@ -79,18 +77,14 @@ class PostgreSQLTransaction(Transaction):
         if self.parent:
             # 중첩 트랜잭션: Savepoint로 롤백
             if self.savepoint_name:
-                await self.connection.execute(
-                    f"ROLLBACK TO SAVEPOINT {self.savepoint_name}"
-                )
+                await self.connection.execute(f"ROLLBACK TO SAVEPOINT {self.savepoint_name}")
                 logger.debug(f"Rolled back to savepoint: {self.savepoint_name}")
         else:
             # 루트 트랜잭션: 롤백
             await self.connection.rollback()
 
         self.rolled_back = True
-        logger.debug(
-            f"PostgreSQL transaction rolled back (level: {self._nested_level})"
-        )
+        logger.debug(f"PostgreSQL transaction rolled back (level: {self._nested_level})")
 
 
 class PostgreSQLDriver(DatabaseDriver):
@@ -120,8 +114,7 @@ class PostgreSQLDriver(DatabaseDriver):
         """
         if not ASYNCPG_AVAILABLE:
             raise ImportError(
-                "asyncpg is required for PostgreSQL driver. "
-                "Install it with: pip install asyncpg"
+                "asyncpg is required for PostgreSQL driver. " "Install it with: pip install asyncpg"
             )
 
         super().__init__(connection_string, pool_size, max_overflow, isolation_level)
@@ -192,9 +185,7 @@ class PostgreSQLDriver(DatabaseDriver):
             await connection.execute(f"BEGIN ISOLATION LEVEL {isolation_sql}")
 
             tx = PostgreSQLTransaction(self, connection, isolation)
-            logger.debug(
-                f"PostgreSQL root transaction started (isolation: {isolation_sql})"
-            )
+            logger.debug(f"PostgreSQL root transaction started (isolation: {isolation_sql})")
 
         return tx
 

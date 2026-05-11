@@ -27,9 +27,7 @@ class MCPHealthBackgroundService:
         self._running = False
         self._task: asyncio.Task | None = None
         self.last_check: dict = {}  # server_name -> last_check_time
-        logger.info(
-            f"MCP Health Background Service initialized (interval: {interval}s)"
-        )
+        logger.info(f"MCP Health Background Service initialized (interval: {interval}s)")
 
     async def start(self):
         """백그라운드에서 주기적 헬스체크 시작"""
@@ -85,9 +83,7 @@ class MCPHealthBackgroundService:
                 try:
                     # 기존 MCPHub의 헬스체크 메서드 사용 (수정 없음)
                     if hasattr(self.mcp_hub, "_check_connection_health"):
-                        is_healthy = await self.mcp_hub._check_connection_health(
-                            server_name
-                        )
+                        is_healthy = await self.mcp_hub._check_connection_health(server_name)
                         self.last_check[server_name] = datetime.now()
 
                         if not is_healthy:
@@ -96,9 +92,7 @@ class MCPHealthBackgroundService:
                             )
                             await self._reconnect_server(server_name)
                     else:
-                        logger.debug(
-                            "Health check: _check_connection_health method not available"
-                        )
+                        logger.debug("Health check: _check_connection_health method not available")
                 except Exception as e:
                     logger.error(f"Health check failed for {server_name}: {e}")
         except Exception as e:
@@ -124,13 +118,9 @@ class MCPHealthBackgroundService:
                         except Exception:
                             pass
                     # 재연결
-                    await self.mcp_hub._connect_to_mcp_server(
-                        server_name, server_config
-                    )
+                    await self.mcp_hub._connect_to_mcp_server(server_name, server_config)
                     logger.info(f"Health check: Reconnected to {server_name}")
             else:
-                logger.warning(
-                    f"Health check: No reconnection method available for {server_name}"
-                )
+                logger.warning(f"Health check: No reconnection method available for {server_name}")
         except Exception as e:
             logger.error(f"Reconnection failed for {server_name}: {e}")

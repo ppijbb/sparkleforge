@@ -36,9 +36,7 @@ class WebSearchTool(BaseResearchTool):
         self.tool_type = ToolType.SEARCH
 
         # 검색 제공자 설정 (MCP 전용)
-        self.primary_provider = SearchProvider(
-            config.get("primary_provider", "mcp_gsearch")
-        )
+        self.primary_provider = SearchProvider(config.get("primary_provider", "mcp_gsearch"))
 
         # MCP 도구 매핑
         self.mcp_tool_mapping = {
@@ -83,9 +81,7 @@ class WebSearchTool(BaseResearchTool):
 
         return fetch_result["data"].get("content", "")
 
-    def _convert_to_search_results(
-        self, data: Dict[str, Any], query: str
-    ) -> List[SearchResult]:
+    def _convert_to_search_results(self, data: Dict[str, Any], query: str) -> List[SearchResult]:
         """데이터를 SearchResult 객체로 변환."""
         results = []
         search_results = data.get("results", [])
@@ -171,9 +167,7 @@ class WebSearchTool(BaseResearchTool):
 
         return results
 
-    async def search_with_verification(
-        self, query: str, **kwargs
-    ) -> List[SearchResult]:
+    async def search_with_verification(self, query: str, **kwargs) -> List[SearchResult]:
         """검증이 포함된 검색 (Continuous Verification - 혁신 4)."""
         # 기본 검색 실행
         results = await self.search(query, **kwargs)

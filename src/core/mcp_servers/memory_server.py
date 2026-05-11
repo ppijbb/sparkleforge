@@ -60,9 +60,7 @@ class StoreMemoryInput(BaseModel):
     content: str = Field(..., description="Content to store", min_length=1)
     memory_type: str = Field(default="short_term", description="Type of memory")
     tags: List[str] = Field(default_factory=list, description="Memory tags")
-    metadata: Dict[str, Any] | None = Field(
-        default=None, description="Additional metadata"
-    )
+    metadata: Dict[str, Any] | None = Field(default=None, description="Additional metadata")
     importance: float = Field(default=0.5, ge=0, le=1, description="Importance score")
 
 
@@ -82,9 +80,7 @@ class UpdateMemoryInput(BaseModel):
     memory_id: str = Field(..., description="Memory ID to update")
     content: str | None = Field(default=None, description="New content")
     tags: List[str] | None = Field(default=None, description="New tags")
-    importance: float | None = Field(
-        default=None, ge=0, le=1, description="New importance"
-    )
+    importance: float | None = Field(default=None, ge=0, le=1, description="New importance")
     metadata: Dict[str, Any] | None = Field(default=None, description="New metadata")
 
 
@@ -317,9 +313,7 @@ class MemoryManager:
         if memory_type:
             # Get IDs to delete
             to_delete = [
-                mid
-                for mid, m in self._memories.items()
-                if m["memory_type"] == memory_type
+                mid for mid, m in self._memories.items() if m["memory_type"] == memory_type
             ]
             for mid in to_delete:
                 self._update_index(mid, self._memories[mid]["tags"], remove=True)
@@ -442,9 +436,7 @@ async def get_memory(memory_id: str = Field(..., description="Memory ID")) -> st
     memory = manager.get(memory_id)
 
     if memory:
-        return json.dumps(
-            {"success": True, "memory": memory}, ensure_ascii=False, indent=2
-        )
+        return json.dumps({"success": True, "memory": memory}, ensure_ascii=False, indent=2)
     else:
         return json.dumps(
             {"success": False, "error": "Memory not found", "memory_id": memory_id},
@@ -477,9 +469,7 @@ async def update_memory(input: UpdateMemoryInput) -> str:
     )
 
     if memory:
-        return json.dumps(
-            {"success": True, "memory": memory}, ensure_ascii=False, indent=2
-        )
+        return json.dumps({"success": True, "memory": memory}, ensure_ascii=False, indent=2)
     else:
         return json.dumps(
             {
@@ -506,9 +496,7 @@ async def delete_memory(
     manager = get_memory_manager()
     success = manager.delete(memory_id)
 
-    return json.dumps(
-        {"success": success, "memory_id": memory_id}, ensure_ascii=False, indent=2
-    )
+    return json.dumps({"success": success, "memory_id": memory_id}, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()

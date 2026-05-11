@@ -129,9 +129,12 @@ Answer:"""
                 orig_text = _extract_text_from_messages(original_messages, max_chars=3000)
                 words = [w.strip(".,;:") for w in orig_text.split() if len(w.strip(".,;:")) > 4]
                 from collections import Counter
+
                 top = Counter(words).most_common(5)
                 expected_keywords = [w for w, _ in top]
-            score = _score_answer_by_keywords(answer, expected_keywords) if expected_keywords else 0.5
+            score = (
+                _score_answer_by_keywords(answer, expected_keywords) if expected_keywords else 0.5
+            )
             # "Not mentioned"면 낮은 점수
             if "not mentioned" in answer.lower() or "not in context" in answer.lower():
                 score = min(score, 0.3)
@@ -183,5 +186,7 @@ def evaluate_context_completeness_with_probes(
     """
     if probe_result is None:
         return completeness_score
-    combined = (1.0 - weight_probes) * completeness_score + weight_probes * probe_result.overall_score
+    combined = (
+        1.0 - weight_probes
+    ) * completeness_score + weight_probes * probe_result.overall_score
     return min(1.0, max(0.0, combined))

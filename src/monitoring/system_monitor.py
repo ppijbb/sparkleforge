@@ -96,20 +96,14 @@ class HealthMonitor:
 
         # Monitoring settings from config
         self.monitoring_interval = getattr(config.reliability, "monitoring_interval", 5)
-        self.metrics_history_size = getattr(
-            config.reliability, "metrics_history_size", 1000
-        )
+        self.metrics_history_size = getattr(config.reliability, "metrics_history_size", 1000)
         self.alert_thresholds = {
             "cpu_usage": getattr(config.reliability, "cpu_threshold", 80.0),
             "memory_usage": getattr(config.reliability, "memory_threshold", 85.0),
             "disk_usage": getattr(config.reliability, "disk_threshold", 90.0),
             "error_rate": getattr(config.reliability, "error_rate_threshold", 10.0),
-            "response_time": getattr(
-                config.reliability, "response_time_threshold", 30.0
-            ),
-            "mcp_tool_failure_rate": getattr(
-                config.reliability, "mcp_failure_threshold", 20.0
-            ),
+            "response_time": getattr(config.reliability, "response_time_threshold", 30.0),
+            "mcp_tool_failure_rate": getattr(config.reliability, "mcp_failure_threshold", 20.0),
         }
 
         # Data storage
@@ -133,9 +127,7 @@ class HealthMonitor:
         """Start real-time monitoring with production-grade reliability."""
         if not self.monitoring_active:
             self.monitoring_active = True
-            self.monitoring_thread = threading.Thread(
-                target=self._monitoring_loop, daemon=True
-            )
+            self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
             self.monitoring_thread.start()
             logger.info("Health monitoring started with 8 innovations support")
 
@@ -207,20 +199,12 @@ class HealthMonitor:
 
             # 8 innovations metrics
             adaptive_supervisor_metrics = self._get_adaptive_supervisor_metrics()
-            hierarchical_compression_metrics = (
-                self._get_hierarchical_compression_metrics()
-            )
-            multi_model_orchestration_metrics = (
-                self._get_multi_model_orchestration_metrics()
-            )
-            continuous_verification_metrics = (
-                self._get_continuous_verification_metrics()
-            )
+            hierarchical_compression_metrics = self._get_hierarchical_compression_metrics()
+            multi_model_orchestration_metrics = self._get_multi_model_orchestration_metrics()
+            continuous_verification_metrics = self._get_continuous_verification_metrics()
             streaming_pipeline_metrics = self._get_streaming_pipeline_metrics()
             universal_mcp_hub_metrics = self._get_universal_mcp_hub_metrics()
-            adaptive_context_window_metrics = (
-                self._get_adaptive_context_window_metrics()
-            )
+            adaptive_context_window_metrics = self._get_adaptive_context_window_metrics()
             production_reliability_metrics = self._get_production_reliability_metrics()
 
             return SystemMetrics(
@@ -299,18 +283,12 @@ class HealthMonitor:
     def _get_adaptive_supervisor_metrics(self) -> Dict[str, Any]:
         """Get Adaptive Supervisor (Innovation 1) metrics."""
         return {
-            "active_researchers": getattr(
-                self.config.agent, "max_concurrent_research_units", 0
-            ),
+            "active_researchers": getattr(self.config.agent, "max_concurrent_research_units", 0),
             "min_researchers": getattr(self.config.agent, "min_researchers", 1),
             "max_researchers": getattr(self.config.agent, "max_researchers", 10),
-            "fast_track_enabled": getattr(
-                self.config.agent, "enable_fast_track", False
-            ),
+            "fast_track_enabled": getattr(self.config.agent, "enable_fast_track", False),
             "auto_retry_enabled": getattr(self.config.agent, "enable_auto_retry", True),
-            "priority_queue_enabled": getattr(
-                self.config.agent, "priority_queue_enabled", True
-            ),
+            "priority_queue_enabled": getattr(self.config.agent, "priority_queue_enabled", True),
             "quality_monitoring_enabled": getattr(
                 self.config.agent, "enable_quality_monitoring", True
             ),
@@ -324,12 +302,8 @@ class HealthMonitor:
             "target_compression_ratio": getattr(
                 self.config.compression, "target_compression_ratio", 0.7
             ),
-            "validation_enabled": getattr(
-                self.config.compression, "validation_enabled", True
-            ),
-            "history_enabled": getattr(
-                self.config.compression, "history_enabled", True
-            ),
+            "validation_enabled": getattr(self.config.compression, "validation_enabled", True),
+            "history_enabled": getattr(self.config.compression, "history_enabled", True),
             "parallel_compression": getattr(
                 self.config.research, "enable_parallel_compression", False
             ),
@@ -344,21 +318,15 @@ class HealthMonitor:
             "planning_model": getattr(
                 self.config.llm, "planning_model", "gemini-3.1-flash-lite-preview"
             ),
-            "reasoning_model": getattr(
-                self.config.llm, "reasoning_model", "gemini-2.5-pro"
-            ),
-            "verification_model": getattr(
-                self.config.llm, "verification_model", "claude-sonnet-4"
-            ),
+            "reasoning_model": getattr(self.config.llm, "reasoning_model", "gemini-2.5-pro"),
+            "verification_model": getattr(self.config.llm, "verification_model", "claude-sonnet-4"),
             "generation_model": getattr(
                 self.config.llm, "generation_model", "gemini-3.1-flash-lite-preview"
             ),
             "compression_model": getattr(
                 self.config.llm, "compression_model", "gemini-3.1-flash-lite-preview"
             ),
-            "cost_optimization_enabled": getattr(
-                self.config.llm, "enable_cost_optimization", True
-            ),
+            "cost_optimization_enabled": getattr(self.config.llm, "enable_cost_optimization", True),
             "budget_limit": getattr(self.config.llm, "budget_limit", 100.0),
         }
 
@@ -392,12 +360,8 @@ class HealthMonitor:
     def _get_streaming_pipeline_metrics(self) -> Dict[str, Any]:
         """Get Streaming Pipeline (Innovation 5) metrics."""
         return {
-            "streaming_enabled": getattr(
-                self.config.research, "enable_streaming", False
-            ),
-            "stream_chunk_size": getattr(
-                self.config.research, "stream_chunk_size", 1000
-            ),
+            "streaming_enabled": getattr(self.config.research, "enable_streaming", False),
+            "stream_chunk_size": getattr(self.config.research, "stream_chunk_size", 1000),
             "progressive_reporting_enabled": getattr(
                 self.config.research, "enable_progressive_reporting", True
             ),
@@ -417,9 +381,7 @@ class HealthMonitor:
             "plugin_architecture_enabled": getattr(
                 self.config.mcp, "enable_plugin_architecture", True
             ),
-            "auto_fallback_enabled": getattr(
-                self.config.mcp, "enable_auto_fallback", True
-            ),
+            "auto_fallback_enabled": getattr(self.config.mcp, "enable_auto_fallback", True),
             "performance_tracking_enabled": getattr(
                 self.config.mcp, "enable_performance_tracking", True
             ),
@@ -436,9 +398,7 @@ class HealthMonitor:
     def _get_adaptive_context_window_metrics(self) -> Dict[str, Any]:
         """Get Adaptive Context Window (Innovation 7) metrics."""
         return {
-            "context_window_enabled": getattr(
-                self.config.context_window, "enabled", False
-            ),
+            "context_window_enabled": getattr(self.config.context_window, "enabled", False),
             "min_tokens": getattr(self.config.context_window, "min_tokens", 2000),
             "max_tokens": getattr(self.config.context_window, "max_tokens", 1000000),
             "importance_preservation_enabled": getattr(
@@ -467,24 +427,18 @@ class HealthMonitor:
             "state_persistence_enabled": getattr(
                 self.config.reliability, "state_persistence_enabled", True
             ),
-            "health_check_enabled": getattr(
-                self.config.reliability, "health_check_enabled", True
-            ),
+            "health_check_enabled": getattr(self.config.reliability, "health_check_enabled", True),
             "graceful_degradation_enabled": getattr(
                 self.config.reliability, "graceful_degradation_enabled", True
             ),
             "detailed_logging_enabled": getattr(
                 self.config.reliability, "detailed_logging_enabled", True
             ),
-            "failure_threshold": getattr(
-                self.config.reliability, "failure_threshold", 5
+            "failure_threshold": getattr(self.config.reliability, "failure_threshold", 5),
+            "recovery_timeout": getattr(self.config.reliability, "recovery_timeout", 60),
+            "circuit_breaker_state": (
+                self.circuit_breaker.state if hasattr(self, "circuit_breaker") else "closed"
             ),
-            "recovery_timeout": getattr(
-                self.config.reliability, "recovery_timeout", 60
-            ),
-            "circuit_breaker_state": self.circuit_breaker.state
-            if hasattr(self, "circuit_breaker")
-            else "closed",
         }
         try:
             from src.core.task_monitoring import get_task_processing_level_controller
@@ -551,9 +505,7 @@ class HealthMonitor:
         except Exception as e:
             logger.error(f"Failed to check alerts: {e}")
 
-    def _create_alert(
-        self, level: str, category: str, message: str, details: Dict[str, Any]
-    ):
+    def _create_alert(self, level: str, category: str, message: str, details: Dict[str, Any]):
         """Create and process a new alert."""
         alert = Alert(
             timestamp=datetime.now(),
@@ -607,9 +559,7 @@ class HealthMonitor:
 
             # Calculate average metrics
             avg_cpu = sum(m.cpu_usage for m in recent_metrics) / len(recent_metrics)
-            avg_memory = sum(m.memory_usage for m in recent_metrics) / len(
-                recent_metrics
-            )
+            avg_memory = sum(m.memory_usage for m in recent_metrics) / len(recent_metrics)
             avg_disk = sum(m.disk_usage for m in recent_metrics) / len(recent_metrics)
 
             # Calculate health score (lower usage = higher score)
@@ -736,9 +686,11 @@ class HealthMonitor:
                 "error_alerts_count": len(error_alerts),
                 "warning_alerts_count": len(warning_alerts),
                 "monitoring_active": self.monitoring_active,
-                "circuit_breaker_status": self.circuit_breaker.state.value
-                if hasattr(self.circuit_breaker, "state")
-                else "unknown",
+                "circuit_breaker_status": (
+                    self.circuit_breaker.state.value
+                    if hasattr(self.circuit_breaker, "state")
+                    else "unknown"
+                ),
             }
 
         except Exception as e:

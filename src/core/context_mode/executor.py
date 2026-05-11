@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,9 @@ def _detect_runtimes() -> Dict[str, str | None]:
     runtimes["python"] = shutil.which("python3") or shutil.which("python")
     runtimes["shell"] = shutil.which("bash") or shutil.which("sh") or "sh"
     runtimes["javascript"] = shutil.which("node")
-    runtimes["typescript"] = shutil.which("tsx") or shutil.which("ts-node") or runtimes["javascript"]
+    runtimes["typescript"] = (
+        shutil.which("tsx") or shutil.which("ts-node") or runtimes["javascript"]
+    )
     return runtimes
 
 
@@ -76,14 +78,29 @@ def _build_safe_env(cwd: str) -> Dict[str, str]:
     """Build minimal env with passthrough for auth/CLI tools."""
     home = os.environ.get("HOME") or os.environ.get("USERPROFILE") or cwd
     passthrough = [
-        "GH_TOKEN", "GITHUB_TOKEN", "GH_HOST",
-        "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
-        "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE",
-        "GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_CONFIG",
-        "DOCKER_HOST", "KUBECONFIG",
-        "NPM_TOKEN", "NODE_AUTH_TOKEN", "npm_config_registry",
-        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE", "CURL_CA_BUNDLE",
-        "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_HOST",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        "AWS_PROFILE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "CLOUDSDK_CONFIG",
+        "DOCKER_HOST",
+        "KUBECONFIG",
+        "NPM_TOKEN",
+        "NODE_AUTH_TOKEN",
+        "npm_config_registry",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "SSL_CERT_FILE",
+        "CURL_CA_BUNDLE",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
     ]
     env: Dict[str, str] = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
@@ -145,12 +162,13 @@ class SandboxedExecutor:
         ]
 
     def _is_autonomy_mode(self) -> bool:
-        return (
-            os.getenv("SPARKLEFORGE_AUTONOMY_MODE", "false")
-            .strip()
-            .lower()
-            in {"1", "true", "yes", "y", "on"}
-        )
+        return os.getenv("SPARKLEFORGE_AUTONOMY_MODE", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
 
     def _code_block_reason(self, language: str, code: str) -> str | None:
         if not self._is_autonomy_mode():
@@ -224,6 +242,7 @@ class SandboxedExecutor:
         finally:
             try:
                 import shutil as _shutil
+
                 _shutil.rmtree(tmpdir, ignore_errors=True)
             except Exception:
                 pass
@@ -263,11 +282,7 @@ class SandboxedExecutor:
             )
         if language == "shell":
             safe = absolute_path.replace("'", "'\"'\"'")
-            return (
-                f"FILE_CONTENT_PATH='{safe}'\n"
-                f"FILE_CONTENT=$(cat '{safe}')\n"
-                f"{code}"
-            )
+            return f"FILE_CONTENT_PATH='{safe}'\n" f"FILE_CONTENT=$(cat '{safe}')\n" f"{code}"
         if language in ("javascript", "typescript"):
             return (
                 "const FILE_CONTENT_PATH = " + escaped + ";\n"
@@ -303,7 +318,9 @@ class SandboxedExecutor:
             stderr_str = raw_stderr.decode("utf-8", errors="replace")
             total_bytes = len(raw_stdout) + len(raw_stderr)
             if total_bytes > self.hard_cap_bytes:
-                stderr_str += f"\n[output capped at {self.hard_cap_bytes // (1024*1024)}MB — process killed]"
+                stderr_str += (
+                    f"\n[output capped at {self.hard_cap_bytes // (1024*1024)}MB — process killed]"
+                )
             stdout_str = _smart_truncate(stdout_str, self.max_output_bytes)
             stderr_str = _smart_truncate(stderr_str, self.max_output_bytes)
             return ExecResult(

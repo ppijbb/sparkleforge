@@ -14,6 +14,7 @@ from src.core.agent_pool import AgentPool
 from src.core.agent_result_sharing import AgentDiscussionManager, SharedResultsManager
 from src.core.concurrency_manager import get_concurrency_manager
 from src.core.error_handler import get_error_handler
+from src.core.llm_manager import TaskType, execute_llm_task
 from src.core.mcp_integration import execute_tool
 from src.core.researcher_config import (
     get_agent_config,
@@ -24,7 +25,6 @@ from src.core.result_cache import get_result_cache
 from src.core.streaming_manager import EventType, get_streaming_manager
 from src.core.task_graph import TaskGraph
 from src.core.task_validator import TaskValidator
-from src.core.llm_manager import execute_llm_task, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +61,15 @@ class ParallelAgentExecutor:
         self.shared_results_manager: SharedResultsManager | None = None
         self.discussion_manager: AgentDiscussionManager | None = None
 
-        logger.info(
-            f"ParallelAgentExecutor initialized with max_concurrent={self.max_concurrent}"
-        )
+        logger.info(f"ParallelAgentExecutor initialized with max_concurrent={self.max_concurrent}")
 
         # Start concurrency monitoring (only if event loop is running)
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             asyncio.create_task(self.concurrency_manager.start_monitoring())
         except RuntimeError:
             # No event loop running, will be started later
-            logger.debug(
-                "No event loop running, concurrency monitoring will start later"
-            )
+            logger.debug("No event loop running, concurrency monitoring will start later")
 
     async def execute_parallel_tasks(
         self,
@@ -83,15 +79,11 @@ class ParallelAgentExecutor:
         objective_id: str,
     ) -> Dict[str, Any]:
         """병렬 작업 실행 (의존성 그래프 기반 스마트 스케줄링)."""
-        logger.info(
-            f"Starting parallel execution of {len(tasks)} tasks (with dependency graph)"
-        )
+        logger.info(f"Starting parallel execution of {len(tasks)} tasks (with dependency graph)")
 
         # 결과 공유 및 토론 시스템 초기화
         if self.agent_config.enable_agent_communication:
-            self.shared_results_manager = SharedResultsManager(
-                objective_id=objective_id
-            )
+            self.shared_results_manager = SharedResultsManager(objective_id=objective_id)
             self.discussion_manager = AgentDiscussionManager(
                 objective_id=objective_id,
                 shared_results_manager=self.shared_results_manager,
@@ -103,9 +95,7 @@ class ParallelAgentExecutor:
             from src.core.task_dependency_graph import TaskDependencyGraph
 
             dependency_graph = TaskDependencyGraph(tasks)
-            logger.info(
-                f"✅ Dependency graph built: {dependency_graph.get_statistics()}"
-            )
+            logger.info(f"✅ Dependency graph built: {dependency_graph.get_statistics()}")
             use_dependency_graph = True
 
             # DAG 시각화 초기화
@@ -128,9 +118,7 @@ class ParallelAgentExecutor:
                 self.task_queue.add_task_from_dict(t)
             parallel_groups = execution_plan.get("parallel_groups", [])
             if parallel_groups:
-                logger.info(
-                    f"Using {len(parallel_groups)} parallel groups from execution plan"
-                )
+                logger.info(f"Using {len(parallel_groups)} parallel groups from execution plan")
 
         # 스트리밍 이벤트: 실행 시작
         await self.streaming_manager.stream_event(
@@ -181,9 +169,9 @@ class ParallelAgentExecutor:
                 "execution_time": execution_time,
                 "success_rate": len(final_results.get("execution_results", []))
                 / max(len(tasks), 1),
-                "dependency_graph_stats": dependency_graph.get_statistics()
-                if dependency_graph
-                else None,
+                "dependency_graph_stats": (
+                    dependency_graph.get_statistics() if dependency_graph else None
+                ),
             },
             priority=1,
         )
@@ -281,19 +269,17 @@ class ParallelAgentExecutor:
                         )
 
                 # 그룹 실행 완료 대기
-                group_results = await asyncio.gather(
-                    *group_tasks, return_exceptions=True
-                )
+                group_results = await asyncio.gather(*group_tasks, return_exceptions=True)
 
                 # 결과 처리
                 for i, result in enumerate(group_results):
                     task_id = task_group[i]
                     if isinstance(result, Exception):
                         logger.error(f"Task {task_id} failed with exception: {result}")
-                        self.failed_tasks.append(
-                            {"task_id": task_id, "error": str(result)}
-                        )
-                        dependency_graph.mark_completed(task_id, str(result))  # 실패해도 완료로 표시
+                        self.failed_tasks.append({"task_id": task_id, "error": str(result)})
+                        dependency_graph.mark_completed(
+                            task_id, str(result)
+                        )  # 실패해도 완료로 표시
 
                         # DAG 시각화 업데이트
                         try:
@@ -336,16 +322,12 @@ class ParallelAgentExecutor:
                     )
 
             if remaining_tasks:
-                remaining_results = await asyncio.gather(
-                    *remaining_tasks, return_exceptions=True
-                )
+                remaining_results = await asyncio.gather(*remaining_tasks, return_exceptions=True)
                 for i, result in enumerate(remaining_results):
                     task_id = remaining_ready[i]
                     if isinstance(result, Exception):
                         logger.error(f"Task {task_id} failed: {result}")
-                        self.failed_tasks.append(
-                            {"task_id": task_id, "error": str(result)}
-                        )
+                        self.failed_tasks.append({"task_id": task_id, "error": str(result)})
                         dependency_graph.mark_completed(task_id, str(result))
                     else:
                         results.append(result)
@@ -369,9 +351,7 @@ class ParallelAgentExecutor:
         while self.task_queue.has_pending_tasks():
             # 다음 작업 그룹 가져오기 (dynamic concurrency)
             current_concurrency = self.concurrency_manager.get_current_concurrency()
-            task_group = self.task_queue.get_next_task_group(
-                max_group_size=current_concurrency
-            )
+            task_group = self.task_queue.get_next_task_group(max_group_size=current_concurrency)
 
             if not task_group:
                 # 더 이상 실행 가능한 작업이 없으면 대기
@@ -387,7 +367,11 @@ class ParallelAgentExecutor:
                 if task:
                     group_tasks.append(
                         self._execute_single_task(
-                            task_id, task.to_dict() if hasattr(task, "to_dict") else task, agent_assignments, semaphore, objective_id
+                            task_id,
+                            task.to_dict() if hasattr(task, "to_dict") else task,
+                            agent_assignments,
+                            semaphore,
+                            objective_id,
                         )
                     )
 
@@ -440,17 +424,13 @@ class ParallelAgentExecutor:
                 try:
                     # 사전 검증: 작업 실행 전 검증
                     tool_category = self._get_tool_category_for_task(task)
-                    available_tools = self._get_available_tools_for_category(
-                        tool_category
-                    )
+                    available_tools = self._get_available_tools_for_category(tool_category)
 
-                    pre_validation = (
-                        await self.task_validator.validate_task_before_execution(
-                            task=task,
-                            task_id=task_id,
-                            task_queue=self.task_queue,
-                            available_tools=available_tools,
-                        )
+                    pre_validation = await self.task_validator.validate_task_before_execution(
+                        task=task,
+                        task_id=task_id,
+                        task_queue=self.task_queue,
+                        available_tools=available_tools,
                     )
 
                     if not pre_validation.is_valid:
@@ -478,9 +458,7 @@ class ParallelAgentExecutor:
                             logger.debug(f"Task {task_id}: Attempting tool {tool_name}")
 
                             # 파라미터 생성
-                            tool_parameters = self._generate_tool_parameters(
-                                task, tool_name
-                            )
+                            tool_parameters = self._generate_tool_parameters(task, tool_name)
 
                             # 캐시 확인
                             cached_result = await self.result_cache.get(
@@ -491,22 +469,16 @@ class ParallelAgentExecutor:
                             )
 
                             if cached_result:
-                                logger.info(
-                                    f"Task {task_id}: Cache hit for tool {tool_name}"
-                                )
+                                logger.info(f"Task {task_id}: Cache hit for tool {tool_name}")
                                 tool_result = cached_result
                             else:
                                 # 도구 실행
-                                tool_result = await execute_tool(
-                                    tool_name, tool_parameters
-                                )
+                                tool_result = await execute_tool(tool_name, tool_parameters)
 
                                 # 성공한 결과만 캐시에 저장
                                 if tool_result.get("success", False):
                                     # TTL 결정: 검색 도구는 1시간, 다른 도구는 30분
-                                    ttl = (
-                                        3600 if "search" in tool_name.lower() else 1800
-                                    )
+                                    ttl = 3600 if "search" in tool_name.lower() else 1800
                                     await self.result_cache.set(
                                         tool_name=tool_name,
                                         parameters=tool_parameters,
@@ -523,21 +495,19 @@ class ParallelAgentExecutor:
                                     "tool": tool_name,
                                     "success": tool_result.get("success", False),
                                     "error": tool_result.get("error", ""),
-                                    "execution_time": tool_result.get(
-                                        "execution_time", 0.0
-                                    ),
+                                    "execution_time": tool_result.get("execution_time", 0.0),
                                 }
                             )
 
                             # 실행 중 검증
-                            execution_time_so_far = (
-                                datetime.now() - task_start
-                            ).total_seconds()
-                            during_validation = await self.task_validator.validate_task_during_execution(
-                                task_id=task_id,
-                                intermediate_result=tool_result,
-                                task=task,
-                                execution_time=execution_time_so_far,
+                            execution_time_so_far = (datetime.now() - task_start).total_seconds()
+                            during_validation = (
+                                await self.task_validator.validate_task_during_execution(
+                                    task_id=task_id,
+                                    intermediate_result=tool_result,
+                                    task=task,
+                                    execution_time=execution_time_so_far,
+                                )
                             )
 
                             if during_validation.warnings:
@@ -546,10 +516,8 @@ class ParallelAgentExecutor:
                                 )
 
                             # 결과 검증 (강화된 버전)
-                            result_validation = (
-                                await self.task_validator.validate_task_result(
-                                    tool_result=tool_result, task=task
-                                )
+                            result_validation = await self.task_validator.validate_task_result(
+                                tool_result=tool_result, task=task
                             )
 
                             # 성공 조건: 기본 성공 + 검증 통과
@@ -583,9 +551,7 @@ class ParallelAgentExecutor:
                                 tool_result = None
 
                         except Exception as tool_error:
-                            logger.warning(
-                                f"Task {task_id}: Tool {tool_name} error: {tool_error}"
-                            )
+                            logger.warning(f"Task {task_id}: Tool {tool_name} error: {tool_error}")
 
                             # Try error handler recovery
                             try:
@@ -618,11 +584,13 @@ class ParallelAgentExecutor:
                                     execution_time_so_far = (
                                         datetime.now() - task_start
                                     ).total_seconds()
-                                    during_validation = await self.task_validator.validate_task_during_execution(
-                                        task_id=task_id,
-                                        intermediate_result=tool_result,
-                                        task=task,
-                                        execution_time=execution_time_so_far,
+                                    during_validation = (
+                                        await self.task_validator.validate_task_during_execution(
+                                            task_id=task_id,
+                                            intermediate_result=tool_result,
+                                            task=task,
+                                            execution_time=execution_time_so_far,
+                                        )
                                     )
 
                                     result_validation = (
@@ -656,11 +624,10 @@ class ParallelAgentExecutor:
                             )
                             continue
 
-
                     # 도구가 성공하지 못했거나 도구가 없으면 LLM으로 폴백
                     if tool_result is None or not tool_result.get("success"):
                         logger.info(f"Task {task_id}: Falling back to LLM processing")
-                        
+
                         llm_prompt = f"""
                         Job description: {task.get('description', task.get('name', 'Generic task'))}
                         Previous tool attempts: {tool_attempts}
@@ -680,18 +647,18 @@ class ParallelAgentExecutor:
                         
                         Constraints: Provide factual and detailed information. Include correctly formatted python code blocks.
                         """
-                        
+
                         llm_result = await execute_llm_task(
                             prompt=llm_prompt,
                             task_type=TaskType.RESEARCH,
-                            system_message="You are a professional research agent."
+                            system_message="You are a professional research agent.",
                         )
-                        
+
                         tool_result = {
                             "success": True,
                             "data": llm_result.content if llm_result else "No content generated",
                             "confidence": 0.8,
-                            "execution_time": (datetime.now() - task_start).total_seconds()
+                            "execution_time": (datetime.now() - task_start).total_seconds(),
                         }
 
                     execution_time = (datetime.now() - task_start).total_seconds()
@@ -708,9 +675,7 @@ class ParallelAgentExecutor:
                             "task_id": task_id,
                             "task_name": task.get("name", ""),
                             "agent_id": agent_id,
-                            "tool_used": tool_attempts[-1]["tool"]
-                            if tool_attempts
-                            else "none",
+                            "tool_used": tool_attempts[-1]["tool"] if tool_attempts else "none",
                             "result": result_data,
                             "execution_time": execution_time,
                             "confidence": confidence,
@@ -733,20 +698,16 @@ class ParallelAgentExecutor:
                             result["shared_result_id"] = result_id
 
                             # 다른 agent들의 결과 가져오기 (동일한 작업에 대한)
-                            other_results = (
-                                await self.shared_results_manager.get_shared_results(
-                                    task_id=task_id, exclude_agent_id=agent_id
-                                )
+                            other_results = await self.shared_results_manager.get_shared_results(
+                                task_id=task_id, exclude_agent_id=agent_id
                             )
 
                             # 다른 agent들과 토론
                             if other_results and self.discussion_manager:
-                                discussion = (
-                                    await self.discussion_manager.agent_discuss_result(
-                                        result_id=result_id,
-                                        agent_id=agent_id,
-                                        other_agent_results=other_results,
-                                    )
+                                discussion = await self.discussion_manager.agent_discuss_result(
+                                    result_id=result_id,
+                                    agent_id=agent_id,
+                                    other_agent_results=other_results,
                                 )
                                 if discussion:
                                     result["discussion"] = discussion
@@ -845,9 +806,7 @@ class ParallelAgentExecutor:
             "failed_tasks": self.failed_tasks,
             "progress": progress,
             "total_execution_time": sum(r.get("execution_time", 0.0) for r in results),
-            "success_count": len(
-                [r for r in results if r.get("status") == "completed"]
-            ),
+            "success_count": len([r for r in results if r.get("status") == "completed"]),
             "failure_count": len([r for r in results if r.get("status") == "failed"])
             + len(self.failed_tasks),
             "result_sharing": sharing_summary,
@@ -937,9 +896,7 @@ class ParallelAgentExecutor:
         # 설정된 도구가 있으면 반환, 없으면 빈 리스트 (에러 처리)
         return available_tools if available_tools else config_tools
 
-    def _generate_tool_parameters(
-        self, task: Dict[str, Any], tool_name: str
-    ) -> Dict[str, Any]:
+    def _generate_tool_parameters(self, task: Dict[str, Any], tool_name: str) -> Dict[str, Any]:
         """도구 파라미터 생성."""
         # 간단한 구현: 작업 정보를 도구 파라미터로 변환
         task_description = task.get("description", task.get("name", ""))

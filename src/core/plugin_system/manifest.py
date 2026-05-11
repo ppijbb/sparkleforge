@@ -27,8 +27,8 @@ class PluginAuthor:
     """Plugin author (name, email, url)."""
 
     name: str
-    email: Optional[str] = None
-    url: Optional[str] = None
+    email: str | None = None
+    url: str | None = None
 
 
 @dataclass
@@ -38,14 +38,14 @@ class PluginManifest:
     name: str
     version: str
     description: str = ""
-    author: Optional[PluginAuthor] = None
-    homepage: Optional[str] = None
+    author: PluginAuthor | None = None
+    homepage: str | None = None
     skills: List[str] = field(default_factory=list)
     commands: List[str] = field(default_factory=list)
     raw: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, plugin_root: Path) -> Optional["PluginManifest"]:
+    def load(cls, plugin_root: Path) -> PluginManifest | None:
         """Load plugin.json from plugin_root / .sparkleforge-plugin / plugin.json."""
         manifest_path = plugin_root / PLUGIN_MANIFEST_DIR / PLUGIN_MANIFEST_FILE
         if not manifest_path.is_file():
@@ -59,8 +59,8 @@ class PluginManifest:
 
     @classmethod
     def from_dict(
-        cls, data: Dict[str, Any], plugin_root: Optional[Path] = None
-    ) -> Optional["PluginManifest"]:
+        cls, data: Dict[str, Any], plugin_root: Path | None = None
+    ) -> PluginManifest | None:
         """Build PluginManifest from dict (e.g. from plugin.json)."""
         name = (data.get("name") or "").strip()
         if not name:

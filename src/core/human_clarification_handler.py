@@ -106,9 +106,7 @@ class HumanClarificationHandler:
                     timeout=15.0,
                 )
             except TimeoutError:
-                logger.warning(
-                    "LLM timeout in detect_ambiguities, returning empty list"
-                )
+                logger.warning("LLM timeout in detect_ambiguities, returning empty list")
                 return []
 
             # 결과 파싱
@@ -168,9 +166,7 @@ class HumanClarificationHandler:
             suggested_options = ambiguity.get("suggested_options", [])
 
             # 질문 형식 결정
-            question_format = self.determine_question_format(
-                ambiguity_type, suggested_options
-            )
+            question_format = self.determine_question_format(ambiguity_type, suggested_options)
 
             # 질문 텍스트 개선 (LLM 사용)
             if not suggested_question:
@@ -202,13 +198,9 @@ class HumanClarificationHandler:
                         ),
                         timeout=10.0,
                     )
-                    question_text = (
-                        result.content.strip() if result.content else suggested_question
-                    )
+                    question_text = result.content.strip() if result.content else suggested_question
                 except TimeoutError:
-                    logger.warning(
-                        "LLM timeout in generate_question, using suggested question"
-                    )
+                    logger.warning("LLM timeout in generate_question, using suggested question")
                     question_text = suggested_question
             else:
                 question_text = suggested_question
@@ -323,9 +315,7 @@ class HumanClarificationHandler:
                     timeout=10.0,
                 )
             except TimeoutError:
-                logger.warning(
-                    "LLM timeout in _generate_choice_options, returning empty list"
-                )
+                logger.warning("LLM timeout in _generate_choice_options, returning empty list")
                 return []
 
             import json
@@ -389,9 +379,7 @@ class HumanClarificationHandler:
             clarification["normalized_response"] = response
             clarification["validated"] = True
 
-            logger.info(
-                f"Processed user response for question {question_id}: {response}"
-            )
+            logger.info(f"Processed user response for question {question_id}: {response}")
 
             return {
                 "question_id": question_id,
@@ -521,11 +509,7 @@ class HumanClarificationHandler:
             logger.error(f"Error in auto_select_response: {e}")
             # 기본값 반환
             if question.get("format") == "choice" and question.get("options"):
-                return (
-                    question["options"][0].get("value", "")
-                    if question["options"]
-                    else ""
-                )
+                return question["options"][0].get("value", "") if question["options"] else ""
             return "기본값"
 
     def apply_clarification(
@@ -569,12 +553,8 @@ class HumanClarificationHandler:
                 updated["output_format"] = response
 
             elif question_type == "resource_constraint":
-                updated["resource_constraints"] = updated.get(
-                    "resource_constraints", {}
-                )
-                updated["resource_constraints"][clarification.get("field", "")] = (
-                    response
-                )
+                updated["resource_constraints"] = updated.get("resource_constraints", {})
+                updated["resource_constraints"][clarification.get("field", "")] = response
 
             # 명확화 정보 메타데이터 추가
             updated["clarifications"] = updated.get("clarifications", [])
@@ -587,9 +567,7 @@ class HumanClarificationHandler:
                 }
             )
 
-            logger.info(
-                f"Applied clarification to plan/task: {question_type} = {response}"
-            )
+            logger.info(f"Applied clarification to plan/task: {question_type} = {response}")
             return updated
 
         except Exception as e:

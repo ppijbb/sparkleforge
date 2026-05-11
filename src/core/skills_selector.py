@@ -42,6 +42,7 @@ class SkillSelector:
                 SkillRetriever,
                 get_skill_performance_tracker,
             )
+
             tracker = get_skill_performance_tracker()
             hot_cache = HotSkillCache(self.skill_manager, max_size=50)
             hot_cache.refresh(tracker)
@@ -52,18 +53,14 @@ class SkillSelector:
             )
         return self._retriever
 
-    def select_skills_for_task(
-        self, query: str, max_skills: int = 5
-    ) -> List[SkillMatch]:
+    def select_skills_for_task(self, query: str, max_skills: int = 5) -> List[SkillMatch]:
         """작업 쿼리에 필요한 Skills 자동 선택 (SkillRetriever + FlashRank)."""
         logger.info(f"Selecting skills for task: {query[:100]}")
         try:
             retriever = self._get_retriever()
 
             async def _run() -> List[SkillMatch]:
-                return await retriever.retrieve(
-                    query, agent_skill_tree=None, top_k=max_skills
-                )
+                return await retriever.retrieve(query, agent_skill_tree=None, top_k=max_skills)
 
             try:
                 loop = asyncio.get_running_loop()
@@ -73,13 +70,12 @@ class SkillSelector:
                 matches = asyncio.run(_run())
             else:
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     fut = pool.submit(asyncio.run, _run())
                     matches = fut.result(timeout=30)
             selected = self._add_dependencies(matches)
-            logger.info(
-                f"Selected {len(selected)} skills: {[s.skill_id for s in selected]}"
-            )
+            logger.info(f"Selected {len(selected)} skills: {[s.skill_id for s in selected]}")
             return selected
         except Exception as e:
             logger.warning("SkillRetriever path failed, using legacy matching: %s", e)
@@ -90,12 +86,8 @@ class SkillSelector:
         keyword_matches = self._match_by_keywords(query)
         tag_matches = self._match_by_tags(query)
         description_matches = self._match_by_description(query)
-        all_matches = self._merge_matches(
-            keyword_matches, tag_matches, description_matches
-        )
-        top_matches = sorted(all_matches, key=lambda x: x.score, reverse=True)[
-            :max_skills
-        ]
+        all_matches = self._merge_matches(keyword_matches, tag_matches, description_matches)
+        top_matches = sorted(all_matches, key=lambda x: x.score, reverse=True)[:max_skills]
         return self._add_dependencies(top_matches)
 
     async def select_skills_proactively(
@@ -104,9 +96,7 @@ class SkillSelector:
         """FlashRank 기반 스킬 선택 (LLM 대신 경량 reranker 사용)."""
         try:
             retriever = self._get_retriever()
-            matches = await retriever.retrieve(
-                query, agent_skill_tree=None, top_k=max_skills
-            )
+            matches = await retriever.retrieve(query, agent_skill_tree=None, top_k=max_skills)
             return self._add_dependencies(matches)
         except Exception as e:
             logger.warning(
@@ -196,9 +186,7 @@ class SkillSelector:
                     SkillMatch(
                         skill_id=skill_id,
                         score=normalized_score * 0.4,  # 40% 가중치
-                        reasons=[
-                            f"Keywords matched: {', '.join(matched_keywords[:3])}"
-                        ],
+                        reasons=[f"Keywords matched: {', '.join(matched_keywords[:3])}"],
                         metadata=skill_metadata,
                     )
                 )
@@ -246,17 +234,13 @@ class SkillSelector:
 
         for skill_metadata in all_skills:
             # 설명과 태그에서 단어 추출
-            description_words = set(
-                re.findall(r"\b\w+\b", skill_metadata.description.lower())
-            )
+            description_words = set(re.findall(r"\b\w+\b", skill_metadata.description.lower()))
             capability_words = set()
             for cap in skill_metadata.capabilities:
                 capability_words.update(re.findall(r"\b\w+\b", cap.lower()))
 
             # 공통 단어 찾기
-            common_words = query_words.intersection(
-                description_words.union(capability_words)
-            )
+            common_words = query_words.intersection(description_words.union(capability_words))
 
             if common_words:
                 # 점수: 공통 단어 비율
@@ -265,9 +249,7 @@ class SkillSelector:
                     SkillMatch(
                         skill_id=skill_metadata.skill_id,
                         score=score * 0.3,  # 30% 가중치
-                        reasons=[
-                            f"Description matched: {len(common_words)} common words"
-                        ],
+                        reasons=[f"Description matched: {len(common_words)} common words"],
                         metadata=skill_metadata,
                     )
                 )

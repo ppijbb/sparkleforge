@@ -52,7 +52,7 @@ class LocalSandboxBackend(BaseSandboxBackend):
                 exit_code=result.exit_code,
                 truncated=result.timed_out,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return ExecuteResponse(
                 output="",
                 exit_code=124,

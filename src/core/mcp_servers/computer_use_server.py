@@ -147,17 +147,26 @@ def _ensure_display() -> int:
         vdisplay.start()
         _display = vdisplay
         _display_num = vdisplay.vdisplay_num
-        logger.info("Started Xvfb virtual display :%d (%dx%d)", _display_num, DISPLAY_WIDTH, DISPLAY_HEIGHT)
+        logger.info(
+            "Started Xvfb virtual display :%d (%dx%d)", _display_num, DISPLAY_WIDTH, DISPLAY_HEIGHT
+        )
     except ImportError:
         # xvfbwrapper not installed — try launching Xvfb manually
         logger.warning("xvfbwrapper not available, launching Xvfb subprocess on :%d", _display_num)
         try:
             subprocess.Popen(
-                ["Xvfb", f":{_display_num}", "-screen", "0", f"{DISPLAY_WIDTH}x{DISPLAY_HEIGHT}x{DISPLAY_DEPTH}"],
+                [
+                    "Xvfb",
+                    f":{_display_num}",
+                    "-screen",
+                    "0",
+                    f"{DISPLAY_WIDTH}x{DISPLAY_HEIGHT}x{DISPLAY_DEPTH}",
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
             import time
+
             time.sleep(0.5)  # give Xvfb a moment to start
             _display = True  # sentinel: display started via subprocess
         except FileNotFoundError:
@@ -170,6 +179,7 @@ def _ensure_display() -> int:
     # Import pyautogui now (after DISPLAY is set, X11 connection happens on import)
     try:
         import pyautogui as _pg
+
         _pg.FAILSAFE = False
         _pg.PAUSE = 0.05
         _pyautogui = _pg
@@ -184,9 +194,7 @@ def _get_pyautogui():
     """Return the lazily initialized pyautogui module."""
     _ensure_display()
     if _pyautogui is None:
-        raise RuntimeError(
-            "pyautogui is not available. Install with: pip install pyautogui"
-        )
+        raise RuntimeError("pyautogui is not available. Install with: pip install pyautogui")
     return _pyautogui
 
 
@@ -240,9 +248,7 @@ def _capture_screenshot_bytes(fmt: str = "png", quality: int = 85) -> bytes:
     except Exception as exc:
         logger.debug("xwd/convert fallback failed: %s", exc)
 
-    raise RuntimeError(
-        "All screenshot methods failed. Ensure mss or scrot is installed."
-    )
+    raise RuntimeError("All screenshot methods failed. Ensure mss or scrot is installed.")
 
 
 def _success(data: dict[str, Any]) -> str:
@@ -334,7 +340,9 @@ async def mouse_scroll(input: MouseScrollInput) -> str:
         pg.moveTo(input.x, input.y)
         pg.scroll(input.clicks)
         direction = "up" if input.clicks > 0 else "down"
-        return _success({"x": input.x, "y": input.y, "clicks": input.clicks, "direction": direction})
+        return _success(
+            {"x": input.x, "y": input.y, "clicks": input.clicks, "direction": direction}
+        )
     except Exception as exc:
         logger.error("mouse_scroll failed: %s", exc)
         return _error(str(exc))

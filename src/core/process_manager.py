@@ -113,9 +113,7 @@ class ProcessManager:
                 ):
 
                     def _schedule():
-                        self._shutdown_task = asyncio.create_task(
-                            self._handle_shutdown(signum)
-                        )
+                        self._shutdown_task = asyncio.create_task(self._handle_shutdown(signum))
 
                     loop.call_soon_threadsafe(_schedule)
             except RuntimeError:

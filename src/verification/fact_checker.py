@@ -210,9 +210,7 @@ class FactChecker:
                 try:
                     analysis = json.loads(content)
                 except json.JSONDecodeError:
-                    logger.warning(
-                        "Self-verification failed: Invalid JSON format in response"
-                    )
+                    logger.warning("Self-verification failed: Invalid JSON format in response")
                     raise ValueError("Invalid JSON format")
 
             return {
@@ -253,9 +251,7 @@ class FactChecker:
             conflicts = await self._detect_conflicts(fact_text, sources)
 
             # 일치도 계산
-            consensus_score = self._calculate_consensus_score(
-                cross_ref_result, conflicts
-            )
+            consensus_score = self._calculate_consensus_score(cross_ref_result, conflicts)
 
             return {
                 "stage": VerificationStage.CROSS.value,
@@ -286,9 +282,7 @@ class FactChecker:
             external_sources = await self._search_external_sources(fact_text)
 
             # 외부 출처와의 일치도 분석
-            external_match_score = await self._analyze_external_matches(
-                fact_text, external_sources
-            )
+            external_match_score = await self._analyze_external_matches(fact_text, external_sources)
 
             # 신뢰할 수 있는 외부 출처 확인
             trusted_verification = await self._verify_with_trusted_sources(
@@ -348,9 +342,7 @@ class FactChecker:
                             }
                         )
 
-            consensus_score = self._calculate_consensus_from_matches(
-                source_matches, conflicts
-            )
+            consensus_score = self._calculate_consensus_from_matches(source_matches, conflicts)
 
             return CrossReferenceResult(
                 fact_id=f"cross_ref_{int(datetime.now().timestamp())}",
@@ -435,9 +427,7 @@ class FactChecker:
                 try:
                     analysis = json.loads(content)
                 except json.JSONDecodeError:
-                    logger.warning(
-                        "Conflict detection failed: Invalid JSON format in response"
-                    )
+                    logger.warning("Conflict detection failed: Invalid JSON format in response")
                     return []
 
             conflicts = analysis.get("conflicts", [])
@@ -453,9 +443,7 @@ class FactChecker:
         """외부 출처를 검색합니다."""
         try:
             # MCP 도구를 사용한 외부 검색
-            search_result = await execute_tool(
-                "g-search", {"query": fact_text, "max_results": 5}
-            )
+            search_result = await execute_tool("g-search", {"query": fact_text, "max_results": 5})
 
             if search_result.get("success", False):
                 return search_result.get("data", {}).get("results", [])
@@ -603,8 +591,7 @@ class FactChecker:
             timestamp=datetime.now(UTC),
             metadata={
                 "verification_method": "comprehensive",
-                "total_sources_checked": len(supporting_sources)
-                + len(conflicting_sources),
+                "total_sources_checked": len(supporting_sources) + len(conflicting_sources),
             },
         )
 
@@ -615,8 +602,7 @@ class FactChecker:
         if conflict_count > 2:
             return FactStatus.DISPUTED
         elif (
-            confidence >= self.verification_thresholds["high_confidence"]
-            and consensus_score > 0.8
+            confidence >= self.verification_thresholds["high_confidence"] and consensus_score > 0.8
         ):
             return FactStatus.VERIFIED
         elif (
@@ -629,9 +615,7 @@ class FactChecker:
         else:
             return FactStatus.UNVERIFIED
 
-    def _create_failed_result(
-        self, fact_id: str, fact_text: str, error: str
-    ) -> FactCheckResult:
+    def _create_failed_result(self, fact_id: str, fact_text: str, error: str) -> FactCheckResult:
         """실패한 검증 결과를 생성합니다."""
         return FactCheckResult(
             fact_id=fact_id,

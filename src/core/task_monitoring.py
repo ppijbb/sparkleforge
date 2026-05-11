@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from threading import Lock
-from typing import Any, Dict, List
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,9 @@ class TaskMetrics:
     throughput_per_min: float  # completed per minute, rolling
     error_rate: float  # failed / (completed + failed)
     by_session: Dict[str, TaskSnapshot] = field(default_factory=dict)
-    by_agent: Dict[str, Dict[str, int]] = field(default_factory=dict)  # agent_id -> {completed, failed}
+    by_agent: Dict[str, Dict[str, int]] = field(
+        default_factory=dict
+    )  # agent_id -> {completed, failed}
 
 
 class TaskMetricsCollector:
@@ -149,16 +151,17 @@ class TaskMetricsCollector:
             total_running = sum(self._running.values())
             total_completed = sum(self._completed.values())
             total_failed = sum(self._failed.values())
-            sessions = set(self._queue_depth) | set(self._running) | set(self._completed) | set(self._failed)
+            sessions = (
+                set(self._queue_depth)
+                | set(self._running)
+                | set(self._completed)
+                | set(self._failed)
+            )
             n = len(self._latency_samples)
             if n:
                 sorted_lat = sorted(self._latency_samples)
                 p50 = sorted_lat[int((n - 1) * 0.5)]
-                p95 = (
-                    sorted_lat[int((n - 1) * 0.95)]
-                    if n >= 2
-                    else sorted_lat[-1]
-                )
+                p95 = sorted_lat[int((n - 1) * 0.95)] if n >= 2 else sorted_lat[-1]
             else:
                 p50 = p95 = None
             now = time.monotonic()
@@ -257,7 +260,12 @@ class TaskProcessingLevelController:
         self._suggested_max_concurrent = base_max_concurrent
         self._lock = Lock()
 
-    def update(self, task_metrics: TaskMetrics | None = None, cpu_percent: float | None = None, memory_percent: float | None = None) -> None:
+    def update(
+        self,
+        task_metrics: TaskMetrics | None = None,
+        cpu_percent: float | None = None,
+        memory_percent: float | None = None,
+    ) -> None:
         """Update level and suggested concurrency from metrics."""
         if task_metrics is None:
             task_metrics = get_task_metrics_collector().get_global_metrics()
@@ -277,8 +285,15 @@ class TaskProcessingLevelController:
                 else:
                     level = TaskProcessingLevel.ELEVATED
                     suggested = min(self.max_concurrent, self.base_max_concurrent + 2)
-            elif task_metrics.total_queue_depth <= self.queue_depth_threshold_low and task_metrics.total_running == 0:
-                if cpu_percent is not None and cpu_percent < 60 and (memory_percent is None or memory_percent < 75):
+            elif (
+                task_metrics.total_queue_depth <= self.queue_depth_threshold_low
+                and task_metrics.total_running == 0
+            ):
+                if (
+                    cpu_percent is not None
+                    and cpu_percent < 60
+                    and (memory_percent is None or memory_percent < 75)
+                ):
                     level = TaskProcessingLevel.ELEVATED
                     suggested = min(self.max_concurrent, self.base_max_concurrent + 1)
             else:

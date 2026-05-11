@@ -92,7 +92,6 @@ class DocumentGenerator(ABC):
         Returns:
             Generated document object
         """
-        pass
 
     @abstractmethod
     def get_supported_types(self) -> List[DocumentType]:
@@ -101,7 +100,6 @@ class DocumentGenerator(ABC):
         Returns:
             List of supported document types
         """
-        pass
 
     def is_enabled(self) -> bool:
         """Check if generator is enabled."""

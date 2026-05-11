@@ -274,15 +274,11 @@ class GreedyOverseerAgent:
             )
 
             # Assess quality
-            quality_score = await self._assess_quality(
-                verified_results, quality_assessments
-            )
+            quality_score = await self._assess_quality(verified_results, quality_assessments)
 
             # Count sources by type
             academic_sources = self._count_academic_sources(verified_results)
-            verified_sources = len(
-                [r for r in verified_results if r.get("status") == "verified"]
-            )
+            verified_sources = len([r for r in verified_results if r.get("status") == "verified"])
 
             # Make decision
             (
@@ -317,16 +313,12 @@ class GreedyOverseerAgent:
             state["overseer_evaluations"] = state.get("overseer_evaluations", []) + [
                 evaluation.__dict__
             ]
-            state["completeness_scores"][f"iteration_{current_iteration}"] = (
-                completeness_score
-            )
+            state["completeness_scores"][f"iteration_{current_iteration}"] = completeness_score
             state["overseer_decision"] = decision
 
             # Add requirements if retrying
             if decision == "retry" and additional_requirements:
-                state["overseer_requirements"] = state.get(
-                    "overseer_requirements", []
-                ) + [
+                state["overseer_requirements"] = state.get("overseer_requirements", []) + [
                     {
                         "iteration": current_iteration + 1,
                         "requirements": additional_requirements,
@@ -336,19 +328,13 @@ class GreedyOverseerAgent:
             logger.info("[OVERSEER] Evaluation complete:")
             logger.info(f"  - Completeness: {completeness_score:.2f}")
             logger.info(f"  - Quality: {quality_score:.2f}")
-            logger.info(
-                f"  - Academic sources: {academic_sources}/{self.min_academic_sources}"
-            )
-            logger.info(
-                f"  - Verified sources: {verified_sources}/{self.min_verified_sources}"
-            )
+            logger.info(f"  - Academic sources: {academic_sources}/{self.min_academic_sources}")
+            logger.info(f"  - Verified sources: {verified_sources}/{self.min_verified_sources}")
             logger.info(f"  - Decision: {decision}")
             logger.info(f"  - Reasoning: {reasoning}")
 
             if decision == "retry":
-                logger.info(
-                    f"  - Additional requirements: {len(additional_requirements)}"
-                )
+                logger.info(f"  - Additional requirements: {len(additional_requirements)}")
 
             logger.info("=" * 80)
 
@@ -488,10 +474,7 @@ class GreedyOverseerAgent:
                 "proceedings",
             ]
 
-            if any(
-                indicator in url or indicator in title
-                for indicator in academic_indicators
-            ):
+            if any(indicator in url or indicator in title for indicator in academic_indicators):
                 academic_count += 1
 
         return academic_count
@@ -537,9 +520,7 @@ class GreedyOverseerAgent:
 
         # Check quality
         if quality_score < self.quality_threshold:
-            reasons.append(
-                f"Quality {quality_score:.2f} below threshold {self.quality_threshold}"
-            )
+            reasons.append(f"Quality {quality_score:.2f} below threshold {self.quality_threshold}")
             additional_requirements.append(
                 {
                     "type": "quality",
@@ -644,9 +625,7 @@ class GreedyOverseerAgent:
                 state["user_responses"][question["id"]] = processed
 
                 state["clarification_context"] = state.get("clarification_context", {})
-                state["clarification_context"][question["id"]] = processed.get(
-                    "clarification", {}
-                )
+                state["clarification_context"][question["id"]] = processed.get("clarification", {})
 
                 logger.info(f"[OVERSEER] Auto-selected: {response}")
         else:
@@ -673,9 +652,7 @@ class GreedyOverseerAgent:
             title = result.get("title", "N/A")
             status = result.get("status", "N/A")
             confidence = result.get("confidence", 0.0)
-            formatted.append(
-                f"{i}. {title} (status: {status}, confidence: {confidence:.2f})"
-            )
+            formatted.append(f"{i}. {title} (status: {status}, confidence: {confidence:.2f})")
         return "\n".join(formatted)
 
 

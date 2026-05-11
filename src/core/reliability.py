@@ -255,8 +255,7 @@ class HealthMonitor:
 
                 status.last_check = datetime.now()
                 status.avg_response_time = (
-                    status.avg_response_time
-                    * (status.success_count + status.error_count - 1)
+                    status.avg_response_time * (status.success_count + status.error_count - 1)
                     + response_time
                 ) / (status.success_count + status.error_count)
 
@@ -285,14 +284,10 @@ class HealthMonitor:
 
         return {
             "overall_status": overall_status,
-            "components": {
-                name: asdict(status) for name, status in self.components.items()
-            },
+            "components": {name: asdict(status) for name, status in self.components.items()},
             "summary": {
                 "total_components": len(self.components),
-                "healthy": len(
-                    [s for s in self.components.values() if s.status == "healthy"]
-                ),
+                "healthy": len([s for s in self.components.values() if s.status == "healthy"]),
                 "degraded": degraded_count,
                 "critical": critical_count,
             },
@@ -347,14 +342,11 @@ class ProductionReliability:
         if not circuit_breaker.can_execute():
             logger.warning(f"Circuit breaker open for {component_name}")
             if self.config.enable_graceful_degradation:
-                return await self._graceful_degradation(
-                    func, component_name, *args, **kwargs
-                )
+                return await self._graceful_degradation(func, component_name, *args, **kwargs)
             else:
                 raise RuntimeError(f"Circuit breaker open for {component_name}")
 
         # 상태 저장
-        state_id = None
         if save_state and self.config.enable_state_persistence:
             state_data = {
                 "function": func.__name__,
@@ -362,7 +354,7 @@ class ProductionReliability:
                 "kwargs": kwargs,
                 "timestamp": time.time(),
             }
-            state_id = await self.state_manager.save_state(component_name, state_data)
+            await self.state_manager.save_state(component_name, state_data)
 
         start_time = time.time()
 
@@ -374,9 +366,7 @@ class ProductionReliability:
             execution_time = time.time() - start_time
             circuit_breaker.record_success()
 
-            logger.info(
-                f"Function {func.__name__} executed successfully in {execution_time:.2f}s"
-            )
+            logger.info(f"Function {func.__name__} executed successfully in {execution_time:.2f}s")
             return result
 
         except Exception as e:
@@ -387,9 +377,7 @@ class ProductionReliability:
 
             # Graceful degradation
             if self.config.enable_graceful_degradation:
-                return await self._graceful_degradation(
-                    func, component_name, e, *args, **kwargs
-                )
+                return await self._graceful_degradation(func, component_name, e, *args, **kwargs)
             else:
                 raise
 
@@ -411,9 +399,7 @@ class ProductionReliability:
                         self.retry_config.base_delay * (2**attempt),
                         self.retry_config.max_delay,
                     )
-                    logger.debug(
-                        f"TimeoutError on attempt {attempt + 1}, retrying in {wait_time}s"
-                    )
+                    logger.debug(f"TimeoutError on attempt {attempt + 1}, retrying in {wait_time}s")
                     await asyncio.sleep(wait_time)
                     continue
                 raise

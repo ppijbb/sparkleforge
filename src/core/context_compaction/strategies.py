@@ -36,7 +36,6 @@ class CompactionStrategy(ABC):
     @abstractmethod
     def name(self) -> str:
         """전략 이름."""
-        pass
 
     @abstractmethod
     async def compact(
@@ -51,7 +50,6 @@ class CompactionStrategy(ABC):
         Returns:
             압축된 메시지 리스트
         """
-        pass
 
 
 class PruneStrategy(CompactionStrategy):
@@ -205,7 +203,9 @@ class SummarizeStrategy(CompactionStrategy):
         """구조화된 요약에서 섹션별 텍스트 추출."""
         sections: Dict[str, str] = {s: "" for s in STRUCTURED_SUMMARY_SECTIONS}
         pattern = re.compile(
-            r"##\s*(" + "|".join(re.escape(s) for s in STRUCTURED_SUMMARY_SECTIONS) + r")\s*:?\s*\n(.*?)(?=##|\Z)",
+            r"##\s*("
+            + "|".join(re.escape(s) for s in STRUCTURED_SUMMARY_SECTIONS)
+            + r")\s*:?\s*\n(.*?)(?=##|\Z)",
             re.DOTALL | re.IGNORECASE,
         )
         for m in pattern.finditer(content):
@@ -216,9 +216,7 @@ class SummarizeStrategy(CompactionStrategy):
                     break
         return sections
 
-    def _merge_structured_sections(
-        self, existing: Dict[str, str], new: Dict[str, str]
-    ) -> str:
+    def _merge_structured_sections(self, existing: Dict[str, str], new: Dict[str, str]) -> str:
         """기존 요약과 새 요약을 섹션별로 병합. 새 내용이 있으면 추가/갱신."""
         out = []
         for section in STRUCTURED_SUMMARY_SECTIONS:
@@ -255,9 +253,7 @@ class SummarizeStrategy(CompactionStrategy):
 
         section_list = "\n".join(f"- {s}" for s in STRUCTURED_SUMMARY_SECTIONS)
         if existing_structured_summary:
-            existing_sections = self._parse_structured_sections(
-                existing_structured_summary
-            )
+            existing_sections = self._parse_structured_sections(existing_structured_summary)
             prompt = f"""다음은 새로 추가된 대화 내용입니다. 이 내용만 보고 구조화 요약을 생성하세요.
 기존 요약과 병합할 것이므로, 새 대화에서 나온 내용만 각 섹션에 채우세요.
 
@@ -312,13 +308,9 @@ class SummarizeStrategy(CompactionStrategy):
                 summary = f"## Session Intent\n(요약: {len(messages)}개 메시지)\n## Files Modified\n없음\n## Decisions Made\n없음\n## Current State\n진행 중\n## Next Steps\n없음"
 
             if existing_structured_summary and summary:
-                existing_sections = self._parse_structured_sections(
-                    existing_structured_summary
-                )
+                existing_sections = self._parse_structured_sections(existing_structured_summary)
                 new_sections = self._parse_structured_sections(summary)
-                summary = self._merge_structured_sections(
-                    existing_sections, new_sections
-                )
+                summary = self._merge_structured_sections(existing_sections, new_sections)
             return summary if summary else "요약 없음"
         except Exception as e:
             logger.error(f"Failed to generate summary: {e}")
@@ -379,8 +371,7 @@ class HybridStrategy(CompactionStrategy):
             result = pruned + protected
 
         logger.info(
-            f"Hybrid strategy: {len(messages)} -> {len(result)} messages "
-            f"(pruned + summarized)"
+            f"Hybrid strategy: {len(messages)} -> {len(result)} messages " f"(pruned + summarized)"
         )
 
         return result

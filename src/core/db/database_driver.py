@@ -148,17 +148,13 @@ class DatabaseDriver(ABC):
     @abstractmethod
     async def connect(self) -> None:
         """데이터베이스 연결."""
-        pass
 
     @abstractmethod
     async def disconnect(self) -> None:
         """데이터베이스 연결 종료."""
-        pass
 
     @abstractmethod
-    async def begin(
-        self, isolation_level: TransactionIsolation | None = None
-    ) -> Transaction:
+    async def begin(self, isolation_level: TransactionIsolation | None = None) -> Transaction:
         """트랜잭션 시작.
 
         Args:
@@ -167,60 +163,50 @@ class DatabaseDriver(ABC):
         Returns:
             Transaction 객체
         """
-        pass
 
     @abstractmethod
     async def _commit_transaction(self, tx: Transaction) -> None:
         """트랜잭션 커밋 (내부 메서드)."""
-        pass
 
     @abstractmethod
     async def _rollback_transaction(self, tx: Transaction) -> None:
         """트랜잭션 롤백 (내부 메서드)."""
-        pass
 
     @abstractmethod
     async def _execute_in_transaction(
         self, tx: Transaction, query: str, params: Dict[str, Any] | None = None
     ) -> Any:
         """트랜잭션 내에서 쿼리 실행."""
-        pass
 
     @abstractmethod
     async def _execute_many_in_transaction(
         self, tx: Transaction, query: str, params_list: List[Dict[str, Any]]
     ) -> Any:
         """트랜잭션 내에서 여러 쿼리 일괄 실행."""
-        pass
 
     @abstractmethod
     async def execute(self, query: str, params: Dict[str, Any] | None = None) -> Any:
         """트랜잭션 없이 쿼리 실행."""
-        pass
 
     @abstractmethod
     async def execute_many(self, query: str, params_list: List[Dict[str, Any]]) -> Any:
         """트랜잭션 없이 여러 쿼리 일괄 실행."""
-        pass
 
     @abstractmethod
     async def fetch_one(
         self, query: str, params: Dict[str, Any] | None = None
     ) -> Dict[str, Any] | None:
         """단일 행 조회."""
-        pass
 
     @abstractmethod
     async def fetch_all(
         self, query: str, params: Dict[str, Any] | None = None
     ) -> List[Dict[str, Any]]:
         """모든 행 조회."""
-        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
         """데이터베이스 연결 상태 확인."""
-        pass
 
     @asynccontextmanager
     async def transaction(self, isolation_level: TransactionIsolation | None = None):

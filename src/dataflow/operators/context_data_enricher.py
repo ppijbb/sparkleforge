@@ -63,9 +63,7 @@ class ContextDataEnricher(SparkleForgeOperatorABC):
         df = storage.read("dataframe")
 
         if input_key not in df.columns:
-            self.logger.warning(
-                f"Input key '{input_key}' not found. Creating empty results."
-            )
+            self.logger.warning(f"Input key '{input_key}' not found. Creating empty results.")
             df[output_key] = None
             storage.write(df)
             return "No input data found"

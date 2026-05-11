@@ -63,9 +63,7 @@ class AgentLoader:
         config = self.load_agent_config(agent_name)
 
         if prompt_name not in config.prompts:
-            raise ValueError(
-                f"Prompt '{prompt_name}' not found for agent '{agent_name}'"
-            )
+            raise ValueError(f"Prompt '{prompt_name}' not found for agent '{agent_name}'")
 
         prompt_config = config.prompts[prompt_name]
         template_str = prompt_config["template"]
@@ -84,9 +82,7 @@ class AgentLoader:
         config = self.load_agent_config(agent_name)
 
         if prompt_name not in config.prompts:
-            raise ValueError(
-                f"Prompt '{prompt_name}' not found for agent '{agent_name}'"
-            )
+            raise ValueError(f"Prompt '{prompt_name}' not found for agent '{agent_name}'")
 
         return config.prompts[prompt_name].get("system_message", "")
 

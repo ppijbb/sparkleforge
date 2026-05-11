@@ -49,9 +49,7 @@ def truncate_text(text: str, max_length: int = 10000) -> str:
 def clean_html_content(html: str, max_length: int = 10000) -> str:
     """Clean and extract text from HTML."""
     # Remove script and style tags
-    html = re.sub(
-        r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE
-    )
+    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
 
     # Remove HTML tags
@@ -126,9 +124,7 @@ async def fetch_url(
                 content = truncate_text(response.text, max_length)
             else:
                 # For binary content, return message
-                content = (
-                    f"[Binary content: {content_type}, {len(response.content)} bytes]"
-                )
+                content = f"[Binary content: {content_type}, {len(response.content)} bytes]"
 
             return {
                 "success": True,

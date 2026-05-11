@@ -186,9 +186,7 @@ class SharedMemory:
                 self.chroma_client = chromadb.Client()
                 logger.info("✅ ChromaDB initialized for vector search")
             except ImportError:
-                logger.warning(
-                    "⚠️ ChromaDB not available - using file-based storage only"
-                )
+                logger.warning("⚠️ ChromaDB not available - using file-based storage only")
                 logger.info("   Install with: pip install chromadb")
                 self.enable_chromadb = False
 
@@ -239,9 +237,7 @@ class SharedMemory:
             elif scope == MemoryScope.SESSION:
                 if session_id:
                     if session_id not in self.session_caches:
-                        self.session_caches[session_id] = LRUCache(
-                            max_size=500, ttl_seconds=3600
-                        )
+                        self.session_caches[session_id] = LRUCache(max_size=500, ttl_seconds=3600)
                     self.session_caches[session_id].put(key, memory_entry)
 
                     # Legacy compatibility
@@ -253,9 +249,7 @@ class SharedMemory:
                 if agent_id and session_id:
                     cache_key = f"{session_id}:{agent_id}"
                     if cache_key not in self.agent_caches:
-                        self.agent_caches[cache_key] = LRUCache(
-                            max_size=200, ttl_seconds=1800
-                        )
+                        self.agent_caches[cache_key] = LRUCache(max_size=200, ttl_seconds=1800)
                     self.agent_caches[cache_key].put(key, memory_entry)
 
                     # Legacy compatibility
@@ -347,9 +341,9 @@ class SharedMemory:
                         if "agents" in self.sessions[session_id]:
                             if agent_id in self.sessions[session_id]["agents"]:
                                 if key in self.sessions[session_id]["agents"][agent_id]:
-                                    return self.sessions[session_id]["agents"][
-                                        agent_id
-                                    ][key]["value"]
+                                    return self.sessions[session_id]["agents"][agent_id][key][
+                                        "value"
+                                    ]
 
             return None
 
@@ -458,12 +452,10 @@ class SharedMemory:
         stats = {
             "global_cache": self.global_cache.get_stats(),
             "session_caches": {
-                session_id: cache.get_stats()
-                for session_id, cache in self.session_caches.items()
+                session_id: cache.get_stats() for session_id, cache in self.session_caches.items()
             },
             "agent_caches": {
-                cache_key: cache.get_stats()
-                for cache_key, cache in self.agent_caches.items()
+                cache_key: cache.get_stats() for cache_key, cache in self.agent_caches.items()
             },
             "total_session_caches": len(self.session_caches),
             "total_agent_caches": len(self.agent_caches),
@@ -527,9 +519,7 @@ def get_shared_memory() -> SharedMemory:
     if _shared_memory is None:
         storage_path = os.getenv("MEMORI_STORAGE_PATH", "./storage/memori")
         enable_chromadb = os.getenv("ENABLE_CHROMADB", "true").lower() == "true"
-        _shared_memory = SharedMemory(
-            storage_path=storage_path, enable_chromadb=enable_chromadb
-        )
+        _shared_memory = SharedMemory(storage_path=storage_path, enable_chromadb=enable_chromadb)
 
     return _shared_memory
 
@@ -545,8 +535,6 @@ def init_shared_memory(
     if enable_chromadb is None:
         enable_chromadb = os.getenv("ENABLE_CHROMADB", "true").lower() == "true"
 
-    _shared_memory = SharedMemory(
-        storage_path=storage_path, enable_chromadb=enable_chromadb
-    )
+    _shared_memory = SharedMemory(storage_path=storage_path, enable_chromadb=enable_chromadb)
 
     return _shared_memory

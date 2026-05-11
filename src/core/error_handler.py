@@ -70,7 +70,9 @@ class ErrorInfo:
 
     def __post_init__(self):
         if not self.error_id:
-            self.error_id = f"err_{int(self.timestamp.timestamp())}_{hash(self.message) % 10000:04d}"
+            self.error_id = (
+                f"err_{int(self.timestamp.timestamp())}_{hash(self.message) % 10000:04d}"
+            )
 
         # 스택 트레이스 자동 추출
         if self.original_error and not self.stack_trace:
@@ -350,9 +352,7 @@ class ErrorHandler:
             error_info.severity in [ErrorSeverity.HIGH, ErrorSeverity.CRITICAL]
             and error_info.stack_trace
         ):
-            self.logger.error(
-                f"Stack trace for {error_info.error_id}:\n{error_info.stack_trace}"
-            )
+            self.logger.error(f"Stack trace for {error_info.error_id}:\n{error_info.stack_trace}")
 
     async def _display_error(self, error_info: ErrorInfo):
         """출력 매니저를 통한 에러 표시."""
@@ -370,18 +370,13 @@ class ErrorHandler:
                 level = OutputLevel.SERVICE
 
             # 에러 메시지 구성
-            error_message = (
-                f"[{error_info.category.value.upper()}] {error_info.message}"
-            )
+            error_message = f"[{error_info.category.value.upper()}] {error_info.message}"
 
             if error_info.context and error_info.context.agent_id:
                 error_message = f"{output_manager._format_agent_name(error_info.context.agent_id)} {error_message}"
 
             # UNKNOWN 범주의 일반론적 복구 제안은 CLI 출력에서 제외해 노이즈를 줄임
-            if (
-                error_info.recovery_suggestions
-                and error_info.category != ErrorCategory.UNKNOWN
-            ):
+            if error_info.recovery_suggestions and error_info.category != ErrorCategory.UNKNOWN:
                 error_message += "\n💡 복구 제안:"
                 for i, suggestion in enumerate(error_info.recovery_suggestions[:3], 1):
                     error_message += f"\n  {i}. {suggestion}"
@@ -412,9 +407,7 @@ class ErrorHandler:
             if recovery_func:
                 result = await recovery_func(error_info)
                 if result:
-                    self.logger.info(
-                        f"Custom recovery succeeded for {error_info.error_id}"
-                    )
+                    self.logger.info(f"Custom recovery succeeded for {error_info.error_id}")
                     return True
 
             # 자동 복구 전략 적용
@@ -528,9 +521,7 @@ class ErrorHandler:
                     "id": e.error_id,
                     "category": e.category.value,
                     "severity": e.severity.value,
-                    "message": e.message[:100] + "..."
-                    if len(e.message) > 100
-                    else e.message,
+                    "message": e.message[:100] + "..." if len(e.message) > 100 else e.message,
                     "timestamp": e.timestamp.isoformat(),
                 }
                 for e in self.error_history[-10:]  # 최근 10개
@@ -593,9 +584,7 @@ async def handle_error_async(
 ) -> ErrorInfo:
     """비동기 에러 처리 헬퍼 함수."""
     handler = get_error_handler()
-    return await handler.handle_error(
-        error, category, severity, context, custom_message
-    )
+    return await handler.handle_error(error, category, severity, context, custom_message)
 
 
 def handle_error_sync(
@@ -629,9 +618,7 @@ def handle_error_sync(
             asyncio.set_event_loop(new_loop)
             try:
                 new_loop.run_until_complete(
-                    handler.handle_error(
-                        error, category, severity, context, custom_message
-                    )
+                    handler.handle_error(error, category, severity, context, custom_message)
                 )
             finally:
                 new_loop.close()

@@ -89,9 +89,7 @@ class BatchWrapper(Generic[P, R]):
                 res_df = batch_storage.read("dataframe")
 
                 # 새 컬럼 추가
-                new_cols = [
-                    c for c in res_df.columns if c not in whole_dataframe.columns
-                ]
+                new_cols = [c for c in res_df.columns if c not in whole_dataframe.columns]
                 for c in new_cols:
                     whole_dataframe[c] = pd.NA
 

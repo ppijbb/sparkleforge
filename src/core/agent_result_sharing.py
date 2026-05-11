@@ -20,6 +20,7 @@ from src.core.researcher_config import get_agent_config, get_llm_config
 
 logger = logging.getLogger(__name__)
 
+
 # workspace/agents 디렉터리 (Sub-Agent Communication via Filesystem)
 def _get_shared_results_workspace_root() -> Path:
     root = Path(__file__).resolve().parent.parent.parent
@@ -104,7 +105,9 @@ class SharedResultsManager:
             path = root / f"{self.objective_id}_{safe_id}.json"
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
-            summary = json.dumps(result, ensure_ascii=False)[:500] + ("..." if _serialize_result_size(result) > 500 else "")
+            summary = json.dumps(result, ensure_ascii=False)[:500] + (
+                "..." if _serialize_result_size(result) > 500 else ""
+            )
             return {
                 "_fs_ref": str(path),
                 "summary": summary,
@@ -127,7 +130,10 @@ class SharedResultsManager:
             result_id = f"{task_id}_{agent_id}_{datetime.now().timestamp()}"
 
             payload = result
-            if self.use_filesystem_for_large_results and _serialize_result_size(result) > self.large_result_threshold_chars:
+            if (
+                self.use_filesystem_for_large_results
+                and _serialize_result_size(result) > self.large_result_threshold_chars
+            ):
                 payload = self._write_result_to_fs(result_id, agent_id, result)
 
             shared_result = SharedResult(
@@ -142,9 +148,7 @@ class SharedResultsManager:
             self.task_results[task_id].append(result_id)
             self.agent_results[agent_id].append(result_id)
 
-            logger.info(
-                f"Result shared: {result_id} by agent {agent_id} for task {task_id}"
-            )
+            logger.info(f"Result shared: {result_id} by agent {agent_id} for task {task_id}")
 
             return result_id
 
@@ -207,9 +211,7 @@ class SharedResultsManager:
             }
 
         agents = set(r.agent_id for r in results)
-        avg_confidence = (
-            sum(r.confidence for r in results) / len(results) if results else 0.0
-        )
+        avg_confidence = sum(r.confidence for r in results) / len(results) if results else 0.0
 
         return {
             "total_results": len(results),
@@ -296,10 +298,16 @@ class AgentDiscussionManager:
 
         total_weight = sum(max(0.0, r.confidence) for r in all_results) or 1.0
         participant_weights = [
-            {"agent_id": r.agent_id, "confidence": r.confidence, "weight": max(0.0, r.confidence) / total_weight}
+            {
+                "agent_id": r.agent_id,
+                "confidence": r.confidence,
+                "weight": max(0.0, r.confidence) / total_weight,
+            }
             for r in all_results
         ]
-        consensus_score = sum(r.confidence for r in all_results) / len(all_results) if all_results else 0.0
+        consensus_score = (
+            sum(r.confidence for r in all_results) / len(all_results) if all_results else 0.0
+        )
         best = max(all_results, key=lambda r: r.confidence)
         try:
             weighted_summary = json.dumps(best.result, ensure_ascii=False)[:500]
@@ -466,9 +474,7 @@ Provide a structured response with comparison, consistency analysis, logical val
             )
 
             discussion_message = (
-                llm_result.content
-                if hasattr(llm_result, "content")
-                else str(llm_result)
+                llm_result.content if hasattr(llm_result, "content") else str(llm_result)
             )
 
             # Weighted Voting / 명시적 합의 도출
@@ -506,9 +512,7 @@ Provide a structured response with comparison, consistency analysis, logical val
             consistency_check = "unknown"
             logical_validity = "unknown"
 
-            if any(
-                kw in discussion_lower for kw in ["consistent", "agreement", "agree"]
-            ):
+            if any(kw in discussion_lower for kw in ["consistent", "agreement", "agree"]):
                 if any(
                     kw in discussion_lower
                     for kw in ["inconsistent", "contradiction", "disagreement"]
@@ -517,24 +521,16 @@ Provide a structured response with comparison, consistency analysis, logical val
                 else:
                     consistency_check = "consistent"
             elif any(
-                kw in discussion_lower
-                for kw in ["inconsistent", "contradiction", "disagreement"]
+                kw in discussion_lower for kw in ["inconsistent", "contradiction", "disagreement"]
             ):
                 consistency_check = "inconsistent"
 
-            if any(
-                kw in discussion_lower
-                for kw in ["logical", "valid", "sound", "reasoning"]
-            ):
-                if any(
-                    kw in discussion_lower for kw in ["invalid", "fallacy", "illogical"]
-                ):
+            if any(kw in discussion_lower for kw in ["logical", "valid", "sound", "reasoning"]):
+                if any(kw in discussion_lower for kw in ["invalid", "fallacy", "illogical"]):
                     logical_validity = "partially_valid"
                 else:
                     logical_validity = "valid"
-            elif any(
-                kw in discussion_lower for kw in ["invalid", "fallacy", "illogical"]
-            ):
+            elif any(kw in discussion_lower for kw in ["invalid", "fallacy", "illogical"]):
                 logical_validity = "invalid"
 
             discussion_result["consistency_check"] = consistency_check
@@ -559,9 +555,7 @@ Provide a structured response with comparison, consistency analysis, logical val
             logger.error(f"Failed to generate discussion message: {e}")
             return {}
 
-    async def get_all_discussions_for_result(
-        self, result_id: str
-    ) -> List[Dict[str, Any]]:
+    async def get_all_discussions_for_result(self, result_id: str) -> List[Dict[str, Any]]:
         """특정 결과에 대한 모든 논박 내용 조회."""
         async with self._lock:
             all_discussions = []
@@ -593,9 +587,7 @@ Provide a structured response with comparison, consistency analysis, logical val
                 summary["topics"][topic_name] = {
                     "message_count": len(messages),
                     "participating_agents": list(agents),
-                    "last_message_time": messages[-1].timestamp.isoformat()
-                    if messages
-                    else None,
+                    "last_message_time": messages[-1].timestamp.isoformat() if messages else None,
                 }
 
             return summary

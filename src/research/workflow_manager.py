@@ -107,9 +107,7 @@ class ResearchWorkflowManager:
 
             # Step 4: Report Generation
             logger.info("Generating report...")
-            report_generation = await self._generate_report(
-                workflow_data, result.output
-            )
+            report_generation = await self._generate_report(workflow_data, result.output)
             result.output["report_generation"] = report_generation
 
             result.status = WorkflowStatus.COMPLETED
@@ -171,11 +169,7 @@ class ResearchWorkflowManager:
         topic = workflow_data["topic"]
 
         # Get sources from previous step
-        sources = (
-            workflow_data.get("output", {})
-            .get("source_discovery", {})
-            .get("sources", [])
-        )
+        sources = workflow_data.get("output", {}).get("source_discovery", {}).get("sources", [])
 
         # If no sources, raise error instead of creating mock content
         if not sources:
@@ -211,9 +205,7 @@ class ResearchWorkflowManager:
                 await asyncio.sleep(0.5)  # Be respectful
 
             except Exception as e:
-                logger.warning(
-                    f"Failed to gather content from {source.get('url', 'unknown')}: {e}"
-                )
+                logger.warning(f"Failed to gather content from {source.get('url', 'unknown')}: {e}")
                 continue
 
         # If no content gathered, raise error
@@ -313,9 +305,7 @@ class ResearchWorkflowManager:
                 return True
         return False
 
-    def list_workflows(
-        self, status_filter: WorkflowStatus | None = None
-    ) -> List[Dict[str, Any]]:
+    def list_workflows(self, status_filter: WorkflowStatus | None = None) -> List[Dict[str, Any]]:
         """List all workflows with optional status filtering."""
         workflows = []
 

@@ -6,7 +6,6 @@ Session Intelligence: 5-factor scoring for resume vs fresh (OpenClaw pattern).
 """
 
 import logging
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List
@@ -110,22 +109,12 @@ class SessionManager:
 
             # PII Redaction (백서 요구사항: 세션 데이터 저장 전 PII 제거)
             pii_redactor = get_pii_redactor()
-            redacted_state, pii_matches_state = pii_redactor.redact_session_data(
-                agent_state
-            )
-            redacted_context, pii_matches_context = pii_redactor.redact_session_data(
-                context_data
-            )
-            redacted_memory, pii_matches_memory = pii_redactor.redact_session_data(
-                memory_data
-            )
+            redacted_state, pii_matches_state = pii_redactor.redact_session_data(agent_state)
+            redacted_context, pii_matches_context = pii_redactor.redact_session_data(context_data)
+            redacted_memory, pii_matches_memory = pii_redactor.redact_session_data(memory_data)
 
             # Calculate total PII matches
-            total_pii = (
-                len(pii_matches_state)
-                + len(pii_matches_context)
-                + len(pii_matches_memory)
-            )
+            total_pii = len(pii_matches_state) + len(pii_matches_context) + len(pii_matches_memory)
 
             if total_pii > 0:
                 logger.warning(
@@ -135,9 +124,11 @@ class SessionManager:
             # 메타데이터 구성
             full_metadata = {
                 "user_id": metadata.get("user_id") if metadata else None,
-                "created_at": metadata.get("created_at", datetime.now().isoformat())
-                if metadata
-                else datetime.now().isoformat(),
+                "created_at": (
+                    metadata.get("created_at", datetime.now().isoformat())
+                    if metadata
+                    else datetime.now().isoformat()
+                ),
                 "last_accessed": datetime.now().isoformat(),
                 "state_version": metadata.get("state_version", 1) if metadata else 1,
                 "tags": metadata.get("tags", []) if metadata else [],
@@ -196,9 +187,7 @@ class SessionManager:
             logger.error(f"Error loading session {session_id}: {e}", exc_info=True)
             return None
 
-    def compute_session_resume_score(
-        self, session_id: str, user_query: str
-    ) -> SessionResumeScore:
+    def compute_session_resume_score(self, session_id: str, user_query: str) -> SessionResumeScore:
         """5-factor score for session resume (OpenClaw-style Session Intelligence).
 
         Factors: recency (0.25), task_relevance (0.25), session_health (0.20),
@@ -240,7 +229,12 @@ class SessionManager:
                 score.task_relevance = 0.5
 
             # Session health: no error, not failed
-            failed = state.get("research_failed") or state.get("verification_failed") or state.get("report_failed") or state.get("error")
+            failed = (
+                state.get("research_failed")
+                or state.get("verification_failed")
+                or state.get("report_failed")
+                or state.get("error")
+            )
             score.session_health = 0.0 if failed else 1.0
 
             # Context capacity: smaller context = more room (0-1)
@@ -368,9 +362,7 @@ class SessionManager:
         """
         return self.storage.restore_from_snapshot(session_id, snapshot_id)
 
-    def _extract_context_state(
-        self, context_engineer: ContextEngineer
-    ) -> Dict[str, Any]:
+    def _extract_context_state(self, context_engineer: ContextEngineer) -> Dict[str, Any]:
         """ContextEngineer 상태 추출."""
         try:
             stats = context_engineer.get_context_stats()
@@ -431,9 +423,7 @@ class SessionManager:
                     compressed=chunk_data.get("compressed", False),
                     original_size=chunk_data.get("original_size", 0),
                 )
-                chunk.token_count = chunk_data.get(
-                    "token_count", chunk._estimate_tokens()
-                )
+                chunk.token_count = chunk_data.get("token_count", chunk._estimate_tokens())
                 context_engineer.context_chunks.append(chunk)
 
             logger.info(f"Context state restored: {len(chunks_data)} chunks")
@@ -441,9 +431,7 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error restoring context state: {e}", exc_info=True)
 
-    def _extract_memory_state(
-        self, shared_memory: SharedMemory, session_id: str
-    ) -> Dict[str, Any]:
+    def _extract_memory_state(self, shared_memory: SharedMemory, session_id: str) -> Dict[str, Any]:
         """SharedMemory 상태 추출."""
         try:
             # 세션별 메모리 추출

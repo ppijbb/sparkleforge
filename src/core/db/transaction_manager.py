@@ -47,9 +47,7 @@ class TransactionManager:
         self.default_isolation_level = default_isolation_level
         logger.info("TransactionManager initialized")
 
-    async def begin(
-        self, isolation_level: TransactionIsolation | None = None
-    ) -> Transaction:
+    async def begin(self, isolation_level: TransactionIsolation | None = None) -> Transaction:
         """새 트랜잭션 시작.
 
         Args:

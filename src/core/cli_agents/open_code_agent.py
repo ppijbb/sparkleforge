@@ -27,6 +27,7 @@ OPENROUTER_FALLBACKS = [
 ]
 GOOGLE_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
+
 # OPENCODE_PRIMARY: "google" = Gemini 우선 (한도 절약), "openrouter" = OpenRouter 우선
 def _primary_provider() -> str:
     raw = (os.getenv("OPENCODE_PRIMARY") or "").strip().lower()
@@ -95,7 +96,9 @@ class OpenCodeAgent(BaseCLIAgent):
             try:
                 return await self._call_google_genai(user_msg, system_msg)
             except Exception as e:
-                logger.warning("Google Gemini primary failed (%s), trying OpenRouter...", str(e)[:60])
+                logger.warning(
+                    "Google Gemini primary failed (%s), trying OpenRouter...", str(e)[:60]
+                )
         if self._api_key:
             try:
                 return await self._call_openrouter_chain(user_msg, system_msg)
@@ -123,8 +126,13 @@ class OpenCodeAgent(BaseCLIAgent):
             except RuntimeError as e:
                 last_err = e
                 err_str = str(e)
-                if any(c in err_str for c in ("402", "403", "404", "429")) or "limit" in err_str.lower():
-                    logger.warning("Model %s unavailable (%s), trying fallback...", model, err_str[:80])
+                if (
+                    any(c in err_str for c in ("402", "403", "404", "429"))
+                    or "limit" in err_str.lower()
+                ):
+                    logger.warning(
+                        "Model %s unavailable (%s), trying fallback...", model, err_str[:80]
+                    )
                     continue
                 raise
         raise last_err or RuntimeError("All OpenRouter models failed")
@@ -146,13 +154,18 @@ class OpenCodeAgent(BaseCLIAgent):
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                OPENROUTER_URL, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=90)
+                OPENROUTER_URL,
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=90),
             ) as resp:
                 raw = await resp.text()
                 try:
                     body = json.loads(raw) if raw else {}
                 except Exception:
-                    raise RuntimeError(f"OpenRouter {resp.status}: {raw[:200] if raw else 'empty response'}")
+                    raise RuntimeError(
+                        f"OpenRouter {resp.status}: {raw[:200] if raw else 'empty response'}"
+                    )
                 if resp.status != 200:
                     err = body.get("error", {}).get("message", str(body))
                     raise RuntimeError(f"OpenRouter {resp.status}: {err}")
@@ -179,7 +192,9 @@ class OpenCodeAgent(BaseCLIAgent):
                 try:
                     body = json.loads(raw) if raw else {}
                 except Exception:
-                    raise RuntimeError(f"Google Gemini {resp.status}: {raw[:200] if raw else 'empty response'}")
+                    raise RuntimeError(
+                        f"Google Gemini {resp.status}: {raw[:200] if raw else 'empty response'}"
+                    )
                 if resp.status != 200:
                     err = body.get("error", {}).get("message", str(body))
                     raise RuntimeError(f"Google Gemini {resp.status}: {err}")

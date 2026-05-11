@@ -36,7 +36,7 @@ class TrustContext:
     allowed_mcp_servers: frozenset[str] | None = None
 
     @classmethod
-    def default(cls) -> "TrustContext":
+    def default(cls) -> TrustContext:
         return cls()
 
     def allows_tool(self, tool_name: str, mcp_server: str | None = None) -> bool:
@@ -132,8 +132,7 @@ class TrustGate:
         level = self._resolve_level(file_config)
 
         deny_names = {
-            name.strip().lower()
-            for name in _split_csv(os.getenv("SPARKLEFORGE_DENY_TOOLS"))
+            name.strip().lower() for name in _split_csv(os.getenv("SPARKLEFORGE_DENY_TOOLS"))
         }
         if not deny_names and file_config.get("deny_names"):
             value = file_config["deny_names"]
@@ -143,8 +142,7 @@ class TrustGate:
                 deny_names = {name.strip().lower() for name in _split_csv(str(value))}
 
         deny_prefixes = tuple(
-            prefix.strip().lower()
-            for prefix in _split_csv(os.getenv("SPARKLEFORGE_DENY_PREFIXES"))
+            prefix.strip().lower() for prefix in _split_csv(os.getenv("SPARKLEFORGE_DENY_PREFIXES"))
         )
         if not deny_prefixes and file_config.get("deny_prefixes"):
             value = file_config["deny_prefixes"]
@@ -153,9 +151,7 @@ class TrustGate:
                     str(prefix).strip().lower() for prefix in value if str(prefix).strip()
                 )
             else:
-                deny_prefixes = tuple(
-                    prefix.strip().lower() for prefix in _split_csv(str(value))
-                )
+                deny_prefixes = tuple(prefix.strip().lower() for prefix in _split_csv(str(value)))
 
         allowed_servers_raw = os.getenv("SPARKLEFORGE_ALLOWED_MCP_SERVERS")
         allowed_mcp_servers: frozenset[str] | None
@@ -167,9 +163,7 @@ class TrustGate:
             value = file_config.get("allowed_mcp_servers")
             if isinstance(value, list):
                 allowed_mcp_servers = frozenset(
-                    str(server).strip().lower()
-                    for server in value
-                    if str(server).strip()
+                    str(server).strip().lower() for server in value if str(server).strip()
                 )
             elif value:
                 allowed_mcp_servers = frozenset(

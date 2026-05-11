@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.core.plugin_system.manifest import PLUGIN_MANIFEST_DIR, PluginManifest
+from src.core.plugin_system.manifest import PluginManifest
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,9 @@ class PluginDiscovery:
 
     def build_registry_from_plugins(
         self,
-        existing_skills: Optional[Dict[str, Dict[str, Any]]] = None,
-        existing_categories: Optional[Dict[str, List[str]]] = None,
-        existing_dependencies: Optional[Dict[str, List[str]]] = None,
+        existing_skills: Dict[str, Dict[str, Any]] | None = None,
+        existing_categories: Dict[str, List[str]] | None = None,
+        existing_dependencies: Dict[str, List[str]] | None = None,
     ) -> tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]], Dict[str, List[str]]]:
         """Build skills dict, skill_categories, skill_dependencies from plugins + existing (merge).
 
@@ -98,11 +98,15 @@ class PluginDiscovery:
                         "version": pinfo.manifest.version,
                         "category": "general",
                         "tags": [],
-                        "path": f"skills/{skill_id}" if (self.skills_dir / skill_id).exists() else "",
+                        "path": (
+                            f"skills/{skill_id}" if (self.skills_dir / skill_id).exists() else ""
+                        ),
                         "enabled": True,
                         "dependencies": [],
                         "required_tools": [],
-                        "author": pinfo.manifest.author.name if pinfo.manifest.author else "Unknown",
+                        "author": (
+                            pinfo.manifest.author.name if pinfo.manifest.author else "Unknown"
+                        ),
                         "created_at": "",
                         "updated_at": "",
                         "metadata": {"capabilities": [], "compatibility": {}},

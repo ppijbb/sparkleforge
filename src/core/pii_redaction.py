@@ -25,9 +25,7 @@ class PIIMatch:
 # PII 패턴 정의
 PII_PATTERNS = {
     "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"),
-    "phone": re.compile(
-        r"\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"
-    ),
+    "phone": re.compile(r"\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),
     "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
     "credit_card": re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"),
     "ip_address": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
@@ -90,9 +88,7 @@ class PIIRedactor:
 
         return sorted(matches, key=lambda m: m.start_pos)
 
-    def redact_text(
-        self, text: str, replacement: str = "[REDACTED]"
-    ) -> Tuple[str, List[PIIMatch]]:
+    def redact_text(self, text: str, replacement: str = "[REDACTED]") -> Tuple[str, List[PIIMatch]]:
         """텍스트에서 PII 제거.
 
         Args:

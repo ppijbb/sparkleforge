@@ -150,7 +150,6 @@ class AgentPipeline(ABC):
 
         하위 클래스에서 구현해야 합니다.
         """
-        pass
 
     def compile(self):
         """Pipeline을 컴파일하고 데이터 흐름을 검증합니다."""
@@ -224,12 +223,10 @@ class AgentPipeline(ABC):
                         {
                             "input_key": input_key,
                             "op_name": op_node.op_name,
-                            "class_name": op_node.op_obj.__class__.__name__
-                            if op_node.op_obj
-                            else "None",
-                            "key_para_name": op_node.input_key_nodes[
-                                input_key
-                            ].key_para_name,
+                            "class_name": (
+                                op_node.op_obj.__class__.__name__ if op_node.op_obj else "None"
+                            ),
+                            "key_para_name": op_node.input_key_nodes[input_key].key_para_name,
                         }
                     )
 
@@ -285,9 +282,9 @@ class AgentPipeline(ABC):
 
                 if len(self.last_modified_index_of_keys[input_key]) > 0:
                     last_modified_idx = self.last_modified_index_of_keys[input_key][-1]
-                    last_modified_keynode = self.op_nodes_list[
-                        last_modified_idx
-                    ].output_keys_nodes[input_key]
+                    last_modified_keynode = self.op_nodes_list[last_modified_idx].output_keys_nodes[
+                        input_key
+                    ]
                     # 양방향 포인터 설정
                     last_modified_keynode.ptr.append(current_keynode)
                     current_keynode.ptr.append(last_modified_keynode)
@@ -298,9 +295,7 @@ class AgentPipeline(ABC):
                 current_keynode.set_index(idx)
                 self.last_modified_index_of_keys[output_key].append(idx)
 
-        self.logger.debug(
-            f"Built operator nodes graph with {len(self.op_nodes_list)} nodes"
-        )
+        self.logger.debug(f"Built operator nodes graph with {len(self.op_nodes_list)} nodes")
         self.logger.debug(f"Accumulated keys: {self.accumulated_keys}")
 
     def _compiled_forward(self, resume_step: int = 0):

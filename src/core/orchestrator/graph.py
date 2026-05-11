@@ -1,31 +1,34 @@
 import logging
-from langgraph.graph import StateGraph, END
 
-from src.core.orchestrator.state import ResearchState
+from langgraph.graph import END, StateGraph
+
 from src.core.orchestrator.analysis import AnalysisNode
-from src.core.orchestrator.planning import PlanningNode
-from src.core.orchestrator.execution import ExecutionNode
-from src.core.orchestrator.verification import VerificationNode
 from src.core.orchestrator.compression import CompressionNode
+from src.core.orchestrator.execution import ExecutionNode
+from src.core.orchestrator.planning import PlanningNode
+from src.core.orchestrator.state import ResearchState
 from src.core.orchestrator.synthesis import SynthesisNode
+from src.core.orchestrator.verification import VerificationNode
 
 logger = logging.getLogger(__name__)
 
+
 def create_orchestrator_graph(
-    creativity_agent, 
-    context_manager, 
-    streaming_manager, 
+    creativity_agent,
+    context_manager,
+    streaming_manager,
     hybrid_storage,
     context_loader,
     research_depth,
     llm_config,
-    agent_config
+    agent_config,
 ):
     """Orchestrator LangGraph 워크플로우 구축."""
-    
     # 노드 초기화
     analysis = AnalysisNode(creativity_agent, context_manager, streaming_manager, hybrid_storage)
-    planning = PlanningNode(context_manager, context_loader, research_depth, hybrid_storage, streaming_manager)
+    planning = PlanningNode(
+        context_manager, context_loader, research_depth, hybrid_storage, streaming_manager
+    )
     execution = ExecutionNode(llm_config, agent_config, research_depth, streaming_manager)
     verification = VerificationNode(agent_config)
     compression = CompressionNode(context_manager)
@@ -54,9 +57,7 @@ def create_orchestrator_graph(
     workflow.add_conditional_edges(
         "planning_agent",
         lambda state: (
-            "waiting_for_clarification"
-            if state.get("waiting_for_user", False)
-            else "verify_plan"
+            "waiting_for_clarification" if state.get("waiting_for_user", False) else "verify_plan"
         ),
         {
             "waiting_for_clarification": "planning_agent",
@@ -66,9 +67,7 @@ def create_orchestrator_graph(
 
     workflow.add_conditional_edges(
         "verify_plan",
-        lambda state: (
-            "approved" if state.get("plan_approved", False) else "planning_agent"
-        ),
+        lambda state: ("approved" if state.get("plan_approved", False) else "planning_agent"),
         {"approved": "overseer_initial_review", "planning_agent": "planning_agent"},
     )
 

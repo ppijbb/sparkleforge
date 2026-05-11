@@ -42,9 +42,7 @@ class SearchInput(BaseModel):
 class GetPaperInput(BaseModel):
     """Input schema for getting paper details."""
 
-    paper_id: str = Field(
-        ..., description="arXiv paper ID", min_length=1, max_length=20
-    )
+    paper_id: str = Field(..., description="arXiv paper ID", min_length=1, max_length=20)
 
 
 # arXiv API utilities
@@ -405,9 +403,7 @@ async def search(
         sort_by=sort_by,
         sort_order=sort_order,
     )
-    result = await search_arxiv(
-        input.query, input.max_results, input.sort_by, input.sort_order
-    )
+    result = await search_arxiv(input.query, input.max_results, input.sort_by, input.sort_order)
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 

@@ -12,7 +12,7 @@ DeepResearch (Alibaba-NLP) 영감을 받은 반복적 깊은 연구 시스템.
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List
@@ -37,12 +37,8 @@ class QualityMetrics(BaseModel):
 
     completeness: float = Field(default=0.0, ge=0.0, le=1.0, description="주제 완성도")
     depth: float = Field(default=0.0, ge=0.0, le=1.0, description="분석 깊이")
-    source_diversity: float = Field(
-        default=0.0, ge=0.0, le=1.0, description="소스 다양성"
-    )
-    factual_accuracy: float = Field(
-        default=0.0, ge=0.0, le=1.0, description="사실적 정확성"
-    )
+    source_diversity: float = Field(default=0.0, ge=0.0, le=1.0, description="소스 다양성")
+    factual_accuracy: float = Field(default=0.0, ge=0.0, le=1.0, description="사실적 정확성")
     coherence: float = Field(default=0.0, ge=0.0, le=1.0, description="일관성")
 
     @property
@@ -63,13 +59,9 @@ class ThinkOutput(BaseModel):
 
     current_understanding: str = Field(description="현재까지의 이해")
     knowledge_gaps: List[str] = Field(default_factory=list, description="지식 공백")
-    next_research_directions: List[str] = Field(
-        default_factory=list, description="다음 연구 방향"
-    )
+    next_research_directions: List[str] = Field(default_factory=list, description="다음 연구 방향")
     hypotheses: List[str] = Field(default_factory=list, description="검증할 가설들")
-    confidence_level: float = Field(
-        default=0.0, ge=0.0, le=1.0, description="현재 신뢰도"
-    )
+    confidence_level: float = Field(default=0.0, ge=0.0, le=1.0, description="현재 신뢰도")
 
 
 class ReportOutput(BaseModel):
@@ -77,35 +69,21 @@ class ReportOutput(BaseModel):
 
     round_number: int = Field(description="현재 라운드 번호")
     executive_summary: str = Field(description="핵심 요약")
-    key_findings: List[Dict[str, Any]] = Field(
-        default_factory=list, description="주요 발견사항"
-    )
-    sources_used: List[Dict[str, str]] = Field(
-        default_factory=list, description="사용된 소스"
-    )
-    quality_metrics: QualityMetrics = Field(
-        default_factory=QualityMetrics, description="품질 지표"
-    )
-    remaining_questions: List[str] = Field(
-        default_factory=list, description="남은 질문들"
-    )
+    key_findings: List[Dict[str, Any]] = Field(default_factory=list, description="주요 발견사항")
+    sources_used: List[Dict[str, str]] = Field(default_factory=list, description="사용된 소스")
+    quality_metrics: QualityMetrics = Field(default_factory=QualityMetrics, description="품질 지표")
+    remaining_questions: List[str] = Field(default_factory=list, description="남은 질문들")
 
 
 class ActionOutput(BaseModel):
     """Action 단계의 출력."""
 
-    actions_taken: List[Dict[str, Any]] = Field(
-        default_factory=list, description="수행한 액션들"
-    )
+    actions_taken: List[Dict[str, Any]] = Field(default_factory=list, description="수행한 액션들")
     new_information: List[Dict[str, Any]] = Field(
         default_factory=list, description="새로 획득한 정보"
     )
-    tool_calls: List[Dict[str, Any]] = Field(
-        default_factory=list, description="도구 호출 기록"
-    )
-    errors_encountered: List[str] = Field(
-        default_factory=list, description="발생한 오류들"
-    )
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list, description="도구 호출 기록")
+    errors_encountered: List[str] = Field(default_factory=list, description="발생한 오류들")
 
 
 class RoundState(BaseModel):
@@ -130,9 +108,7 @@ class IterativeResearchState(BaseModel):
     session_id: str = Field(description="세션 ID")
     current_round: int = Field(default=1, description="현재 라운드")
     max_rounds: int = Field(default=5, description="최대 라운드 수")
-    quality_threshold: float = Field(
-        default=0.8, ge=0.0, le=1.0, description="종료 품질 임계값"
-    )
+    quality_threshold: float = Field(default=0.8, ge=0.0, le=1.0, description="종료 품질 임계값")
     is_continuous: bool = Field(default=False, description="24/7 연속 실행 모드 (장기 세션)")
     intermediate_reports: List[str] = Field(default_factory=list, description="중간 보고 기록")
 
@@ -141,14 +117,10 @@ class IterativeResearchState(BaseModel):
     accumulated_findings: List[Dict[str, Any]] = Field(
         default_factory=list, description="누적 발견사항"
     )
-    all_sources: List[Dict[str, str]] = Field(
-        default_factory=list, description="모든 사용 소스"
-    )
+    all_sources: List[Dict[str, str]] = Field(default_factory=list, description="모든 사용 소스")
 
     # 라운드 히스토리 (Think 제외 - context bloat 방지)
-    round_reports: List[ReportOutput] = Field(
-        default_factory=list, description="라운드별 보고서"
-    )
+    round_reports: List[ReportOutput] = Field(default_factory=list, description="라운드별 보고서")
 
     # 종료 조건
     is_complete: bool = Field(default=False, description="연구 완료 여부")
@@ -171,7 +143,7 @@ class WorkspaceContext:
     remaining_questions: List[str]
     quality_score: float
     round_number: int
-    reasoning_memories: List[Any] = field(default_factory=list) # 추가: 검색된 추론 메모리
+    reasoning_memories: List[Any] = field(default_factory=list)  # 추가: 검색된 추론 메모리
 
 
 class WorkspaceReconstructor:
@@ -246,9 +218,7 @@ class IterativeResearchEngine:
         self.max_rounds = max_rounds
         self.quality_threshold = quality_threshold
         self.min_improvement_threshold = min_improvement_threshold
-        self.workspace_reconstructor = (
-            workspace_reconstructor or WorkspaceReconstructor()
-        )
+        self.workspace_reconstructor = workspace_reconstructor or WorkspaceReconstructor()
 
         # Callbacks
         self.on_round_start: Callable | None = None
@@ -300,9 +270,13 @@ class IterativeResearchEngine:
         stagnation_count = 0
         max_stagnation = 2  # 연속 2라운드 개선 없으면 종료
 
-        logger.info(f"🔄 Starting iterative research for query: {query[:100]}... (Continuous: {state.is_continuous})")
+        logger.info(
+            f"🔄 Starting iterative research for query: {query[:100]}... (Continuous: {state.is_continuous})"
+        )
 
-        while not state.is_complete and (state.is_continuous or state.current_round <= self.max_rounds):
+        while not state.is_complete and (
+            state.is_continuous or state.current_round <= self.max_rounds
+        ):
             round_start = datetime.now()
 
             # 라운드 시작 콜백
@@ -326,9 +300,7 @@ class IterativeResearchEngine:
                 state.current_round_state.think_output = think_output
 
                 if self.on_think_complete:
-                    await self._safe_callback(
-                        self.on_think_complete, state, think_output
-                    )
+                    await self._safe_callback(self.on_think_complete, state, think_output)
 
                 logger.info(
                     f"💭 Think complete: {len(think_output.knowledge_gaps)} gaps identified"
@@ -342,13 +314,9 @@ class IterativeResearchEngine:
                 state.current_round_state.action_output = action_output
 
                 if self.on_action_complete:
-                    await self._safe_callback(
-                        self.on_action_complete, state, action_output
-                    )
+                    await self._safe_callback(self.on_action_complete, state, action_output)
 
-                logger.info(
-                    f"⚡ Action complete: {len(action_output.new_information)} new items"
-                )
+                logger.info(f"⚡ Action complete: {len(action_output.new_information)} new items")
 
                 # 3. REPORT 단계 (Think + Action 결과 종합)
                 state.current_round_state.phase = ResearchPhase.REPORT
@@ -362,9 +330,7 @@ class IterativeResearchEngine:
                 state.current_round_state.report_output = report_output
 
                 if self.on_report_complete:
-                    await self._safe_callback(
-                        self.on_report_complete, state, report_output
-                    )
+                    await self._safe_callback(self.on_report_complete, state, report_output)
 
                 logger.info(
                     f"📊 Report complete: quality={report_output.quality_metrics.overall_score:.2f}"
@@ -372,9 +338,7 @@ class IterativeResearchEngine:
 
                 # 4. RECONSTRUCT 단계
                 state.current_round_state.phase = ResearchPhase.RECONSTRUCT
-                new_workspace = self.workspace_reconstructor.reconstruct(
-                    state, report_output
-                )
+                new_workspace = self.workspace_reconstructor.reconstruct(state, report_output)
 
                 # 상태 업데이트 (Think 출력은 저장하지 않음 - context bloat 방지)
                 state.evolving_summary = new_workspace.evolving_summary
@@ -394,8 +358,12 @@ class IterativeResearchEngine:
                     # Intermediate reporting
                     if state.current_round % report_interval == 0:
                         if self.on_intermediate_report:
-                            await self._safe_callback(self.on_intermediate_report, state, report_output)
-                        state.intermediate_reports.append(f"Report complete at round {state.current_round}")
+                            await self._safe_callback(
+                                self.on_intermediate_report, state, report_output
+                            )
+                        state.intermediate_reports.append(
+                            f"Report complete at round {state.current_round}"
+                        )
 
                 # 종료 조건 확인
                 current_quality = report_output.quality_metrics.overall_score
@@ -443,9 +411,7 @@ class IterativeResearchEngine:
 
             except Exception as e:
                 logger.error(f"❌ Round {state.current_round} failed: {e}")
-                state.termination_reason = (
-                    f"Error in round {state.current_round}: {str(e)}"
-                )
+                state.termination_reason = f"Error in round {state.current_round}: {str(e)}"
                 # 오류 발생해도 이전 결과는 유지하고 종료
                 if state.round_reports:
                     state.is_complete = True
@@ -469,64 +435,74 @@ class IterativeResearchEngine:
             last_report=last_report,
             knowledge_gaps=last_report.remaining_questions[:5] if last_report else [],
             remaining_questions=last_report.remaining_questions if last_report else [],
-            quality_score=last_report.quality_metrics.overall_score
-            if last_report
-            else 0.0,
+            quality_score=last_report.quality_metrics.overall_score if last_report else 0.0,
             round_number=state.current_round,
-            reasoning_memories=[]
+            reasoning_memories=[],
         )
 
-    async def _prepare_workspace_async(self, state: IterativeResearchState, query: str) -> WorkspaceContext:
+    async def _prepare_workspace_async(
+        self, state: IterativeResearchState, query: str
+    ) -> WorkspaceContext:
         """비동기로 workspace context 준비 (메모리 검색 포함)."""
         workspace = self._prepare_workspace(state)
-        
+
         try:
             from src.core.reasoning_memory import get_reasoning_memory_bank
+
             bank = get_reasoning_memory_bank()
-            memories = await bank.select_reasoning_memory(query=query, n=3, domain_filter="research")
+            memories = await bank.select_reasoning_memory(
+                query=query, n=3, domain_filter="research"
+            )
             workspace.reasoning_memories = memories
         except Exception as e:
             logger.warning(f"Failed to fetch reasoning memories: {e}")
-            
+
         return workspace
 
-    async def _induce_reasoning_memory_async(self, state: IterativeResearchState, query: str, quality_score: float):
+    async def _induce_reasoning_memory_async(
+        self, state: IterativeResearchState, query: str, quality_score: float
+    ):
         """라운드 완료 후 궤적으로부터 추론 메모리 추출."""
         try:
-            from src.core.reasoning_memory_inducer import get_reasoning_memory_inducer, TrajectoryRecord
             from src.core.reasoning_memory import get_reasoning_memory_bank
-            
+            from src.core.reasoning_memory_inducer import (
+                TrajectoryRecord,
+                get_reasoning_memory_inducer,
+            )
+
             inducer = get_reasoning_memory_inducer()
             bank = get_reasoning_memory_bank()
-            
+
             traj = TrajectoryRecord(query=query, domain="research")
-            
+
             # 현재 라운드의 기록을 trajectory에 추가
             if state.current_round_state and state.current_round_state.think_output:
                 think_str = state.current_round_state.think_output.current_understanding
-                
+
                 action_str = ""
                 if state.current_round_state.action_output:
                     action_str = str(state.current_round_state.action_output.actions_taken)
-                    
+
                 obs_str = ""
                 if state.current_round_state.report_output:
                     obs_str = state.current_round_state.report_output.executive_summary
-                    
+
                 traj.add_step(think=think_str, action=action_str, observation=obs_str)
-                
+
             # 품질 점수로 성공/실패 판단
             traj.status = "success" if quality_score >= self.quality_threshold else "fail"
-            
+
             if traj.status == "success":
                 new_memories = await inducer.induce_from_success(traj)
             else:
                 new_memories = await inducer.induce_from_failure(traj)
-                
+
             if new_memories:
                 await bank.store_batch(new_memories)
-                logger.info(f"Learned {len(new_memories)} reasoning memories from research round {state.current_round}.")
-                
+                logger.info(
+                    f"Learned {len(new_memories)} reasoning memories from research round {state.current_round}."
+                )
+
         except Exception as e:
             logger.warning(f"Failed to induce reasoning memory: {e}")
 
@@ -642,8 +618,13 @@ class IterativeResearchNode:
 
         # 검색된 추론 메모리 주입
         if hasattr(workspace, "reasoning_memories") and workspace.reasoning_memories:
-            from src.core.prompts.reasoning_memory_prompts import MEMORY_INJECTION_TEMPLATE
-            memory_text = "\n\n".join([f"### {m.title}\n{m.content}" for m in workspace.reasoning_memories])
+            from src.core.prompts.reasoning_memory_prompts import (
+                MEMORY_INJECTION_TEMPLATE,
+            )
+
+            memory_text = "\n\n".join(
+                [f"### {m.title}\n{m.content}" for m in workspace.reasoning_memories]
+            )
             context_section += f"\n{MEMORY_INJECTION_TEMPLATE.format(memories=memory_text)}\n"
 
         return f"""# Deep Research Think Phase (Round {round_number})
@@ -696,8 +677,7 @@ Respond in a structured format:
         """Report 단계 프롬프트 생성."""
         new_info = (
             "\n".join(
-                f"- {info.get('content', str(info))}"
-                for info in action_output.new_information
+                f"- {info.get('content', str(info))}" for info in action_output.new_information
             )
             if action_output.new_information
             else "No new information gathered in this round."

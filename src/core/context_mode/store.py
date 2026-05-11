@@ -25,20 +25,112 @@ try:
 except sqlite3.OperationalError:
     FTS5_AVAILABLE = False
 
-STOPWORDS = frozenset([
-    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
-    "her", "was", "one", "our", "out", "has", "his", "how", "its", "may",
-    "new", "now", "old", "see", "way", "who", "did", "get", "got", "let",
-    "say", "she", "too", "use", "will", "with", "this", "that", "from",
-    "they", "been", "have", "many", "some", "them", "than", "each", "make",
-    "like", "just", "over", "such", "take", "into", "year", "your", "good",
-    "could", "would", "about", "which", "their", "there", "other", "after",
-    "should", "through", "also", "more", "most", "only", "very", "when",
-    "what", "then", "these", "those", "being", "does", "done", "both",
-    "same", "still", "while", "where", "here", "were", "much",
-    "update", "updates", "updated", "deps", "dev", "tests", "test",
-    "add", "added", "fix", "fixed", "run", "running", "using",
-])
+STOPWORDS = frozenset(
+    [
+        "the",
+        "and",
+        "for",
+        "are",
+        "but",
+        "not",
+        "you",
+        "all",
+        "can",
+        "had",
+        "her",
+        "was",
+        "one",
+        "our",
+        "out",
+        "has",
+        "his",
+        "how",
+        "its",
+        "may",
+        "new",
+        "now",
+        "old",
+        "see",
+        "way",
+        "who",
+        "did",
+        "get",
+        "got",
+        "let",
+        "say",
+        "she",
+        "too",
+        "use",
+        "will",
+        "with",
+        "this",
+        "that",
+        "from",
+        "they",
+        "been",
+        "have",
+        "many",
+        "some",
+        "them",
+        "than",
+        "each",
+        "make",
+        "like",
+        "just",
+        "over",
+        "such",
+        "take",
+        "into",
+        "year",
+        "your",
+        "good",
+        "could",
+        "would",
+        "about",
+        "which",
+        "their",
+        "there",
+        "other",
+        "after",
+        "should",
+        "through",
+        "also",
+        "more",
+        "most",
+        "only",
+        "very",
+        "when",
+        "what",
+        "then",
+        "these",
+        "those",
+        "being",
+        "does",
+        "done",
+        "both",
+        "same",
+        "still",
+        "while",
+        "where",
+        "here",
+        "were",
+        "much",
+        "update",
+        "updates",
+        "updated",
+        "deps",
+        "dev",
+        "tests",
+        "test",
+        "add",
+        "added",
+        "fix",
+        "fixed",
+        "run",
+        "running",
+        "using",
+    ]
+)
 
 
 def _sanitize_query(query: str) -> str:
@@ -71,8 +163,7 @@ def _levenshtein(a: str, b: str) -> int:
         curr = [i]
         for j in range(1, len(b) + 1):
             curr.append(
-                prev[j - 1] if a[i - 1] == b[j - 1]
-                else 1 + min(prev[j], curr[j - 1], prev[j - 1])
+                prev[j - 1] if a[i - 1] == b[j - 1] else 1 + min(prev[j], curr[j - 1], prev[j - 1])
             )
         prev = curr
     return prev[len(b)]
@@ -144,8 +235,8 @@ class SearchResult:
         source: str,
         rank: float,
         content_type: str,
-        match_layer: Optional[str] = None,
-        highlighted: Optional[str] = None,
+        match_layer: str | None = None,
+        highlighted: str | None = None,
     ):
         self.title = title
         self.content = content
@@ -159,7 +250,7 @@ class SearchResult:
 class ContentStore:
     """FTS5 BM25 knowledge base for context-mode."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         if not FTS5_AVAILABLE:
             raise RuntimeError("SQLite FTS5 is not available on this system")
         self._db_path = db_path or os.path.join(
@@ -171,7 +262,8 @@ class ContentStore:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        self._conn.executescript("""
+        self._conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL,
@@ -199,7 +291,8 @@ class ContentStore:
             CREATE TABLE IF NOT EXISTS vocabulary (
                 word TEXT PRIMARY KEY
             );
-        """)
+        """
+        )
         self._conn.commit()
 
     def cleanup(self) -> None:
@@ -218,14 +311,18 @@ class ContentStore:
 
     def index(
         self,
-        content: Optional[str] = None,
-        path: Optional[str] = None,
-        source: Optional[str] = None,
+        content: str | None = None,
+        path: str | None = None,
+        source: str | None = None,
     ) -> IndexResult:
         """Index markdown or text. Provide content or path."""
         if not content and not path:
             raise ValueError("Either content or path must be provided")
-        text = content if content is not None else Path(path).read_text(encoding="utf-8", errors="replace")
+        text = (
+            content
+            if content is not None
+            else Path(path).read_text(encoding="utf-8", errors="replace")
+        )
         label = source or path or "untitled"
         chunks = self._chunk_markdown(text)
         if not chunks:
@@ -306,7 +403,9 @@ class ContentStore:
             code_chunks=0,
         )
 
-    def search(self, query: str, limit: int = 3, source: Optional[str] = None) -> List[SearchResult]:
+    def search(
+        self, query: str, limit: int = 3, source: str | None = None
+    ) -> List[SearchResult]:
         """Porter FTS5 search."""
         sanitized = _sanitize_query(query)
         if source:
@@ -350,7 +449,7 @@ class ContentStore:
         ]
 
     def search_trigram(
-        self, query: str, limit: int = 3, source: Optional[str] = None
+        self, query: str, limit: int = 3, source: str | None = None
     ) -> List[SearchResult]:
         """Trigram FTS5 search."""
         sanitized = _sanitize_trigram_query(query)
@@ -393,7 +492,7 @@ class ContentStore:
             for r in rows
         ]
 
-    def _fuzzy_correct(self, query: str) -> Optional[str]:
+    def _fuzzy_correct(self, query: str) -> str | None:
         """Levenshtein-based correction from vocabulary."""
         word = query.lower().strip()
         if len(word) < 3:
@@ -403,7 +502,7 @@ class ContentStore:
             "SELECT word FROM vocabulary WHERE length(word) BETWEEN ? AND ?",
             (len(word) - max_dist, len(word) + max_dist),
         ).fetchall()
-        best_word: Optional[str] = None
+        best_word: str | None = None
         best_dist = max_dist + 1
         for (candidate,) in rows:
             if candidate == word:
@@ -415,7 +514,7 @@ class ContentStore:
         return best_word if best_dist <= max_dist else None
 
     def search_with_fallback(
-        self, query: str, limit: int = 3, source: Optional[str] = None
+        self, query: str, limit: int = 3, source: str | None = None
     ) -> List[SearchResult]:
         """Porter -> Trigram -> Fuzzy correction."""
         results = self.search(query, limit, source)
@@ -488,15 +587,14 @@ class ContentStore:
             "SELECT content FROM chunks WHERE source_id = ?", (source_id,)
         ):
             words = set(
-                w for w in re.findall(r"[\w\-_]+", content.lower())
+                w
+                for w in re.findall(r"[\w\-_]+", content.lower())
                 if len(w) >= 3 and w not in STOPWORDS
             )
             for w in words:
                 doc_freq[w] = doc_freq.get(w, 0) + 1
         filtered = [
-            (word, count)
-            for word, count in doc_freq.items()
-            if min_app <= count <= max_app
+            (word, count) for word, count in doc_freq.items() if min_app <= count <= max_app
         ]
 
         def score(item: Tuple[str, int]) -> float:
@@ -572,14 +670,9 @@ class ContentStore:
         flush()
         return chunks
 
-    def _chunk_plain_text(
-        self, text: str, lines_per_chunk: int
-    ) -> List[Tuple[str, str]]:
+    def _chunk_plain_text(self, text: str, lines_per_chunk: int) -> List[Tuple[str, str]]:
         sections = re.split(r"\n\s*\n", text)
-        if (
-            3 <= len(sections) <= 200
-            and all(len(s.encode("utf-8")) < 5000 for s in sections)
-        ):
+        if 3 <= len(sections) <= 200 and all(len(s.encode("utf-8")) < 5000 for s in sections):
             out = []
             for i, sec in enumerate(sections):
                 trimmed = sec.strip()
@@ -598,7 +691,11 @@ class ContentStore:
             slice_lines = lines[i : i + lines_per_chunk]
             if not slice_lines:
                 break
-            first = (slice_lines[0].strip()[:80]) if slice_lines else f"Lines {i+1}-{i+len(slice_lines)}"
+            first = (
+                (slice_lines[0].strip()[:80])
+                if slice_lines
+                else f"Lines {i+1}-{i+len(slice_lines)}"
+            )
             out.append((first or f"Lines {i+1}-{i+len(slice_lines)}", "\n".join(slice_lines)))
         return out
 

@@ -34,8 +34,7 @@ def _langfuse_enabled() -> bool:
     global _LANGFUSE_ENABLED
     if _LANGFUSE_ENABLED is None:
         _LANGFUSE_ENABLED = bool(
-            os.environ.get("LANGFUSE_PUBLIC_KEY")
-            and os.environ.get("LANGFUSE_SECRET_KEY")
+            os.environ.get("LANGFUSE_PUBLIC_KEY") and os.environ.get("LANGFUSE_SECRET_KEY")
         )
     return _LANGFUSE_ENABLED
 
@@ -105,9 +104,7 @@ def get_langfuse_run_config(
             tags.append(f"source:{source_type}")
     if tags:
         meta["langfuse_tags"] = tags
-    return (
-        {"callbacks": callbacks, "metadata": meta} if meta else {"callbacks": callbacks}
-    )
+    return {"callbacks": callbacks, "metadata": meta} if meta else {"callbacks": callbacks}
 
 
 def get_langfuse_client() -> Any | None:
@@ -266,6 +263,7 @@ def propagate_trace_context(
     except (ImportError, Exception):
         pass
 
+
 @contextmanager
 def track_harness_transition(
     session_id: str,
@@ -276,17 +274,19 @@ def track_harness_transition(
     # 1. Workflow Audit Log 기록
     try:
         from src.core.workflow_audit import get_audit_logger
+
         audit = get_audit_logger()
         audit.log_state_transition(session_id, old_phase, new_phase, {"status": "transitioned"})
     except ImportError:
         pass
-        
+
     # 2. Observability Span 기록
     if not _langfuse_enabled():
         yield None
         return
     try:
         from langfuse import get_client
+
         client = get_client()
         with client.start_as_current_observation(
             as_type="span",

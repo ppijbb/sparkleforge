@@ -65,9 +65,7 @@ class GuardrailsValidator:
             # Jailbreak 시도 검증
             validation_result = self._check_jailbreak(user_query)
             if not validation_result.is_valid:
-                logger.warning(
-                    f"Jailbreak attempt detected: {validation_result.reason}"
-                )
+                logger.warning(f"Jailbreak attempt detected: {validation_result.reason}")
                 raise ValueError(f"Input validation failed: {validation_result.reason}")
 
             # 기존 state 그대로 반환 (수정 없음)
@@ -97,12 +95,8 @@ class GuardrailsValidator:
             if final_report:
                 validation_result = self._check_harmful_content(final_report)
                 if not validation_result.is_valid:
-                    logger.warning(
-                        f"Harmful content detected: {validation_result.reason}"
-                    )
-                    raise ValueError(
-                        f"Output validation failed: {validation_result.reason}"
-                    )
+                    logger.warning(f"Harmful content detected: {validation_result.reason}")
+                    raise ValueError(f"Output validation failed: {validation_result.reason}")
 
             # research_results 검증
             research_results = result.get("research_results", [])
