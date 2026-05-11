@@ -593,9 +593,6 @@ class Scheduler:
         except asyncio.CancelledError:
             execution.status = "cancelled"
             execution.completed_at = datetime.now()
-            self._save_executions()
-        except Exception as e:
-            logger.error(f"Error executing schedule: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Error executing schedule: {e}", exc_info=True)
 
