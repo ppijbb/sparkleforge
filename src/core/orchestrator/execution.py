@@ -285,7 +285,7 @@ class ExecutionNode(BaseNode):
         """카테고리별 사용 가능한 도구 목록을 반환합니다."""
         mapping = {
             ToolCategory.SEARCH: ["g-search", "ddg_search::search", "tavily-mcp::tavily-search"],
-            ToolCategory.ACADEMIC: ["arxiv"],
+            ToolCategory.ACADEMIC: ["arxiv", "scholar"],
             ToolCategory.DATA: ["fetch::fetch_url", "fetch::extract_elements"],
             ToolCategory.CODE: ["python_coder", "code_interpreter"],
             ToolCategory.BROWSER: ["cdp_navigate", "cdp_click", "cdp_type_text", "cdp_screenshot", "cdp_extract_text", "cdp_js", "cdp_page_info"],

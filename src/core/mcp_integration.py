@@ -5244,7 +5244,16 @@ async def _fallback_to_ddg_search(query: str, max_results: int) -> ToolResult:
         logger.info(f"[MCP][fallback] Using DDG search fallback for query: {query}")
         result = search_duckduckgo_json(query, max_results)
         if isinstance(result, str):
-            result = json.loads(result)
+            try:
+                result = json.loads(result)
+            except (json.JSONDecodeError, ValueError):
+                logger.warning("[MCP][fallback] DDG returned non-JSON string, wrapping as plain text result")
+                return ToolResult(
+                    success=True,
+                    data={"results": [{"content": result}], "total_results": 1},
+                    tool_name="ddg_search",
+                    source="native_ddg_fallback",
+                )
 
         if result and isinstance(result, dict):
             results = result.get("results", [])
