@@ -186,18 +186,14 @@ def check_main_py_usage() -> Dict:
 
     # Extract import lines
     import_lines = [
-        line
-        for line in content.split("\n")
-        if "import" in line and "orchestrator" in line.lower()
+        line for line in content.split("\n") if "import" in line and "orchestrator" in line.lower()
     ]
     result["import_lines"] = import_lines
 
     return result
 
 
-def generate_usage_report(
-    import_stats: Dict, unused_files: List[str], main_usage: Dict
-) -> str:
+def generate_usage_report(import_stats: Dict, unused_files: List[str], main_usage: Dict) -> str:
     """Generate markdown usage report."""
     report = []
     report.append("# 실제 사용 여부 분석 리포트\n")
@@ -211,9 +207,7 @@ def generate_usage_report(
     report.append(
         f"autonomous_orchestrator imported: {main_usage.get('autonomous_orchestrator_imported', False)}"
     )
-    report.append(
-        f"agent_orchestrator used: {main_usage.get('agent_orchestrator_used', False)}"
-    )
+    report.append(f"agent_orchestrator used: {main_usage.get('agent_orchestrator_used', False)}")
     report.append(
         f"autonomous_orchestrator used: {main_usage.get('autonomous_orchestrator_used', False)}"
     )
@@ -230,9 +224,7 @@ def generate_usage_report(
     orch_usage = analyze_orchestrator_usage(import_stats)
 
     report.append("### agent_orchestrator")
-    report.append(
-        f"- Imported by: {len(orch_usage['agent_orchestrator']['imported_by'])} files"
-    )
+    report.append(f"- Imported by: {len(orch_usage['agent_orchestrator']['imported_by'])} files")
     if orch_usage["agent_orchestrator"]["imported_by"]:
         for importer in orch_usage["agent_orchestrator"]["imported_by"]:
             report.append(f"  - `{importer}`")
@@ -248,9 +240,7 @@ def generate_usage_report(
     report.append("")
 
     report.append("## 3. 사용되지 않는 파일 (후보)\n")
-    report.append(
-        f"총 {len(unused_files)}개 파일이 다른 모듈에서 import되지 않습니다.\n"
-    )
+    report.append(f"총 {len(unused_files)}개 파일이 다른 모듈에서 import되지 않습니다.\n")
     report.append(
         "⚠️ 주의: 이 파일들은 실제로 사용되지 않을 수 있지만, 다음 경우에는 사용될 수 있습니다:\n"
     )
@@ -292,9 +282,7 @@ def main():
     print("\n[2] Checking main.py usage...")
     main_usage = check_main_py_usage()
     print("✅ Main.py analysis complete")
-    print(
-        f"   - agent_orchestrator used: {main_usage.get('agent_orchestrator_used', False)}"
-    )
+    print(f"   - agent_orchestrator used: {main_usage.get('agent_orchestrator_used', False)}")
     print(
         f"   - autonomous_orchestrator used: {main_usage.get('autonomous_orchestrator_used', False)}"
     )

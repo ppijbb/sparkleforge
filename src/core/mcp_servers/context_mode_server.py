@@ -8,7 +8,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List
 
 try:
     from fastmcp import FastMCP
@@ -79,9 +79,7 @@ if FASTMCP_AVAILABLE:
         )
 
     @mcp.tool()
-    def execute(
-        language: str, code: str, timeout: int = 30000, intent: str | None = None
-    ) -> str:
+    def execute(language: str, code: str, timeout: int = 30000, intent: str | None = None) -> str:
         """Execute code in sandbox. Only stdout enters context. Prefer over bash for large output."""
         executor = _get_executor()
         result = executor.execute(language=language, code=code, timeout=timeout)

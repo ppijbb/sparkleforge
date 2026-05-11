@@ -102,7 +102,7 @@ def visualize_langgraph():
 
         # Load configuration first
         print("\n[0] Configuration 로드 중...")
-        config = load_config_from_env()
+        load_config_from_env()
         print("✅ Configuration 로드 완료")
 
         # Create orchestrator (this builds the graph)
@@ -177,9 +177,7 @@ def visualize_langgraph():
 
                 # Check if mmdc (mermaid-cli) is installed
                 try:
-                    result = subprocess.run(
-                        ["which", "mmdc"], capture_output=True, text=True
-                    )
+                    result = subprocess.run(["which", "mmdc"], capture_output=True, text=True)
                     if result.returncode == 0:
                         print("✅ mermaid-cli (mmdc) 발견")
                         subprocess.run(
@@ -206,8 +204,6 @@ def visualize_langgraph():
                         # Try using Python mermaid package
                         try:
                             print("\nPython mermaid 패키지로 시도 중...")
-                            import base64
-                            from io import BytesIO
 
                             # Try pyppeteer-based rendering
                             print("pyppeteer 기반 렌더링 시도...")
@@ -242,9 +238,7 @@ def visualize_langgraph():
                             with open(html_file, "w", encoding="utf-8") as f:
                                 f.write(html_content)
                             print(f"✅ HTML 파일 저장: {html_file}")
-                            print(
-                                "\n📝 브라우저에서 HTML 파일을 열고 스크린샷을 찍거나,"
-                            )
+                            print("\n📝 브라우저에서 HTML 파일을 열고 스크린샷을 찍거나,")
                             print("   온라인 도구를 사용하세요:")
                             print("   - https://mermaid.live/ (온라인 에디터)")
                             print("   - https://mermaid.ink/ (PNG 생성 API)")

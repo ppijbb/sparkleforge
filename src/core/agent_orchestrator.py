@@ -5,7 +5,7 @@
 """
 
 import logging
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, TypedDict
 
 from src.core.agent_harness import AgentHarness
 

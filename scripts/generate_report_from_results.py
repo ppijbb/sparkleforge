@@ -169,11 +169,7 @@ for server_name, result in successful:
     for stage_name, stage_result in stages.items():
         if isinstance(stage_result, dict):
             status = "✅ 성공" if stage_result.get("success") else "❌ 실패"
-            time_info = (
-                f" ({stage_result.get('time', 0):.2f}s)"
-                if stage_result.get("time")
-                else ""
-            )
+            time_info = f" ({stage_result.get('time', 0):.2f}s)" if stage_result.get("time") else ""
             report += f"- {stage_name}: {status}{time_info}\n"
 
     report += "\n"
@@ -200,9 +196,7 @@ if failed:
                     else ""
                 )
                 time_info = (
-                    f" ({stage_result.get('time', 0):.2f}s)"
-                    if stage_result.get("time")
-                    else ""
+                    f" ({stage_result.get('time', 0):.2f}s)" if stage_result.get("time") else ""
                 )
                 report += f"- {stage_name}: {status}{time_info}{error_info}\n"
 
@@ -217,8 +211,7 @@ report += """## 🔍 문제점 분석
 error_500_servers = [
     name
     for name, r in failed
-    if "500" in str(r.get("error", ""))
-    or "Failed to get user config" in str(r.get("error", ""))
+    if "500" in str(r.get("error", "")) or "Failed to get user config" in str(r.get("error", ""))
 ]
 if error_500_servers:
     report += f"""### 1. Smithery 서버 500 에러 (Bundle 설정 조회 실패)
@@ -261,9 +254,7 @@ if error_401_servers:
 """
 
 # 타임아웃
-timeout_servers = [
-    name for name, r in failed if "timeout" in str(r.get("error", "")).lower()
-]
+timeout_servers = [name for name, r in failed if "timeout" in str(r.get("error", "")).lower()]
 if timeout_servers:
     report += f"""### 3. 타임아웃 에러
 
@@ -317,8 +308,7 @@ report += (
 )
 
 report_file = (
-    reports_dir
-    / f"smithery_mcp_diagnosis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+    reports_dir / f"smithery_mcp_diagnosis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
 )
 with open(report_file, "w", encoding="utf-8") as f:
     f.write(report)

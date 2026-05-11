@@ -403,9 +403,7 @@ class ContentStore:
             code_chunks=0,
         )
 
-    def search(
-        self, query: str, limit: int = 3, source: str | None = None
-    ) -> List[SearchResult]:
+    def search(self, query: str, limit: int = 3, source: str | None = None) -> List[SearchResult]:
         """Porter FTS5 search."""
         sanitized = _sanitize_query(query)
         if source:

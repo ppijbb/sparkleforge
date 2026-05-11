@@ -13,7 +13,7 @@ import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generator, List, Optional, Set, Tuple
+from typing import Any, Dict, Generator, List, Set, Tuple
 
 from src.core.prompt_security import (
     get_input_filter,

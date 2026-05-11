@@ -5,7 +5,7 @@
 상태 전이 추적 및 데이터 오염을 방지합니다.
 """
 
-from typing import Annotated, Any, Dict, List, Optional, Set
+from typing import Annotated, Any, Dict, List, Set
 
 from typing_extensions import TypedDict
 
