@@ -13,6 +13,32 @@ DeepResearchAgent 영감을 받은 동적 MCP 도구 관리 에이전트.
 
 import asyncio
 import logging
+
+logger = logging.getLogger(__name__)
+
+class OpenRouter:
+    def __init__(self):
+        self._preset_configs = False
+        self._lock = asyncio.Lock()
+
+    async def _ensure_initialized(self):
+        if not self._preset_configs:
+            async with self._lock:
+                if not self._preset_configs:
+                    try:
+                        await self._initialize_models()
+                        await self._initialize_clients()
+                        self._preset_configs = True
+                    except Exception as e:
+                        logger.error('Initialization failed: %s', e)
+                        raise
+
+    async def _initialize_models(self):
+        pass
+
+    async def _initialize_clients(self):
+        pass
+import logging
 from collections import defaultdict
 from datetime import datetime
 from enum import Enum
