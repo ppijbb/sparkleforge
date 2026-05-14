@@ -95,8 +95,8 @@ jobs:
           set +e
           uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
-            --format markdown --no-interactive \
-            > sparkleforge-roadmap-console.log \
+            --format markdown \
+            > sparkleforge-roadmap-console.log 2>&1 \
             2> sparkleforge-roadmap-error.log
           RC=$?
           set -e

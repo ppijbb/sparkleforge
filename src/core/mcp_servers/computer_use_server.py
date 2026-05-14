@@ -453,5 +453,9 @@ def run():
     mcp.run(show_banner=False)
 
 
+def get_mcp():
+    return mcp
+
+
 if __name__ == "__main__":
     run()
