@@ -143,7 +143,7 @@ jobs:
               ;;
           esac
           PR_TITLE=$(echo "$PR_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
-          COMMIT_TITLE="🧹 chore: apply OpenCode changes for issue #$ISSUE_NUMBER"
+          COMMIT_TITLE="$PR_TITLE"
           BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"
           if [ -z "$BASE_BRANCH" ]; then
             BASE_BRANCH=$(gh repo view "${{ github.repository }}" \
@@ -379,6 +379,8 @@ jobs:
           gh pr merge "${{ steps.pr.outputs.pr_number }}" \
             --repo "${{ github.repository }}" \
             --"$AUTO_FIX_MERGE_METHOD" \
+            --subject "${{ steps.context.outputs.pr_title }}" \
+            --body "Closes #${{ steps.context.outputs.issue_number }}" \
             --delete-branch
 
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
