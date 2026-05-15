@@ -14,7 +14,7 @@ def main_entry():
     os.chdir(project_root)
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    # main 모듈은 프로젝트 루트의 main.py
-    import main
+    # main 모듈은 src.cli.interactive_cli 또는 적절한 진입점
+    from src.cli.interactive_cli import main
 
-    main.main_entry()
+    main()
