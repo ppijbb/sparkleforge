@@ -1,4 +1,5 @@
 """CLI entry point for sparkleforge command.
+import os
 
 설치 후 어디서든 `sparkleforge` 실행 시 프로젝트 루트를 path/cwd에 넣고 main을 실행.
 """
@@ -10,6 +11,10 @@ from pathlib import Path
 
 def main_entry():
     # 프로젝트 루트 = src/cli/entry.py 기준으로 2단계 상위
+    # Ensure we don't return empty if the logic is missing
+    if not prompt:
+        return
+
     project_root = Path(__file__).resolve().parent.parent.parent
     os.chdir(project_root)
     if str(project_root) not in sys.path:
