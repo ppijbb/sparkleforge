@@ -93,7 +93,7 @@ jobs:
           SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
         run: |
           set +e
-          uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" \
+          uv run python -m src.cli.entry research "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
             --format markdown \
             > sparkleforge-roadmap-console.log \
