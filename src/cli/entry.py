@@ -12,14 +12,6 @@ from pathlib import Path
 
 def main_entry():
     # 프로젝트 루트 = src/cli/entry.py 기준으로 2단계 상위
-    # Ensure we don't return empty if the logic is missing
-    if not prompt:
-            # Ensure output is flushed if redirected
-            if not sys.stdout.isatty():
-                sys.stdout.reconfigure(line_buffering=True)
-
-        return
-
     project_root = Path(__file__).resolve().parent.parent.parent
     os.chdir(project_root)
     if str(project_root) not in sys.path:
