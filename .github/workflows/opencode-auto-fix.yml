@@ -323,7 +323,7 @@ jobs:
               --title "${{ steps.context.outputs.pr_title }}" \
               --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
 
-          Closes #${{ steps.context.outputs.issue_number }}
+          Refs #${{ steps.context.outputs.issue_number }}
 
           Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
             PR_NUMBER=${PR_URL##*/}
@@ -381,7 +381,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --"$AUTO_FIX_MERGE_METHOD" \
             --subject "${{ steps.context.outputs.pr_title }}" \
-            --body "Closes #${{ steps.context.outputs.issue_number }}" \
+            --body "Refs #${{ steps.context.outputs.issue_number }}" \
             --delete-branch
 
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
@@ -397,7 +397,7 @@ jobs:
             --add-label auto-fix-merged || true
           gh issue comment "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
-            --body "OpenCode auto-fix PR merged: ${{ steps.pr.outputs.pr_url }}"
+            --body "OpenCode auto-fix PR merged: ${{ steps.pr.outputs.pr_url }}. This issue remains open until the fix is validated against the acceptance criteria."
 
       - name: Report auto-fix failure on issue
         if: failure() && steps.context.outputs.issue_number != ''
