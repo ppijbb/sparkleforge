@@ -40,7 +40,7 @@ Unlike traditional research tools, SparkleForge simulates a **team of master cra
 git clone https://github.com/yourusername/sparkleforge.git
 cd sparkleforge
 
-# Run the installation script
+# Run the installation script (Linux/macOS)
 ./install.sh
 
 # Install Python dependencies in the uv environment
@@ -51,9 +51,10 @@ cp env.example .env
 # Edit .env with your OpenRouter API key
 ```
 
-`./install.sh` installs Docker and registers the gVisor `runsc` runtime used by
-SparkleForge's safe code execution path. Code execution runs in short-lived
-containers with network, memory, CPU, PID, privilege, and filesystem limits.
+`./install.sh` handles environment setup. On Linux, it installs Docker and
+registers the gVisor `runsc` runtime for secure code execution. On macOS,
+SparkleForge automatically detects the platform and uses native process isolation
+or local sandbox backends, skipping Linux-specific container requirements.
 
 ### Basic Usage
 
