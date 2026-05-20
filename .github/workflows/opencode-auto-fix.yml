@@ -156,8 +156,17 @@ jobs:
           git checkout -B "$BRANCH" "origin/$BASE_BRANCH"
           gh issue view "$ISSUE_NUMBER" \
             --repo "${{ github.repository }}" \
-            --json title,body,url \
-            --jq '"# " + .title + "\n\n" + (.body // "") + "\n\n" + .url' > issue-context.md
+            --json title,body,url,comments \
+            --jq '
+              "# " + .title +
+              "\n\n" + (.body // "") +
+              "\n\n" + .url +
+              "\n\n## Recent issue comments\n\n" +
+              ([
+                (.comments // [])[-8:][]? |
+                "### " + .author.login + " at " + .createdAt + "\n" + (.body // "")
+              ] | join("\n\n"))
+            ' > issue-context.md
 
           {
             echo "issue_number=$ISSUE_NUMBER"
