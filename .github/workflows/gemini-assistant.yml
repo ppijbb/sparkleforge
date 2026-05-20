@@ -3,6 +3,8 @@ on:
   push:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -12,6 +14,62 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  route-gemini-review-feedback:
+    if: >-
+      github.event_name == 'pull_request_review' &&
+      github.event.review.user.login == 'gemini-code-assist' &&
+      github.event.review.body != ''
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Send Gemini review feedback to linked issue
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+          REVIEW_URL: ${{ github.event.review.html_url }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required to route Gemini review feedback to OpenCode."
+            exit 1
+          fi
+
+          PR_BODY=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json body \
+            --jq '.body // ""')
+          ISSUES=$(printf '%s\n' "$PR_BODY" |
+            grep -Eio '(refs|close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' |
+            grep -Eo '#[0-9]+' |
+            tr -d '#' |
+            sort -u || true)
+
+          if [ -z "$ISSUES" ]; then
+            echo "No linked issue found in PR #$PR_NUMBER body."
+            exit 0
+          fi
+
+          for ISSUE in $ISSUES; do
+            {
+              echo "@opencode"
+              echo
+              echo "Gemini Code Assist left review feedback on PR #$PR_NUMBER that should be incorporated into the next automated fix attempt."
+              echo
+              echo "Review: $REVIEW_URL"
+              echo
+              echo "```markdown"
+              printf '%s\n' "$REVIEW_BODY"
+              echo "```"
+            } > gemini-review-feedback.md
+
+            gh issue comment "$ISSUE" \
+              --repo "${{ github.repository }}" \
+              --body-file gemini-review-feedback.md
+          done
+
   # 1단계: 코드 변경점 리뷰 (OpenRouter / Groq 등 무료 API 직접 호출)
   code-review:
     if: >-
