@@ -93,7 +93,7 @@ jobs:
           SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
         run: |
           set +e
-          uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" \
+          uv run python -m src.cli.entry research "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
             --format markdown --no-interactive \
             > sparkleforge-roadmap-console.log \
@@ -101,9 +101,17 @@ jobs:
           RC=$?
           set -e
 
+          OUTPUT_BYTES=$(wc -c < sparkleforge-roadmap.md 2>/dev/null || echo 0)
+          CONSOLE_BYTES=$(wc -c < sparkleforge-roadmap-console.log 2>/dev/null || echo 0)
+          ERROR_BYTES=$(wc -c < sparkleforge-roadmap-error.log 2>/dev/null || echo 0)
+
           if [ "$RC" -ne 0 ] || [ ! -s sparkleforge-roadmap.md ]; then
             {
-              echo "# Daily roadmap generation failure"
+              if [ "$RC" -eq 0 ] && [ "$OUTPUT_BYTES" -eq 0 ]; then
+                echo "# Daily roadmap CLI produced empty output"
+              else
+                echo "# Daily roadmap generation failure"
+              fi
               echo
               echo "SparkleForge failed while generating the daily improvement roadmap."
               echo "Create a focused fix that restores this workflow and the runtime path it exercises."
@@ -111,6 +119,12 @@ jobs:
               echo "## Failure"
               echo "- Exit code: $RC"
               echo "- Workflow: SparkleForge Daily Roadmap Issue"
+              echo "- Output bytes: $OUTPUT_BYTES"
+              echo "- Console log bytes: $CONSOLE_BYTES"
+              echo "- Error log bytes: $ERROR_BYTES"
+              if [ "$RC" -eq 0 ] && [ "$OUTPUT_BYTES" -eq 0 ]; then
+                echo "- Failure kind: CLI returned success but produced an empty deliverable"
+              fi
               echo
               echo "## Console output"
               echo '```text'
@@ -158,9 +172,28 @@ jobs:
             exit 0
           fi
 
+          if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
+            EXISTING_FIX=$(gh issue list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --search '"Daily roadmap CLI produced empty output" in:title' \
+              --json number \
+              --jq '.[0].number // empty')
+            if [ -n "$EXISTING_FIX" ]; then
+              echo "Open daily roadmap failure issue already exists: #$EXISTING_FIX"
+              echo "issue_number=$EXISTING_FIX" >> "$GITHUB_OUTPUT"
+              echo "created=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
           TITLE=$(sed -n '1s/^# *//p' sparkleforge-roadmap.md | head -c 180)
           if [ -z "$TITLE" ]; then
             TITLE="Daily SparkleForge improvement plan"
+          fi
+          ISSUE_PREFIX="✨ feature:"
+          if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
+            ISSUE_PREFIX="🔧 fix:"
           fi
 
           {
@@ -174,7 +207,7 @@ jobs:
 
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
-            --title "✨ feature: $TODAY - $TITLE" \
+            --title "$ISSUE_PREFIX $TODAY - $TITLE" \
             --body-file issue-body.md)
 
           ISSUE_NUMBER="${ISSUE_URL##*/}"
