@@ -31,12 +31,45 @@ command_exists() {
 }
 
 detect_os() {
-    OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    OS="${SPARKLEFORGE_INSTALL_OS:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
     DISTRO=""
 
     if [ "$OS" = "linux" ] && [ -f /etc/os-release ]; then
         . /etc/os-release
         DISTRO="${ID:-}"
+    fi
+}
+
+ensure_uv() {
+    if command_exists uv; then
+        success "uv is already installed: $(uv --version)"
+        return
+    fi
+
+    if [ "$OS" = "darwin" ] && command_exists brew; then
+        info "Installing uv with Homebrew..."
+        brew install uv
+        return
+    fi
+
+    error "uv is required. Install it from https://docs.astral.sh/uv/ or run: curl -LsSf https://astral.sh/uv/install.sh | sh"
+}
+
+setup_python_environment() {
+    ensure_uv
+
+    if [ "${SPARKLEFORGE_SKIP_UV_SYNC:-}" = "1" ]; then
+        info "Skipping uv sync because SPARKLEFORGE_SKIP_UV_SYNC=1"
+    else
+        info "Installing Python dependencies with uv..."
+        uv sync
+    fi
+
+    if [ ! -f ".env" ] && [ -f "env.example" ]; then
+        cp env.example .env
+        success "Created .env from env.example"
+    elif [ -f ".env" ]; then
+        success ".env already exists"
     fi
 }
 
@@ -157,8 +190,20 @@ verify_sandbox() {
     success "Docker/gVisor sandbox is working"
 }
 
-main() {
-    detect_os
+setup_macos() {
+    info "Detected macOS. Skipping Linux-only Docker/gVisor runsc installation."
+    info "SparkleForge can be installed on macOS with uv; Docker Desktop is optional for Docker-backed workflows."
+    setup_python_environment
+
+    echo ""
+    success "macOS installation completed successfully"
+    echo ""
+    info "Next steps:"
+    echo "  uv run sparkleforge --help"
+    echo "  Edit .env with your API keys before running research workflows."
+}
+
+setup_linux() {
     install_docker
     install_runsc
     verify_sandbox
@@ -169,6 +214,22 @@ main() {
     info "SparkleForge safe code execution now uses Docker with gVisor/runsc."
     echo "  uv sync"
     echo "  uv run sparkleforge --help"
+}
+
+main() {
+    detect_os
+
+    case "$OS" in
+        linux)
+            setup_linux
+            ;;
+        darwin)
+            setup_macos
+            ;;
+        *)
+            error "Unsupported OS: $OS"
+            ;;
+    esac
 }
 
 main "$@"
