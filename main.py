@@ -117,6 +117,37 @@ def _load_autonomous_orchestrator():
     return AutonomousOrchestrator
 
 
+def extract_cli_result_content(result: Any) -> str:
+    """Return the primary human-readable result from supported orchestrator payloads."""
+    if not isinstance(result, dict):
+        return str(result)
+
+    for key in ("content", "final_report"):
+        value = result.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+
+    for key in ("final_synthesis", "synthesis_results"):
+        value = result.get(key)
+        if isinstance(value, dict):
+            content = value.get("content")
+            if isinstance(content, str) and content.strip():
+                return content
+
+    return ""
+
+
+def cli_result_succeeded(result: Any, content: str) -> bool:
+    """Infer CLI success for orchestrator payloads that may not expose a success flag."""
+    if not isinstance(result, dict):
+        return bool(content.strip())
+    if result.get("success") is not None:
+        return bool(result.get("success"))
+    if result.get("error") or result.get("error_message"):
+        return False
+    return bool(content.strip()) and result.get("current_step") == "completed"
+
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -2282,7 +2313,7 @@ async def handle_run_command(args):
             )
 
             # 추가 단서가 필요하면 콘솔에서 받아서 이어가기
-            content = result.get("content", "") if isinstance(result, dict) else ""
+            content = extract_cli_result_content(result)
             if should_interact and _needs_clarification(content) and round_idx < max_rounds - 1:
                 clarification_block = _extract_clarification_block(content)
                 if clarification_block:
@@ -2316,26 +2347,26 @@ async def handle_run_command(args):
             ext = ".json" if args.format == "json" else ".md"
             output_path = str(output_dir / f"query_{ts}{ext}")
 
+        text = extract_cli_result_content(result)
+        succeeded = cli_result_succeeded(result, text)
+
         with open(output_path, "w", encoding="utf-8") as f:
             if args.format == "json":
                 json.dump(result, f, ensure_ascii=False, indent=2)
             else:
-                text = (
-                    result.get("content", str(result))
-                    if isinstance(result, dict)
-                    else str(result)
-                )
                 f.write(text)
         logger.info(f"✅ Results saved to {output_path}")
 
-        if isinstance(result, dict) and "content" in result:
-            print(result["content"])
+        if text:
+            print(text)
         else:
             print(result)
 
         # 실행 성공/실패를 결과 페이로드 기준으로 일관되게 반환
-        if isinstance(result, dict) and not bool(result.get("success", False)):
+        if not succeeded:
             logger.error("❌ Research completed with failure state")
+            if not text:
+                logger.error("❌ Research produced no deliverable content")
             return 1
 
     except Exception as e:
