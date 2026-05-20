@@ -91,9 +91,9 @@ jobs:
             for candidate in $(gh issue list \
               --repo "${{ github.repository }}" \
               --state open \
-              --limit 50 \
+              --limit 100 \
               --json number,labels \
-              --jq '.[] | select(([.labels[].name] | index("auto-fix-failed") | not) and ([.labels[].name] | index("auto-fix-pr-opened") | not)) | .number'); do
+              --jq '.[] | select([.labels[].name] | index("auto-fix-pr-opened") | not) | .number'); do
               HAS_PR=$(gh pr list \
                 --repo "${{ github.repository }}" \
                 --state open \
@@ -108,7 +108,7 @@ jobs:
           fi
 
           if [ -z "$ISSUE_NUMBER" ]; then
-            echo "No open issue without an open fix PR was found."
+            echo "No eligible open issue was found. Open issues with auto-fix-pr-opened or an already-linked open fix PR are skipped."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -143,7 +143,7 @@ jobs:
               ;;
           esac
           PR_TITLE=$(echo "$PR_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
-          COMMIT_TITLE="🧹 chore: apply OpenCode changes for issue #$ISSUE_NUMBER"
+          COMMIT_TITLE="$PR_TITLE"
           BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"
           if [ -z "$BASE_BRANCH" ]; then
             BASE_BRANCH=$(gh repo view "${{ github.repository }}" \
@@ -174,6 +174,7 @@ jobs:
         if: >-
           steps.context.outputs.skip != 'true' &&
           (github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'schedule' ||
           (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode')))
         env:
           GH_TOKEN: ${{ secrets.PAT }}
@@ -379,6 +380,8 @@ jobs:
           gh pr merge "${{ steps.pr.outputs.pr_number }}" \
             --repo "${{ github.repository }}" \
             --"$AUTO_FIX_MERGE_METHOD" \
+            --subject "${{ steps.context.outputs.pr_title }}" \
+            --body "Closes #${{ steps.context.outputs.issue_number }}" \
             --delete-branch
 
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
