@@ -29,13 +29,14 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          REVIEW_BODY: ${{ github.event.review.body }}
-          REVIEW_URL: ${{ github.event.review.html_url }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
             echo "::error::PAT repository secret is required to route Gemini review feedback to OpenCode."
             exit 1
           fi
+
+          REVIEW_BODY=$(jq -r '.review.body // ""' "$GITHUB_EVENT_PATH")
+          REVIEW_URL=$(jq -r '.review.html_url // ""' "$GITHUB_EVENT_PATH")
 
           PR_BODY=$(gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
@@ -60,9 +61,9 @@ jobs:
               echo
               echo "Review: $REVIEW_URL"
               echo
-              echo "```markdown"
+              printf '%s\n' '```markdown'
               printf '%s\n' "$REVIEW_BODY"
-              echo "```"
+              printf '%s\n' '```'
             } > gemini-review-feedback.md
 
             gh issue comment "$ISSUE" \
