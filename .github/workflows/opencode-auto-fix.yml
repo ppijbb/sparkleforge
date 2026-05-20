@@ -357,11 +357,35 @@ jobs:
           esac
 
           echo "Waiting up to ${WAIT_SECONDS}s for PR #${{ steps.pr.outputs.pr_number }} checks."
-          timeout "${WAIT_SECONDS}s" gh pr checks "${{ steps.pr.outputs.pr_number }}" \
-            --repo "${{ github.repository }}" \
-            --watch \
-            --interval 15 \
-            --fail-fast
+          DEADLINE=$((SECONDS + WAIT_SECONDS))
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            set +e
+            gh pr checks "${{ steps.pr.outputs.pr_number }}" \
+              --repo "${{ github.repository }}" \
+              --watch \
+              --interval 15 \
+              --fail-fast
+            RC=$?
+            set -e
+
+            if [ "$RC" -eq 0 ]; then
+              exit 0
+            fi
+
+            CHECK_COUNT=$(gh pr view "${{ steps.pr.outputs.pr_number }}" \
+              --repo "${{ github.repository }}" \
+              --json statusCheckRollup \
+              --jq '.statusCheckRollup | length')
+            if [ "$CHECK_COUNT" != "0" ]; then
+              exit "$RC"
+            fi
+
+            echo "No checks reported yet for PR #${{ steps.pr.outputs.pr_number }}; waiting for GitHub to attach checks."
+            sleep 15
+          done
+
+          echo "::error::Timed out waiting for checks to appear on PR #${{ steps.pr.outputs.pr_number }}."
+          exit 1
 
       - name: Merge pull request
         id: merge
