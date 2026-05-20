@@ -29,6 +29,10 @@ permissions:
   issues: write
   pull-requests: write
 
+env:
+  AUTO_FIX_MERGE_METHOD: ${{ vars.AUTO_FIX_MERGE_METHOD || 'squash' }}
+  AUTO_FIX_MERGE_WAIT_SECONDS: ${{ vars.AUTO_FIX_MERGE_WAIT_SECONDS || '900' }}
+
 jobs:
   open-pr-and-fix:
     if: >-
@@ -87,9 +91,9 @@ jobs:
             for candidate in $(gh issue list \
               --repo "${{ github.repository }}" \
               --state open \
-              --limit 50 \
+              --limit 100 \
               --json number,labels \
-              --jq '.[] | select(([.labels[].name] | index("auto-fix-failed") | not) and ([.labels[].name] | index("auto-fix-pr-opened") | not)) | .number'); do
+              --jq '.[] | select([.labels[].name] | index("auto-fix-pr-opened") | not) | .number'); do
               HAS_PR=$(gh pr list \
                 --repo "${{ github.repository }}" \
                 --state open \
@@ -104,7 +108,7 @@ jobs:
           fi
 
           if [ -z "$ISSUE_NUMBER" ]; then
-            echo "No open issue without an open fix PR was found."
+            echo "No eligible open issue was found. Open issues with auto-fix-pr-opened or an already-linked open fix PR are skipped."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -139,7 +143,7 @@ jobs:
               ;;
           esac
           PR_TITLE=$(echo "$PR_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
-          COMMIT_TITLE="🧹 chore: apply OpenCode changes for issue #$ISSUE_NUMBER"
+          COMMIT_TITLE="$PR_TITLE"
           BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"
           if [ -z "$BASE_BRANCH" ]; then
             BASE_BRANCH=$(gh repo view "${{ github.repository }}" \
@@ -170,6 +174,7 @@ jobs:
         if: >-
           steps.context.outputs.skip != 'true' &&
           (github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'schedule' ||
           (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode')))
         env:
           GH_TOKEN: ${{ secrets.PAT }}
@@ -340,6 +345,59 @@ jobs:
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
             --add-label auto-fix-pr-opened || true
+
+      - name: Wait for pull request checks
+        if: steps.pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          WAIT_SECONDS="$AUTO_FIX_MERGE_WAIT_SECONDS"
+          case "$WAIT_SECONDS" in
+            ''|*[!0-9]*) WAIT_SECONDS=900 ;;
+          esac
+
+          echo "Waiting up to ${WAIT_SECONDS}s for PR #${{ steps.pr.outputs.pr_number }} checks."
+          timeout "${WAIT_SECONDS}s" gh pr checks "${{ steps.pr.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --watch \
+            --interval 15 \
+            --fail-fast
+
+      - name: Merge pull request
+        id: merge
+        if: steps.pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          case "$AUTO_FIX_MERGE_METHOD" in
+            merge|squash|rebase) ;;
+            *)
+              echo "::error::AUTO_FIX_MERGE_METHOD must be one of: merge, squash, rebase."
+              exit 1
+              ;;
+          esac
+
+          gh pr merge "${{ steps.pr.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --"$AUTO_FIX_MERGE_METHOD" \
+            --subject "${{ steps.context.outputs.pr_title }}" \
+            --body "Closes #${{ steps.context.outputs.issue_number }}" \
+            --delete-branch
+
+          gh issue edit "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --remove-label auto-fix-pr-opened || true
+          gh label create auto-fix-merged \
+            --repo "${{ github.repository }}" \
+            --color 0E8A16 \
+            --description "An automated fix PR has been merged." \
+            --force >/dev/null 2>&1 || true
+          gh issue edit "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --add-label auto-fix-merged || true
+          gh issue comment "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --body "OpenCode auto-fix PR merged: ${{ steps.pr.outputs.pr_url }}"
 
       - name: Report auto-fix failure on issue
         if: failure() && steps.context.outputs.issue_number != ''

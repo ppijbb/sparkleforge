@@ -196,20 +196,24 @@ jobs:
           
           CURRENT_DATE=$(date +"%Y-%m-%d %H:%M:%S")
           
+          cat > groq_system_prompt.txt <<'PROMPT'
+          You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
+          CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
+          If should_create_issue is true, the title MUST use the repository's emoji conventional prefix style (e.g. '🔧 fix: ...', '✨ feature: ...').
+          The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
+          > **Date**: __CURRENT_DATE__
+          > **Issue Type**: [Classify as Parent Issue or Sub-issue]
+          > **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
+          > **Metrics & Justification**: [Provide a concrete, logical proof or metric of why this code must be changed. Do not use simple judgments.]
+
+          Below the header, provide a highly specific explanation of what is wrong and an actionable plan to fix it.
+          If should_create_issue is false, title and body must be empty strings.
+          PROMPT
+          sed -i "s/__CURRENT_DATE__/$CURRENT_DATE/g" groq_system_prompt.txt
+
           # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용 생성
           jq -n --arg review "$COMBINED_REVIEW" \
-            --arg current_date "$CURRENT_DATE" \
-            --arg system_msg "You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
-CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
-If should_create_issue is true, the title MUST use the repository's emoji conventional prefix style (e.g. '🔧 fix: ...', '✨ feature: ...').
-The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
-> **Date**: \($current_date)
-> **Issue Type**: [Classify as Parent Issue or Sub-issue]
-> **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
-> **Metrics & Justification**: [Provide a concrete, logical proof or metric of why this code must be changed. Do not use simple judgments.]
-
-Below the header, provide a highly specific explanation of what is wrong and an actionable plan to fix it. 
-If should_create_issue is false, title and body must be empty strings." \
+            --rawfile system_msg groq_system_prompt.txt \
             '{
               model: "llama-3.3-70b-versatile",
               messages: [
