@@ -26,6 +26,8 @@ Add screenshots to help explain your problem.
 - OS: [e.g. Ubuntu 22.04]
 - Python Version: [e.g. 3.10]
 - SparkleForge Version: [e.g. 0.1.0]
+- macOS Version: [e.g. 14.5]
+- CPU Architecture: [e.g. Apple Silicon M2 / Intel]
 
 ## 🔗 Related Review/Comment
 (If this issue was created automatically from a code review, link it here)
