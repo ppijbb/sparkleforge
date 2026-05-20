@@ -43,17 +43,19 @@ cd sparkleforge
 # Run the installation script
 ./install.sh
 
-# Install Python dependencies in the uv environment
-uv sync
-
 # Set up environment
-cp env.example .env
 # Edit .env with your OpenRouter API key
 ```
 
-`./install.sh` installs Docker and registers the gVisor `runsc` runtime used by
-SparkleForge's safe code execution path. Code execution runs in short-lived
-containers with network, memory, CPU, PID, privilege, and filesystem limits.
+On Linux, `./install.sh` installs Docker and registers the gVisor `runsc`
+runtime used by SparkleForge's safe code execution path. Code execution runs in
+short-lived containers with network, memory, CPU, PID, privilege, and filesystem
+limits.
+
+On macOS, `./install.sh` skips the Linux-only Docker/gVisor setup, verifies that
+`uv` is available, runs `uv sync`, and creates `.env` from `env.example` when
+needed. Docker Desktop is optional unless you explicitly use Docker-backed
+workflows.
 
 ### Basic Usage
 
