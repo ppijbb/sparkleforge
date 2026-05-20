@@ -52,10 +52,9 @@ runtime used by SparkleForge's safe code execution path. Code execution runs in
 short-lived containers with network, memory, CPU, PID, privilege, and filesystem
 limits.
 
-On macOS, `./install.sh` skips the Linux-only Docker/gVisor setup, verifies that
-`uv` is available, runs `uv sync`, and creates `.env` from `env.example` when
-needed. Docker Desktop is optional unless you explicitly use Docker-backed
-workflows.
+On macOS, `./install.sh` automatically detects the OS, skips Linux-specific
+container dependencies, verifies `uv` installation, runs `uv sync`, and
+initializes the environment.
 
 ### Basic Usage
 
