@@ -370,7 +370,7 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
     1. Normalise bare paths → a/b prefix.
     2. Try the whole patch at once with git apply (fast path).
     3. If that fails, split into per-file segments and apply each independently.
-       - At least one file must succeed; partial success is reported.
+       - Every file segment must succeed. Partial application is a failed fix.
     4. Return (success, error_summary).
     """
     diff_text = patch_path.read_text(encoding="utf-8")
@@ -432,6 +432,12 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
         if failed:
             summary += f"  Skipped: {failed}"
         print(f"[patch] Partial success: {summary}", file=sys.stderr)
+        if failed:
+            return False, (
+                "Patch only applied partially. "
+                "All files in the generated diff must apply cleanly.\n"
+                f"{summary}\n\n" + "\n\n".join(all_errors)
+            )
         return True, ""
 
     return False, "\n\n".join(all_errors)
