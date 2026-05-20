@@ -1,4 +1,34 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -e
+
+echo "🚀 Starting SparkleForge installation..."
+
+OS="$(uname -s)"
+
+if [ "$OS" = "Darwin" ]; then
+    echo "🍎 macOS detected. Skipping Linux-specific container setup."
+    
+    if ! command -v uv &> /dev/null; then
+        echo "Installing uv..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        source $HOME/.cargo/env
+    fi
+    
+    echo "Syncing dependencies..."
+    uv sync
+    
+    if [ ! -f .env ]; then
+        echo "Creating .env from .env.example..."
+        cp .env.example .env
+    fi
+    
+    echo "✅ macOS setup complete."
+else
+    echo "🐧 Linux detected. Running full setup..."
+    # Existing Linux-specific logic here
+    # ...
+fi
 
 # Local Researcher Setup Script
 # This script sets up the Local Researcher environment
