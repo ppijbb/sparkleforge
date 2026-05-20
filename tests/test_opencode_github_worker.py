@@ -1,4 +1,6 @@
-from scripts.opencode_github_worker import _normalize_diff
+from pathlib import Path
+
+from scripts.opencode_github_worker import _apply_patch, _normalize_diff
 
 
 def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:
@@ -50,3 +52,32 @@ def test_normalize_diff_adds_missing_path_prefixes() -> None:
 
     assert "--- a/.github/workflows/auto-fix.yml" in normalized
     assert "+++ b/.github/workflows/auto-fix.yml" in normalized
+
+
+def test_apply_patch_rejects_partial_multifile_success(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    Path("README.md").write_text("old\n", encoding="utf-8")
+
+    patch = tmp_path / "opencode.patch"
+    patch.write_text(
+        """diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1 +1 @@
+-old
++new
+diff --git a/scripts/setup.sh b/scripts/setup.sh
+--- a/scripts/setup.sh
++++ b/scripts/setup.sh
+@@ -1 +1 @@
+-old
++new
+""",
+        encoding="utf-8",
+    )
+
+    success, error = _apply_patch(patch)
+
+    assert success is False
+    assert "Patch only applied partially" in error
+    assert "scripts/setup.sh" in error
