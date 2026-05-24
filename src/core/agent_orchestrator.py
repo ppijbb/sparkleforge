@@ -24,6 +24,7 @@ class AgentState(TypedDict, total=False):
 
 
 logger = logging.getLogger(__name__)
+_orchestrator: "AgentOrchestrator | None" = None
 
 
 class AgentOrchestrator:
@@ -36,9 +37,20 @@ class AgentOrchestrator:
         logger.info("AgentOrchestrator initialized with AgentHarness")
 
     async def execute(
-        self, request: str, session_id: str = "default_session", max_iterations: int = 10, **kwargs
+        self,
+        request: str | None = None,
+        session_id: str | None = "default_session",
+        max_iterations: int = 10,
+        **kwargs,
     ) -> Dict[str, Any]:
         """하네스를 기동하여 요청을 처리합니다."""
+        if request is None:
+            request = kwargs.pop("user_query", None)
+        if request is None:
+            raise TypeError("AgentOrchestrator.execute() requires 'request' or 'user_query'")
+        if session_id is None:
+            session_id = "default_session"
+
         logger.info(f"AgentOrchestrator delegating request to AgentHarness (session: {session_id})")
 
         # Harness 실행
@@ -47,16 +59,34 @@ class AgentOrchestrator:
         )
 
         # main.py 호환을 위한 필드 추가
+        final_report = harness_result.get("results", "")
         return {
             "success": harness_result.get("success", False),
             "plan": harness_result.get("plan", ""),
             "tasks": harness_result.get("tasks", []),
-            "results": harness_result.get("results", ""),
-            "final_report": harness_result.get("results", ""),  # results를 final_report로 매핑
+            "results": final_report,
+            "final_report": final_report,  # results를 final_report로 매핑
+            "content": final_report,
+            "detailed_results": {
+                "plan": harness_result.get("plan", ""),
+                "tasks": harness_result.get("tasks", []),
+                "results": final_report,
+                "final_report": final_report,
+                "success": harness_result.get("success", False),
+                "error": harness_result.get("error"),
+            },
             "session_id": session_id,
             "research_failed": not harness_result.get("success", False),
             "error": harness_result.get("error"),
         }
+
+
+def get_orchestrator(config=None) -> AgentOrchestrator:
+    """이전 CLI 코드와의 호환성을 위한 lazy singleton accessor."""
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = AgentOrchestrator(config=config)
+    return _orchestrator
 
 
 def agent_workflow_result_to_public_dict(
