@@ -96,7 +96,7 @@ jobs:
           set +e
           timeout 25m uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
-            --format markdown \
+            --format markdown --max-tokens 500 \
             > sparkleforge-roadmap-console.log \
             2> sparkleforge-roadmap-error.log
           RC=$?
