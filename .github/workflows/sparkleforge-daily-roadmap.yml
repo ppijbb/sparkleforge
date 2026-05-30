@@ -96,7 +96,7 @@ jobs:
           set +e
           timeout 25m uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
-            --format markdown --max-tokens 500 \
+            --format markdown \
             > sparkleforge-roadmap-console.log \
             2> sparkleforge-roadmap-error.log
           RC=$?
@@ -126,6 +126,10 @@ jobs:
             {
               if [ "$RC" -eq 0 ] && [ "$OUTPUT_BYTES" -eq 0 ]; then
                 echo "# Daily roadmap CLI produced empty output"
+              elif [ "$RC" -eq 124 ]; then
+                echo "# Daily roadmap generation timed out"
+              elif [ "$RC" -ne 0 ]; then
+                echo "# Daily roadmap CLI failed with exit code $RC"
               else
                 echo "# Daily roadmap generation failure"
               fi
