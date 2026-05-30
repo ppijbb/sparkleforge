@@ -206,7 +206,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
           OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
-          OPENCODE_VERIFY_COMMAND: ${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall src scripts' }}
+          OPENCODE_VERIFY_COMMAND: ${{ vars.OPENCODE_VERIFY_COMMAND || 'python scripts/check_syntax.py' }}
         run: |
           MAX_ITERATIONS="${{ github.event.inputs.max_iterations || '3' }}"
           case "$MAX_ITERATIONS" in
