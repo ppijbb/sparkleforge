@@ -24,6 +24,7 @@ permissions:
 jobs:
   create-roadmap-issue:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     outputs:
       issue_number: ${{ steps.create_issue.outputs.issue_number }}
     steps:
@@ -93,7 +94,7 @@ jobs:
           SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
         run: |
           set +e
-          uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" \
+          timeout 25m uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" \
             --output sparkleforge-roadmap.md \
             --format markdown \
             > sparkleforge-roadmap-console.log \

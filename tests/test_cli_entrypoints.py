@@ -32,6 +32,8 @@ def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
     ).read_text(encoding="utf-8")
 
     assert "uv run python -m src.cli.entry run" in workflow
+    assert "timeout 25m uv run python -m src.cli.entry run" in workflow
+    assert "timeout-minutes: 35" in workflow
     assert "uv run python -m src.cli.entry research" not in workflow
     assert "--no-interactive" not in workflow
     assert "Generated roadmap based on:" in workflow
