@@ -20,7 +20,15 @@ on:
     - cron: "*/30 * * * *"
 
 concurrency:
-  group: opencode-auto-fix-${{ github.event.issue.number || github.event.inputs.issue_number || github.run_id }}
+  group: >-
+    opencode-auto-fix-${{
+      github.event_name == 'issue_comment' &&
+      !contains(github.event.comment.body, '@opencode') &&
+      github.run_id ||
+      github.event.issue.number ||
+      github.event.inputs.issue_number ||
+      github.run_id
+    }}
   cancel-in-progress: true
 
 permissions:
