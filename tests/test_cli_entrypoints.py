@@ -34,3 +34,15 @@ def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
     assert "uv run python -m src.cli.entry run" in workflow
     assert "uv run python -m src.cli.entry research" not in workflow
     assert "--no-interactive" not in workflow
+    assert "Generated roadmap based on:" in workflow
+    assert "CLI output is missing required section" in workflow
+
+
+def test_module_entrypoint_delegates_to_real_repository_cli() -> None:
+    entrypoint = (PROJECT_ROOT / "src" / "cli" / "entry.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "from main import main_entry as repository_main_entry" in entrypoint
+    assert "repository_main_entry()" in entrypoint
+    assert "Generated roadmap based on:" not in entrypoint
