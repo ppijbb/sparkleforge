@@ -104,8 +104,24 @@ jobs:
           OUTPUT_BYTES=$(wc -c < sparkleforge-roadmap.md 2>/dev/null || echo 0)
           CONSOLE_BYTES=$(wc -c < sparkleforge-roadmap-console.log 2>/dev/null || echo 0)
           ERROR_BYTES=$(wc -c < sparkleforge-roadmap-error.log 2>/dev/null || echo 0)
+          INVALID_OUTPUT_REASON=""
 
-          if [ "$RC" -ne 0 ] || [ ! -s sparkleforge-roadmap.md ]; then
+          if [ -s sparkleforge-roadmap.md ]; then
+            if grep -Fq "Generated roadmap based on:" sparkleforge-roadmap.md; then
+              INVALID_OUTPUT_REASON="CLI produced placeholder roadmap text instead of a real SparkleForge analysis"
+            elif grep -Fq "SparkleForge failed while generating the daily improvement roadmap." sparkleforge-roadmap.md; then
+              INVALID_OUTPUT_REASON="CLI output was already a failure report"
+            else
+              for section in "## Why now" "## Proposed change" "## Implementation notes" "## Acceptance criteria" "## Validation"; do
+                if ! grep -Fq "$section" sparkleforge-roadmap.md; then
+                  INVALID_OUTPUT_REASON="CLI output is missing required section: $section"
+                  break
+                fi
+              done
+            fi
+          fi
+
+          if [ "$RC" -ne 0 ] || [ ! -s sparkleforge-roadmap.md ] || [ -n "$INVALID_OUTPUT_REASON" ]; then
             {
               if [ "$RC" -eq 0 ] && [ "$OUTPUT_BYTES" -eq 0 ]; then
                 echo "# Daily roadmap CLI produced empty output"
@@ -124,6 +140,9 @@ jobs:
               echo "- Error log bytes: $ERROR_BYTES"
               if [ "$RC" -eq 0 ] && [ "$OUTPUT_BYTES" -eq 0 ]; then
                 echo "- Failure kind: CLI returned success but produced an empty deliverable"
+              elif [ -n "$INVALID_OUTPUT_REASON" ]; then
+                echo "- Failure kind: CLI returned invalid roadmap output"
+                echo "- Invalid output reason: $INVALID_OUTPUT_REASON"
               fi
               echo
               echo "## Console output"
@@ -160,7 +179,7 @@ jobs:
 
           EXISTING=$(gh issue list \
             --repo "${{ github.repository }}" \
-            --state all \
+            --state open \
             --search "$TODAY in:title" \
             --json number \
             --jq '.[0].number // empty')
