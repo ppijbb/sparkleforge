@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -74,7 +74,7 @@ jobs:
   # 1단계: 코드 변경점 리뷰 (OpenRouter / Groq 등 무료 API 직접 호출)
   code-review:
     if: >-
-      (github.event_name == 'pull_request' && !contains(github.event.pull_request.body, 'OpenCode-generated fix')) ||
+      github.event_name == 'pull_request' ||
       (github.event_name == 'push' && !contains(github.event.head_commit.message, 'apply OpenCode changes'))
     runs-on: ubuntu-latest
     timeout-minutes: 8
