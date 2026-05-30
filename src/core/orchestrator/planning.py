@@ -150,33 +150,24 @@ class PlanningNode(BaseNode):
                 ambiguities = []
 
             if ambiguities:
-                # autopilot_mode: LLM이 자율 추론으로 해소
+                # Non-interactive automation must not wait for user input inside the
+                # graph. Proceed with explicit best-effort assumptions so scheduled
+                # workflows produce a deliverable or a real runtime error.
                 if state.get("autopilot_mode", False):
-                    logger.info("🤖 Autopilot mode — LLM auto-selecting responses")
-                    user_responses = {}
-                    clarification_context = {}
-
-                    for ambiguity in ambiguities:
-                        question = await clarification_handler.generate_question(
-                            ambiguity, {"user_request": state.get("user_request", "")}
-                        )
-                        auto_response = await clarification_handler.auto_select_response(
-                            question,
-                            {"user_request": state.get("user_request", "")},
-                            self.hybrid_storage,
-                        )
-                        processed = await clarification_handler.process_user_response(
-                            question["id"], auto_response, {"question": question}
-                        )
-
-                        if processed.get("validated", False):
-                            user_responses[question["id"]] = processed
-                            clarification_context[question["id"]] = processed.get(
-                                "clarification", {}
-                            )
-
-                    state["clarification_context"] = clarification_context
-                    state["user_responses"] = user_responses
+                    logger.info(
+                        "🤖 Autopilot mode — proceeding without interactive clarification"
+                    )
+                    state["clarification_context"] = state.get("clarification_context", {})
+                    state["autopilot_assumptions"] = [
+                        {
+                            "ambiguity": ambiguity,
+                            "resolution": (
+                                "Proceed with the most conservative interpretation "
+                                "that satisfies the original request."
+                            ),
+                        }
+                        for ambiguity in ambiguities
+                    ]
                     state["waiting_for_user"] = False
                     state["pending_questions"] = []
                     state["autopilot_mode"] = True

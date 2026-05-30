@@ -5,6 +5,7 @@ Delegates core logic to src.core.orchestrator packages.
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Any, Dict
 
@@ -17,6 +18,15 @@ from src.core.researcher_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _autopilot_mode_enabled(context: Dict[str, Any] | None = None) -> bool:
+    """Return whether autonomous runs should avoid interactive clarification waits."""
+    if context and "autopilot_mode" in context:
+        return bool(context["autopilot_mode"])
+
+    interactive = os.getenv("SPARKLEFORGE_CLI_INTERACTIVE", "true").lower()
+    return interactive in {"0", "false", "no", "off"}
 
 
 class AutonomousOrchestrator:
@@ -73,6 +83,7 @@ class AutonomousOrchestrator:
         initial_state = {
             "user_request": request,
             "context": context or {},
+            "autopilot_mode": _autopilot_mode_enabled(context),
             "objective_id": f"research_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             "iteration": 0,
             "max_iterations": 10,
