@@ -4619,6 +4619,14 @@ def get_mcp_hub() -> "UniversalMCPHub":
     """Get or initialize global MCP Hub."""
     global _mcp_hub
     if _mcp_hub is None:
+        try:
+            get_mcp_config()
+        except RuntimeError as e:
+            if "Configuration not loaded" not in str(e):
+                raise
+            from src.core.researcher_config import load_config_from_env
+
+            load_config_from_env()
         _mcp_hub = UniversalMCPHub()
     return _mcp_hub
 
