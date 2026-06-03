@@ -94,10 +94,10 @@ jobs:
           SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
         run: |
           set +e
-          timeout 25m uv run python -m src.cli.entry run "$(cat daily-roadmap-prompt.md)" --max-tokens 2048 \
+          timeout 25m uv run python -m src.cli.entry run --max-tokens 4096 \
             --output sparkleforge-roadmap.md \
             --format markdown \
-            > sparkleforge-roadmap-console.log \
+            < daily-roadmap-prompt.md > sparkleforge-roadmap-console.log \
             2> sparkleforge-roadmap-error.log
           RC=$?
           set -e
