@@ -363,7 +363,12 @@ jobs:
               echo "issue_number=$ISSUE_NUMBER"
             } >> "$GITHUB_OUTPUT"
 
-            echo "Created issue #$ISSUE_NUMBER. opencode-auto-fix.yml will pick it up from the issues event or scheduled backlog scan."
+            gh workflow run opencode-auto-fix.yml \
+              --repo "${{ github.repository }}" \
+              --field issue_number="$ISSUE_NUMBER" \
+              --field max_iterations="3"
+
+            echo "Created issue #$ISSUE_NUMBER and dispatched opencode-auto-fix.yml."
           else
             echo "Error: AI response content is empty."
             echo "Raw response: $RAW_RESPONSE"
