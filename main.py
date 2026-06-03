@@ -1435,6 +1435,12 @@ EXAMPLES:
     run_parser.add_argument(
         "--streaming", action="store_true", help="Enable streaming output"
     )
+    run_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Maximum output tokens requested by automation workflows",
+    )
 
     # work 커맨드
     work_parser = subparsers.add_parser("work", help="Execute work goal as coworker")
