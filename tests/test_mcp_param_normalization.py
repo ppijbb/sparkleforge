@@ -43,3 +43,22 @@ def test_normalize_supports_input_schema_attribute_name():
     assert _normalize_mcp_call_params(
         ToolDef(), {"query": "current", "max_results": 5}
     ) == {"input": {"query": "current", "num_results": 5}}
+
+
+def test_get_mcp_hub_loads_config_lazily():
+    import src.core.mcp_integration as mcp_integration
+    import src.core.researcher_config as researcher_config
+
+    previous_config = researcher_config.config
+    previous_hub = mcp_integration._mcp_hub
+    researcher_config.config = None
+    mcp_integration._mcp_hub = None
+
+    try:
+        hub = mcp_integration.get_mcp_hub()
+
+        assert hub is not None
+        assert researcher_config.config is not None
+    finally:
+        mcp_integration._mcp_hub = previous_hub
+        researcher_config.config = previous_config

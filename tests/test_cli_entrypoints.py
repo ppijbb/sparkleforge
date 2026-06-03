@@ -26,6 +26,24 @@ def test_module_entrypoint_prints_help() -> None:
     assert "run" in result.stdout
 
 
+def test_run_entrypoint_accepts_workflow_max_tokens_flag() -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "src.cli.entry", "run", "--help"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "--max-tokens" in result.stdout
+
+
 def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
     workflow = (
         PROJECT_ROOT / ".github" / "workflows" / "sparkleforge-daily-roadmap.yml"
