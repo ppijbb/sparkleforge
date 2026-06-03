@@ -239,8 +239,13 @@ jobs:
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           echo "created=true" >> "$GITHUB_OUTPUT"
 
-      - name: Report follow-up automation
+      - name: Dispatch OpenCode follow-up
         if: steps.create_issue.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created."
-          echo "opencode-auto-fix.yml will process it via its scheduled backlog scan."
+          gh workflow run opencode-auto-fix.yml \
+            --repo "${{ github.repository }}" \
+            --field issue_number="${{ steps.create_issue.outputs.issue_number }}" \
+            --field max_iterations="${{ github.event.inputs.max_iterations || '3' }}"
+          echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created and dispatched to opencode-auto-fix.yml."
