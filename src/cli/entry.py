@@ -14,7 +14,7 @@ def main_entry():
 
     from main import main_entry as repository_main_entry
 
-    repository_main_entry(sys.argv[1:])
+    repository_main_entry()
 
 
 if __name__ == "__main__":
