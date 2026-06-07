@@ -1,6 +1,8 @@
+import argparse
 import logging
 from typing import List
 
+from src.core.security import verify_environment
 from src.core.agent_orchestrator import get_orchestrator
 
 logger = logging.getLogger(__name__)
@@ -8,6 +10,12 @@ logger = logging.getLogger(__name__)
 
 async def work_command(cli, args: List[str]):
     """Work <goal> - Start or continue a coworker session."""
+    # Security check before execution
+    if not verify_environment():
+        logger.error("Security check failed. Aborting.")
+        cli.console.print("[red]Security check failed.[/red]")
+        return
+
     if not args:
         cli.console.print("[red]Usage: work <goal>[/red]")
         return
