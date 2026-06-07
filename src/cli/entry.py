@@ -12,7 +12,7 @@ def main_entry():
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    from main import main_entry as repository_main_entry
+    from src.cli.commands.work import main as repository_main_entry
 
     repository_main_entry()
 
