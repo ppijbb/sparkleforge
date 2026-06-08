@@ -4,7 +4,7 @@ import os
 import sys
 import asyncio
 from pathlib import Path
-from src.core.env_configurator import verify_environment
+from src.core.env_configurator import verify_environment_setup as verify_environment
 
 
 async def main_entry():
