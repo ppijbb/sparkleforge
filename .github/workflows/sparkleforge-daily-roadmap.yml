@@ -91,6 +91,7 @@ jobs:
           MCP_ALLOWED_SERVERS: 'local-search,search,web-fetch,arxiv,sparkleforge-skills'
           SPARKLEFORGE_ALLOWED_MCP_SERVERS: 'local-search,search,web-fetch,arxiv,sparkleforge-skills'
           SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
+          SPARKLEFORGE_ENV: 'production'
         run: |
           timeout 25m uv run python -m src.cli.entry run --max-tokens 4096 \
             --output sparkleforge-roadmap.md \
