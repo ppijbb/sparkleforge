@@ -126,6 +126,18 @@ EMBEDDED_SERVERS = {
         "type": "embedded",
         "transport": "stdio",
     },
+    "system-control": {
+        "name": "system-control",
+        "module": "src.core.mcp_servers.system_control_server",
+        "description": "Read-only system inventory and resource discovery",
+        "tools": [
+            "get_system_inventory",
+            "resolve_executables",
+            "discover_project_directories",
+        ],
+        "type": "embedded",
+        "transport": "stdio",
+    },
 }
 
 
