@@ -616,12 +616,12 @@ class MultiModelOrchestrator:
 
         # Google 모델 ID를 OpenRouter 형식으로 변환
         google_to_openrouter = {
-            "gemini-3.1-flash-lite-preview": "google/gemini-2.0-flash-exp:free",
-            "gemini-2.5-flash": "google/gemini-2.0-flash-exp:free",
-            "gemini-2.5-pro": "google/gemini-2.0-flash-thinking-exp:free",
-            "gemini-flash-lite": "google/gemini-2.0-flash-exp:free",
-            "gemini-flash": "google/gemini-2.0-flash-exp:free",
-            "gemini-pro": "google/gemini-2.0-flash-thinking-exp:free",
+            "gemini-3.1-flash-lite-preview": "google/gemini-2.0-flash-lite-preview:free",
+            "gemini-2.5-flash": "google/gemini-2.0-flash-lite-preview:free",
+            "gemini-2.5-pro": "google/gemini-2.0-flash-lite-preview:free",
+            "gemini-flash-lite": "google/gemini-2.0-flash-lite-preview:free",
+            "gemini-flash": "google/gemini-2.0-flash-lite-preview:free",
+            "gemini-pro": "google/gemini-2.0-flash-lite-preview:free",
         }
 
         if model_id in google_to_openrouter:
@@ -630,12 +630,12 @@ class MultiModelOrchestrator:
         # 모델 이름에서 추론
         if "gemini" in model_name.lower() or "gemini" in model_id.lower():
             # 기본적으로 무료 Gemini 모델 사용
-            return "google/gemini-2.0-flash-exp:free"
+            return "google/gemini-2.0-flash-lite-preview:free"
 
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         fallback_models = [
-            "google/gemini-2.0-flash-exp:free",
+            "google/gemini-2.0-flash-lite-preview:free",
             "meta-llama/llama-3.2-3b-instruct:free",
         ]
 
@@ -1523,7 +1523,7 @@ class MultiModelOrchestrator:
                             f"Model {model_id} not found in OpenRouter, trying fallback models..."
                         )
                         fallback_models = [
-                            "google/gemini-2.0-flash-exp:free",
+                            "google/gemini-2.0-flash-lite-preview:free",
                             "meta-llama/llama-3.2-3b-instruct:free",
                             "mistralai/mistral-7b-instruct:free",
                         ]
