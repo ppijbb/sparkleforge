@@ -2,33 +2,59 @@
 
 import os
 import sys
-import asyncio
 from pathlib import Path
-from src.core.env_configurator import verify_environment
 
 
-async def main_entry():
-    """Run the repository-level CLI entry point from an installed script."""
-    if len(sys.argv) == 1 or "--help" in sys.argv or "-h" in sys.argv:
-        print("SparkleForge CLI")
-        print("Usage: sparkleforge [options] --request <query>")
+_RUN_OPTIONS_WITH_VALUES = {
+    "--output",
+    "-o",
+    "--format",
+    "--max-tokens",
+}
+
+
+def _run_command_has_query(argv: list[str]) -> bool:
+    """Return True when argv contains a positional query for the run command."""
+    if len(argv) < 2 or argv[1] != "run":
+        return True
+
+    skip_next = False
+    for arg in argv[2:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in _RUN_OPTIONS_WITH_VALUES:
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        return True
+    return False
+
+
+def _inject_stdin_query_for_run() -> None:
+    """Support automation that pipes the run query through stdin."""
+    if _run_command_has_query(sys.argv) or sys.stdin.isatty():
         return
 
-    try:
-        await asyncio.to_thread(verify_environment)
-    except Exception as e:
-        print(f"Security environment validation failed: {e}")
-        sys.exit(1)
+    query = sys.stdin.read().strip()
+    if query:
+        sys.argv.insert(2, query)
 
+
+def main_entry() -> None:
+    """Run the repository-level CLI entry point from an installed script."""
     project_root = Path(__file__).resolve().parent.parent.parent
     os.chdir(project_root)
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    from src.cli.commands.work import main as repository_main_entry
+    _inject_stdin_query_for_run()
+
+    from main import main_entry as repository_main_entry
 
     repository_main_entry()
 
 
 if __name__ == "__main__":
-    asyncio.run(main_entry())
+    main_entry()
