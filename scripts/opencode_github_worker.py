@@ -334,6 +334,7 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
                 f"-p{p}",
                 "--3way",
                 "--ignore-whitespace",
+                "--whitespace=nowarn",
                 str(tmp),
             ]
         )
@@ -393,6 +394,7 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
                 f"-p{p}",
                 "--3way",
                 "--ignore-whitespace",
+                "--whitespace=nowarn",
                 str(patch_path),
             ]
         )
