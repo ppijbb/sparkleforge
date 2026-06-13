@@ -574,7 +574,7 @@ class Scheduler:
         # 타임아웃 설정
         if schedule.timeout_seconds:
             task = asyncio.create_task(
-                asyncio.wait_for(run_with_timeout(), timeout=schedule.timeout_seconds)
+                asyncio.wait_for(run_with_timeout(), timeout=float(schedule.timeout_seconds))
             )
         else:
             task = asyncio.create_task(run_with_timeout())
