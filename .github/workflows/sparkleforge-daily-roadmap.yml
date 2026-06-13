@@ -24,6 +24,7 @@ permissions:
 jobs:
   create-roadmap-issue:
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 35
     outputs:
       issue_number: ${{ steps.create_issue.outputs.issue_number }}
@@ -91,7 +92,7 @@ jobs:
           MCP_ALLOWED_SERVERS: 'local-search,search,web-fetch,arxiv,sparkleforge-skills'
           SPARKLEFORGE_ALLOWED_MCP_SERVERS: 'local-search,search,web-fetch,arxiv,sparkleforge-skills'
           SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
-          SPARKLEFORGE_ENV: 'production'
+          SPARKLEFORGE_ENV: ${{ vars.SPARKLEFORGE_ENV || 'production' }}
         run: |
           set +e
           timeout 25m uv run python -m src.cli.entry run --max-tokens 4096 \
