@@ -25,8 +25,13 @@ def _autopilot_mode_enabled(context: Dict[str, Any] | None = None) -> bool:
     if context and "autopilot_mode" in context:
         return bool(context["autopilot_mode"])
 
-    interactive = os.getenv("SPARKLEFORGE_CLI_INTERACTIVE", "true").lower()
-    return interactive in {"0", "false", "no", "off"}
+    explicit = os.getenv("SPARKLEFORGE_AUTOPILOT_MODE")
+    if explicit is not None:
+        return explicit.lower() not in {"0", "false", "no", "off"}
+
+    # Default to autonomous execution. Interactive clarification must be explicitly enabled
+    # by setting SPARKLEFORGE_AUTOPILOT_MODE=false.
+    return True
 
 
 class AutonomousOrchestrator:

@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any, Dict, List
 
@@ -54,8 +55,12 @@ class SynthesisNode(BaseNode):
         logger.info("📝 Synthesizing final deliverable")
 
         self.context_manager.get_current_context()
+        execution_summary = self._build_execution_summary(state.get("execution_results", []))
         synthesis_prompt = (
-            f"Synthesize research findings for request: {state.get('user_request', '')}"
+            "Synthesize a final deliverable from the actual research execution evidence.\n\n"
+            f"User request:\n{state.get('user_request', '')}\n\n"
+            f"Execution evidence:\n{execution_summary}\n\n"
+            "Write the answer from the evidence above. Include limitations when tasks failed or evidence is thin."
         )
 
         result = await execute_llm_task(prompt=synthesis_prompt, task_type=TaskType.SYNTHESIS)
@@ -74,6 +79,26 @@ class SynthesisNode(BaseNode):
         await self._save_research_memory(state)
         await self._generate_creative_insights(state)
         return state
+
+
+    def _build_execution_summary(self, execution_results: List[Dict[str, Any]]) -> str:
+        summary_items = []
+        for item in execution_results:
+            metadata = item.get("agent_loop_metadata", {})
+            summary_items.append(
+                {
+                    "task_id": item.get("task_id"),
+                    "task_name": item.get("task_name"),
+                    "status": item.get("status"),
+                    "tool_used": item.get("tool_used"),
+                    "result": item.get("result"),
+                    "error": item.get("error"),
+                    "iterations": item.get("iterations") or metadata.get("iterations"),
+                    "tool_calls_count": metadata.get("tool_calls_count", 0),
+                    "tool_errors": metadata.get("errors", []),
+                }
+            )
+        return json.dumps(summary_items, ensure_ascii=False, default=str)[:12000]
 
     async def _generate_creative_insights(self, state: ResearchState) -> None:
         try:

@@ -74,14 +74,19 @@ class ExecutionNode(BaseNode):
         return state
 
     async def execute_research(self, state: ResearchState) -> ResearchState:
-        """연구 실행 (Universal MCP Hub + Streaming Pipeline + Parallel Execution)."""
+        """Run planned research tasks through the Hermes-style autonomous tool loop."""
         self._log_node_input("execute_research", state)
-        logger.info("⚙️ Thinking: Executing research tasks and gathering information")
+        logger.info("⚙️ Thinking: Executing research tasks with Hermes tool loop")
 
-        tasks = state.get("planned_tasks", [])
-        agent_assignments = state.get("agent_assignments", {})
+        tasks = state.get("planned_tasks", []) or [
+            {
+                "id": "task_1",
+                "name": "Research request",
+                "description": state.get("user_request", ""),
+                "type": "research",
+            }
+        ]
         execution_plan = state.get("execution_plan", {})
-        objective_id = state.get("objective_id", "default")
 
         use_parallel = (
             execution_plan.get("strategy") in ["parallel", "hybrid"]
@@ -89,124 +94,30 @@ class ExecutionNode(BaseNode):
             and self.agent_config.max_concurrent_research_units > 1
         )
 
-        execution_results = []
-        streaming_data = []
+        max_iterations = self._get_hermes_max_iterations(state)
+        concurrency = self.agent_config.max_concurrent_research_units if use_parallel else 1
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async def run_task(task: Dict[str, Any]) -> Dict[str, Any]:
+            async with semaphore:
+                return await self._execute_task_with_hermes(task, state, max_iterations)
 
         if use_parallel:
-            logger.info("🚀 Using parallel execution with ParallelAgentExecutor")
-            from src.core.parallel_agent_executor import ParallelAgentExecutor
-
-            executor = ParallelAgentExecutor()
-            parallel_results = await executor.execute_parallel_tasks(
-                tasks=tasks,
-                agent_assignments=agent_assignments,
-                execution_plan=execution_plan,
-                objective_id=objective_id,
-            )
-            execution_results = parallel_results.get("execution_results", [])
-            streaming_data = [
-                {
-                    "timestamp": datetime.now().isoformat(),
-                    "task_id": r.get("task_id", ""),
-                    "status": r.get("status", "completed"),
-                    "data": r.get("result"),
-                    "tool_used": r.get("tool_used", ""),
-                }
-                for r in execution_results
-            ]
+            logger.info("🚀 Using Hermes parallel execution")
+            execution_results = await asyncio.gather(*(run_task(task) for task in tasks))
         else:
-            logger.info("📝 Using sequential execution")
+            logger.info("📝 Using Hermes sequential execution")
+            execution_results = []
             for task in tasks:
-                task_success = False
-                tool_attempts = []
-                try:
-                    tool_category = self._get_tool_category_for_task(task)
+                execution_results.append(await run_task(task))
 
-                    # BROWSER 카테고리: PlaywrightController로 직접 처리
-                    if tool_category == ToolCategory.BROWSER:
-                        browser_result = await self._execute_browser_task(task)
-                        if browser_result:
-                            execution_results.append(browser_result)
-                            streaming_data.append(
-                                {
-                                    "timestamp": datetime.now().isoformat(),
-                                    "task_id": task.get("id"),
-                                    "status": browser_result.get("status", "completed"),
-                                    "data": browser_result.get("result"),
-                                    "tool_used": "playwright",
-                                }
-                            )
-                            continue
-
-                    available_tools = self._get_available_tools_for_category(tool_category)
-
-                    for tool_name in available_tools:
-                        try:
-                            params = self._generate_tool_parameters(task, tool_name)
-                            if "__missing_required__" in params:
-                                tool_attempts.append(
-                                    {"tool": tool_name, "success": False, "error": "Missing params"}
-                                )
-                                continue
-
-                            tool_result = await execute_tool(tool_name, params)
-                            tool_attempts.append(
-                                {
-                                    "tool": tool_name,
-                                    "success": tool_result.get("success", False),
-                                    "execution_time": tool_result.get("execution_time", 0.0),
-                                }
-                            )
-
-                            if tool_result.get("success", False) and self._validate_tool_result(
-                                tool_result, task
-                            ):
-                                res_item = {
-                                    "task_id": task.get("id"),
-                                    "task_name": task.get("name"),
-                                    "tool_used": tool_name,
-                                    "result": tool_result.get("data"),
-                                    "status": "completed",
-                                }
-                                execution_results.append(res_item)
-                                streaming_data.append(
-                                    {
-                                        "timestamp": datetime.now().isoformat(),
-                                        "task_id": task.get("id"),
-                                        "status": "completed",
-                                        "data": tool_result.get("data"),
-                                        "tool_used": tool_name,
-                                    }
-                                )
-                                task_success = True
-                                break
-                        except Exception as e:
-                            if isinstance(e, asyncio.CancelledError):
-                                await self._save_executions(execution_results)
-                                raise
-                            else:
-                                logger.warning(f"Tool {tool_name} failed: {e}")
-                                tool_attempts.append(
-                                    {"tool": tool_name, "success": False, "error": str(e)}
-                                )
-
-                    if not task_success:
-                        execution_results.append(
-                            {
-                                "task_id": task.get("id"),
-                                "status": "failed",
-                                "error": f"All {len(available_tools)} tools failed",
-                                "attempts": tool_attempts,
-                            }
-                        )
-                except Exception as e:
-                    if isinstance(e, asyncio.CancelledError):
-                        await self._save_executions(execution_results)
-                        raise
-                    logger.error(f"Task execution error: {e}")
+        streaming_data = [self._streaming_event_from_result(result) for result in execution_results]
 
         # Depth Adjustment (Progressive Deepening)
         self._adjust_depth_if_needed(state, tasks, execution_results)
+
+        tool_calls_count = sum(r.get("agent_loop_metadata", {}).get("tool_calls_count", 0) for r in execution_results)
+        hermes_completed = len([r for r in execution_results if r.get("status") == "completed"])
 
         state.update(
             {
@@ -218,11 +129,197 @@ class ExecutionNode(BaseNode):
                     **state.get("innovation_stats", {}),
                     "tasks_executed": len(execution_results),
                     "parallel_execution_used": use_parallel,
+                    "hermes_execution_used": True,
+                    "hermes_tasks_completed": hermes_completed,
+                    "tool_calls_count": tool_calls_count,
                 },
             }
         )
         self._log_node_output("execute_research", state, {"tasks_executed": len(execution_results)})
         return state
+
+    async def _execute_task_with_hermes(
+        self, task: Dict[str, Any], state: ResearchState, max_iterations: int
+    ) -> Dict[str, Any]:
+        from src.core.agent_loop import AgentLoop
+        from src.core.llm_manager import TaskType
+        from src.core.prompt_builder import get_system_prompt
+
+        task_id = self._task_id(task)
+        task_name = task.get("name") or task.get("title") or task_id
+        prompt = self._build_hermes_task_prompt(task, state)
+        loop = AgentLoop()
+
+        try:
+            result = await loop.run_conversation(
+                messages=[{"role": "user", "content": prompt}],
+                task_type=TaskType.RESEARCH,
+                max_iterations=max_iterations,
+                system_message=get_system_prompt(
+                    "researcher",
+                    (
+                        "Use available tools aggressively when useful. Do not ask the user for "
+                        "clarification; make conservative assumptions, solve the task, and return "
+                        "a concise result with evidence, assumptions, and limitations."
+                    ),
+                ),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("Hermes task execution failed for %s: %s", task_id, e)
+            result = {
+                "success": False,
+                "content": "",
+                "error": str(e),
+                "iterations": 0,
+                "tool_calls_count": 0,
+                "tool_results": [],
+                "errors": [{"type": "hermes_exception", "message": str(e)}],
+                "metadata": {},
+            }
+
+        if result.get("success") and result.get("content"):
+            return {
+                "task_id": task_id,
+                "task_name": task_name,
+                "tool_used": "hermes_agent_loop",
+                "result": result.get("content"),
+                "status": "completed",
+                "iterations": result.get("iterations", 0),
+                "agent_loop_metadata": self._agent_loop_metadata(result),
+            }
+
+        legacy_result = await self._execute_task_with_legacy_tools(task)
+        if not legacy_result.get("task_id"):
+            legacy_result["task_id"] = task_id
+        if not legacy_result.get("task_name"):
+            legacy_result["task_name"] = task_name
+        legacy_result["agent_loop_metadata"] = self._agent_loop_metadata(result)
+        if result.get("error"):
+            legacy_result.setdefault("hermes_error", result.get("error"))
+        return legacy_result
+
+    async def _execute_task_with_legacy_tools(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Fallback for environments where the model/provider cannot drive tool calls."""
+        task_success = False
+        tool_attempts = []
+        task_id = self._task_id(task)
+        task_name = task.get("name") or task.get("title") or task_id
+
+        try:
+            tool_category = self._get_tool_category_for_task(task)
+
+            if tool_category == ToolCategory.BROWSER:
+                browser_result = await self._execute_browser_task(task)
+                if browser_result:
+                    return browser_result
+
+            available_tools = self._get_available_tools_for_category(tool_category)
+
+            for tool_name in available_tools:
+                try:
+                    params = self._generate_tool_parameters(task, tool_name)
+                    if "__missing_required__" in params:
+                        tool_attempts.append(
+                            {"tool": tool_name, "success": False, "error": "Missing params"}
+                        )
+                        continue
+
+                    tool_result = await execute_tool(tool_name, params)
+                    tool_attempts.append(
+                        {
+                            "tool": tool_name,
+                            "success": tool_result.get("success", False),
+                            "execution_time": tool_result.get("execution_time", 0.0),
+                        }
+                    )
+
+                    if tool_result.get("success", False) and self._validate_tool_result(
+                        tool_result, task
+                    ):
+                        task_success = True
+                        return {
+                            "task_id": task_id,
+                            "task_name": task_name,
+                            "tool_used": tool_name,
+                            "result": tool_result.get("data"),
+                            "status": "completed",
+                            "legacy_fallback_used": True,
+                        }
+                except Exception as e:
+                    if isinstance(e, asyncio.CancelledError):
+                        raise
+                    logger.warning("Tool %s failed: %s", tool_name, e)
+                    tool_attempts.append({"tool": tool_name, "success": False, "error": str(e)})
+
+            if not task_success:
+                return {
+                    "task_id": task_id,
+                    "task_name": task_name,
+                    "status": "failed",
+                    "error": f"All {len(available_tools)} tools failed",
+                    "attempts": tool_attempts,
+                    "legacy_fallback_used": True,
+                }
+        except Exception as e:
+            if isinstance(e, asyncio.CancelledError):
+                raise
+            logger.error("Task execution error: %s", e)
+            return {
+                "task_id": task_id,
+                "task_name": task_name,
+                "status": "failed",
+                "error": str(e),
+                "attempts": tool_attempts,
+                "legacy_fallback_used": True,
+            }
+
+    def _task_id(self, task: Dict[str, Any]) -> str:
+        return str(task.get("id") or task.get("task_id") or task.get("name") or "task")
+
+    def _build_hermes_task_prompt(self, task: Dict[str, Any], state: ResearchState) -> str:
+        request = state.get("user_request", "")
+        objectives = state.get("analyzed_objectives", [])
+        preliminary = state.get("preliminary_research", {})
+        return (
+            "Execute this research task to completion as an autonomous problem-solving agent.\n"
+            "Do not stop to ask for clarification. If details are missing, make the most "
+            "conservative useful assumption, use tools to reduce uncertainty, and continue.\n"
+            "Cite evidence from tool outputs when available.\n\n"
+            f"Original request:\n{request}\n\n"
+            f"Task:\n{task}\n\n"
+            f"Known objectives:\n{objectives}\n\n"
+            f"Preliminary research context:\n{preliminary}\n\n"
+            "Return a direct result for this task, including useful findings, source/tool evidence, assumptions, and any hard blockers."
+        )
+
+    def _get_hermes_max_iterations(self, state: ResearchState) -> int:
+        researching = state.get("research_depth", {}).get("researching", {})
+        configured = researching.get("max_iterations") if isinstance(researching, dict) else None
+        return int(configured or state.get("max_iterations", 10) or 10)
+
+    def _agent_loop_metadata(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "success": result.get("success", False),
+            "iterations": result.get("iterations", 0),
+            "tool_calls_count": result.get("tool_calls_count", 0),
+            "tool_results": result.get("tool_results", []),
+            "errors": result.get("errors", []),
+            "metadata": result.get("metadata", {}),
+        }
+
+    def _streaming_event_from_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        metadata = result.get("agent_loop_metadata", {})
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "task_id": result.get("task_id", ""),
+            "status": result.get("status", "completed"),
+            "data": result.get("result") or result.get("error"),
+            "tool_used": result.get("tool_used", "hermes_agent_loop"),
+            "iterations": result.get("iterations") or metadata.get("iterations", 0),
+            "tool_calls_count": metadata.get("tool_calls_count", 0),
+        }
 
     async def _save_executions(self, results: List[Dict[str, Any]]):
         """Save execution state during cleanup."""
