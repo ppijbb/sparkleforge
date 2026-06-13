@@ -3,6 +3,9 @@ from pathlib import Path
 from scripts.opencode_github_worker import _apply_patch, _normalize_diff
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:
     diff = """diff --git a/.github/workflows/auto-fix.yml b/.github/workflows/auto-fix.yml
 --- a/.github/workflows/auto-fix.yml
@@ -37,6 +40,14 @@ def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:
 
     assert "@@ -33,6 +35,23 @@ jobs:" in normalized
     assert "          gh auth status\n \n+      - name: Validate issue number" in normalized
+
+
+def test_worker_git_apply_ignores_whitespace_warnings() -> None:
+    worker = (PROJECT_ROOT / "scripts" / "opencode_github_worker.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--whitespace=nowarn" in worker
 
 
 def test_normalize_diff_adds_missing_path_prefixes() -> None:

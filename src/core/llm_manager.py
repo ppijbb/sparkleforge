@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -50,6 +51,32 @@ logger = logging.getLogger(__name__)
 # Safety settings are handled at the genai.GenerativeModel level, not in LangChain wrapper.
 # Setting to None to avoid validation errors.
 SAFETY_SETTINGS_BLOCK_NONE = None
+
+
+def _parse_openrouter_json_response(response: Any, context: str) -> Dict[str, Any]:
+    """Parse an OpenRouter JSON response and raise a clear error on invalid JSON."""
+    try:
+        data = response.json()
+    except ValueError as exc:
+        body = getattr(response, "text", "") or ""
+        status = getattr(response, "status_code", "unknown")
+        snippet = body[:200].replace("\n", " ")
+        logger.warning(
+            "OpenRouter returned non-JSON response during %s: status=%s body=%r",
+            context,
+            status,
+            snippet,
+        )
+        raise RuntimeError(
+            f"OpenRouter returned non-JSON response during {context}: HTTP {status}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"OpenRouter returned invalid JSON shape during {context}: "
+            f"{type(data).__name__}"
+        )
+    return data
 
 
 class TaskType(Enum):
@@ -455,7 +482,7 @@ class MultiModelOrchestrator:
         response = requests.get("https://openrouter.ai/api/v1/models", headers=headers, timeout=10)
 
         if response.status_code == 200:
-            data = response.json()
+            data = _parse_openrouter_json_response(response, "model list fetch")
             return data.get("data", [])
         else:
             raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
@@ -1556,7 +1583,7 @@ class MultiModelOrchestrator:
                 f"OpenRouter API error after {max_retries} attempts: HTTP {response.status_code if response else 'No response'}"
             )
 
-        data = response.json()
+        data = _parse_openrouter_json_response(response, "chat completion")
         message = data["choices"][0]["message"]
         content = message.get("content", "")
         tool_calls = message.get("tool_calls", [])
