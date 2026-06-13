@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 import time
 from contextlib import AsyncExitStack
@@ -122,6 +123,46 @@ from src.core.observability import start_tool_span
 from src.core.researcher_config import get_llm_config, get_mcp_config
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_json_text(value: str, *, context: str) -> tuple[bool, Any]:
+    """Parse a JSON string without warning for expected plain-text tool output."""
+    try:
+        return True, json.loads(value)
+    except json.JSONDecodeError:
+        logger.debug(
+            "%s returned non-JSON text; preserving plain-text fallback: %r",
+            context,
+            value[:120],
+        )
+        return False, None
+    except TypeError as exc:
+        logger.debug("%s returned non-string JSON candidate: %s", context, exc)
+        return False, None
+
+
+def _parse_markdown_link_results(value: str) -> list[dict[str, str]]:
+    """Parse simple numbered markdown-link search results from plain text."""
+    results: list[dict[str, str]] = []
+    current_result: dict[str, str] | None = None
+    for line in value.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        link_match = re.match(r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line)
+        if link_match:
+            if current_result:
+                results.append(current_result)
+            current_result = {
+                "title": link_match.group(1),
+                "url": link_match.group(2),
+                "snippet": "",
+            }
+        elif current_result:
+            current_result["snippet"] = f"{current_result['snippet']} {line}".strip()
+    if current_result:
+        results.append(current_result)
+    return results
 
 
 def _normalize_mcp_tool_alias(tool_name: str) -> str:
@@ -3954,40 +3995,14 @@ class UniversalMCPHub:
                             # 문자열인 경우 마크다운 파싱 시도
                             if isinstance(mcp_result, str):
                                 # JSON 시도
-                                try:
-                                    result_data = json.loads(mcp_result)
-                                except:
+                                parsed_json, parsed_data = _parse_json_text(
+                                    mcp_result, context=f"MCP tool {tool_name}"
+                                )
+                                if parsed_json:
+                                    result_data = parsed_data
+                                else:
                                     # 마크다운 파싱
-                                    results = []
-                                    lines = mcp_result.strip().split("\n")
-                                    current_result = None
-
-                                    for line in lines:
-                                        line = line.strip()
-                                        if not line:
-                                            continue
-
-                                        link_match = re.match(
-                                            r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line
-                                        )
-                                        if link_match:
-                                            if current_result:
-                                                results.append(current_result)
-                                            title = link_match.group(1)
-                                            url = link_match.group(2)
-                                            current_result = {
-                                                "title": title,
-                                                "url": url,
-                                                "snippet": "",
-                                            }
-                                        elif current_result and line:
-                                            if current_result["snippet"]:
-                                                current_result["snippet"] += " " + line
-                                            else:
-                                                current_result["snippet"] = line
-
-                                    if current_result:
-                                        results.append(current_result)
+                                    results = _parse_markdown_link_results(mcp_result)
 
                                     if results:
                                         result_data = {"results": results}
@@ -5557,9 +5572,12 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
                     if isinstance(result, str):
                         # 텍스트 결과를 파싱 시도
                         # 1. JSON 형식 시도
-                        try:
-                            result_data = json.loads(result)
-                        except:
+                        parsed_json, parsed_data = _parse_json_text(
+                            result, context=f"MCP search result from {server_name}"
+                        )
+                        if parsed_json:
+                            result_data = parsed_data
+                        else:
                             # 2. TAVILY 형식 파싱 시도 ("Title: ... URL: ... Content: ...")
                             if "Title:" in result and "URL:" in result:
                                 results = []
@@ -5941,40 +5959,14 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
                                 continue  # 다음 서버 시도
 
                             if isinstance(result, str):
-                                try:
-                                    result_data = json.loads(result)
-                                except:
+                                parsed_json, parsed_data = _parse_json_text(
+                                    result, context=f"Tavily result from {server_name}"
+                                )
+                                if parsed_json:
+                                    result_data = parsed_data
+                                else:
                                     # 마크다운 형식 파싱
-                                    results = []
-                                    lines = result.strip().split("\n")
-                                    current_result = None
-
-                                    for line in lines:
-                                        line = line.strip()
-                                        if not line:
-                                            continue
-
-                                        link_match = re.match(
-                                            r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line
-                                        )
-                                        if link_match:
-                                            if current_result:
-                                                results.append(current_result)
-                                            title = link_match.group(1)
-                                            url = link_match.group(2)
-                                            current_result = {
-                                                "title": title,
-                                                "url": url,
-                                                "snippet": "",
-                                            }
-                                        elif current_result and line:
-                                            if current_result["snippet"]:
-                                                current_result["snippet"] += " " + line
-                                            else:
-                                                current_result["snippet"] = line
-
-                                    if current_result:
-                                        results.append(current_result)
+                                    results = _parse_markdown_link_results(result)
 
                                     if results:
                                         result_data = {"results": results}
@@ -6097,40 +6089,14 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
                                 continue  # 다음 서버 시도
 
                             if isinstance(result, str):
-                                try:
-                                    result_data = json.loads(result)
-                                except:
+                                parsed_json, parsed_data = _parse_json_text(
+                                    result, context=f"Tavily result from {server_name}"
+                                )
+                                if parsed_json:
+                                    result_data = parsed_data
+                                else:
                                     # 마크다운 형식 파싱
-                                    results = []
-                                    lines = result.strip().split("\n")
-                                    current_result = None
-
-                                    for line in lines:
-                                        line = line.strip()
-                                        if not line:
-                                            continue
-
-                                        link_match = re.match(
-                                            r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line
-                                        )
-                                        if link_match:
-                                            if current_result:
-                                                results.append(current_result)
-                                            title = link_match.group(1)
-                                            url = link_match.group(2)
-                                            current_result = {
-                                                "title": title,
-                                                "url": url,
-                                                "snippet": "",
-                                            }
-                                        elif current_result and line:
-                                            if current_result["snippet"]:
-                                                current_result["snippet"] += " " + line
-                                            else:
-                                                current_result["snippet"] = line
-
-                                    if current_result:
-                                        results.append(current_result)
+                                    results = _parse_markdown_link_results(result)
 
                                     if results:
                                         result_data = {"results": results}
