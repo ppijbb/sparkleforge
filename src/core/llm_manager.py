@@ -635,7 +635,7 @@ class MultiModelOrchestrator:
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         fallback_models = [
-            "google/gemini-2.0-flash-lite-preview:free",
+            "google/gemini-2.0-flash-exp",
             "meta-llama/llama-3.2-3b-instruct:free",
         ]
 
@@ -1523,7 +1523,7 @@ class MultiModelOrchestrator:
                             f"Model {model_id} not found in OpenRouter, trying fallback models..."
                         )
                         fallback_models = [
-                            "google/gemini-2.0-flash-lite-preview:free",
+                            "google/gemini-2.0-flash-exp",
                             "meta-llama/llama-3.2-3b-instruct:free",
                             "mistralai/mistral-7b-instruct:free",
                         ]
