@@ -442,7 +442,10 @@ jobs:
             --add-label auto-fix-merged || true
           gh issue comment "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
-            --body "OpenCode auto-fix PR merged: ${{ steps.pr.outputs.pr_url }}. This issue remains open until the fix is validated against the acceptance criteria."
+            --body "OpenCode auto-fix PR merged: ${{ steps.pr.outputs.pr_url }}. This issue has been automatically closed."
+          gh issue close "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --reason "completed" || true
 
       - name: Report auto-fix failure on issue
         if: failure() && steps.context.outputs.issue_number != ''
