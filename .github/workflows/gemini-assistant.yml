@@ -603,7 +603,10 @@ jobs:
               for ISSUE in $ISSUES; do
                 gh issue comment "$ISSUE" \
                   --repo "${{ github.repository }}" \
-                  --body "Fix PR #$NUMBER was merged into \`$BASE_BRANCH\`. This issue will close automatically when \`$BASE_BRANCH\` is promoted into \`$DEFAULT_BRANCH\`."
+                  --body "Fix PR #$NUMBER was merged into \`$BASE_BRANCH\`. This issue has been automatically closed."
+                gh issue close "$ISSUE" \
+                  --repo "${{ github.repository }}" \
+                  --reason "completed" || true
               done
             fi
           done
