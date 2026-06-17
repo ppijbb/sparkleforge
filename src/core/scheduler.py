@@ -531,9 +531,26 @@ class Scheduler:
         async def run_with_timeout():
             try:
                 if self.execution_callback:
-                    # Ensure we handle potential CancelledError here if needed
-                    # or let it propagate to the caller
-                    result = await self.execution_callback(schedule.user_query, session_id)
+                    # Ensure timeout is validated and converted safely
+                    timeout = None
+                    if schedule.timeout_seconds is not None:
+                        try:
+                            timeout_val = float(schedule.timeout_seconds)
+                            if timeout_val > 0 and float('inf') > timeout_val > -float('inf'):
+                                timeout = timeout_val
+                            else:
+                                logger.error(f"Timeout must be a positive finite number, got: {schedule.timeout_seconds}")
+                        except (ValueError, TypeError):
+                            logger.error(f"Invalid timeout type/value: {schedule.timeout_seconds}", exc_info=True)
+
+                    if timeout is not None:
+                        # Apply timeout directly to the execution callback
+                        result = await asyncio.wait_for(
+                            self.execution_callback(schedule.user_query, session_id),
+                            timeout=timeout
+                        )
+                    else:
+                        result = await self.execution_callback(schedule.user_query, session_id)
                     execution.status = "completed"
                     execution.result = result
                 else:
@@ -543,7 +560,7 @@ class Scheduler:
             except asyncio.CancelledError:
                 execution.status = "cancelled"
                 raise
-            except TimeoutError:
+            except (asyncio.TimeoutError, TimeoutError):
                 execution.status = "failed"
                 execution.error = "Timeout"
             except Exception as e:
@@ -571,13 +588,8 @@ class Scheduler:
                 self._save_schedules()
                 self._save_executions()
 
-        # 타임아웃 설정
-        if schedule.timeout_seconds:
-            task = asyncio.create_task(
-                asyncio.wait_for(run_with_timeout(), timeout=schedule.timeout_seconds)
-            )
-        else:
-            task = asyncio.create_task(run_with_timeout())
+        # 타임아웃을 내부 콜백에 직접 적용하므로, 여기서는 단순히 태스크만 생성합니다
+        task = asyncio.create_task(run_with_timeout())
 
         try:
             await task

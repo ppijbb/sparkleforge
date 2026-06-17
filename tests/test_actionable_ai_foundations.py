@@ -132,3 +132,43 @@ def test_bootstrap_graph_reports_stage_failures(tmp_path: Path):
     assert result.stages[0].ok is True
     assert result.stages[1].ok is False
     assert result.stages[1].error == "boom"
+
+
+def test_scheduler_timeout_validation_and_handling(tmp_path: Path):
+    scheduler = Scheduler(storage_path=tmp_path)
+
+    async def slow_callback(user_query: str, session_id: str):
+        await asyncio.sleep(0.5)
+        return "done"
+
+    scheduler.set_execution_callback(slow_callback)
+
+    # 1. Valid timeout that triggers timeout error
+    schedule = scheduler.create_schedule(
+        "slow_job", "* * * * *", "slow", timeout_seconds=1  # 1s is not enough if callback takes 0.5s but wait, let's use timeout_seconds=0.1
+    )
+    # Wait, let's set timeout_seconds to a small value so it times out
+    schedule.timeout_seconds = 0.05
+    execution = asyncio.run(scheduler.run_now(schedule.schedule_id))
+    assert execution.status == "failed"
+    assert "Timeout" in (execution.error or "")
+
+    # 2. Invalid timeout value (infinity) - should be validated safely and run without timeout
+    async def fast_callback(user_query: str, session_id: str):
+        return "fast"
+    scheduler.set_execution_callback(fast_callback)
+
+    schedule_inf = scheduler.create_schedule(
+        "inf_job", "* * * * *", "fast", timeout_seconds="inf"  # type: ignore[arg-type]
+    )
+    execution_inf = asyncio.run(scheduler.run_now(schedule_inf.schedule_id))
+    assert execution_inf.status == "completed"
+    assert execution_inf.result == "fast"
+
+    # 3. Invalid timeout value (negative) - should be validated safely and run without timeout
+    schedule_neg = scheduler.create_schedule(
+        "neg_job", "* * * * *", "fast", timeout_seconds=-5
+    )
+    execution_neg = asyncio.run(scheduler.run_now(schedule_neg.schedule_id))
+    assert execution_neg.status == "completed"
+    assert execution_neg.result == "fast"
