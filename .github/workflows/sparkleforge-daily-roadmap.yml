@@ -95,7 +95,7 @@ jobs:
           SPARKLEFORGE_ENV: ${{ vars.SPARKLEFORGE_ENV || 'production' }}
         run: |
           set +e
-          timeout 25m uv run python -m src.cli.entry run --max-tokens 4096 \
+          timeout 25m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-2.0-flash-exp \
             --output sparkleforge-roadmap.md \
             --format markdown \
             < daily-roadmap-prompt.md > sparkleforge-roadmap-console.log \
