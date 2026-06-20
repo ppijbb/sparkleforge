@@ -12,7 +12,6 @@ _RUN_OPTIONS_WITH_VALUES = {
     "--max-tokens",
 }
 
-
 def _run_command_has_query(argv: list[str]) -> bool:
     """Return True when argv contains a positional query for the run command."""
     if len(argv) < 2 or argv[1] != "run":
