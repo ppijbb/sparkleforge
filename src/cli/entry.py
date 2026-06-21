@@ -10,6 +10,7 @@ _RUN_OPTIONS_WITH_VALUES = {
     "-o",
     "--format",
     "--max-tokens",
+    "--model",
 }
 
 def _run_command_has_query(argv: list[str]) -> bool:
