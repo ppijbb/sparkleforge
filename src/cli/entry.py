@@ -51,7 +51,7 @@ def main_entry() -> None:
 
     _inject_stdin_query_for_run()
 
-    from src.cli.commands.run import main_entry as repository_main_entry
+    from src.cli.commands.work import main_entry as repository_main_entry
 
     repository_main_entry()
 
