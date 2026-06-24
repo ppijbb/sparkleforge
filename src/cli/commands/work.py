@@ -2,7 +2,7 @@ import argparse
 import logging
 from typing import List
 
-from src.core.security import verify_environment
+from src.core.agent_security import verify_environment
 from src.core.agent_orchestrator import get_orchestrator
 
 logger = logging.getLogger(__name__)
