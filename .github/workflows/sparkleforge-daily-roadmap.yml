@@ -186,7 +186,7 @@ jobs:
           EXISTING=$(gh issue list \
             --repo "${{ github.repository }}" \
             --state open \
-            --search "$TODAY in:title" \
+            --search "sparkleforge-daily-roadmap:$TODAY in:body" \
             --json number \
             --jq '.[0].number // empty')
 
@@ -216,10 +216,20 @@ jobs:
           if [ -z "$TITLE" ]; then
             TITLE="Daily SparkleForge improvement plan"
           fi
-          ISSUE_PREFIX="✨ feature:"
+          ISSUE_TYPE="feat"
           if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
-            ISSUE_PREFIX="🔧 fix:"
+            ISSUE_TYPE="fix"
+            TITLE="restore daily roadmap generation"
           fi
+          SUBJECT=$(printf '%s\n' "$TITLE" | sed -E \
+            -e 's/^[[:space:]]+|[[:space:]]+$//g' \
+            -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
+            -e 's/[[:space:]]*\(#[0-9]+\)$//' \
+            -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
+          if [ -z "$SUBJECT" ]; then
+            SUBJECT="daily sparkleforge improvement plan"
+          fi
+          ISSUE_TITLE="$ISSUE_TYPE: $SUBJECT"
 
           {
             echo "<!-- sparkleforge-daily-roadmap:$TODAY -->"
@@ -232,7 +242,7 @@ jobs:
 
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
-            --title "$ISSUE_PREFIX $TODAY - $TITLE" \
+            --title "$ISSUE_TITLE" \
             --body-file issue-body.md)
 
           ISSUE_NUMBER="${ISSUE_URL##*/}"

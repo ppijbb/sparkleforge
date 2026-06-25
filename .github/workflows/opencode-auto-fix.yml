@@ -185,6 +185,7 @@ jobs:
           if [ -z "$SUBJECT" ]; then
             SUBJECT="update automated issue fix"
           fi
+          SUBJECT=$(printf '%s\n' "$SUBJECT" | tr '[:upper:]' '[:lower:]')
           PR_TITLE="$CONVENTIONAL_TYPE: $SUBJECT"
           COMMIT_TITLE="$PR_TITLE"
           BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"

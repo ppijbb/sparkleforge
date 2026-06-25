@@ -261,7 +261,7 @@ jobs:
           cat > groq_system_prompt.txt <<'PROMPT'
           You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
           CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
-          If should_create_issue is true, the title MUST use the repository's emoji conventional prefix style (e.g. '🔧 fix: ...', '✨ feature: ...').
+          If should_create_issue is true, the title MUST use the repository's plain Conventional Commit prefix style (e.g. 'fix: ...', 'feat: ...').
           The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
           > **Date**: __CURRENT_DATE__
           > **Issue Type**: [Classify as Parent Issue or Sub-issue]
@@ -310,29 +310,49 @@ jobs:
             fi
             
             SHOULD_CREATE=$(echo "$CONTENT" | jq -r '.should_create_issue // false')
-            ISSUE_TITLE=$(echo "$CONTENT" | jq -r '.title // "🔧 fix: issue identified in review"')
+            ISSUE_TITLE=$(echo "$CONTENT" | jq -r '.title // "fix: issue identified in review"')
             ISSUE_BODY=$(echo "$CONTENT" | jq -r '.body // empty')
             ISSUE_TITLE=$(echo "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
             case "$ISSUE_TITLE" in
-              "🔧 fix:"*|"✨ feature:"*|"♻️ refactor:"*|"🧹 chore:"*)
+              "🔧 fix:"*)
+                ISSUE_TITLE="fix:${ISSUE_TITLE#*:}"
+                ;;
+              "✨ feature:"*)
+                ISSUE_TITLE="feat:${ISSUE_TITLE#*:}"
+                ;;
+              "♻️ refactor:"*)
+                ISSUE_TITLE="refactor:${ISSUE_TITLE#*:}"
+                ;;
+              "🧹 chore:"*)
+                ISSUE_TITLE="chore:${ISSUE_TITLE#*:}"
                 ;;
               "fix:"*|"Fix:"*)
-                ISSUE_TITLE="🔧 fix:${ISSUE_TITLE#*:}"
+                ISSUE_TITLE="fix:${ISSUE_TITLE#*:}"
                 ;;
               "feat:"*|"Feat:"*|"feature:"*|"Feature:"*)
-                ISSUE_TITLE="✨ feature:${ISSUE_TITLE#*:}"
+                ISSUE_TITLE="feat:${ISSUE_TITLE#*:}"
                 ;;
               "refactor:"*|"Refactor:"*)
-                ISSUE_TITLE="♻️ refactor:${ISSUE_TITLE#*:}"
+                ISSUE_TITLE="refactor:${ISSUE_TITLE#*:}"
                 ;;
               "chore:"*|"Chore:"*)
-                ISSUE_TITLE="🧹 chore:${ISSUE_TITLE#*:}"
+                ISSUE_TITLE="chore:${ISSUE_TITLE#*:}"
                 ;;
               *)
-                ISSUE_TITLE="🔧 fix: $ISSUE_TITLE"
+                ISSUE_TITLE="fix: $ISSUE_TITLE"
                 ;;
             esac
-            ISSUE_TITLE=$(echo "$ISSUE_TITLE" | sed -E 's/^([^:]+:)[[:space:]]*/\1 /')
+            ISSUE_TYPE="${ISSUE_TITLE%%:*}"
+            ISSUE_SUBJECT="${ISSUE_TITLE#*:}"
+            ISSUE_SUBJECT=$(printf '%s\n' "$ISSUE_SUBJECT" | sed -E \
+              -e 's/^[[:space:]]+|[[:space:]]+$//g' \
+              -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
+              -e 's/[[:space:]]*\(#[0-9]+\)$//' \
+              -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
+            if [ -z "$ISSUE_SUBJECT" ]; then
+              ISSUE_SUBJECT="issue identified in review"
+            fi
+            ISSUE_TITLE="$ISSUE_TYPE: $ISSUE_SUBJECT"
 
             NORMALIZED_TITLE=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]')
             if [ "$SHOULD_CREATE" != "true" ]; then
@@ -414,6 +434,40 @@ jobs:
           PR_META=$(gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName,statusCheckRollup)
+          normalize_commit_title() {
+            python3 - "$1" <<'PY'
+          import re
+          import sys
+
+          title = re.sub(r"\s+", " ", sys.argv[1].strip())
+          commit_type = "fix"
+          patterns = [
+              (r"^(?:🔧\s*)?fix(?:\([^)]*\))?!?:\s*(.*)$", "fix"),
+              (r"^(?:✨\s*)?(?:feat|feature)(?:\([^)]*\))?!?:\s*(.*)$", "feat"),
+              (r"^(?:♻️\s*)?refactor(?:\([^)]*\))?!?:\s*(.*)$", "refactor"),
+              (r"^(?:🧹\s*)?chore(?:\([^)]*\))?!?:\s*(.*)$", "chore"),
+              (r"^docs(?:\([^)]*\))?!?:\s*(.*)$", "docs"),
+              (r"^test(?:\([^)]*\))?!?:\s*(.*)$", "test"),
+              (r"^ci(?:\([^)]*\))?!?:\s*(.*)$", "ci"),
+              (r"^build(?:\([^)]*\))?!?:\s*(.*)$", "build"),
+              (r"^perf(?:\([^)]*\))?!?:\s*(.*)$", "perf"),
+          ]
+          for pattern, candidate in patterns:
+              match = re.match(pattern, title, flags=re.IGNORECASE)
+              if match:
+                  commit_type = candidate
+                  title = match.group(1)
+                  break
+          title = re.sub(r"^\d{4}-\d{2}-\d{2}\s*-\s*", "", title)
+          title = re.sub(r"\s*\(#[0-9]+\)\s*$", "", title)
+          title = re.sub(r"\s+", " ", title).strip().lower()
+          if not title:
+              title = "update automated fix"
+          print(f"{commit_type}: {title}")
+          PY
+          }
+          PR_TITLE=$(echo "$PR_META" | jq -r '.title // "update automated fix"')
+          MERGE_SUBJECT=$(normalize_commit_title "$PR_TITLE")
           MERGE_STATE=$(echo "$PR_META" | jq -r '.mergeStateStatus // "UNKNOWN"')
           BASE_BRANCH=$(echo "$PR_META" | jq -r '.baseRefName // "UNKNOWN"')
           NOT_READY_CHECKS=$(echo "$PR_META" | jq -r '
@@ -519,6 +573,7 @@ jobs:
             gh pr merge "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
               --squash \
+              --subject "$MERGE_SUBJECT" \
               --auto \
               --delete-branch
             exit 0
@@ -527,6 +582,7 @@ jobs:
           gh pr merge "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --squash \
+            --subject "$MERGE_SUBJECT" \
             --delete-branch
 
   auto-merge-ready-fix-prs:
@@ -552,21 +608,55 @@ jobs:
           DEFAULT_BRANCH=$(gh repo view "${{ github.repository }}" \
             --json defaultBranchRef \
             --jq '.defaultBranchRef.name')
+          normalize_commit_title() {
+            python3 - "$1" <<'PY'
+          import re
+          import sys
+
+          title = re.sub(r"\s+", " ", sys.argv[1].strip())
+          commit_type = "fix"
+          patterns = [
+              (r"^(?:🔧\s*)?fix(?:\([^)]*\))?!?:\s*(.*)$", "fix"),
+              (r"^(?:✨\s*)?(?:feat|feature)(?:\([^)]*\))?!?:\s*(.*)$", "feat"),
+              (r"^(?:♻️\s*)?refactor(?:\([^)]*\))?!?:\s*(.*)$", "refactor"),
+              (r"^(?:🧹\s*)?chore(?:\([^)]*\))?!?:\s*(.*)$", "chore"),
+              (r"^docs(?:\([^)]*\))?!?:\s*(.*)$", "docs"),
+              (r"^test(?:\([^)]*\))?!?:\s*(.*)$", "test"),
+              (r"^ci(?:\([^)]*\))?!?:\s*(.*)$", "ci"),
+              (r"^build(?:\([^)]*\))?!?:\s*(.*)$", "build"),
+              (r"^perf(?:\([^)]*\))?!?:\s*(.*)$", "perf"),
+          ]
+          for pattern, candidate in patterns:
+              match = re.match(pattern, title, flags=re.IGNORECASE)
+              if match:
+                  commit_type = candidate
+                  title = match.group(1)
+                  break
+          title = re.sub(r"^\d{4}-\d{2}-\d{2}\s*-\s*", "", title)
+          title = re.sub(r"\s*\(#[0-9]+\)\s*$", "", title)
+          title = re.sub(r"\s+", " ", title).strip().lower()
+          if not title:
+              title = "update automated fix"
+          print(f"{commit_type}: {title}")
+          PY
+          }
 
           gh pr list \
             --repo "${{ github.repository }}" \
             --state open \
             --limit 100 \
-            --json number,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,statusCheckRollup,body \
+            --json number,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,statusCheckRollup,body \
             --jq '.[] | select((.headRefName | startswith("fix/")) or (.headRefName | startswith("chore/"))) | @base64' |
           while read -r encoded; do
             [ -n "$encoded" ] || continue
             PR=$(echo "$encoded" | base64 -d)
             NUMBER=$(echo "$PR" | jq -r '.number')
+            TITLE=$(echo "$PR" | jq -r '.title // "update automated fix"')
             BASE_BRANCH=$(echo "$PR" | jq -r '.baseRefName')
             IS_DRAFT=$(echo "$PR" | jq -r '.isDraft')
             MERGEABLE=$(echo "$PR" | jq -r '.mergeable')
             MERGE_STATE=$(echo "$PR" | jq -r '.mergeStateStatus')
+            MERGE_SUBJECT=$(normalize_commit_title "$TITLE")
 
             if [ "$IS_DRAFT" = "true" ]; then
               echo "Skipping #$NUMBER: draft PR."
@@ -595,6 +685,7 @@ jobs:
             gh pr merge "$NUMBER" \
               --repo "${{ github.repository }}" \
               --squash \
+              --subject "$MERGE_SUBJECT" \
               --delete-branch
 
             if [ "$BASE_BRANCH" != "$DEFAULT_BRANCH" ]; then
