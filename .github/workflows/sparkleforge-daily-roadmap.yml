@@ -20,6 +20,7 @@ permissions:
   actions: write
   contents: read
   issues: write
+  pull-requests: read
 
 jobs:
   create-roadmap-issue:
@@ -79,6 +80,61 @@ jobs:
           - State exact commands or checks the PR should run.
           EOF
           echo "today=$TODAY" >> "$GITHUB_OUTPUT"
+
+      - name: Collect GitHub planning context
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          TODAY: ${{ steps.prompt.outputs.today }}
+        run: |
+          {
+            echo "## Current GitHub issue and PR context"
+            echo
+            echo "Use this repository context as the primary input for the daily roadmap. Prioritize unblocked, high-leverage work from these issues and PRs before proposing net-new ideas."
+            echo
+            echo "### Open pull requests"
+          } > github-planning-context.md
+
+          gh pr list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --limit 40 \
+            --json number,title,headRefName,baseRefName,isDraft,mergeStateStatus,updatedAt,labels \
+            --jq '.[] | "- #\(.number) \(.title) [\(.headRefName) -> \(.baseRefName); draft=\(.isDraft); merge=\(.mergeStateStatus); updated=\(.updatedAt); labels=\([.labels[].name] | join(", "))]"' \
+            > open-prs.md
+          if [ ! -s open-prs.md ]; then
+            echo "- No open pull requests." > open-prs.md
+          fi
+          cat open-prs.md >> github-planning-context.md
+
+          {
+            echo
+            echo "### Open issues"
+          } >> github-planning-context.md
+
+          gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --limit 80 \
+            --json number,title,updatedAt,labels,assignees \
+            --jq '.[] | "- #\(.number) \(.title) [updated=\(.updatedAt); labels=\([.labels[].name] | join(", ")); assignees=\([.assignees[].login] | join(", "))]"' \
+            > open-issues.md
+          if [ ! -s open-issues.md ]; then
+            echo "- No open issues." > open-issues.md
+          fi
+          cat open-issues.md >> github-planning-context.md
+
+          {
+            echo
+            echo "### Daily selection rule"
+            echo "- If a PR is open and blocked by a workflow or review failure, prefer a roadmap item that unblocks it."
+            echo "- If repeated daily-roadmap failure issues are open, prefer a roadmap item that restores daily roadmap generation/update reliability."
+            echo "- Do not create a generic trend-only item when a concrete open issue or PR is more actionable."
+          } >> github-planning-context.md
+
+          {
+            echo
+            cat github-planning-context.md
+          } >> daily-roadmap-prompt.md
 
       - name: Run SparkleForge research
         id: research
@@ -191,24 +247,19 @@ jobs:
             --jq '.[0].number // empty')
 
           if [ -n "$EXISTING" ]; then
-            echo "Roadmap issue already exists for $TODAY: #$EXISTING"
-            echo "issue_number=$EXISTING" >> "$GITHUB_OUTPUT"
-            echo "created=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "Roadmap issue already exists for $TODAY: #$EXISTING; it will be updated."
           fi
 
-          if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
+          if [ -z "$EXISTING" ] && [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
             EXISTING_FIX=$(gh issue list \
               --repo "${{ github.repository }}" \
               --state open \
-              --search '"Daily roadmap CLI produced empty output" in:title' \
+              --search 'daily roadmap in:title' \
               --json number \
               --jq '.[0].number // empty')
             if [ -n "$EXISTING_FIX" ]; then
-              echo "Open daily roadmap failure issue already exists: #$EXISTING_FIX"
-              echo "issue_number=$EXISTING_FIX" >> "$GITHUB_OUTPUT"
-              echo "created=false" >> "$GITHUB_OUTPUT"
-              exit 0
+              echo "Open daily roadmap issue already exists: #$EXISTING_FIX; it will be updated."
+              EXISTING="$EXISTING_FIX"
             fi
           fi
 
@@ -240,6 +291,18 @@ jobs:
             echo
             cat sparkleforge-roadmap.md
           } > issue-body.md
+
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" \
+              --repo "${{ github.repository }}" \
+              --title "$ISSUE_TITLE" \
+              --body-file issue-body.md
+
+            echo "Updated issue: #$EXISTING"
+            echo "issue_number=$EXISTING" >> "$GITHUB_OUTPUT"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
