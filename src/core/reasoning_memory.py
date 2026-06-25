@@ -185,7 +185,6 @@ class ReasoningMemoryBank:
                 mem = valid_memories[idx]
                 mem.usage_count += 1
                 results.append(mem)
-            self._flush_all()
 
             return results
 
