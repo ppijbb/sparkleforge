@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            git fetch --no-tags --depth=1000 origin "${{ github.base_ref }}"
             RANGE="origin/${{ github.base_ref }}..HEAD"
           else
             BEFORE="${{ github.event.before }}"
