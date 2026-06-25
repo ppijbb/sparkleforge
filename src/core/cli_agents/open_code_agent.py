@@ -47,6 +47,7 @@ class OpenCodeAgent(BaseCLIAgent):
         self._api_key = os.getenv("OPENROUTER_API_KEY", "")
         self._google_key = os.getenv("GOOGLE_API_KEY", "")
         self._primary = _primary_provider()
+        self._max_tokens = int(os.getenv("LLM_MAX_TOKENS", "4096"))
         config = CLIAgentConfig(
             name="open_code",
             command="opencode",
@@ -59,9 +60,10 @@ class OpenCodeAgent(BaseCLIAgent):
 
     async def execute_query(self, query: str, **kwargs) -> Dict[str, Any]:
         system_msg = kwargs.get("system_message") or "You are a helpful research assistant."
+        max_tokens = int(kwargs.get("max_tokens") or self._max_tokens)
         start = time.time()
         try:
-            text = await self._call_llm(query, system_msg)
+            text = await self._call_llm(query, system_msg, max_tokens=max_tokens)
             elapsed = time.time() - start
             return {
                 "success": bool(text),
@@ -70,6 +72,7 @@ class OpenCodeAgent(BaseCLIAgent):
                 "metadata": {
                     "agent": "open_code",
                     "model": self._model,
+                    "max_tokens": max_tokens,
                     "execution_time": elapsed,
                 },
                 "usage": {},
@@ -84,45 +87,55 @@ class OpenCodeAgent(BaseCLIAgent):
                 "metadata": {
                     "agent": "open_code",
                     "model": self._model,
+                    "max_tokens": max_tokens,
                     "execution_time": elapsed,
                     "error": str(e),
                 },
                 "usage": {},
             }
 
-    async def _call_llm(self, user_msg: str, system_msg: str) -> str:
+    def _google_model(self) -> str:
+        if self._model.startswith("google/"):
+            return self._model.split("/", 1)[1]
+        if self._model.startswith("models/"):
+            return self._model.split("/", 1)[1]
+        if self._model.startswith("gemini-"):
+            return self._model
+        return GOOGLE_FALLBACK_MODEL
+
+    async def _call_llm(self, user_msg: str, system_msg: str, max_tokens: int) -> str:
         """OPENCODE_PRIMARY에 따라 Google 우선 또는 OpenRouter 우선 호출."""
         if self._primary == "google" and self._google_key:
             try:
-                return await self._call_google_genai(user_msg, system_msg)
+                return await self._call_google_genai(user_msg, system_msg, max_tokens)
             except Exception as e:
                 logger.warning(
                     "Google Gemini primary failed (%s), trying OpenRouter...", str(e)[:60]
                 )
         if self._api_key:
             try:
-                return await self._call_openrouter_chain(user_msg, system_msg)
+                return await self._call_openrouter_chain(user_msg, system_msg, max_tokens)
             except RuntimeError as e:
                 if self._google_key:
                     logger.info("OpenRouter chain failed, falling back to Google Gemini")
                     try:
-                        return await self._call_google_genai(user_msg, system_msg)
+                        return await self._call_google_genai(user_msg, system_msg, max_tokens)
                     except Exception as ge:
                         logger.warning("Google Gemini fallback also failed: %s", ge)
                 raise e
         if self._google_key:
-            return await self._call_google_genai(user_msg, system_msg)
+            return await self._call_google_genai(user_msg, system_msg, max_tokens)
         raise RuntimeError(
             "No API key available. Set GOOGLE_API_KEY and/or OPENROUTER_API_KEY (OPENCODE_PRIMARY=google recommended)."
         )
 
-    async def _call_openrouter_chain(self, user_msg: str, system_msg: str) -> str:
+    async def _call_openrouter_chain(self, user_msg: str, system_msg: str, max_tokens: int) -> str:
         """OpenRouter 모델 순서대로 시도 후 실패 시 예외."""
         models_to_try = [self._model] + [m for m in OPENROUTER_FALLBACKS if m != self._model]
         last_err = None
         for model in models_to_try:
             try:
-                return await self._call_openrouter_single(model, user_msg, system_msg)
+                return await self._call_openrouter_single(model, user_msg, system_msg, max_tokens)
             except RuntimeError as e:
                 last_err = e
                 err_str = str(e)
@@ -137,7 +150,9 @@ class OpenCodeAgent(BaseCLIAgent):
                 raise
         raise last_err or RuntimeError("All OpenRouter models failed")
 
-    async def _call_openrouter_single(self, model: str, user_msg: str, system_msg: str) -> str:
+    async def _call_openrouter_single(
+        self, model: str, user_msg: str, system_msg: str, max_tokens: int
+    ) -> str:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -149,7 +164,7 @@ class OpenCodeAgent(BaseCLIAgent):
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
             "temperature": 0.2,
         }
         async with aiohttp.ClientSession() as session:
@@ -174,12 +189,14 @@ class OpenCodeAgent(BaseCLIAgent):
                     raise RuntimeError("OpenRouter returned no choices")
                 return choices[0].get("message", {}).get("content", "")
 
-    async def _call_google_genai(self, user_msg: str, system_msg: str) -> str:
-        url = GOOGLE_GENAI_URL.format(model=GOOGLE_FALLBACK_MODEL)
+    async def _call_google_genai(
+        self, user_msg: str, system_msg: str, max_tokens: int
+    ) -> str:
+        url = GOOGLE_GENAI_URL.format(model=self._google_model())
         payload = {
             "contents": [{"parts": [{"text": user_msg}]}],
             "systemInstruction": {"parts": [{"text": system_msg}]},
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 4096},
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_tokens},
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(
