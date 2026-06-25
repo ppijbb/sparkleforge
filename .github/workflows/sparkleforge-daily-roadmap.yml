@@ -151,7 +151,7 @@ jobs:
           SPARKLEFORGE_ENV: ${{ vars.SPARKLEFORGE_ENV || 'production' }}
         run: |
           set +e
-          timeout 25m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-2.0-flash-exp \
+          timeout 10m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-2.0-flash-exp \
             --output sparkleforge-roadmap.md \
             --format markdown \
             < daily-roadmap-prompt.md > sparkleforge-roadmap-console.log \
@@ -180,48 +180,92 @@ jobs:
           fi
 
           if [ "$RC" -ne 0 ] || [ ! -s sparkleforge-roadmap.md ] || [ -n "$INVALID_OUTPUT_REASON" ]; then
-            {
-              if [ "$RC" -eq 0 ] && [ "$OUTPUT_BYTES" -eq 0 ]; then
-                echo "# Daily roadmap CLI produced empty output"
-              elif [ "$RC" -eq 124 ]; then
-                echo "# Daily roadmap generation timed out"
-              elif [ "$RC" -ne 0 ]; then
-                echo "# Daily roadmap CLI failed with exit code $RC"
-              else
-                echo "# Daily roadmap CLI produced invalid output"
-              fi
-              echo
-              echo "SparkleForge failed while generating the daily improvement roadmap."
-              echo "Create a focused fix that restores this workflow and the runtime path it exercises."
-              echo
-              echo "## Failure"
-              echo "- Exit code: $RC"
-              echo "- Workflow: SparkleForge Daily Roadmap Issue"
-              echo "- Output bytes: $OUTPUT_BYTES"
-              echo "- Console log bytes: $CONSOLE_BYTES"
-              echo "- Error log bytes: $ERROR_BYTES"
-              if [ "$RC" -eq 0 ] && [ "$OUTPUT_BYTES" -eq 0 ]; then
-                echo "- Failure kind: CLI returned success but produced an empty deliverable"
-              elif [ -n "$INVALID_OUTPUT_REASON" ]; then
-                echo "- Failure kind: CLI returned invalid roadmap output"
-                echo "- Invalid output reason: $INVALID_OUTPUT_REASON"
-              fi
-              echo
-              echo "## Console output"
-              echo '```text'
-              tail -n 120 sparkleforge-roadmap-console.log 2>/dev/null || true
-              echo '```'
-              echo
-              echo "## Error output"
-              echo '```text'
-              tail -n 180 sparkleforge-roadmap-error.log 2>/dev/null || true
-              echo '```'
-              echo
-              echo "## Acceptance criteria"
-              echo "- The daily roadmap workflow can run SparkleForge without failing before issue creation."
-              echo "- Runtime compatibility errors in the failing path are fixed rather than hidden."
-              echo "- Static checks for edited Python files pass."
-            } > sparkleforge-roadmap.md
+            export DAILY_RC="$RC"
+            export DAILY_OUTPUT_BYTES="$OUTPUT_BYTES"
+            export DAILY_CONSOLE_BYTES="$CONSOLE_BYTES"
+            export DAILY_ERROR_BYTES="$ERROR_BYTES"
+            export DAILY_INVALID_OUTPUT_REASON="$INVALID_OUTPUT_REASON"
+            python - <<'PY' > sparkleforge-roadmap.md
+          import os
+          import re
+          from pathlib import Path
+
+          context = Path("github-planning-context.md").read_text(encoding="utf-8")
+
+          def collect(header: str, stop: str) -> list[str]:
+              active = False
+              rows = []
+              for raw in context.splitlines():
+                  line = raw.strip()
+                  if line == header:
+                      active = True
+                      continue
+                  if active and line == stop:
+                      break
+                  if active and line.startswith("- #"):
+                      rows.append(line)
+              return rows
+
+          prs = collect("### Open pull requests", "### Open issues")
+          issues = collect("### Open issues", "### Daily selection rule")
+          if prs:
+              target_kind = "pull request"
+              target = prs[0]
+          elif issues:
+              target_kind = "issue"
+              target = issues[0]
+          else:
+              target_kind = "repository backlog"
+              target = "No open issue or pull request was returned by GitHub context collection."
+
+          match = re.match(r"- #(?P<number>\d+) (?P<title>.*?) \[", target)
+          number = match.group("number") if match else ""
+          title = match.group("title") if match else "repository backlog"
+          if target_kind == "pull request" and number:
+              heading = f"Unblock pull request {number}"
+              target_label = f"PR #{number}: {title}"
+          elif target_kind == "issue" and number:
+              heading = f"Triage issue {number}"
+              target_label = f"Issue #{number}: {title}"
+          else:
+              heading = "Refresh daily roadmap from repository context"
+              target_label = title
+
+          rc = os.getenv("DAILY_RC", "")
+          invalid = os.getenv("DAILY_INVALID_OUTPUT_REASON", "")
+          output_bytes = os.getenv("DAILY_OUTPUT_BYTES", "0")
+          console_bytes = os.getenv("DAILY_CONSOLE_BYTES", "0")
+          error_bytes = os.getenv("DAILY_ERROR_BYTES", "0")
+
+          print(f"# {heading}")
+          print()
+          print("## Why now")
+          print("- Daily roadmap generation must update the tracked GitHub issue even when the full SparkleForge research path is slow, unavailable, or returns invalid output.")
+          print(f"- The live GitHub context collection selected {target_label} as the top actionable backlog item.")
+          print(f"- SparkleForge CLI fallback metadata: exit code `{rc}`, output bytes `{output_bytes}`, console bytes `{console_bytes}`, error bytes `{error_bytes}`.")
+          if invalid:
+              print(f"- Invalid output reason: {invalid}.")
+          print()
+          print("## Proposed change")
+          print(f"- Use the current repository issue/PR context to move {target_label} toward a mergeable or closable state.")
+          print("- Keep the scope bounded to the smallest code, workflow, or documentation change needed to unblock that item.")
+          print()
+          print("## Implementation notes")
+          print("- Start from the referenced PR/issue, inspect its checks, labels, and latest comments, then patch only the directly related files.")
+          print("- Preserve the daily roadmap workflow contract: collect GitHub context, produce required roadmap sections, and update the existing daily issue instead of creating duplicates.")
+          print("- If this item is already resolved by the time the automation runs, select the next open PR first, then the next open issue.")
+          print()
+          print("## Acceptance criteria")
+          print("- [ ] The selected PR/issue has a concrete code or workflow change attached.")
+          print("- [ ] Required GitHub checks pass for the resulting PR.")
+          print("- [ ] The daily roadmap issue body is updated with the latest GitHub context rather than skipped.")
+          print("- [ ] No new duplicate daily-roadmap failure issue is created for the same day.")
+          print()
+          print("## Validation")
+          print("- `./actionlint .github/workflows/sparkleforge-daily-roadmap.yml .github/workflows/gemini-assistant.yml .github/workflows/opencode-auto-fix.yml .github/workflows/pr-merge-gate.yml`")
+          print("- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_cli_entrypoints.py tests/test_open_code_agent_config.py tests/test_cli_result_handling.py`")
+          print("- `git diff --check`")
+          PY
             echo "status=fallback" >> "$GITHUB_OUTPUT"
           else
             echo "status=generated" >> "$GITHUB_OUTPUT"
