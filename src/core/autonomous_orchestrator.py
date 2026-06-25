@@ -80,6 +80,7 @@ class AutonomousOrchestrator:
             llm_config=self.llm_config,
             agent_config=self.agent_config,
         )
+        self.graph.recursion_limit = 100
 
     async def execute(self, request: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """연구 실행 워크플로우 기동."""
