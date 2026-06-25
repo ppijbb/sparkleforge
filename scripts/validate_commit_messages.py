@@ -89,7 +89,7 @@ def normalize_title(title: str) -> str:
 
     subject = re.sub(r"^\s*20[0-9]{2}-[0-9]{2}-[0-9]{2}\s*-\s*", "", subject)
     subject = re.sub(r"\s*\(#\d+\)\s*$", "", subject)
-    subject = re.sub(r"\s+", " ", subject).strip().lower()
+    subject = re.sub(r"\s+", " ", subject).strip()
     normalized = f"{commit_type}: {subject}" if subject else ""
     errors = validate_subject(normalized, "normalized title")
     if errors:

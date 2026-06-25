@@ -350,7 +350,7 @@ jobs:
               -e 's/[[:space:]]*\(#[0-9]+\)$//' \
               -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
             if [ -z "$ISSUE_SUBJECT" ]; then
-              ISSUE_SUBJECT="issue identified in review"
+              ISSUE_SUBJECT="fix: issue identified in review"
             fi
             ISSUE_TITLE="$ISSUE_TYPE: $ISSUE_SUBJECT"
 
