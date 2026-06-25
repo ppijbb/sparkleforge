@@ -52,12 +52,13 @@ def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
     ).read_text(encoding="utf-8")
 
     assert "uv run python -m src.cli.entry run" in workflow
-    assert "timeout 25m uv run python -m src.cli.entry run" in workflow
+    assert "timeout 10m uv run python -m src.cli.entry run" in workflow
     assert "timeout-minutes: 35" in workflow
-    assert "set +e\n          timeout 25m uv run python -m src.cli.entry run" in workflow
+    assert "set +e\n          timeout 10m uv run python -m src.cli.entry run" in workflow
     assert "RC=$?\n          set -e" in workflow
     assert "--model google/gemini-2.0-flash-exp" in workflow
     assert "Collect GitHub planning context" in workflow
+    assert "SparkleForge CLI fallback metadata" in workflow
     assert "gh pr list" in workflow
     assert "gh issue list" in workflow
     assert "github-planning-context.md" in workflow
