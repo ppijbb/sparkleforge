@@ -347,39 +347,8 @@ jobs:
           PR_META=$(gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName,statusCheckRollup)
-          normalize_commit_title() {
-            local title="$1"
-            local commit_type="fix"
-            local subject
-            title=$(printf '%s\n' "$title" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            case "$title" in
-              "🔧 fix:"*) subject="${title#*:}" ;;
-              "✨ feature:"*) commit_type="feat"; subject="${title#*:}" ;;
-              "♻️ refactor:"*) commit_type="refactor"; subject="${title#*:}" ;;
-              "🧹 chore:"*) commit_type="chore"; subject="${title#*:}" ;;
-              "fix:"*|"Fix:"*) subject="${title#*:}" ;;
-              "feat:"*|"Feat:"*|"feature:"*|"Feature:"*) commit_type="feat"; subject="${title#*:}" ;;
-              "refactor:"*|"Refactor:"*) commit_type="refactor"; subject="${title#*:}" ;;
-              "chore:"*|"Chore:"*) commit_type="chore"; subject="${title#*:}" ;;
-              "docs:"*|"Docs:"*) commit_type="docs"; subject="${title#*:}" ;;
-              "test:"*|"Test:"*) commit_type="test"; subject="${title#*:}" ;;
-              "ci:"*|"CI:"*) commit_type="ci"; subject="${title#*:}" ;;
-              "build:"*|"Build:"*) commit_type="build"; subject="${title#*:}" ;;
-              "perf:"*|"Perf:"*) commit_type="perf"; subject="${title#*:}" ;;
-              *) subject="$title" ;;
-            esac
-            subject=$(printf '%s\n' "$subject" | sed -E \
-              -e 's/^[[:space:]]+|[[:space:]]+$//g' \
-              -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
-              -e 's/[[:space:]]*\(#[0-9]+\)$//' \
-              -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
-            if [ -z "$subject" ]; then
-              subject="update automated fix"
-            fi
-            printf '%s: %s\n' "$commit_type" "$subject"
-          }
-          PR_TITLE=$(echo "$PR_META" | jq -r '.title // "update automated fix"')
-          MERGE_SUBJECT=$(normalize_commit_title "$PR_TITLE")
+          PR_TITLE=$(echo "$PR_META" | jq -r '.title // empty')
+          MERGE_SUBJECT=$(python scripts/validate_commit_messages.py --normalize-title "$PR_TITLE")
           MERGE_STATE=$(echo "$PR_META" | jq -r '.mergeStateStatus // "UNKNOWN"')
           BASE_BRANCH=$(echo "$PR_META" | jq -r '.baseRefName // "UNKNOWN"')
           NOT_READY_CHECKS=$(echo "$PR_META" | jq -r '
@@ -521,37 +490,6 @@ jobs:
           DEFAULT_BRANCH=$(gh repo view "${{ github.repository }}" \
             --json defaultBranchRef \
             --jq '.defaultBranchRef.name')
-          normalize_commit_title() {
-            local title="$1"
-            local commit_type="fix"
-            local subject
-            title=$(printf '%s\n' "$title" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            case "$title" in
-              "🔧 fix:"*) subject="${title#*:}" ;;
-              "✨ feature:"*) commit_type="feat"; subject="${title#*:}" ;;
-              "♻️ refactor:"*) commit_type="refactor"; subject="${title#*:}" ;;
-              "🧹 chore:"*) commit_type="chore"; subject="${title#*:}" ;;
-              "fix:"*|"Fix:"*) subject="${title#*:}" ;;
-              "feat:"*|"Feat:"*|"feature:"*|"Feature:"*) commit_type="feat"; subject="${title#*:}" ;;
-              "refactor:"*|"Refactor:"*) commit_type="refactor"; subject="${title#*:}" ;;
-              "chore:"*|"Chore:"*) commit_type="chore"; subject="${title#*:}" ;;
-              "docs:"*|"Docs:"*) commit_type="docs"; subject="${title#*:}" ;;
-              "test:"*|"Test:"*) commit_type="test"; subject="${title#*:}" ;;
-              "ci:"*|"CI:"*) commit_type="ci"; subject="${title#*:}" ;;
-              "build:"*|"Build:"*) commit_type="build"; subject="${title#*:}" ;;
-              "perf:"*|"Perf:"*) commit_type="perf"; subject="${title#*:}" ;;
-              *) subject="$title" ;;
-            esac
-            subject=$(printf '%s\n' "$subject" | sed -E \
-              -e 's/^[[:space:]]+|[[:space:]]+$//g' \
-              -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
-              -e 's/[[:space:]]*\(#[0-9]+\)$//' \
-              -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
-            if [ -z "$subject" ]; then
-              subject="update automated fix"
-            fi
-            printf '%s: %s\n' "$commit_type" "$subject"
-          }
 
           gh pr list \
             --repo "${{ github.repository }}" \
@@ -563,12 +501,12 @@ jobs:
             [ -n "$encoded" ] || continue
             PR=$(echo "$encoded" | base64 -d)
             NUMBER=$(echo "$PR" | jq -r '.number')
-            TITLE=$(echo "$PR" | jq -r '.title // "update automated fix"')
+            TITLE=$(echo "$PR" | jq -r '.title // empty')
             BASE_BRANCH=$(echo "$PR" | jq -r '.baseRefName')
             IS_DRAFT=$(echo "$PR" | jq -r '.isDraft')
             MERGEABLE=$(echo "$PR" | jq -r '.mergeable')
             MERGE_STATE=$(echo "$PR" | jq -r '.mergeStateStatus')
-            MERGE_SUBJECT=$(normalize_commit_title "$TITLE")
+            MERGE_SUBJECT=$(python scripts/validate_commit_messages.py --normalize-title "$TITLE")
 
             if [ "$IS_DRAFT" = "true" ]; then
               echo "Skipping #$NUMBER: draft PR."

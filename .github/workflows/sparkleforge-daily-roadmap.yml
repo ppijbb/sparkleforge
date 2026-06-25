@@ -100,7 +100,13 @@ jobs:
 
           if [ "$RC" -ne 0 ] || [ ! -s sparkleforge-roadmap.md ]; then
             {
-              echo "# Daily roadmap generation failure"
+              if [ "$RC" -eq 0 ]; then
+                echo "# Daily roadmap CLI produced empty output"
+              elif [ "$RC" -eq 124 ]; then
+                echo "# Daily roadmap generation timed out"
+              else
+                echo "# Daily roadmap CLI failed with exit code $RC"
+              fi
               echo
               echo "SparkleForge failed while generating the daily improvement roadmap."
               echo "Create a focused fix that restores this workflow and the runtime path it exercises."
@@ -153,14 +159,21 @@ jobs:
           if [ -z "$TITLE" ]; then
             TITLE="Daily SparkleForge improvement plan"
           fi
+          ISSUE_TYPE="feat"
+          if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
+            ISSUE_TYPE="fix"
+          fi
           SUBJECT=$(printf '%s\n' "$TITLE" | sed -E \
             -e 's/^[[:space:]]+|[[:space:]]+$//g' \
             -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
             -e 's/[[:space:]]*\(#[0-9]+\)$//' \
             -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
           if [ -z "$SUBJECT" ]; then
-            SUBJECT="daily sparkleforge improvement plan"
+            echo "::error::Unable to derive a specific roadmap issue title."
+            exit 1
           fi
+          ISSUE_TITLE="$ISSUE_TYPE: $SUBJECT"
+          python scripts/validate_commit_messages.py --message "$ISSUE_TITLE"
 
           {
             echo "<!-- sparkleforge-daily-roadmap:$TODAY -->"
@@ -173,7 +186,7 @@ jobs:
 
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
-            --title "feat: $SUBJECT" \
+            --title "$ISSUE_TITLE" \
             --body-file issue-body.md)
 
           ISSUE_NUMBER="${ISSUE_URL##*/}"
