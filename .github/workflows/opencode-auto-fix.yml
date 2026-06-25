@@ -173,7 +173,7 @@ jobs:
           SUBJECT=$(printf '%s\n' "$RAW_SUBJECT" | sed -E \
             -e 's/^[[:space:]]+|[[:space:]]+$//g' \
             -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
-            -e 's/[[:space:]]*\(#[0-9]+\)$//' \
+            -e 's/[[:space:]]*\([#0-9]+\)$//' \
             -e 's/[[:space:]]+/ /g' \
             -e 's/[[:space:]]+$//')
           case "$SUBJECT" in
@@ -186,7 +186,7 @@ jobs:
             SUBJECT="update automated issue fix"
           fi
           SUBJECT=$(printf '%s\n' "$SUBJECT" | tr '[:upper:]' '[:lower:]')
-          PR_TITLE="$CONVENTIONAL_TYPE: $SUBJECT"
+          PR_TITLE=$(printf '%s: %s' "$CONVENTIONAL_TYPE" "$SUBJECT" | sed 's/"/\\"/g')
           COMMIT_TITLE="$PR_TITLE"
           BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"
           if [ -z "$BASE_BRANCH" ]; then
@@ -310,7 +310,7 @@ jobs:
             git add -u .
             git ls-files --others --exclude-standard -z | xargs -0 -r git add --
             if ! git diff --cached --quiet; then
-              git commit -m "${{ steps.context.outputs.commit_title }}"
+              git commit -m "$(echo "${{ steps.context.outputs.commit_title }}" | sed 's/"/\\"/g')"
             else
               echo "::error::Repository changes were detected but no non-ignored files were staged."
               exit 1
@@ -457,7 +457,7 @@ jobs:
           gh pr merge "${{ steps.pr.outputs.pr_number }}" \
             --repo "${{ github.repository }}" \
             --"$AUTO_FIX_MERGE_METHOD" \
-            --subject "${{ steps.context.outputs.pr_title }}" \
+            --subject "$(echo "${{ steps.context.outputs.pr_title }}" | sed 's/"/\\"/g')" \
             --body "Refs #${{ steps.context.outputs.issue_number }}" \
             --delete-branch
 
