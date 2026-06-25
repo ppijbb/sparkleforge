@@ -57,6 +57,11 @@ def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
     assert "set +e\n          timeout 25m uv run python -m src.cli.entry run" in workflow
     assert "RC=$?\n          set -e" in workflow
     assert "--model google/gemini-2.0-flash-exp" in workflow
+    assert "Collect GitHub planning context" in workflow
+    assert "gh pr list" in workflow
+    assert "gh issue list" in workflow
+    assert "github-planning-context.md" in workflow
+    assert "gh issue edit \"$EXISTING\"" in workflow
     assert "uv run python -m src.cli.entry research" not in workflow
     assert "--no-interactive" not in workflow
     assert "Generated roadmap based on:" in workflow
