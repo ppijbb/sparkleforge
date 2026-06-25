@@ -10,6 +10,40 @@ permissions:
   contents: read
 
 jobs:
+  commit-message-policy:
+    name: Commit message policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve commit range
+        id: commit-range
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            RANGE="origin/${{ github.base_ref }}..HEAD"
+          else
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.sha }}"
+            if [ -z "$BEFORE" ] || [[ "$BEFORE" =~ ^0+$ ]]; then
+              RANGE="$AFTER"
+            else
+              RANGE="$BEFORE..$AFTER"
+            fi
+          fi
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+
+      - name: Validate commit subjects
+        run: python scripts/validate_commit_messages.py --range "${{ steps.commit-range.outputs.range }}"
+
   syntax:
     name: Python syntax
     runs-on: ubuntu-latest
