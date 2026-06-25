@@ -1422,25 +1422,33 @@ EXAMPLES:
     # 서브커맨드 추가
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    def add_research_command_options(command_parser):
+        command_parser.add_argument("query", help="Research query")
+        command_parser.add_argument("--output", "-o", help="Output file path")
+        command_parser.add_argument(
+            "--format",
+            choices=["json", "markdown", "html"],
+            default="markdown",
+            help="Output format",
+        )
+        command_parser.add_argument(
+            "--streaming", action="store_true", help="Enable streaming output"
+        )
+        command_parser.add_argument(
+            "--max-tokens",
+            type=int,
+            default=None,
+            help="Maximum output tokens requested by automation workflows",
+        )
+        command_parser.add_argument(
+            "--model",
+            default=None,
+            help="Model override for this non-interactive research run",
+        )
+
     # run 커맨드
     run_parser = subparsers.add_parser("run", help="Execute research request")
-    run_parser.add_argument("query", help="Research query")
-    run_parser.add_argument("--output", "-o", help="Output file path")
-    run_parser.add_argument(
-        "--format",
-        choices=["json", "markdown", "html"],
-        default="markdown",
-        help="Output format",
-    )
-    run_parser.add_argument(
-        "--streaming", action="store_true", help="Enable streaming output"
-    )
-    run_parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=None,
-        help="Maximum output tokens requested by automation workflows",
-    )
+    add_research_command_options(run_parser)
 
     # work 커맨드
     work_parser = subparsers.add_parser("work", help="Execute work goal as coworker")
@@ -1462,17 +1470,7 @@ EXAMPLES:
     query_parser = subparsers.add_parser(
         "query", help="Send research query (alias for run)"
     )
-    query_parser.add_argument("query", help="Research query")
-    query_parser.add_argument("--output", "-o", help="Output file path")
-    query_parser.add_argument(
-        "--format",
-        choices=["json", "markdown", "html"],
-        default="markdown",
-        help="Output format",
-    )
-    query_parser.add_argument(
-        "--streaming", action="store_true", help="Enable streaming output"
-    )
+    add_research_command_options(query_parser)
 
     # web 커맨드
     web_parser = subparsers.add_parser("web", help="Start web dashboard")
@@ -2222,6 +2220,34 @@ def _ensure_database_driver_for_cli() -> None:
 
 async def handle_run_command(args):
     """연구 실행 커맨드 처리"""
+    def _apply_runtime_overrides() -> None:
+        model_override = getattr(args, "model", None)
+        if model_override:
+            os.environ["OPEN_CODE_MODEL_PATH"] = model_override
+            if config.llm.provider == "opencode":
+                config.llm.open_code_model_path = model_override
+            else:
+                os.environ["LLM_MODEL"] = model_override
+                for key in (
+                    "PLANNING_MODEL",
+                    "REASONING_MODEL",
+                    "VERIFICATION_MODEL",
+                    "GENERATION_MODEL",
+                    "COMPRESSION_MODEL",
+                ):
+                    os.environ[key] = model_override
+                config.llm.primary_model = model_override
+                config.llm.planning_model = model_override
+                config.llm.reasoning_model = model_override
+                config.llm.verification_model = model_override
+                config.llm.generation_model = model_override
+                config.llm.compression_model = model_override
+
+        max_tokens = getattr(args, "max_tokens", None)
+        if max_tokens is not None:
+            os.environ["LLM_MAX_TOKENS"] = str(max_tokens)
+            config.llm.max_tokens = max_tokens
+
     def _sanitize_embedded_cli_flags(query: str) -> tuple[str, bool]:
         """Query 문자열에 잘못 포함된 CLI 플래그를 제거.
 
@@ -2229,7 +2255,14 @@ async def handle_run_command(args):
         """
         if not query:
             return query, False
-        markers = (" --format ", " --output ", " --streaming", " -o ")
+        markers = (
+            " --format ",
+            " --output ",
+            " --streaming",
+            " --max-tokens ",
+            " --model ",
+            " -o ",
+        )
         cut_positions = [query.find(m) for m in markers if query.find(m) != -1]
         if not cut_positions:
             return query, False
@@ -2253,6 +2286,7 @@ async def handle_run_command(args):
         )
         args.query = sanitized_query
 
+    _apply_runtime_overrides()
     logger.info(f"🔬 Starting research: {args.query}")
 
     try:
