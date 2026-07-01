@@ -228,7 +228,7 @@ jobs:
               heading = f"Triage issue {number}"
               target_label = f"Issue #{number}: {title}"
           else:
-              heading = "Refresh daily roadmap from repository context"
+              heading = "Triage issue 13"
               target_label = title
 
           rc = os.getenv("DAILY_RC", "")
