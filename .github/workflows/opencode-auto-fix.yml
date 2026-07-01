@@ -373,7 +373,7 @@ jobs:
               --title "${{ steps.context.outputs.pr_title }}" \
               --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
 
-          Refs #${{ steps.context.outputs.issue_number }}
+          Closes #${{ steps.context.outputs.issue_number }}
 
           Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
             PR_NUMBER=${PR_URL##*/}
@@ -455,7 +455,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --"$AUTO_FIX_MERGE_METHOD" \
             --subject "$(echo "${{ steps.context.outputs.pr_title }}" | sed 's/"/\\"/g')" \
-            --body "Refs #${{ steps.context.outputs.issue_number }}" \
+            --body "Closes #${{ steps.context.outputs.issue_number }}" \
             --delete-branch
 
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
