@@ -2,7 +2,7 @@ name: AI Harness (Distributed)
 on:
   push:
   pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review, closed]
   pull_request_review:
     types: [submitted]
   schedule:
@@ -632,16 +632,75 @@ jobs:
               --subject "$MERGE_SUBJECT" \
               --delete-branch
 
-            if [ "$BASE_BRANCH" != "$DEFAULT_BRANCH" ]; then
-              BODY=$(echo "$PR" | jq -r '.body // ""')
-              ISSUES=$(echo "$BODY" | grep -Eio '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' | grep -Eo '#[0-9]+' | tr -d '#' | sort -u || true)
-              for ISSUE in $ISSUES; do
-                gh issue comment "$ISSUE" \
-                  --repo "${{ github.repository }}" \
-                  --body "Fix PR #$NUMBER was merged into \`$BASE_BRANCH\`. This issue has been automatically closed."
-                gh issue close "$ISSUE" \
-                  --repo "${{ github.repository }}" \
-                  --reason "completed" || true
-              done
-            fi
+            BODY=$(echo "$PR" | jq -r '.body // ""')
+            ISSUES=$(echo "$BODY" | grep -Eio '(refs|close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' | grep -Eo '#[0-9]+' | tr -d '#' | sort -u || true)
+            for ISSUE in $ISSUES; do
+              gh issue edit "$ISSUE" \
+                --repo "${{ github.repository }}" \
+                --remove-label auto-fix-pr-opened || true
+              gh label create auto-fix-merged \
+                --repo "${{ github.repository }}" \
+                --color 0E8A16 \
+                --description "An automated fix PR has been merged." \
+                --force >/dev/null 2>&1 || true
+              gh issue edit "$ISSUE" \
+                --repo "${{ github.repository }}" \
+                --add-label auto-fix-merged || true
+              gh issue comment "$ISSUE" \
+                --repo "${{ github.repository }}" \
+                --body "Fix PR #$NUMBER was merged into \`$BASE_BRANCH\`. This issue has been automatically closed."
+              gh issue close "$ISSUE" \
+                --repo "${{ github.repository }}" \
+                --reason "completed" || true
+            done
+          done
+
+  post-pr-merge-cleanup:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Cleanup linked issues on PR merge
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_BODY=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json body \
+            --jq '.body // ""')
+          ISSUES=$(printf '%s\n' "$PR_BODY" |
+            grep -Eio '(refs|close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' |
+            grep -Eo '#[0-9]+' |
+            tr -d '#' |
+            sort -u || true)
+
+          if [ -z "$ISSUES" ]; then
+            echo "No linked issues found in PR #$PR_NUMBER body."
+            exit 0
+          fi
+
+          for ISSUE in $ISSUES; do
+            gh issue edit "$ISSUE" \
+              --repo "${{ github.repository }}" \
+              --remove-label auto-fix-pr-opened || true
+            gh label create auto-fix-merged \
+              --repo "${{ github.repository }}" \
+              --color 0E8A16 \
+              --description "An automated fix PR has been merged." \
+              --force >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE" \
+              --repo "${{ github.repository }}" \
+              --add-label auto-fix-merged || true
+            gh issue comment "$ISSUE" \
+              --repo "${{ github.repository }}" \
+              --body "Fix PR #$PR_NUMBER was merged. This issue has been automatically closed."
+            gh issue close "$ISSUE" \
+              --repo "${{ github.repository }}" \
+              --reason "completed" || true
           done
