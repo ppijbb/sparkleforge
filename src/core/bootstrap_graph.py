@@ -70,6 +70,11 @@ class BootstrapGraph:
                 self._stage_runtime_mode,
                 depends_on=("trust_gate",),
             ),
+            BootstrapStage(
+                "observation_plane",
+                self._stage_observation_plane,
+                depends_on=("config",),
+            ),
         ]
 
     async def _stage_config(self) -> dict[str, Any]:
@@ -128,6 +133,16 @@ class BootstrapGraph:
 
     async def _stage_runtime_mode(self) -> dict[str, Any]:
         return {"mode": self.runtime_mode}
+
+    async def _stage_observation_plane(self) -> dict[str, Any]:
+        from src.core.observe.observation_plane import ObservationPlane
+
+        op = ObservationPlane()
+        metrics = await op.system.get_all_metrics()
+        return {
+            "observation_plane": op,
+            "metrics_available": "error" not in metrics.get("cpu", {}),
+        }
 
     async def run(self) -> BootstrapResult:
         """Run the startup graph sequentially and collect stage diagnostics."""
