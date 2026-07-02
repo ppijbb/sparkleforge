@@ -75,6 +75,11 @@ class BootstrapGraph:
                 self._stage_observation_plane,
                 depends_on=("config",),
             ),
+            BootstrapStage(
+                "actuation_plane",
+                self._stage_actuation_plane,
+                depends_on=("config", "trust_gate"),
+            ),
         ]
 
     async def _stage_config(self) -> dict[str, Any]:
@@ -142,6 +147,15 @@ class BootstrapGraph:
         return {
             "observation_plane": op,
             "metrics_available": "error" not in metrics.get("cpu", {}),
+        }
+
+    async def _stage_actuation_plane(self) -> dict[str, Any]:
+        from src.core.actuate.actuation_plane import ActuationPlane
+
+        ap = ActuationPlane()
+        return {
+            "actuation_plane": ap,
+            "initialized": ap is not None,
         }
 
     async def run(self) -> BootstrapResult:
