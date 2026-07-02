@@ -1465,6 +1465,27 @@ EXAMPLES:
             default=None,
             help="Optional phase/task label prefixed onto the query, for automation traceability",
         )
+        command_parser.add_argument(
+            "--session",
+            dest="session_id",
+            default=None,
+            metavar="SESSION_ID",
+            help="Resume a specific prior session by ID instead of starting a new one",
+        )
+        command_parser.add_argument(
+            "--continue",
+            "-c",
+            dest="continue_session",
+            action="store_true",
+            help="Resume the most recently active session",
+        )
+        command_parser.add_argument(
+            "--mode",
+            choices=["research", "work"],
+            default="research",
+            help="Execution mode: 'research' (default, one-shot research query) or "
+            "'work' (coworker/tool-use goal execution, same path as the 'work' command)",
+        )
 
     # run 커맨드
     run_parser = subparsers.add_parser("run", help="Execute research request")
@@ -1473,6 +1494,20 @@ EXAMPLES:
     # work 커맨드
     work_parser = subparsers.add_parser("work", help="Execute work goal as coworker")
     work_parser.add_argument("goal", nargs="+", help="Work goal")
+
+    # session 커맨드 (REPL 밖에서도 세션 조회/재개 가능하도록)
+    session_parser = subparsers.add_parser(
+        "session", help="Inspect research sessions started via 'run --session'/'--continue'"
+    )
+    session_subparsers = session_parser.add_subparsers(
+        dest="session_command", help="Session action"
+    )
+    session_list_parser = session_subparsers.add_parser("list", help="List sessions")
+    session_list_parser.add_argument(
+        "--limit", type=int, default=20, help="Maximum number of sessions to show"
+    )
+    session_show_parser = session_subparsers.add_parser("show", help="Show session details")
+    session_show_parser.add_argument("session_id", help="Session ID")
 
     # actions 커맨드
     actions_parser = subparsers.add_parser("actions", help="List pending actions")
@@ -1783,6 +1818,8 @@ EXAMPLES:
         cli_rc = await handle_run_command(args)
     elif cmd == "work":
         cli_rc = await handle_work_command(args)
+    elif cmd == "session":
+        cli_rc = await handle_session_command(args)
     elif cmd == "actions":
         cli_rc = await handle_actions_command(args)
     elif cmd == "approve":
@@ -1821,7 +1858,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "actions", "approve", "deny"}
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)
@@ -2243,8 +2280,65 @@ def _ensure_database_driver_for_cli() -> None:
         logger.info("✅ SQLite database driver initialized: %s", sqlite_db_path)
 
 
+async def _resolve_run_session(args) -> tuple[str, str | None]:
+    """`--session`/`--continue`를 처리해 세션 ID를 결정하고, 이어가는 경우 이전 컨텍스트를 query에 반영.
+
+    Returns:
+        (session_id, error_message). error_message가 있으면 caller가 즉시 중단해야 함.
+    """
+    resume_id = getattr(args, "session_id", None)
+    should_continue = getattr(args, "continue_session", False)
+
+    if not resume_id and not should_continue:
+        return f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}", None
+
+    from src.core.session_control import SessionControl
+
+    session_control = SessionControl()
+
+    target_id = resume_id
+    if not target_id:
+        recent = await session_control.search_sessions(limit=1)
+        if not recent:
+            return "", "❌ No previous session found to continue (--continue)."
+        target_id = recent[0].session_id
+
+    restored_state = await session_control.restore_session(target_id)
+    if restored_state is None:
+        return "", f"❌ Session not found: {target_id}"
+
+    prior_query = restored_state.get("user_query")
+    if prior_query:
+        args.query = (
+            f"[Continuing session {target_id}]\nPrevious request: {prior_query}\n\n"
+            f"New request: {args.query}"
+        )
+    logger.info(f"↩️  Resumed session: {target_id}")
+    return target_id, None
+
+
+def _persist_run_session(session_id: str, query: str, output_text: str | None) -> None:
+    """연구 실행 완료 후 세션을 저장해 이후 --session/--continue로 이어갈 수 있게 함."""
+    try:
+        from src.core.session_manager import get_session_manager
+
+        get_session_manager().save_session(
+            session_id,
+            agent_state={
+                "user_query": query,
+                "last_output_preview": (output_text or "")[:2000],
+            },
+            metadata={"tags": ["cli-run"]},
+        )
+    except Exception:
+        logger.debug("Session persistence skipped for %s", session_id, exc_info=True)
+
+
 async def handle_run_command(args):
     """연구 실행 커맨드 처리"""
+    if getattr(args, "mode", "research") == "work":
+        return await handle_work_command_from_query(args)
+
     def _apply_runtime_overrides() -> None:
         model_override = getattr(args, "model", None)
         if model_override:
@@ -2314,6 +2408,11 @@ async def handle_run_command(args):
     task_label = getattr(args, "task", None)
     if task_label:
         args.query = f"[{task_label}] {args.query}"
+
+    session_id, session_error = await _resolve_run_session(args)
+    if session_error:
+        logger.error(session_error)
+        return 1
 
     _apply_runtime_overrides()
     logger.info(f"🔬 Starting research: {args.query}")
@@ -2418,6 +2517,7 @@ async def handle_run_command(args):
 
         text = extract_cli_result_content(result)
         succeeded = cli_result_succeeded(result, text)
+        _persist_run_session(session_id, base_query, text)
 
         with open(output_path, "w", encoding="utf-8") as f:
             if args.format == "json":
@@ -2444,15 +2544,45 @@ async def handle_run_command(args):
     return 0
 
 
-async def handle_work_command(args):
-    """협업 세션 실행 커맨드 처리"""
-    goal = " ".join(args.goal)
+async def _execute_coworker_goal(goal: str) -> int:
+    """Coworker(tool-use) 모드로 목표를 실행하는 공통 경로."""
     logger.info(f"🤝 Starting coworker session for: {goal}")
     from src.core.agent_orchestrator import get_orchestrator
     orchestrator = get_orchestrator()
     result = await orchestrator.execute(goal, custom_state={"mode": "coworker", "current_goal": goal})
     print(result.get("content", ""))
     return 0
+
+
+async def handle_work_command(args):
+    """협업 세션 실행 커맨드 처리"""
+    return await _execute_coworker_goal(" ".join(args.goal))
+
+
+async def handle_work_command_from_query(args):
+    """`run --mode work`에서 진입하는 coworker 실행 경로 (query를 goal로 사용)."""
+    return await _execute_coworker_goal(getattr(args, "query", "") or "")
+
+
+async def handle_session_command(args):
+    """REPL 밖에서 세션을 조회하는 커맨드 처리 (session list / session show <id>)."""
+    from rich.console import Console
+    from src.core.session_control import SessionControl
+    from src.cli.commands.session import session_list_command, session_show_command
+
+    class _SessionCliShim:
+        def __init__(self):
+            self.session_control = SessionControl()
+            self.console = Console()
+
+    shim = _SessionCliShim()
+    sub = getattr(args, "session_command", None)
+    if sub == "show":
+        await session_show_command(shim, [args.session_id])
+    else:
+        await session_list_command(shim, [str(getattr(args, "limit", 20))])
+    return 0
+
 
 async def handle_actions_command(args):
     print("To view actions, please enter REPL mode (run without commands) and type 'actions'.")
