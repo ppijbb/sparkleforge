@@ -544,13 +544,11 @@ jobs:
           fi
 
           if [ "$NOT_READY_CHECKS" != "0" ] || [ "$MERGE_STATE" != "CLEAN" ]; then
-            echo "Checks are still settling or merge state is $MERGE_STATE; enabling auto-merge."
-            gh pr merge "$PR_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --squash \
-              --subject "$MERGE_SUBJECT" \
-              --auto \
-              --delete-branch
+            # This repo does not have GitHub's native auto-merge feature enabled,
+            # so `gh pr merge --auto` fails hard (enablePullRequestAutoMerge error).
+            # Leave the PR for the scheduled auto-merge-ready-fix-prs job, which
+            # polls and merges directly once checks finish and state is CLEAN.
+            echo "Checks are still settling or merge state is $MERGE_STATE; deferring to the scheduled auto-merge-ready-fix-prs job."
             exit 0
           fi
 
