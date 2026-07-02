@@ -851,6 +851,9 @@ class ParallelAgentExecutor:
         available_tools = []
         try:
             mcp_hub = UniversalMCPHub()
+            # TrustGate 선필터링 목록 확보
+            allowed_tool_names = set(mcp_hub.get_allowed_tools())
+
             if hasattr(mcp_hub, "mcp_tools_map") and mcp_hub.mcp_tools_map:
                 # 설정에서 지정된 도구가 실제로 사용 가능한지 확인
                 for tool_name in config_tools:
@@ -859,37 +862,44 @@ class ParallelAgentExecutor:
                         server_name, actual_tool_name = tool_name.split("::", 1)
                         if server_name in mcp_hub.mcp_tools_map:
                             if actual_tool_name in mcp_hub.mcp_tools_map[server_name]:
-                                available_tools.append(tool_name)
+                                if tool_name in allowed_tool_names:
+                                    available_tools.append(tool_name)
                     else:
                         # tool_name만 있는 경우, 모든 서버에서 찾기
                         for server_name, server_tools in mcp_hub.mcp_tools_map.items():
                             if tool_name in server_tools:
-                                available_tools.append(f"{server_name}::{tool_name}")
-                                break
+                                full_tool_name = f"{server_name}::{tool_name}"
+                                if full_tool_name in allowed_tool_names:
+                                    available_tools.append(full_tool_name)
+                                    break
 
                 # 설정된 도구가 없으면 카테고리 기반으로 찾기
                 if not available_tools:
                     for server_name, server_tools in mcp_hub.mcp_tools_map.items():
                         for tool_name in server_tools.keys():
+                            full_tool_name = f"{server_name}::{tool_name}"
+                            if full_tool_name not in allowed_tool_names:
+                                continue
+
                             tool_lower = tool_name.lower()
                             if category == "search" and (
                                 "search" in tool_lower or "query" in tool_lower
                             ):
-                                available_tools.append(f"{server_name}::{tool_name}")
+                                available_tools.append(full_tool_name)
                             elif category == "data" and "data" in tool_lower:
-                                available_tools.append(f"{server_name}::{tool_name}")
+                                available_tools.append(full_tool_name)
                             elif category == "code" and (
                                 "code" in tool_lower or "exec" in tool_lower
                             ):
-                                available_tools.append(f"{server_name}::{tool_name}")
+                                available_tools.append(full_tool_name)
                             elif category == "academic" and (
                                 "academic" in tool_lower or "paper" in tool_lower
                             ):
-                                available_tools.append(f"{server_name}::{tool_name}")
+                                available_tools.append(full_tool_name)
                             elif category == "business" and (
                                 "business" in tool_lower or "market" in tool_lower
                             ):
-                                available_tools.append(f"{server_name}::{tool_name}")
+                                available_tools.append(full_tool_name)
         except Exception as e:
             logger.warning(f"Failed to get tools from MCP Hub: {e}")
 

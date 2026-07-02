@@ -77,6 +77,7 @@ class BootstrapGraph:
 
         config = load_config_from_env()
         return {
+            "config": config,
             "provider": getattr(getattr(config, "llm", None), "provider", "unknown"),
             "project_root": str(self.project_root),
         }
@@ -91,13 +92,13 @@ class BootstrapGraph:
             sqlite_db_path.parent.mkdir(parents=True, exist_ok=True)
             driver = SQLiteDriver(str(sqlite_db_path))
             set_database_driver(driver)
-        return {"driver": driver.__class__.__name__}
+        return {"driver_instance": driver, "driver": driver.__class__.__name__}
 
     async def _stage_mcp_hub(self) -> dict[str, Any]:
         from src.core.mcp_integration import get_mcp_hub
 
         hub = get_mcp_hub()
-        return {"registered_tools": len(hub.registry.get_all_tool_names())}
+        return {"mcp_hub": hub, "registered_tools": len(hub.registry.get_all_tool_names())}
 
     async def _stage_skills_plugins_hooks(self) -> dict[str, Any]:
         from src.core.skills_manager import get_skill_manager

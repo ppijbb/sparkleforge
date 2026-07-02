@@ -284,13 +284,19 @@ class WebAppManager:
 class AutonomousResearchSystem:
     """자율 리서처 시스템 - 9가지 핵심 혁신 통합 메인 클래스"""
 
-    def __init__(self):
+    def __init__(self, bootstrap_result=None):
         # Load configurations from environment - ALL REQUIRED, NO DEFAULTS
         try:
-            self.config = load_config_from_env()
-            logger.info(
-                "✅ Configuration loaded successfully from environment variables"
-            )
+            if bootstrap_result and bootstrap_result.ok:
+                self.config = bootstrap_result.values["config"]["config"]
+                logger.info(
+                    "✅ Configuration transferred from bootstrap successfully"
+                )
+            else:
+                self.config = load_config_from_env()
+                logger.info(
+                    "✅ Configuration loaded successfully from environment variables"
+                )
 
             # Validate ChromaDB availability (optional)
             try:
@@ -326,11 +332,16 @@ class AutonomousResearchSystem:
             from src.core.db.sqlite_driver import SQLiteDriver
 
             if get_database_driver() is None:
-                sqlite_db_path = (
-                    Path(__file__).resolve().parent / "data" / "sparkleforge.db"
-                )
-                set_database_driver(SQLiteDriver(str(sqlite_db_path)))
-                logger.info(f"✅ SQLite database driver initialized: {sqlite_db_path}")
+                if bootstrap_result and bootstrap_result.ok and "database" in bootstrap_result.values:
+                    driver = bootstrap_result.values["database"]["driver_instance"]
+                    set_database_driver(driver)
+                    logger.info(f"✅ SQLite database driver transferred from bootstrap: {driver.__class__.__name__}")
+                else:
+                    sqlite_db_path = (
+                        Path(__file__).resolve().parent / "data" / "sparkleforge.db"
+                    )
+                    set_database_driver(SQLiteDriver(str(sqlite_db_path)))
+                    logger.info(f"✅ SQLite database driver initialized: {sqlite_db_path}")
 
             # Use new multi-agent orchestrator (no fallback - fail clearly)
             AgentOrchestrator, _ = _load_agent_orchestrator()
@@ -344,8 +355,12 @@ class AutonomousResearchSystem:
         try:
             from src.core.mcp_integration import UniversalMCPHub
 
-            self.mcp_hub = UniversalMCPHub()
-            logger.info("✅ MCP Hub initialized")
+            if bootstrap_result and bootstrap_result.ok and "mcp_hub" in bootstrap_result.values:
+                self.mcp_hub = bootstrap_result.values["mcp_hub"]["mcp_hub"]
+                logger.info("✅ MCP Hub transferred from bootstrap")
+            else:
+                self.mcp_hub = UniversalMCPHub()
+                logger.info("✅ MCP Hub initialized")
         except Exception as e:
             logger.error(f"❌ MCP Hub initialization failed: {e}")
             raise
@@ -1746,6 +1761,11 @@ EXAMPLES:
             for line in bootstrap_result.render_lines():
                 print(line, file=sys.stderr)
         return 1
+
+    # Reassign global config using the pre-initialized config from BootstrapGraph
+    global config
+    config = bootstrap_result.values["config"]["config"]
+
     if args.debug_bootstrap and args.command == "repl" and not getattr(args, "prompt", None):
         return 0
 
@@ -1916,7 +1936,7 @@ EXAMPLES:
     system = None
     if not is_repl_mode:
         # Initialize system
-        system = AutonomousResearchSystem()
+        system = AutonomousResearchSystem(bootstrap_result)
 
     try:
         # 체크포인트 복원 (있는 경우)
@@ -2008,7 +2028,7 @@ EXAMPLES:
 
         # Interactive 모드 (기존)
         if args.interactive:
-            from src.cli.interactive_cli import InteractiveCLI
+            from src.cli.repl_cli import REPLCLI
             from src.core.scheduler import (
                 configure_scheduler_execution,
                 get_scheduler,
@@ -2018,7 +2038,7 @@ EXAMPLES:
             scheduler = configure_scheduler_execution(get_scheduler())
             await scheduler.start()
 
-            cli = InteractiveCLI()
+            cli = REPLCLI()
             try:
                 await cli.run()
             finally:
@@ -2457,7 +2477,6 @@ async def handle_web_command(args):
 
 async def handle_mcp_command(args):
     """MCP 관리 커맨드 처리"""
-
     if args.mcp_command == "status":
         logger.info("🔍 Checking MCP server status...")
         mcp_hub = None
@@ -2552,7 +2571,7 @@ async def handle_tools_command(args):
             try:
                 # 전체 초기화가 지연될 수 있으므로 타임아웃 후 부분 결과로 진행
                 await asyncio.wait_for(mcp_hub.initialize_mcp(), timeout=25.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "⚠️ MCP initialization timed out; showing currently discovered tools only"
                 )
@@ -2905,46 +2924,25 @@ async def handle_interactive_command(args):
     logger.info("💬 Starting interactive mode...")
 
     try:
-        # 간단한 REPL 구현
-        print("SparkleForge Interactive Mode")
-        print("Type 'help' for commands, 'quit' to exit")
-        print("-" * 50)
+        from src.cli.repl_cli import REPLCLI
+        from src.core.scheduler import (
+            configure_scheduler_execution,
+            get_scheduler,
+        )
 
-        while True:
-            try:
-                query = input("🔍 Research query: ").strip()
-                if not query:
-                    continue
-                if query.lower() in ["quit", "exit", "q"]:
-                    break
-                if query.lower() == "help":
-                    print("Commands:")
-                    print("  help  - Show this help")
-                    print("  quit  - Exit interactive mode")
-                    print("  <query> - Execute research query")
-                    continue
+        scheduler = configure_scheduler_execution(get_scheduler())
+        await scheduler.start()
 
-                # 연구 실행
-                await handle_run_command(
-                    type(
-                        "Args",
-                        (),
-                        {
-                            "query": query,
-                            "output": None,
-                            "format": "markdown",
-                            "streaming": True,
-                        },
-                    )()
-                )
+        cli = REPLCLI()
+        try:
+            await cli.run()
+        finally:
+            await scheduler.stop()
+        return 0
 
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                logger.error(f"❌ Error: {e}")
-
+    except (EOFError, KeyboardInterrupt, SystemExit):
         logger.info("👋 Goodbye!")
-
+        return 0
     except Exception as e:
         logger.error(f"❌ Interactive mode failed: {e}")
         return 1
