@@ -140,3 +140,7 @@ SparkleForge builds upon the massive strides made by the open-source community. 
 - **LangGraph & Open Deep Research**: For state machine coordination and cyclic research flows.
 - **LightMem**: For hierarchical compression and efficient context retrieval over long horizons.
 - **OpenManus**: For flexible multi-agent foundation architecture.
+
+## 🚀 Milestone: Federation & Scale (Anvil Phase Z)
+
+We are currently entering Phase Z, focusing on multi-node federation, remote session management, and physical IoT device integration. See `docs/ANVIL_PLAN.md` for the roadmap.
