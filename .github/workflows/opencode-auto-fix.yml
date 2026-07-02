@@ -112,7 +112,7 @@ jobs:
                 --limit 100 \
                 --json number,headRefName,body \
                 --jq '[.[] | select((.headRefName | startswith("fix/'"$candidate"'-")) or ((.body // "") | test("(?i)(close[sd]?|fix(e[sd])?|resolve[sd]?) #'"$candidate"'")))] | length')
-              if [ "$HAS_PR" = "0" ]; then
+              if [ "$HAS_PR" -eq 0 ]; then
                 ISSUE_NUMBER="$candidate"
                 break
               fi
