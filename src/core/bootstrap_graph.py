@@ -85,6 +85,11 @@ class BootstrapGraph:
                 self._stage_automation_engine,
                 depends_on=("config", "observation_plane", "actuation_plane"),
             ),
+            BootstrapStage(
+                "memory_context",
+                self._stage_memory_context,
+                depends_on=("config", "database", "observation_plane", "actuation_plane", "automation_engine"),
+            ),
         ]
 
     async def _stage_config(self) -> dict[str, Any]:
@@ -170,6 +175,21 @@ class BootstrapGraph:
         return {
             "automation_engine": ae,
             "initialized": ae is not None,
+        }
+
+    async def _stage_memory_context(self) -> dict[str, Any]:
+        from src.core.memory.semantic_memory import SemanticMemory
+        from src.core.memory.context_lane import ContextLane
+        from src.core.memory.history_analyzer import HistoryAnalyzer
+
+        sm = SemanticMemory()
+        ha = HistoryAnalyzer(memory=sm)
+        cl = ContextLane(memory=sm)
+        return {
+            "semantic_memory": sm,
+            "history_analyzer": ha,
+            "context_lane": cl,
+            "initialized": all(x is not None for x in [sm, ha, cl]),
         }
 
     async def run(self) -> BootstrapResult:
