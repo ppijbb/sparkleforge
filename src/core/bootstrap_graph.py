@@ -80,6 +80,11 @@ class BootstrapGraph:
                 self._stage_actuation_plane,
                 depends_on=("config", "trust_gate"),
             ),
+            BootstrapStage(
+                "automation_engine",
+                self._stage_automation_engine,
+                depends_on=("config", "observation_plane", "actuation_plane"),
+            ),
         ]
 
     async def _stage_config(self) -> dict[str, Any]:
@@ -156,6 +161,15 @@ class BootstrapGraph:
         return {
             "actuation_plane": ap,
             "initialized": ap is not None,
+        }
+
+    async def _stage_automation_engine(self) -> dict[str, Any]:
+        from src.core.automation.automation_engine import AutomationEngine
+
+        ae = AutomationEngine()
+        return {
+            "automation_engine": ae,
+            "initialized": ae is not None,
         }
 
     async def run(self) -> BootstrapResult:
