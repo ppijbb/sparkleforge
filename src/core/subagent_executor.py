@@ -35,6 +35,17 @@ class SubAgentExecutor:
         self, task: TaskState, agent_config: SubAgentConfig, timeout: int = 300
     ) -> TaskState:
         """독립된 컨텍스트 공간에서 서브에이전트 실행을 위임합니다."""
+        # Capture and propagate the current TrustContext
+        from src.core.trust_gate import (
+            get_current_trust_context,
+            set_current_trust_context,
+        )
+        try:
+            parent_trust = get_current_trust_context()
+            set_current_trust_context(parent_trust)
+        except Exception as trust_err:
+            logger.warning(f"Failed to propagate TrustContext to sub-agent: {trust_err}")
+
         task_id = task.get("task_id", str(uuid.uuid4()))
         agent_name = agent_config.name
         logger.info(

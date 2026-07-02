@@ -529,6 +529,14 @@ class Scheduler:
         self.executions.append(execution)
 
         async def run_with_timeout():
+            # Propagate TrustContext to background task thread
+            from src.core.trust_gate import TrustGate, set_current_trust_context
+            try:
+                trust_context = await TrustGate().evaluate()
+                set_current_trust_context(trust_context)
+            except Exception as trust_err:
+                logger.warning(f"Failed to evaluate/set TrustContext in schedule callback: {trust_err}")
+
             try:
                 if self.execution_callback:
                     # Ensure timeout is validated and converted safely
@@ -560,7 +568,7 @@ class Scheduler:
             except asyncio.CancelledError:
                 execution.status = "cancelled"
                 raise
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 execution.status = "failed"
                 execution.error = "Timeout"
             except Exception as e:
