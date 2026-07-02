@@ -81,6 +81,16 @@ class BootstrapGraph:
                 depends_on=("config", "trust_gate"),
             ),
             BootstrapStage(
+                "guard_plane",
+                self._stage_guard_plane,
+                depends_on=("config", "trust_gate", "actuation_plane"),
+            ),
+            BootstrapStage(
+                "surface_plane",
+                self._stage_surface_plane,
+                depends_on=("config", "guard_plane"),
+            ),
+            BootstrapStage(
                 "automation_engine",
                 self._stage_automation_engine,
                 depends_on=("config", "observation_plane", "actuation_plane"),
@@ -89,6 +99,11 @@ class BootstrapGraph:
                 "memory_context",
                 self._stage_memory_context,
                 depends_on=("config", "database", "observation_plane", "actuation_plane", "automation_engine"),
+            ),
+            BootstrapStage(
+                "guard_plane",
+                self._stage_guard_plane,
+                depends_on=("config", "trust_gate", "actuation_plane"),
             ),
         ]
 
@@ -168,6 +183,25 @@ class BootstrapGraph:
             "initialized": ap is not None,
         }
 
+    async def _stage_guard_plane(self) -> dict[str, Any]:
+        from src.core.guard.guard_plane import GuardPlane
+
+        gp = GuardPlane()
+        return {
+            "guard_plane": gp,
+            "initialized": gp is not None,
+        }
+
+    async def _stage_surface_plane(self) -> dict[str, Any]:
+        from src.core.surface.surface_plane import SurfacePlane
+
+        # Retrieve guard_plane from prior stage if available
+        sp = SurfacePlane()
+        return {
+            "surface_plane": sp,
+            "initialized": sp is not None,
+        }
+
     async def _stage_automation_engine(self) -> dict[str, Any]:
         from src.core.automation.automation_engine import AutomationEngine
 
@@ -190,6 +224,15 @@ class BootstrapGraph:
             "history_analyzer": ha,
             "context_lane": cl,
             "initialized": all(x is not None for x in [sm, ha, cl]),
+        }
+
+    async def _stage_guard_plane(self) -> dict[str, Any]:
+        from src.core.guard.guard_plane import GuardPlane
+
+        gp = GuardPlane()
+        return {
+            "guard_plane": gp,
+            "initialized": gp is not None,
         }
 
     async def run(self) -> BootstrapResult:
