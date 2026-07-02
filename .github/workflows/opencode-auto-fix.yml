@@ -456,7 +456,7 @@ jobs:
             --"$AUTO_FIX_MERGE_METHOD" \
             --subject "$(echo "${{ steps.context.outputs.pr_title }}" | sed 's/"/\\"/g')" \
             --body "Closes #${{ steps.context.outputs.issue_number }}" \
-            --delete-branch
+            --delete-branch || true
 
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
