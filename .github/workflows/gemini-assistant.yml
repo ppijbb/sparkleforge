@@ -584,10 +584,6 @@ jobs:
             exit 1
           fi
 
-          DEFAULT_BRANCH=$(gh repo view "${{ github.repository }}" \
-            --json defaultBranchRef \
-            --jq '.defaultBranchRef.name')
-
           gh pr list \
             --repo "${{ github.repository }}" \
             --state open \
