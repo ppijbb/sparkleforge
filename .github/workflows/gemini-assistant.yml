@@ -265,7 +265,7 @@ jobs:
           You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
           CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
           If should_create_issue is true, the title MUST use the repository's plain Conventional Commit prefix style (e.g. 'fix: ...', 'feat: ...').
-          The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
+          The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top (replace __CURRENT_DATE__ with the actual date):
           > **Date**: __CURRENT_DATE__
           > **Issue Type**: [Classify as Parent Issue or Sub-issue]
           > **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
