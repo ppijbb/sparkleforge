@@ -267,7 +267,7 @@ jobs:
           If should_create_issue is true, the title MUST use the repository's plain Conventional Commit prefix style (e.g. 'fix: ...', 'feat: ...').
           The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top (replace __CURRENT_DATE__ with the actual date):
           > **Date**: __CURRENT_DATE__
-          > **Issue Type**: [Classify as Parent Issue or Sub-issue]
+          > **Issue Type**: [Classify as Parent Issue or Sub-issue (Anvil Phase A)]
           > **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
           > **Metrics & Justification**: [Provide a concrete, logical proof or metric of why this code must be changed. Do not use simple judgments.]
 
