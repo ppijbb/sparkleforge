@@ -265,7 +265,7 @@ jobs:
           print("- `./actionlint .github/workflows/sparkleforge-daily-roadmap.yml .github/workflows/gemini-assistant.yml .github/workflows/opencode-auto-fix.yml .github/workflows/pr-merge-gate.yml`")
           print("- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_cli_entrypoints.py tests/test_open_code_agent_config.py tests/test_cli_result_handling.py`")
           print("- `git diff --check`")
-          EOF
+          PY
             echo "status=fallback" >> "$GITHUB_OUTPUT"
           else
             echo "status=generated" >> "$GITHUB_OUTPUT"

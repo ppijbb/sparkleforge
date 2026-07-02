@@ -1460,6 +1460,11 @@ EXAMPLES:
             default=None,
             help="Model override for this non-interactive research run",
         )
+        command_parser.add_argument(
+            "--task",
+            default=None,
+            help="Optional phase/task label prefixed onto the query, for automation traceability",
+        )
 
     # run 커맨드
     run_parser = subparsers.add_parser("run", help="Execute research request")
@@ -2305,6 +2310,10 @@ async def handle_run_command(args):
             "Detected embedded CLI flags inside query text; sanitized query for research execution."
         )
         args.query = sanitized_query
+
+    task_label = getattr(args, "task", None)
+    if task_label:
+        args.query = f"[{task_label}] {args.query}"
 
     _apply_runtime_overrides()
     logger.info(f"🔬 Starting research: {args.query}")

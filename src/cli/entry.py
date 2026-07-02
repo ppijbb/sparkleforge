@@ -11,6 +11,7 @@ _RUN_OPTIONS_WITH_VALUES = {
     "--format",
     "--max-tokens",
     "--model",
+    "--task",
 }
 
 def _run_command_has_query(argv: list[str]) -> bool:
