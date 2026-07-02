@@ -12,6 +12,8 @@ _RUN_OPTIONS_WITH_VALUES = {
     "--max-tokens",
     "--model",
     "--task",
+    "--session",
+    "--mode",
 }
 
 def _run_command_has_query(argv: list[str]) -> bool:
