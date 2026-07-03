@@ -124,6 +124,100 @@ class GuardPlane:
             "entry_id":    entry.entry_id,
         }
 
+    def check_and_control_device(
+        self,
+        agent_id: str,
+        device_id: str,
+        command: str,
+        description: str,
+        is_write: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        IoT Device Guard pipeline:
+        1. Determine capability based on action type (read or write)
+        2. Check capability grant (iot_read or iot_control)
+        3. Human-in-the-loop (HITL) check if required
+        4. Journal the execution
+        5. Execute control via ActuationPlane
+        """
+        from src.core.guard.capability_manager import BUILTIN_CAPABILITIES
+        from src.core.actuate.actuation_plane import ActuationPlane
+        
+        capability_name = "iot_control" if is_write else "iot_read"
+        
+        # 1. Capability check
+        if not self.capability_manager.agent_has(agent_id, capability_name):
+            logger.warning("Agent '%s' lacks capability '%s' to control IoT device '%s'", agent_id, capability_name, device_id)
+            return {"ok": False, "error": f"Missing capability: {capability_name}"}
+
+        cap = BUILTIN_CAPABILITIES.get(capability_name)
+        risk_level = cap.risk_level if cap else "low"
+
+        # 2. HITL approval check
+        if cap and cap.requires_hitl:
+            req = self.hitl_gate.request_approval(
+                agent_id=agent_id,
+                action=capability_name,
+                description=f"Control IoT device '{device_id}' with command: '{command}'",
+                risk_level=risk_level,
+            )
+            if not self.hitl_gate.is_approved(req):
+                self.action_journal.record(
+                    agent_id=agent_id,
+                    action=f"iot_control:{device_id}",
+                    description=description,
+                    risk_level=str(risk_level),
+                    metadata={"blocked_by": "hitl", "request_id": req.request_id},
+                )
+                return {"ok": False, "error": f"Action not approved: {req.status}"}
+
+        # 3. Journal pre-execution
+        entry = self.action_journal.record(
+            agent_id=agent_id,
+            action=f"iot:{device_id}:{command}",
+            description=description,
+            risk_level=str(risk_level),
+        )
+
+        # 4. Execute via ActuationPlane
+        actuator = ActuationPlane()
+        try:
+            if hasattr(actuator, "control_device"):
+                # If command is write action
+                if is_write:
+                    result_data = actuator.control_device(device_id, command)
+                else:
+                    result_data = actuator.read_device(device_id, command)
+                ok = result_data.get("status") == "success"
+                stdout = result_data.get("stdout", "")
+                stderr = result_data.get("stderr", "")
+                returncode = result_data.get("returncode", 0)
+            else:
+                ok = False
+                stdout = ""
+                stderr = "ActuationPlane lacks control_device interface."
+                returncode = -1
+        except Exception as e:
+            ok = False
+            stdout = ""
+            stderr = str(e)
+            returncode = -1
+
+        # 5. Journal post-execution outcome
+        self.action_journal.update_outcome(
+            entry.entry_id,
+            outcome="success" if ok else "failure",
+            error=stderr if not ok else None,
+        )
+
+        return {
+            "ok": ok,
+            "stdout": stdout,
+            "stderr": stderr,
+            "returncode": returncode,
+            "entry_id": entry.entry_id,
+        }
+
     def get_status(self) -> Dict[str, Any]:
         """Return a status summary of all guard subsystems."""
         pending_approvals = self.hitl_gate.get_pending()
