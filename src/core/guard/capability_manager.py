@@ -48,6 +48,8 @@ BUILTIN_CAPABILITIES: Dict[str, Capability] = {
     "process_control":  Capability("process_control",  "Start, stop, or kill processes",        RiskLevel.HIGH,    requires_hitl=True),
     "memory_read":      Capability("memory_read",      "Read agent memory and context",         RiskLevel.LOW),
     "memory_write":     Capability("memory_write",     "Write to agent memory and context",     RiskLevel.MEDIUM),
+    "iot_read":         Capability("iot_read",         "Read telemetry or status from IoT devices", RiskLevel.LOW),
+    "iot_control":      Capability("iot_control",      "Send control commands to physical IoT devices", RiskLevel.HIGH, requires_hitl=True),
 }
 
 
