@@ -114,14 +114,18 @@ class CLIExecutor:
                 error_message=result.stderr if result.returncode != 0 else None,
             )
 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             execution_time = time.time() - start_time
+            stdout_str = e.stdout.decode('utf-8', errors='replace') if isinstance(e.stdout, bytes) else str(e.stdout or "")
+            stderr_str = e.stderr.decode('utf-8', errors='replace') if isinstance(e.stderr, bytes) else str(e.stderr or "")
+            self.logger.error(f"CLI Timeout. Stdout captured:\n{stdout_str}")
+            self.logger.error(f"CLI Timeout. Stderr captured:\n{stderr_str}")
             return CLIResult(
                 success=False,
                 execution_time=execution_time,
                 return_code=-1,
-                stdout="",
-                stderr=f"Command timed out after {self.timeout} seconds",
+                stdout=stdout_str,
+                stderr=stderr_str,
                 error_message=f"Timeout after {self.timeout}s",
             )
         except Exception as e:

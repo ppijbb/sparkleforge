@@ -968,7 +968,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
     project_root = Path(__file__).parent.parent.parent
     env_file = project_root / ".env"
     if env_file.exists():
-        load_dotenv(env_file)
+        load_dotenv(env_file, override=True)
 
     def get_required_env(key: str, var_type: type = str):
         """Get required environment variable, raise error if missing."""

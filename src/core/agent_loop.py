@@ -414,6 +414,23 @@ Autonomous problem-solving contract:
             parameters = getattr(info, "parameters", None) or {"type": "object", "properties": {}}
             if not isinstance(parameters, dict):
                 parameters = {"type": "object", "properties": {}}
+            else:
+                if "properties" not in parameters and parameters:
+                    required_fields = [k for k, v in parameters.items() if isinstance(v, dict) and v.get("required")]
+                    properties = {}
+                    for k, v in parameters.items():
+                        if isinstance(v, dict):
+                            v_copy = dict(v)
+                            v_copy.pop("required", None)
+                            properties[k] = v_copy
+                        else:
+                            properties[k] = v
+                    parameters = {
+                        "type": "object",
+                        "properties": properties,
+                    }
+                    if required_fields:
+                        parameters["required"] = required_fields
 
             openai_tools.append(
                 {
