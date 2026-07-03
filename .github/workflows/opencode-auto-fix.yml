@@ -10,7 +10,7 @@ on:
       max_iterations:
         description: 'Maximum OpenCode repair attempts before opening the PR'
         required: false
-        default: '3'
+        default: '5'
         type: string
   issues:
     types: [opened, reopened, labeled]
