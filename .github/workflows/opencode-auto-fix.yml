@@ -354,6 +354,41 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
+          ISSUE_NUMBER="${{ steps.context.outputs.issue_number }}"
+          BASE_BRANCH="${{ steps.context.outputs.base_branch }}"
+
+          # Guard against auto-closing issues that OpenCode didn't actually finish:
+          # if the issue still has unresolved acceptance-criteria checkboxes and the
+          # diff only touches workflow/docs files (or is trivially small), don't let
+          # this PR carry a closing keyword.
+          UNCHECKED=$(grep -c '^- \[ \]' issue-context.md 2>/dev/null || true)
+          UNCHECKED=${UNCHECKED:-0}
+
+          CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH...HEAD")
+          CHANGED_LINES=$(git diff --shortstat "origin/$BASE_BRANCH...HEAD" |
+            grep -Eo '[0-9]+ (insertion|deletion)' | grep -Eo '[0-9]+' |
+            awk '{s+=$1} END {print s+0}')
+
+          NON_TRIVIAL_FILE=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              .github/workflows/*|*.md|docs/*) ;;
+              *) NON_TRIVIAL_FILE=1 ;;
+            esac
+          done <<< "$CHANGED_FILES"
+
+          SUBSTANTIAL=true
+          if [ "$UNCHECKED" -gt 0 ] && { [ "$NON_TRIVIAL_FILE" -eq 0 ] || [ "$CHANGED_LINES" -le 3 ]; }; then
+            SUBSTANTIAL=false
+          fi
+
+          if [ "$SUBSTANTIAL" = "true" ]; then
+            CLOSES_LINE="Closes #$ISSUE_NUMBER"
+          else
+            CLOSES_LINE="Refs #$ISSUE_NUMBER (not auto-closed: diff only touches workflow/docs files and the issue still has $UNCHECKED unresolved checklist item(s) — needs a real follow-up implementation)"
+          fi
+
           EXISTING_PR=$(gh pr list \
             --repo "${{ github.repository }}" \
             --head "${{ steps.context.outputs.branch }}" \
@@ -373,7 +408,7 @@ jobs:
               --title "${{ steps.context.outputs.pr_title }}" \
               --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
 
-          Closes #${{ steps.context.outputs.issue_number }}
+          $CLOSES_LINE
 
           Source run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
             PR_NUMBER=${PR_URL##*/}
@@ -382,6 +417,8 @@ jobs:
           {
             echo "pr_number=$PR_NUMBER"
             echo "pr_url=$PR_URL"
+            echo "closes_line=$CLOSES_LINE"
+            echo "substantial=$SUBSTANTIAL"
           } >> "$GITHUB_OUTPUT"
 
           gh issue comment "${{ steps.context.outputs.issue_number }}" \
@@ -395,6 +432,20 @@ jobs:
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
             --add-label auto-fix-pr-opened || true
+
+          if [ "$SUBSTANTIAL" != "true" ]; then
+            gh label create needs-follow-up \
+              --repo "${{ github.repository }}" \
+              --color FBCA04 \
+              --description "Automated fix only made a trivial/workflow change; issue checklist is still unresolved." \
+              --force >/dev/null 2>&1 || true
+            gh issue edit "${{ steps.context.outputs.issue_number }}" \
+              --repo "${{ github.repository }}" \
+              --add-label needs-follow-up || true
+            gh issue comment "${{ steps.context.outputs.issue_number }}" \
+              --repo "${{ github.repository }}" \
+              --body "⚠️ PR $PR_URL only touches workflow/docs files and this issue still has $UNCHECKED unresolved checklist item(s), so it will **not** auto-close this issue on merge. A real implementation is still needed." || true
+          fi
 
       - name: Wait for pull request checks
         if: steps.pr.outputs.pr_number != ''
@@ -437,9 +488,19 @@ jobs:
           echo "::error::Timed out waiting for checks to appear on PR #${{ steps.pr.outputs.pr_number }}."
           exit 1
 
+      - name: Skip merge for non-substantial fix
+        if: steps.pr.outputs.pr_number != '' && steps.pr.outputs.substantial != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          echo "::warning::PR ${{ steps.pr.outputs.pr_url }} only touches workflow/docs files while issue #${{ steps.context.outputs.issue_number }} still has unresolved checklist items. Leaving it open for human review instead of auto-merging."
+          gh pr comment "${{ steps.pr.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --body "🛑 Not auto-merging: this change only touches workflow/docs files and issue #${{ steps.context.outputs.issue_number }} still has unresolved checklist items. A human should confirm this is a real fix (or close as won't-fix) before merging." || true
+
       - name: Merge pull request
         id: merge
-        if: steps.pr.outputs.pr_number != ''
+        if: steps.pr.outputs.pr_number != '' && steps.pr.outputs.substantial == 'true'
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
@@ -455,7 +516,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --"$AUTO_FIX_MERGE_METHOD" \
             --subject "$(echo "${{ steps.context.outputs.pr_title }}" | sed 's/"/\\"/g')" \
-            --body "Closes #${{ steps.context.outputs.issue_number }}" \
+            --body "${{ steps.pr.outputs.closes_line }}" \
             --delete-branch || true
 
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
