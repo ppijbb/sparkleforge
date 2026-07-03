@@ -598,21 +598,8 @@ class MultiModelOrchestrator:
     def _get_valid_openrouter_model_id(self, model_id: str, model_name: str) -> str:
         """OpenRouter에 실제 존재하는 모델 ID 반환."""
         # 이미 OpenRouter 형식인 경우 (provider/model:tag)
-        if "/" in model_id or ":" in model_id:
-            # OpenRouter 형식 확인
-            if model_id.startswith(
-                (
-                    "google/",
-                    "openai/",
-                    "anthropic/",
-                    "meta-llama/",
-                    "mistralai/",
-                    "cerebras/",
-                    "groq/",
-                    "moonshotai/",
-                )
-            ):
-                return model_id
+        if "/" in model_id:
+            return model_id
 
         # Google 모델 ID를 OpenRouter 형식으로 변환
         google_to_openrouter = {
@@ -635,7 +622,7 @@ class MultiModelOrchestrator:
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         fallback_models = [
-            "google/gemini-2.0-flash-exp",
+            "google/gemini-2.0-flash-lite-preview:free",
             "meta-llama/llama-3.2-3b-instruct:free",
         ]
 
@@ -1523,7 +1510,7 @@ class MultiModelOrchestrator:
                             f"Model {model_id} not found in OpenRouter, trying fallback models..."
                         )
                         fallback_models = [
-                            "google/gemini-2.0-flash-exp",
+                            "google/gemini-2.0-flash-lite-preview:free",
                             "meta-llama/llama-3.2-3b-instruct:free",
                             "mistralai/mistral-7b-instruct:free",
                         ]
