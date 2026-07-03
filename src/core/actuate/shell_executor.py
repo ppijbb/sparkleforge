@@ -1,6 +1,8 @@
 import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from src.core.session.remote_session import RemoteSession
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +20,9 @@ COMMAND_BLACKLIST = [
 class SecureShellExecutor:
     """Executes host shell commands asynchronously with strict timeout, dry-run, and security filters."""
 
-    def __init__(self, blacklist: List[str] = None):
+    def __init__(self, blacklist: List[str] = None, remote_session: Optional[RemoteSession] = None):
         self.blacklist = blacklist if blacklist is not None else COMMAND_BLACKLIST
+        self.remote_session = remote_session
 
     def _is_safe(self, command: str) -> bool:
         """Check if command contains blacklisted items."""
@@ -53,6 +56,10 @@ class SecureShellExecutor:
                 "returncode": 0,
                 "status": "success"
             }
+
+        if self.remote_session:
+            logger.info(f"SecureShellExecutor: Routing command to remote session: {command}")
+            return await self.remote_session.execute(command, timeout=timeout)
 
         try:
             # Spawn asynchronous shell process

@@ -39,6 +39,32 @@ class TrustContext:
     def default(cls) -> TrustContext:
         return cls()
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert trust context to a JSON-serializable dictionary."""
+        return {
+            "level": self.level.value,
+            "deny_names": list(self.deny_names),
+            "deny_prefixes": list(self.deny_prefixes),
+            "allowed_mcp_servers": list(self.allowed_mcp_servers) if self.allowed_mcp_servers is not None else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TrustContext:
+        """Create a TrustContext from a dictionary."""
+        level_str = data.get("level", TrustLevel.FULL.value)
+        try:
+            level = TrustLevel(level_str)
+        except ValueError:
+            level = TrustLevel.FULL
+
+        allowed_servers = data.get("allowed_mcp_servers")
+        return cls(
+            level=level,
+            deny_names=frozenset(data.get("deny_names", [])),
+            deny_prefixes=tuple(data.get("deny_prefixes", ())),
+            allowed_mcp_servers=frozenset(allowed_servers) if allowed_servers is not None else None,
+        )
+
     def allows_tool(self, tool_name: str, mcp_server: str | None = None) -> bool:
         """Return True if the tool is allowed under this trust context."""
         normalized_name = (tool_name or "").strip().lower()
