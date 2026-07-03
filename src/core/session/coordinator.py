@@ -1,0 +1,232 @@
+import asyncio
+import logging
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from src.core.session.remote_session import RemoteSession
+from src.core.trust_gate import TrustContext
+from src.core.guard.guard_plane import GuardPlane
+
+logger = logging.getLogger(__name__)
+
+
+class NodeStatus(str, Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+
+
+class CoordinatorNode:
+    """Coordinator Node managing multiple Worker Nodes, pairing, heartbeat, and failover."""
+
+    def __init__(self, guard_plane: Optional[GuardPlane] = None):
+        self.guard_plane = guard_plane or GuardPlane()
+        self.active_workers: Dict[str, RemoteSession] = {}
+        self.worker_statuses: Dict[str, NodeStatus] = {}
+        self.worker_loads: Dict[str, int] = {}
+        self.heartbeat_failures: Dict[str, int] = {}
+        
+        # Track tasks: task_id -> worker_id
+        self.task_assignments: Dict[str, str] = {}
+        # Store delegated task payloads for failover recovery: task_id -> task_payload
+        self.task_payloads: Dict[str, Dict[str, Any]] = {}
+        
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._is_running = False
+        self._round_robin_index = 0
+
+    def register_worker(self, worker_id: str, session: RemoteSession) -> None:
+        """Register (pair) a new worker node."""
+        self.active_workers[worker_id] = session
+        self.worker_statuses[worker_id] = NodeStatus.ONLINE
+        self.worker_loads[worker_id] = 0
+        self.heartbeat_failures[worker_id] = 0
+        logger.info(f"Worker node '{worker_id}' paired and registered successfully.")
+
+    def deregister_worker(self, worker_id: str) -> None:
+        """Deregister a worker node."""
+        if worker_id in self.active_workers:
+            del self.active_workers[worker_id]
+        if worker_id in self.worker_statuses:
+            del self.worker_statuses[worker_id]
+        if worker_id in self.worker_loads:
+            del self.worker_loads[worker_id]
+        if worker_id in self.heartbeat_failures:
+            del self.heartbeat_failures[worker_id]
+        logger.info(f"Worker node '{worker_id}' deregistered.")
+
+    def start_heartbeat_loop(self, interval: float = 2.0, max_failures: int = 3) -> None:
+        """Start background heartbeat checks."""
+        self._is_running = True
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(interval, max_failures))
+        logger.info("Coordinator heartbeat monitoring started.")
+
+    async def stop_heartbeat_loop(self) -> None:
+        """Stop background heartbeat checks."""
+        self._is_running = False
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._heartbeat_task = None
+        logger.info("Coordinator heartbeat monitoring stopped.")
+
+    async def _heartbeat_loop(self, interval: float, max_failures: int) -> None:
+        while self._is_running:
+            await asyncio.sleep(interval)
+            await self._check_heartbeats(max_failures)
+
+    async def _check_heartbeats(self, max_failures: int) -> None:
+        """Send heartbeats (ping) to all registered worker nodes."""
+        for worker_id, session in list(self.active_workers.items()):
+            if self.worker_statuses.get(worker_id) == NodeStatus.OFFLINE:
+                continue
+
+            try:
+                # Use a short timeout for heartbeats
+                res = await asyncio.wait_for(session.execute("ping"), timeout=1.0)
+                if res.get("status") == "success" or res.get("stdout") == "pong":
+                    self.heartbeat_failures[worker_id] = 0
+                else:
+                    self._handle_heartbeat_failure(worker_id, max_failures)
+            except Exception as e:
+                logger.warning(f"Heartbeat failed for worker '{worker_id}': {e}")
+                self._handle_heartbeat_failure(worker_id, max_failures)
+
+    def _handle_heartbeat_failure(self, worker_id: str, max_failures: int) -> None:
+        self.heartbeat_failures[worker_id] = self.heartbeat_failures.get(worker_id, 0) + 1
+        failures = self.heartbeat_failures[worker_id]
+        logger.warning(f"Worker '{worker_id}' heartbeat failure count: {failures}/{max_failures}")
+        
+        if failures >= max_failures:
+            logger.error(f"Worker '{worker_id}' reached max heartbeat failures. Marking OFFLINE.")
+            self.worker_statuses[worker_id] = NodeStatus.OFFLINE
+            asyncio.create_task(self._handle_failover(worker_id))
+
+    async def _handle_failover(self, offline_worker_id: str) -> None:
+        """Reschedule all active tasks of the offline worker node to other online workers."""
+        affected_tasks = [
+            task_id for task_id, worker_id in self.task_assignments.items()
+            if worker_id == offline_worker_id
+        ]
+        
+        logger.info(f"Triggering failover for worker '{offline_worker_id}'. Affected tasks: {affected_tasks}")
+        
+        for task_id in affected_tasks:
+            # Remove assignment
+            if task_id in self.task_assignments:
+                del self.task_assignments[task_id]
+            
+            # Retrieve original task payload
+            payload = self.task_payloads.get(task_id)
+            if payload:
+                logger.info(f"Rescheduling task '{task_id}' to a healthy node...")
+                # Re-delegate task
+                success = await self.delegate_task(task_id, payload)
+                if not success:
+                    logger.critical(f"Failed to failover task '{task_id}': No healthy nodes available.")
+            else:
+                logger.warning(f"No payload found for task '{task_id}', cannot failover.")
+
+    async def delegate_task(self, task_id: str, task_payload: Dict[str, Any]) -> bool:
+        """Route and execute a task on a selected active worker node (round-robin + load-balancing)."""
+        online_workers = [
+            wid for wid, status in self.worker_statuses.items()
+            if status == NodeStatus.ONLINE
+        ]
+        
+        if not online_workers:
+            logger.error("No online worker nodes available for task delegation.")
+            return False
+
+        # 1. Select worker node (Least Load with Round Robin tie-breaker)
+        selected_worker = min(online_workers, key=lambda wid: self.worker_loads.get(wid, 0))
+        
+        # Save payload for potential failover recovery
+        self.task_payloads[task_id] = task_payload
+        self.task_assignments[task_id] = selected_worker
+        self.worker_loads[selected_worker] += 1
+        
+        session = self.active_workers[selected_worker]
+        logger.info(f"Delegating task '{task_id}' to worker '{selected_worker}' (load: {self.worker_loads[selected_worker]}).")
+        
+        try:
+            # Execute delegated task on worker
+            res = await session.execute(task_payload.get("command", ""), timeout=task_payload.get("timeout", 30.0))
+            self.worker_loads[selected_worker] = max(0, self.worker_loads[selected_worker] - 1)
+            return res.get("status") == "success"
+        except Exception as e:
+            logger.error(f"Error executing delegated task '{task_id}' on worker '{selected_worker}': {e}")
+            self.worker_loads[selected_worker] = max(0, self.worker_loads[selected_worker] - 1)
+            # Instantly trigger failover
+            await self._handle_failover(selected_worker)
+            return False
+
+    async def sync_policy(self, deny_names: List[str], deny_prefixes: List[str]) -> bool:
+        """Broadcast updated GuardPlane capabilities/policies to all active workers."""
+        logger.info("Broadcasting policy synchronization to workers...")
+        success = True
+        
+        # Build local trust context payload
+        trust = TrustContext(
+            level=self.guard_plane.capability_manager.get_default_trust_level() if hasattr(self.guard_plane.capability_manager, "get_default_trust_level") else TrustContext.default().level,
+            deny_names=frozenset(deny_names),
+            deny_prefixes=tuple(deny_prefixes),
+        )
+        
+        for worker_id, session in self.active_workers.items():
+            if self.worker_statuses.get(worker_id) == NodeStatus.ONLINE:
+                ok = await session.send_trust_context(trust)
+                if not ok:
+                    logger.warning(f"Failed to sync policy to worker '{worker_id}'.")
+                    success = False
+        return success
+
+
+class WorkerNode:
+    """Worker Node listening to Coordinator commands and returning results."""
+
+    def __init__(self, worker_id: str, guard_plane: Optional[GuardPlane] = None):
+        self.worker_id = worker_id
+        self.guard_plane = guard_plane or GuardPlane()
+        self.trust_context = TrustContext.default()
+
+    async def handle_ping(self) -> Dict[str, Any]:
+        """Respond to coordinator heartbeats."""
+        return {"status": "success", "stdout": "pong"}
+
+    async def handle_execute(self, command: str) -> Dict[str, Any]:
+        """Execute action after security validation via local GuardPlane."""
+        # 1. Block commands locally if they violate current trust context
+        executable = command.strip().split()[0] if command.strip() else ""
+        if not self.trust_context.allows_tool(executable):
+            return {
+                "stdout": "",
+                "stderr": "Blocked: Command violates local worker trust policy.",
+                "returncode": -1,
+                "status": "failed"
+            }
+
+        # 2. Pass to local GuardPlane execution pipeline
+        # Use capability check (default: local execution capability)
+        res = self.guard_plane.check_and_execute(
+            agent_id=self.worker_id,
+            capability_name="execute_shell",
+            command=command,
+            description="Remote delegated task execution",
+        )
+        
+        status = "success" if res.get("ok") else "failed"
+        return {
+            "stdout": res.get("stdout", ""),
+            "stderr": res.get("stderr", ""),
+            "returncode": res.get("returncode", 0),
+            "status": status,
+        }
+
+    async def handle_sync_policy(self, trust_dict: Dict[str, Any]) -> bool:
+        """Receive policy update from coordinator."""
+        self.trust_context = TrustContext.from_dict(trust_dict)
+        logger.info(f"Worker '{self.worker_id}' synchronized trust policy: {self.trust_context}")
+        return True

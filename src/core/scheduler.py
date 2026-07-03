@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     from croniter import croniter
@@ -99,12 +99,14 @@ class ScheduleExecution:
 class Scheduler:
     """스케줄 관리 및 실행 시스템."""
 
-    def __init__(self, storage_path: Path | None = None):
+    def __init__(self, storage_path: Path | None = None, coordinator: Any = None):
         """초기화.
 
         Args:
             storage_path: 스케줄 저장 경로 (None이면 기본 경로)
+            coordinator: 코디네이터 노드 인스턴스
         """
+        self.coordinator = coordinator
         if storage_path is None:
             storage_path = Path.home() / ".sparkleforge" / "schedules"
 
@@ -538,7 +540,21 @@ class Scheduler:
                 logger.warning(f"Failed to evaluate/set TrustContext in schedule callback: {trust_err}")
 
             try:
-                if self.execution_callback:
+                if self.coordinator and self.coordinator.active_workers:
+                    # Construct task payload and delegate via CoordinatorNode
+                    payload = {
+                        "command": schedule.user_query,
+                        "timeout": schedule.timeout_seconds or 30.0,
+                    }
+                    logger.info(f"Scheduler: Routing scheduled task '{schedule.schedule_id}' via Coordinator.")
+                    success = await self.coordinator.delegate_task(schedule.schedule_id, payload)
+                    if success:
+                        execution.status = "completed"
+                        execution.result = {"status": "success", "message": "Delegated execution succeeded."}
+                    else:
+                        execution.status = "failed"
+                        execution.error = "Delegated execution failed or no nodes available."
+                elif self.execution_callback:
                     # Ensure timeout is validated and converted safely
                     timeout = None
                     if schedule.timeout_seconds is not None:
