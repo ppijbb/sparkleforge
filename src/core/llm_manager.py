@@ -792,29 +792,23 @@ class MultiModelOrchestrator:
 
     def _load_nvidia_models(self):
         """NVIDIA NIM 모델 로딩."""
+        # 주의: 동일 model_id를 별명으로 중복 등록하면 provider cascade가
+        # 같은 모델을 연달아 호출해 429를 자초하므로 단일 항목만 유지한다.
         nvidia_models = [
-            {
-                "name": "glm-5.2",
-                "model_id": "z-ai/glm-5.2",
-                "speed_rating": 8.5,
-                "quality_rating": 9.0,
-                "capabilities": [
-                    TaskType.DEEP_REASONING,
-                    TaskType.GENERATION,
-                    TaskType.RESEARCH,
-                    TaskType.ANALYSIS,
-                ],
-            },
             {
                 "name": "z-ai/glm-5.2",
                 "model_id": "z-ai/glm-5.2",
                 "speed_rating": 8.5,
                 "quality_rating": 9.0,
                 "capabilities": [
+                    TaskType.PLANNING,
                     TaskType.DEEP_REASONING,
+                    TaskType.VERIFICATION,
                     TaskType.GENERATION,
+                    TaskType.COMPRESSION,
                     TaskType.RESEARCH,
                     TaskType.ANALYSIS,
+                    TaskType.SYNTHESIS,
                 ],
             },
         ]
@@ -935,17 +929,22 @@ class MultiModelOrchestrator:
             logger.error(f"Failed to initialize model clients: {e}")
             raise
 
+    # Provider별 rate limit 쿨다운 (초). NIM 429는 순간 동시성 제한이라 짧게 잡는다.
+    PROVIDER_RATE_LIMIT_COOLDOWN = {"nvidia": 30}
+    DEFAULT_RATE_LIMIT_COOLDOWN = 300
+
     def _is_provider_rate_limited(self, provider: str) -> bool:
-        """Provider가 rate limit에 걸렸는지 확인 (5분 후 자동 해제)."""
+        """Provider가 rate limit에 걸렸는지 확인 (쿨다운 후 자동 해제)."""
         if provider not in self.provider_rate_limited:
             return False
 
-        # Rate limit 타임스탬프 확인 (5분 = 300초)
+        cooldown = self.PROVIDER_RATE_LIMIT_COOLDOWN.get(
+            provider, self.DEFAULT_RATE_LIMIT_COOLDOWN
+        )
         rate_limit_time = self.provider_rate_limited[provider]
-        if time.time() - rate_limit_time > 300:
-            # 5분 경과 시 자동 해제
+        if time.time() - rate_limit_time > cooldown:
             del self.provider_rate_limited[provider]
-            logger.info(f"Provider {provider} rate limit automatically cleared after 5 minutes")
+            logger.info(f"Provider {provider} rate limit automatically cleared after {cooldown}s")
             return False
 
         return True
