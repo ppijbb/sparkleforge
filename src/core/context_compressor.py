@@ -48,7 +48,7 @@ class ContextCompressor:
         if not middle:
             return messages
 
-        middle_text = "\n".join([f"{m['role']}: {m.get('content', '')[:500]}" for m in middle])
+        middle_text = "\n".join([f"{m['role']}: {(m.get('content') or '')[:500]}" for m in middle])
 
         summary_prompt = f"Please summarize the following conversation history concisely while preserving key technical details and tool results:\n\n{middle_text}"
 
