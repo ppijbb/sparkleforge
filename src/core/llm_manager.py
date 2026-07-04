@@ -1182,7 +1182,7 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter"],
                         **kwargs,
                     )
-            elif model_provider == "groq":
+            elif not use_cascade_for_provider and model_provider == "groq":
                 logger.info(f"Executing with Groq model: {model_name_clean}")
                 try:
                     result = await self._execute_groq_model(
@@ -1203,7 +1203,7 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter", "groq"],
                         **kwargs,
                     )
-            elif model_provider == "google":
+            elif not use_cascade_for_provider and model_provider == "google":
                 logger.info(f"Executing with Gemini model: {model_name_clean}")
                 try:
                     if model_name.endswith("_langchain"):
@@ -1225,7 +1225,7 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter", "groq", "google"],
                         **kwargs,
                     )
-            elif model_provider == "openai":
+            elif not use_cascade_for_provider and model_provider == "openai":
                 logger.info(f"Executing with GPT model: {model_name_clean}")
                 try:
                     result = await self._execute_openai_model(
@@ -1242,7 +1242,7 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter", "groq", "google", "openai"],
                         **kwargs,
                     )
-            elif model_provider == "nvidia":
+            elif not use_cascade_for_provider and model_provider == "nvidia":
                 logger.info(f"Executing with NVIDIA NIM model: {model_name_clean}")
                 try:
                     result = await self._execute_nvidia_model(
@@ -1262,7 +1262,7 @@ class MultiModelOrchestrator:
                         skip_providers=["nvidia"],
                         **kwargs,
                     )
-            else:
+            elif not use_cascade_for_provider:
                 raise ValueError(f"Unknown provider: {model_provider}")
 
             execution_time = time.time() - start_time
