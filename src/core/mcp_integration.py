@@ -7414,6 +7414,29 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
             except Exception:
                 return False
 
+        if tool_name == "filesystem":
+            # 범용 filesystem 도구: operation/action 파라미터를 구체 도구로 매핑
+            operation = str(parameters.get("operation") or parameters.get("action") or "").lower()
+            op_map = {
+                "create": "create_file",
+                "read": "read_file",
+                "write": "write_file",
+                "edit": "edit_file",
+                "list": "list_files",
+                "delete": "delete_file",
+            }
+            mapped = op_map.get(operation)
+            if not mapped:
+                raise ValueError(f"Unknown filesystem operation: {operation or '(missing)'}")
+            if "file_path" not in parameters and "path" in parameters:
+                parameters = {**parameters, "file_path": parameters["path"]}
+            if mapped == "list_files" and "directory_path" not in parameters:
+                parameters = {
+                    **parameters,
+                    "directory_path": parameters.get("path", parameters.get("file_path", ".")),
+                }
+            return await _execute_file_tool(mapped, parameters)
+
         if tool_name == "create_file":
             file_path = parameters.get("file_path", "")
             content = parameters.get("content", "")
