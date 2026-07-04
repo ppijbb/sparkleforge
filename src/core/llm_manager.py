@@ -348,10 +348,7 @@ class MultiModelOrchestrator:
         # Provider 로테이션 추적
         self.provider_rotation_index = 0  # 현재 Provider 인덱스
         self.provider_rotation_order = [
-            "openrouter",
-            "groq",
-            "cerebras",
-            "nvidia",
+            "google",
         ]  # 로테이션 순서
         self.provider_rate_limited = {}  # Rate limit에 걸린 Provider (timestamp)
         self.provider_usage_count = {
@@ -2003,13 +2000,7 @@ class MultiModelOrchestrator:
 
         # 사용자 지정 우선순위: openrouter -> groq -> cerebras (openrouter) -> google -> openai -> nvidia -> claude
         fallback_order = [
-            "openrouter",
-            "groq",
-            "cerebras",
             "google",
-            "openai",
-            "nvidia",
-            "claude",
         ]
 
         for provider in fallback_order:
