@@ -17,6 +17,7 @@ node_modules
 *.sqlite3
 /storage
 reports
+results
 .mypy_cache
 temp
 .ruff_cache
