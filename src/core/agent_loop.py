@@ -378,7 +378,7 @@ Autonomous problem-solving contract:
     def _select_tool_capable_model(self, task_type: TaskType) -> str | None:
         """Prefer providers that can return OpenAI-compatible tool_calls."""
         models = getattr(self.orchestrator, "models", {}) or {}
-        preferred = ("openrouter", "groq", "openai")
+        preferred = ("nvidia", "openrouter", "groq", "openai")
         for provider in preferred:
             for name, config in models.items():
                 if getattr(config, "provider", None) != provider:

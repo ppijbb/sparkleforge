@@ -470,7 +470,7 @@ class AgentHarness:
                     "execution_time": time.time() - start_time,
                 }
             except Exception as e:
-                logger.error(f"❌ Autonomous Harness failed: {e}")
+                logger.error(f"❌ Autonomous Harness failed: {e}", exc_info=True)
                 return {"success": False, "session_id": session_id, "error": str(e)}
 
         # Original LangGraph Research Mode
