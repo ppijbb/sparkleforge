@@ -5,6 +5,7 @@
 """
 
 import logging
+import os
 from typing import Any, Dict, List, TypedDict
 
 from src.core.agent_harness import AgentHarness
@@ -40,7 +41,7 @@ class AgentOrchestrator:
         self,
         request: str | None = None,
         session_id: str | None = "default_session",
-        max_iterations: int = 10,
+        max_iterations: int | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """하네스를 기동하여 요청을 처리합니다."""
@@ -50,6 +51,8 @@ class AgentOrchestrator:
             raise TypeError("AgentOrchestrator.execute() requires 'request' or 'user_query'")
         if session_id is None:
             session_id = "default_session"
+        if max_iterations is None:
+            max_iterations = int(os.getenv("SPARKLEFORGE_MAX_ITERATIONS", "30"))
 
         logger.info(f"AgentOrchestrator delegating request to AgentHarness (session: {session_id})")
 
