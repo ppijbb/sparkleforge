@@ -348,6 +348,7 @@ class MultiModelOrchestrator:
         # Provider 로테이션 추적
         self.provider_rotation_index = 0  # 현재 Provider 인덱스
         self.provider_rotation_order = [
+            "nvidia",
             "google",
         ]  # 로테이션 순서
         self.provider_rate_limited = {}  # Rate limit에 걸린 Provider (timestamp)
@@ -978,6 +979,20 @@ class MultiModelOrchestrator:
         """작업에 최적 모델 선택 - Provider 로테이션: OpenRouter -> Groq -> Cerebras."""
         if budget is None:
             budget = self.llm_config.budget_limit
+
+        # .env에 지정된 작업별 모델을 최우선 사용 (provider 사용 가능 시)
+        configured = {
+            TaskType.PLANNING: self.llm_config.planning_model,
+            TaskType.DEEP_REASONING: self.llm_config.reasoning_model,
+            TaskType.VERIFICATION: self.llm_config.verification_model,
+            TaskType.GENERATION: self.llm_config.generation_model,
+            TaskType.COMPRESSION: self.llm_config.compression_model,
+        }.get(task_type) or self.llm_config.primary_model
+        if configured in self.models and not self._is_provider_rate_limited(
+            self.models[configured].provider
+        ):
+            logger.info(f"Selected configured model for {task_type.value}: {configured}")
+            return configured
 
         # 작업 유형에 적합한 모델 필터링
         suitable_models = [
@@ -1998,8 +2013,9 @@ class MultiModelOrchestrator:
         if skip_providers is None:
             skip_providers = []
 
-        # 사용자 지정 우선순위: openrouter -> groq -> cerebras (openrouter) -> google -> openai -> nvidia -> claude
+        # 사용자 지정 우선순위: nvidia (설정 모델) -> google
         fallback_order = [
+            "nvidia",
             "google",
         ]
 
