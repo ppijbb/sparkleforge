@@ -103,6 +103,7 @@ class Provider(Enum):
     GROQ = "groq"
     OPENAI = "openai"
     LOCAL = "local"
+    NVIDIA = "nvidia"
 
 
 @dataclass
@@ -350,6 +351,7 @@ class MultiModelOrchestrator:
             "openrouter",
             "groq",
             "cerebras",
+            "nvidia",
         ]  # 로테이션 순서
         self.provider_rate_limited = {}  # Rate limit에 걸린 Provider (timestamp)
         self.provider_usage_count = {
@@ -370,6 +372,8 @@ class MultiModelOrchestrator:
             logger.warning("GOOGLE_API_KEY not found - Gemini models will be unavailable")
         if not os.getenv("OPENAI_API_KEY"):
             logger.warning("OPENAI_API_KEY not found - GPT models will be unavailable")
+        if not os.getenv("NVIDIA_API_KEY"):
+            logger.warning("NVIDIA_API_KEY not found - NVIDIA NIM models will be unavailable")
 
     def _initialize_models(self):
         """모델 초기화."""
@@ -453,6 +457,16 @@ class MultiModelOrchestrator:
                 logger.warning(f"OpenAI/GPT models not loaded: {e}")
         else:
             logger.info("OpenAI/GPT disabled - OPENAI_API_KEY not found")
+
+        # 5. NVIDIA NIM 모델
+        if os.getenv("NVIDIA_API_KEY"):
+            try:
+                self._load_nvidia_models()
+                logger.info("✅ NVIDIA NIM models loaded")
+            except Exception as e:
+                logger.warning(f"NVIDIA NIM models not loaded: {e}")
+        else:
+            logger.info("NVIDIA NIM disabled - NVIDIA_API_KEY not found")
 
     def _load_openrouter_models(self):
         """OpenRouter API에서 무료 모델들을 동적으로 로드 (선택적)."""
@@ -778,6 +792,49 @@ class MultiModelOrchestrator:
             )
             logger.info(f"Loaded OpenAI/GPT model: {model_data['name']} ({model_data['model_id']})")
 
+    def _load_nvidia_models(self):
+        """NVIDIA NIM 모델 로딩."""
+        nvidia_models = [
+            {
+                "name": "glm-5.2",
+                "model_id": "z-ai/glm-5.2",
+                "speed_rating": 8.5,
+                "quality_rating": 9.0,
+                "capabilities": [
+                    TaskType.DEEP_REASONING,
+                    TaskType.GENERATION,
+                    TaskType.RESEARCH,
+                    TaskType.ANALYSIS,
+                ],
+            },
+            {
+                "name": "z-ai/glm-5.2",
+                "model_id": "z-ai/glm-5.2",
+                "speed_rating": 8.5,
+                "quality_rating": 9.0,
+                "capabilities": [
+                    TaskType.DEEP_REASONING,
+                    TaskType.GENERATION,
+                    TaskType.RESEARCH,
+                    TaskType.ANALYSIS,
+                ],
+            },
+        ]
+
+        for model_data in nvidia_models:
+            self.models[model_data["name"]] = ModelConfig(
+                name=model_data["name"],
+                provider="nvidia",
+                model_id=model_data["model_id"],
+                temperature=0.2,
+                max_tokens=4000,
+                cost_per_token=0.0,
+                speed_rating=model_data["speed_rating"],
+                quality_rating=model_data["quality_rating"],
+                capabilities=model_data["capabilities"],
+            )
+            logger.info(f"Loaded NVIDIA NIM model: {model_data['name']} ({model_data['model_id']})")
+
     def refresh_openrouter_models(self):
         """OpenRouter 모델 목록을 새로고침."""
         logger.info("Refreshing OpenRouter models...")
@@ -853,6 +910,26 @@ class MultiModelOrchestrator:
                         )
                     except Exception as e:
                         logger.warning(f"Failed to initialize OpenAI client for {model_name}: {e}")
+
+                elif model_config.provider == "nvidia":
+                    # NVIDIA NIM 클라이언트 초기화
+                    try:
+                        from openai import OpenAI
+
+                        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+                        if not nvidia_api_key:
+                            raise ValueError(f"NVIDIA_API_KEY not found for {model_name}")
+                        self.model_clients[model_name] = OpenAI(
+                            api_key=nvidia_api_key,
+                            base_url="https://integrate.api.nvidia.com/v1"
+                        )
+                        logger.info(f"NVIDIA NIM model {model_name} configured")
+                    except ImportError:
+                        logger.warning(
+                            "openai library not installed. Install with: pip install openai"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize NVIDIA NIM client for {model_name}: {e}")
 
             logger.info("Model clients initialized successfully")
 
@@ -1052,7 +1129,7 @@ class MultiModelOrchestrator:
                     # Cascade 실패 시 기존 단일 모델 실행 로직으로 fallback
                     use_cascade_for_provider = False
 
-            if not use_cascade_for_provider:
+            if not use_cascade_for_provider and model_provider == "openrouter":
                 # 기존 단일 모델 실행 로직
                 # 우선순위에 따라 모델 실행 및 폴백
                 if model_provider == "openrouter":
@@ -1136,8 +1213,25 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter", "groq", "google", "openai"],
                         **kwargs,
                     )
-                else:
-                    raise ValueError(f"Unknown provider: {model_provider}")
+            elif model_provider == "nvidia":
+                logger.info(f"Executing with NVIDIA NIM model: {model_name_clean}")
+                try:
+                    result = await self._execute_nvidia_model(
+                        model_name_clean, prompt, system_message, **kwargs
+                    )
+                except Exception as error:
+                    logger.warning(
+                        f"NVIDIA NIM model {model_name_clean} failed: {error}, trying fallback..."
+                    )
+                    result, actual_model_used = await self._try_fallback_models(
+                        task_type,
+                        prompt,
+                        system_message,
+                        skip_providers=["openrouter", "groq", "google", "openai", "nvidia"],
+                        **kwargs,
+                    )
+            else:
+                raise ValueError(f"Unknown provider: {model_provider}")
 
             execution_time = time.time() - start_time
 
@@ -1797,6 +1891,8 @@ class MultiModelOrchestrator:
                 )
         elif model_provider == "openai":
             return await self._execute_openai_model(model_name, prompt, system_message, **kwargs)
+        elif model_provider == "nvidia":
+            return await self._execute_nvidia_model(model_name, prompt, system_message, **kwargs)
         else:
             raise ValueError(f"Unknown provider: {model_provider}")
 
@@ -1905,13 +2001,14 @@ class MultiModelOrchestrator:
         if skip_providers is None:
             skip_providers = []
 
-        # 사용자 지정 우선순위: openrouter -> groq -> cerebras (openrouter) -> google -> openai -> claude
+        # 사용자 지정 우선순위: openrouter -> groq -> cerebras (openrouter) -> google -> openai -> nvidia -> claude
         fallback_order = [
             "openrouter",
             "groq",
             "cerebras",
             "google",
             "openai",
+            "nvidia",
             "claude",
         ]
 
@@ -1959,6 +2056,10 @@ class MultiModelOrchestrator:
                     )
                 elif provider == "openai":
                     result = await self._execute_openai_model(
+                        fallback_model, prompt, system_message, **kwargs
+                    )
+                elif provider == "nvidia":
+                    result = await self._execute_nvidia_model(
                         fallback_model, prompt, system_message, **kwargs
                     )
                 elif provider == "claude":
@@ -2232,6 +2333,62 @@ class MultiModelOrchestrator:
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
             raise RuntimeError(f"OpenAI model {model_name} failed: {e}")
+
+    async def _execute_nvidia_model(
+        self, model_name: str, prompt: str, system_message: str = None, **kwargs
+    ) -> Dict[str, Any]:
+        """NVIDIA NIM 모델 실행."""
+        if model_name not in self.model_clients:
+            raise ValueError(f"NVIDIA NIM client not initialized for {model_name}")
+
+        client = self.model_clients[model_name]
+        model_config = self.models[model_name]
+
+        # 메시지 구성
+        history = kwargs.pop("history_messages", [])
+        messages = []
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+        if history:
+            messages.extend(history)
+        if not history or (history and history[-1].get("content") != prompt):
+            messages.append({"role": "user", "content": prompt})
+
+        try:
+            # NVIDIA API 호출 (OpenAI 라이브러리 연동)
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: client.chat.completions.create(
+                    model=model_config.model_id,
+                    messages=messages,
+                    temperature=model_config.temperature,
+                    max_tokens=model_config.max_tokens,
+                    **kwargs,
+                ),
+            )
+
+            content = response.choices[0].message.content
+            tool_calls = getattr(response.choices[0].message, "tool_calls", [])
+
+            return {
+                "content": content,
+                "confidence": 0.8,
+                "quality_score": 0.8,
+                "metadata": {
+                    "model": model_name,
+                    "provider": "nvidia",
+                    "model_id": model_config.model_id,
+                    "tokens_used": (
+                        response.usage.total_tokens
+                        if hasattr(response, "usage")
+                        else len(str(content).split())
+                    ),
+                    "tool_calls": tool_calls,
+                },
+            }
+        except Exception as e:
+            logger.error(f"NVIDIA NIM API error: {e}")
+            raise RuntimeError(f"NVIDIA NIM model {model_name} failed: {e}")
 
     async def _execute_langchain_model(
         self, model_name: str, prompt: str, system_message: str = None, **kwargs

@@ -28,16 +28,18 @@ OPENROUTER_FALLBACKS = [
 GOOGLE_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 
-# OPENCODE_PRIMARY: "google" = Gemini 우선 (한도 절약), "openrouter" = OpenRouter 우선
+# OPENCODE_PRIMARY: "google" = Gemini 우선 (한도 절약), "openrouter" = OpenRouter 우선, "nvidia" = NVIDIA NIM
 def _primary_provider() -> str:
     raw = (os.getenv("OPENCODE_PRIMARY") or "").strip().lower()
-    if raw in ("google", "openrouter"):
+    if raw in ("google", "openrouter", "nvidia"):
         return raw
+    if os.getenv("NVIDIA_API_KEY"):
+        return "nvidia"
     return "google" if os.getenv("GOOGLE_API_KEY") else "openrouter"
 
 
 class OpenCodeAgent(BaseCLIAgent):
-    """LLM agent: OPENCODE_PRIMARY에 따라 Google Gemini 우선 또는 OpenRouter 우선 → 상대편 fallback."""
+    """LLM agent: OPENCODE_PRIMARY에 따라 Google, NVIDIA NIM, OpenRouter 우선 호출 및 fallback."""
 
     def __init__(self, model_path: str | None = None):
         raw = model_path or os.getenv("OPEN_CODE_MODEL_PATH") or DEFAULT_MODEL
@@ -46,6 +48,7 @@ class OpenCodeAgent(BaseCLIAgent):
         self._model = raw
         self._api_key = os.getenv("OPENROUTER_API_KEY", "")
         self._google_key = os.getenv("GOOGLE_API_KEY", "")
+        self._nvidia_key = os.getenv("NVIDIA_API_KEY", "")
         self._primary = _primary_provider()
         self._max_tokens = int(os.getenv("LLM_MAX_TOKENS", "4096"))
         config = CLIAgentConfig(
@@ -104,7 +107,15 @@ class OpenCodeAgent(BaseCLIAgent):
         return GOOGLE_FALLBACK_MODEL
 
     async def _call_llm(self, user_msg: str, system_msg: str, max_tokens: int) -> str:
-        """OPENCODE_PRIMARY에 따라 Google 우선 또는 OpenRouter 우선 호출."""
+        """OPENCODE_PRIMARY에 따라 Google, NVIDIA, OpenRouter 호출."""
+        if self._primary == "nvidia" and self._nvidia_key:
+            try:
+                return await self._call_nvidia_nim(user_msg, system_msg, max_tokens)
+            except Exception as e:
+                logger.warning(
+                    "NVIDIA NIM primary failed (%s), trying Google or OpenRouter...", str(e)[:60]
+                )
+
         if self._primary == "google" and self._google_key:
             try:
                 return await self._call_google_genai(user_msg, system_msg, max_tokens)
@@ -116,6 +127,12 @@ class OpenCodeAgent(BaseCLIAgent):
             try:
                 return await self._call_openrouter_chain(user_msg, system_msg, max_tokens)
             except RuntimeError as e:
+                if self._nvidia_key:
+                    logger.info("OpenRouter failed, falling back to NVIDIA NIM")
+                    try:
+                        return await self._call_nvidia_nim(user_msg, system_msg, max_tokens)
+                    except Exception as ne:
+                        logger.warning("NVIDIA NIM fallback also failed: %s", ne)
                 if self._google_key:
                     logger.info("OpenRouter chain failed, falling back to Google Gemini")
                     try:
@@ -123,10 +140,12 @@ class OpenCodeAgent(BaseCLIAgent):
                     except Exception as ge:
                         logger.warning("Google Gemini fallback also failed: %s", ge)
                 raise e
+        if self._nvidia_key:
+            return await self._call_nvidia_nim(user_msg, system_msg, max_tokens)
         if self._google_key:
             return await self._call_google_genai(user_msg, system_msg, max_tokens)
         raise RuntimeError(
-            "No API key available. Set GOOGLE_API_KEY and/or OPENROUTER_API_KEY (OPENCODE_PRIMARY=google recommended)."
+            "No API key available. Set GOOGLE_API_KEY, NVIDIA_API_KEY, and/or OPENROUTER_API_KEY."
         )
 
     async def _call_openrouter_chain(self, user_msg: str, system_msg: str, max_tokens: int) -> str:
@@ -220,6 +239,48 @@ class OpenCodeAgent(BaseCLIAgent):
                     raise RuntimeError("Google Gemini returned no candidates")
                 parts = candidates[0].get("content", {}).get("parts", [])
                 return parts[0].get("text", "") if parts else ""
+
+    async def _call_nvidia_nim(
+        self, user_msg: str, system_msg: str, max_tokens: int
+    ) -> str:
+        headers = {
+            "Authorization": f"Bearer {self._nvidia_key}",
+            "Content-Type": "application/json",
+        }
+        model = self._model
+        if not model.startswith("z-ai/") and model != "glm-5.2":
+            model = "z-ai/glm-5.2"
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.2,
+        }
+        url = "https://integrate.api.nvidia.com/v1/chat/completions"
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=90),
+            ) as resp:
+                raw = await resp.text()
+                try:
+                    body = json.loads(raw) if raw else {}
+                except Exception:
+                    raise RuntimeError(
+                        f"NVIDIA NIM {resp.status}: {raw[:200] if raw else 'empty response'}"
+                    )
+                if resp.status != 200:
+                    err = body.get("error", {}).get("message", str(body))
+                    raise RuntimeError(f"NVIDIA NIM {resp.status}: {err}")
+                choices = body.get("choices", [])
+                if not choices:
+                    raise RuntimeError("NVIDIA NIM returned no choices")
+                return choices[0].get("message", {}).get("content", "")
 
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
         return {"success": True, "text": result.output or "", "raw": result.output or ""}
