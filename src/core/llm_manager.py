@@ -912,7 +912,9 @@ class MultiModelOrchestrator:
                             raise ValueError(f"NVIDIA_API_KEY not found for {model_name}")
                         self.model_clients[model_name] = OpenAI(
                             api_key=nvidia_api_key,
-                            base_url="https://integrate.api.nvidia.com/v1"
+                            base_url="https://integrate.api.nvidia.com/v1",
+                            timeout=180.0,
+                            max_retries=1,
                         )
                         logger.info(f"NVIDIA NIM model {model_name} configured")
                     except ImportError:
