@@ -7428,6 +7428,10 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
             mapped = op_map.get(operation)
             if not mapped:
                 raise ValueError(f"Unknown filesystem operation: {operation or '(missing)'}")
+            # read 대상이 디렉토리면 목록 조회로 처리
+            target = parameters.get("path") or parameters.get("file_path") or ""
+            if mapped == "read_file" and target and Path(target).is_dir():
+                mapped = "list_files"
             if "file_path" not in parameters and "path" in parameters:
                 parameters = {**parameters, "file_path": parameters["path"]}
             if mapped == "list_files" and "directory_path" not in parameters:
