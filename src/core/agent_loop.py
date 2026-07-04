@@ -170,9 +170,10 @@ Autonomous problem-solving contract:
             tool_calls_count += len(tool_calls)
 
             # Add Assistant response to history
+            # (잘린/불량 JSON 인자를 그대로 넣으면 이후 모든 API 호출이 400으로 오염됨)
             assistant_msg = {"role": "assistant", "content": content}
             if tool_calls:
-                assistant_msg["tool_calls"] = tool_calls
+                assistant_msg["tool_calls"] = self._sanitize_tool_calls_for_history(tool_calls)
             history.append(assistant_msg)
 
             if not tool_calls:
@@ -357,6 +358,27 @@ Autonomous problem-solving contract:
         if error:
             result["error"] = error
         return result
+
+    @staticmethod
+    def _sanitize_tool_calls_for_history(tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """히스토리에 저장할 tool_calls의 arguments가 유효한 JSON 문자열임을 보장."""
+        sanitized = []
+        for tc in tool_calls:
+            tc_copy = json.loads(json.dumps(tc))
+            fn = tc_copy.get("function", {})
+            args = fn.get("arguments", "{}")
+            if isinstance(args, str):
+                try:
+                    json.loads(args)
+                except (json.JSONDecodeError, ValueError):
+                    fn["arguments"] = "{}"
+            else:
+                try:
+                    fn["arguments"] = json.dumps(args)
+                except (TypeError, ValueError):
+                    fn["arguments"] = "{}"
+            sanitized.append(tc_copy)
+        return sanitized
 
     def _normalize_tool_calls(self, tool_calls: Any) -> List[Dict[str, Any]]:
         """Convert provider-specific tool call objects into OpenAI-like dictionaries."""

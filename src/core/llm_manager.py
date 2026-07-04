@@ -817,7 +817,8 @@ class MultiModelOrchestrator:
                 provider="nvidia",
                 model_id=model_data["model_id"],
                 temperature=0.2,
-                max_tokens=4000,
+                # 파일 쓰기 tool call은 인자가 길어 4000이면 JSON이 잘린다
+                max_tokens=16384,
                 cost_per_token=0.0,
                 speed_rating=model_data["speed_rating"],
                 quality_rating=model_data["quality_rating"],
