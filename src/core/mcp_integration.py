@@ -3066,7 +3066,7 @@ class UniversalMCPHub:
                 # ToolResult를 Dict로 변환하여 반환
                 if tool_name.startswith("browser") or tool_name == "browser":
                     result = await _execute_browser_tool(tool_name, parameters)  # noqa: F823
-                elif tool_name.startswith("shell") or tool_name == "shell":
+                elif tool_name.startswith(("shell", "run_")) or tool_name == "shell":
                     result = await _execute_shell_tool(tool_name, parameters)  # noqa: F823
                 elif (
                     tool_name.startswith(
@@ -3502,9 +3502,17 @@ class UniversalMCPHub:
         ]:
             logger.info(f"[MCP][exec.shell] Routing {tool_name} to _execute_shell_tool")
             try:
-                from src.core.mcp_integration import ToolResult, _execute_shell_tool
+                # IMPORTANT: avoid binding the name `_execute_shell_tool` in this scope.
+                # If we import it with the same identifier, Python treats it as a local variable
+                # across the whole function (leading to UnboundLocalError in the local-tool branch).
+                from src.core.mcp_integration import (
+                    ToolResult,
+                )
+                from src.core.mcp_integration import (
+                    _execute_shell_tool as shell_execute_tool,
+                )
 
-                tool_result = await _execute_shell_tool(tool_name, parameters)
+                tool_result = await shell_execute_tool(tool_name, parameters)
                 execution_time = time.time() - start_time
 
                 result_summary = ""
@@ -3673,9 +3681,17 @@ class UniversalMCPHub:
         ]:
             logger.info(f"[MCP][exec.file] Routing {tool_name} to _execute_file_tool")
             try:
-                from src.core.mcp_integration import ToolResult, _execute_file_tool
+                # IMPORTANT: avoid binding the name `_execute_file_tool` in this scope.
+                # If we import it with the same identifier, Python treats it as a local variable
+                # across the whole function (leading to UnboundLocalError in the local-tool branch).
+                from src.core.mcp_integration import (
+                    ToolResult,
+                )
+                from src.core.mcp_integration import (
+                    _execute_file_tool as file_execute_tool,
+                )
 
-                tool_result = await _execute_file_tool(tool_name, parameters)
+                tool_result = await file_execute_tool(tool_name, parameters)
                 execution_time = time.time() - start_time
 
                 result_summary = ""
@@ -4126,9 +4142,14 @@ class UniversalMCPHub:
 
                         tool_result = await _execute_search_tool(tool_name, parameters)
                     elif category == ToolCategory.DATA:
-                        from src.core.mcp_integration import _execute_data_tool
+                        # IMPORTANT: alias to avoid shadowing the module-level name in this scope
+                        # (a same-name local import makes it local across the whole function,
+                        # causing UnboundLocalError in the earlier local-tool branch).
+                        from src.core.mcp_integration import (
+                            _execute_data_tool as data_execute_tool,
+                        )
 
-                        tool_result = await _execute_data_tool(tool_name, parameters)
+                        tool_result = await data_execute_tool(tool_name, parameters)
                     elif category == ToolCategory.CODE:
                         from src.core.mcp_integration import _execute_code_tool
 
@@ -4142,10 +4163,12 @@ class UniversalMCPHub:
 
                         tool_result = await _execute_git_tool(tool_name, parameters)
                     else:
-                        # 기본적으로 데이터 도구로 처리
-                        from src.core.mcp_integration import _execute_data_tool
+                        # 기본적으로 데이터 도구로 처리 (동일 이름 shadowing 방지 alias)
+                        from src.core.mcp_integration import (
+                            _execute_data_tool as data_execute_tool,
+                        )
 
-                        tool_result = await _execute_data_tool(tool_name, parameters)
+                        tool_result = await data_execute_tool(tool_name, parameters)
 
                     execution_time = time.time() - start_time
 
