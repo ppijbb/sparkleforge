@@ -1232,6 +1232,9 @@ class MultiModelOrchestrator:
                         model_name_clean, prompt, system_message, **kwargs
                     )
                 except Exception as error:
+                    error_str = str(error).lower()
+                    if "rate limit" in error_str or "429" in error_str or "too many requests" in error_str:
+                        self._mark_provider_rate_limited("nvidia")
                     logger.warning(
                         f"NVIDIA NIM model {model_name_clean} failed: {error}, trying fallback..."
                     )
@@ -1239,7 +1242,7 @@ class MultiModelOrchestrator:
                         task_type,
                         prompt,
                         system_message,
-                        skip_providers=["openrouter", "groq", "google", "openai", "nvidia"],
+                        skip_providers=["nvidia"],
                         **kwargs,
                     )
             else:
