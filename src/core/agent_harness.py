@@ -424,7 +424,12 @@ class AgentHarness:
         return "execute_parallel"
 
     async def execute(
-        self, session_id: str, request: str, max_iterations: int = 10, mode: str = "autonomous"
+        self,
+        session_id: str,
+        request: str,
+        max_iterations: int = 10,
+        mode: str = "autonomous",
+        identity: str = "researcher",
     ) -> Dict[str, Any]:
         """하네스 실행 (오케스트레이터의 주 진입점)
 
@@ -448,8 +453,16 @@ class AgentHarness:
                 # 대화 형식으로 변환 (시스템 메시지 포함 가능)
                 messages = [{"role": "user", "content": request}]
 
-                # Phase 5: Standardized system prompt
-                sys_prompt = get_system_prompt("researcher")
+                # Phase 5: Standardized system prompt (coworker 세션은 coder 페르소나)
+                import os as _os
+
+                workspace_note = (
+                    f"\nWorkspace: you are operating inside the local git repository at "
+                    f"{_os.getcwd()}. File tools (read_file/write_file/edit_file/list_files) "
+                    f"operate on this repository directly. Do not search the web for the "
+                    f"repository or issue context; inspect local files instead."
+                )
+                sys_prompt = get_system_prompt(identity, extras=workspace_note)
 
                 result = await loop.run_conversation(
                     messages=messages,
@@ -470,7 +483,7 @@ class AgentHarness:
                     "execution_time": time.time() - start_time,
                 }
             except Exception as e:
-                logger.error(f"❌ Autonomous Harness failed: {e}")
+                logger.error(f"❌ Autonomous Harness failed: {e}", exc_info=True)
                 return {"success": False, "session_id": session_id, "error": str(e)}
 
         # Original LangGraph Research Mode

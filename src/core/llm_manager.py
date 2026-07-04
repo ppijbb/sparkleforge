@@ -347,9 +347,8 @@ class MultiModelOrchestrator:
 
         # Provider 로테이션 추적
         self.provider_rotation_index = 0  # 현재 Provider 인덱스
-        self.provider_rotation_order = [
-            "google",
-        ]  # 로테이션 순서
+        # 키가 설정된 무료 provider를 모두 로테이션 풀에 포함
+        self.provider_rotation_order = self._build_provider_rotation_order()
         self.provider_rate_limited = {}  # Rate limit에 걸린 Provider (timestamp)
         self.provider_usage_count = {
             provider: 0 for provider in self.provider_rotation_order
@@ -791,29 +790,23 @@ class MultiModelOrchestrator:
 
     def _load_nvidia_models(self):
         """NVIDIA NIM 모델 로딩."""
+        # 주의: 동일 model_id를 별명으로 중복 등록하면 provider cascade가
+        # 같은 모델을 연달아 호출해 429를 자초하므로 단일 항목만 유지한다.
         nvidia_models = [
-            {
-                "name": "glm-5.2",
-                "model_id": "z-ai/glm-5.2",
-                "speed_rating": 8.5,
-                "quality_rating": 9.0,
-                "capabilities": [
-                    TaskType.DEEP_REASONING,
-                    TaskType.GENERATION,
-                    TaskType.RESEARCH,
-                    TaskType.ANALYSIS,
-                ],
-            },
             {
                 "name": "z-ai/glm-5.2",
                 "model_id": "z-ai/glm-5.2",
                 "speed_rating": 8.5,
                 "quality_rating": 9.0,
                 "capabilities": [
+                    TaskType.PLANNING,
                     TaskType.DEEP_REASONING,
+                    TaskType.VERIFICATION,
                     TaskType.GENERATION,
+                    TaskType.COMPRESSION,
                     TaskType.RESEARCH,
                     TaskType.ANALYSIS,
+                    TaskType.SYNTHESIS,
                 ],
             },
         ]
@@ -824,7 +817,8 @@ class MultiModelOrchestrator:
                 provider="nvidia",
                 model_id=model_data["model_id"],
                 temperature=0.2,
-                max_tokens=4000,
+                # 파일 쓰기 tool call은 인자가 길어 4000이면 JSON이 잘린다
+                max_tokens=16384,
                 cost_per_token=0.0,
                 speed_rating=model_data["speed_rating"],
                 quality_rating=model_data["quality_rating"],
@@ -918,7 +912,9 @@ class MultiModelOrchestrator:
                             raise ValueError(f"NVIDIA_API_KEY not found for {model_name}")
                         self.model_clients[model_name] = OpenAI(
                             api_key=nvidia_api_key,
-                            base_url="https://integrate.api.nvidia.com/v1"
+                            base_url="https://integrate.api.nvidia.com/v1",
+                            timeout=180.0,
+                            max_retries=1,
                         )
                         logger.info(f"NVIDIA NIM model {model_name} configured")
                     except ImportError:
@@ -934,17 +930,39 @@ class MultiModelOrchestrator:
             logger.error(f"Failed to initialize model clients: {e}")
             raise
 
+    # Provider별 rate limit 쿨다운 (초). NIM 429는 순간 동시성 제한이라 짧게 잡는다.
+    PROVIDER_RATE_LIMIT_COOLDOWN = {"nvidia": 30}
+    DEFAULT_RATE_LIMIT_COOLDOWN = 300
+
+    @staticmethod
+    def _build_provider_rotation_order() -> List[str]:
+        """API 키가 있는 provider로 로테이션 순서 구성 (설정 모델 provider 우선)."""
+        order = []
+        if os.getenv("NVIDIA_API_KEY"):
+            order.append("nvidia")
+        if os.getenv("OPENROUTER_API_KEY"):
+            order.append("openrouter")
+            order.append("cerebras")  # OpenRouter 경유
+        if os.getenv("GROQ_API_KEY"):
+            order.append("groq")
+        if os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"):
+            order.append("google")
+        if os.getenv("OPENAI_API_KEY"):
+            order.append("openai")
+        return order or ["google"]
+
     def _is_provider_rate_limited(self, provider: str) -> bool:
-        """Provider가 rate limit에 걸렸는지 확인 (5분 후 자동 해제)."""
+        """Provider가 rate limit에 걸렸는지 확인 (쿨다운 후 자동 해제)."""
         if provider not in self.provider_rate_limited:
             return False
 
-        # Rate limit 타임스탬프 확인 (5분 = 300초)
+        cooldown = self.PROVIDER_RATE_LIMIT_COOLDOWN.get(
+            provider, self.DEFAULT_RATE_LIMIT_COOLDOWN
+        )
         rate_limit_time = self.provider_rate_limited[provider]
-        if time.time() - rate_limit_time > 300:
-            # 5분 경과 시 자동 해제
+        if time.time() - rate_limit_time > cooldown:
             del self.provider_rate_limited[provider]
-            logger.info(f"Provider {provider} rate limit automatically cleared after 5 minutes")
+            logger.info(f"Provider {provider} rate limit automatically cleared after {cooldown}s")
             return False
 
         return True
@@ -978,6 +996,20 @@ class MultiModelOrchestrator:
         """작업에 최적 모델 선택 - Provider 로테이션: OpenRouter -> Groq -> Cerebras."""
         if budget is None:
             budget = self.llm_config.budget_limit
+
+        # .env에 지정된 작업별 모델을 최우선 사용 (provider 사용 가능 시)
+        configured = {
+            TaskType.PLANNING: self.llm_config.planning_model,
+            TaskType.DEEP_REASONING: self.llm_config.reasoning_model,
+            TaskType.VERIFICATION: self.llm_config.verification_model,
+            TaskType.GENERATION: self.llm_config.generation_model,
+            TaskType.COMPRESSION: self.llm_config.compression_model,
+        }.get(task_type) or self.llm_config.primary_model
+        if configured in self.models and not self._is_provider_rate_limited(
+            self.models[configured].provider
+        ):
+            logger.info(f"Selected configured model for {task_type.value}: {configured}")
+            return configured
 
         # 작업 유형에 적합한 모델 필터링
         suitable_models = [
@@ -1150,7 +1182,7 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter"],
                         **kwargs,
                     )
-            elif model_provider == "groq":
+            elif not use_cascade_for_provider and model_provider == "groq":
                 logger.info(f"Executing with Groq model: {model_name_clean}")
                 try:
                     result = await self._execute_groq_model(
@@ -1171,7 +1203,7 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter", "groq"],
                         **kwargs,
                     )
-            elif model_provider == "google":
+            elif not use_cascade_for_provider and model_provider == "google":
                 logger.info(f"Executing with Gemini model: {model_name_clean}")
                 try:
                     if model_name.endswith("_langchain"):
@@ -1193,7 +1225,7 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter", "groq", "google"],
                         **kwargs,
                     )
-            elif model_provider == "openai":
+            elif not use_cascade_for_provider and model_provider == "openai":
                 logger.info(f"Executing with GPT model: {model_name_clean}")
                 try:
                     result = await self._execute_openai_model(
@@ -1210,13 +1242,16 @@ class MultiModelOrchestrator:
                         skip_providers=["openrouter", "groq", "google", "openai"],
                         **kwargs,
                     )
-            elif model_provider == "nvidia":
+            elif not use_cascade_for_provider and model_provider == "nvidia":
                 logger.info(f"Executing with NVIDIA NIM model: {model_name_clean}")
                 try:
                     result = await self._execute_nvidia_model(
                         model_name_clean, prompt, system_message, **kwargs
                     )
                 except Exception as error:
+                    error_str = str(error).lower()
+                    if "rate limit" in error_str or "429" in error_str or "too many requests" in error_str:
+                        self._mark_provider_rate_limited("nvidia")
                     logger.warning(
                         f"NVIDIA NIM model {model_name_clean} failed: {error}, trying fallback..."
                     )
@@ -1224,10 +1259,10 @@ class MultiModelOrchestrator:
                         task_type,
                         prompt,
                         system_message,
-                        skip_providers=["openrouter", "groq", "google", "openai", "nvidia"],
+                        skip_providers=["nvidia"],
                         **kwargs,
                     )
-            else:
+            elif not use_cascade_for_provider:
                 raise ValueError(f"Unknown provider: {model_provider}")
 
             execution_time = time.time() - start_time
@@ -1998,13 +2033,14 @@ class MultiModelOrchestrator:
         if skip_providers is None:
             skip_providers = []
 
-        # 사용자 지정 우선순위: openrouter -> groq -> cerebras (openrouter) -> google -> openai -> nvidia -> claude
-        fallback_order = [
-            "google",
-        ]
+        # 키가 있는 무료 provider 풀 전체를 순서대로 시도
+        fallback_order = list(self.provider_rotation_order)
 
         for provider in fallback_order:
             if provider in skip_providers:
+                continue
+            check = "openrouter" if provider == "cerebras" else provider
+            if self._is_provider_rate_limited(check):
                 continue
 
             # 해당 provider의 사용 가능한 모델 찾기
@@ -2346,17 +2382,34 @@ class MultiModelOrchestrator:
             messages.append({"role": "user", "content": prompt})
 
         try:
-            # NVIDIA API 호출 (OpenAI 라이브러리 연동)
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: client.chat.completions.create(
-                    model=model_config.model_id,
-                    messages=messages,
-                    temperature=model_config.temperature,
-                    max_tokens=model_config.max_tokens,
-                    **kwargs,
-                ),
-            )
+            # NVIDIA API 호출 (OpenAI 라이브러리 연동) — 429는 백오프 후 재시도
+            max_retries = 3
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: client.chat.completions.create(
+                            model=model_config.model_id,
+                            messages=messages,
+                            temperature=model_config.temperature,
+                            max_tokens=model_config.max_tokens,
+                            **kwargs,
+                        ),
+                    )
+                    break
+                except Exception as retry_e:
+                    retry_str = str(retry_e).lower()
+                    is_rate_limit = "429" in retry_str or "too many requests" in retry_str
+                    if is_rate_limit and attempt < max_retries - 1:
+                        wait_time = 10 * (attempt + 1)
+                        logger.warning(
+                            f"NVIDIA NIM 429, retrying in {wait_time}s "
+                            f"({attempt + 1}/{max_retries - 1})"
+                        )
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
 
             content = response.choices[0].message.content
             tool_calls = getattr(response.choices[0].message, "tool_calls", [])

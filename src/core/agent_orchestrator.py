@@ -5,6 +5,7 @@
 """
 
 import logging
+import os
 from typing import Any, Dict, List, TypedDict
 
 from src.core.agent_harness import AgentHarness
@@ -40,7 +41,7 @@ class AgentOrchestrator:
         self,
         request: str | None = None,
         session_id: str | None = "default_session",
-        max_iterations: int = 10,
+        max_iterations: int | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """하네스를 기동하여 요청을 처리합니다."""
@@ -50,12 +51,21 @@ class AgentOrchestrator:
             raise TypeError("AgentOrchestrator.execute() requires 'request' or 'user_query'")
         if session_id is None:
             session_id = "default_session"
+        if max_iterations is None:
+            max_iterations = int(os.getenv("SPARKLEFORGE_MAX_ITERATIONS", "30"))
+
+        # coworker 모드는 로컬 저장소를 다루는 coder 페르소나로 실행
+        custom_state = kwargs.get("custom_state") or {}
+        identity = "coder" if custom_state.get("mode") == "coworker" else "researcher"
 
         logger.info(f"AgentOrchestrator delegating request to AgentHarness (session: {session_id})")
 
         # Harness 실행
         harness_result = await self.harness.execute(
-            session_id=session_id, request=request, max_iterations=max_iterations
+            session_id=session_id,
+            request=request,
+            max_iterations=max_iterations,
+            identity=identity,
         )
 
         # main.py 호환을 위한 필드 추가

@@ -30,9 +30,9 @@ class GitWorkflow:
             raise ValueError(f"Not a git repository: {self.repo_path}")
 
     def _is_git_repo(self) -> bool:
-        """Git 저장소인지 확인."""
+        """Git 저장소인지 확인 (서브모듈/워크트리는 .git이 파일)."""
         git_dir = self.repo_path / ".git"
-        return git_dir.exists() and git_dir.is_dir()
+        return git_dir.exists()
 
     async def _run_git_command(self, *args: str, check: bool = True) -> Dict[str, Any]:
         """Git 명령 실행.
