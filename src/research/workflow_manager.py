@@ -6,6 +6,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List
 
+from src.core.anvil.engine import AnvilTask, AnvilWorkflowEngine
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,7 +74,11 @@ class ResearchWorkflowManager:
         return workflow_id
 
     async def execute_workflow(self, workflow_id: str) -> WorkflowResult:
-        """Execute a research workflow."""
+        """Execute a research workflow via AnvilWorkflowEngine.
+
+        기존 4단계 순차 흐름을 AnvilWorkflowEngine의 DAG 기반 실행으로 전환.
+        각 단계 메서드를 핸들러로 등록하고, 의존성 체인으로 연결하여 실행합니다.
+        """
         if workflow_id not in self.workflows:
             raise ValueError(f"Workflow not found: {workflow_id}")
 
@@ -88,32 +94,73 @@ class ResearchWorkflowManager:
         self.active_workflows[workflow_id] = result
 
         try:
-            logger.info(f"Starting workflow execution: {workflow_id}")
+            logger.info(f"Starting workflow execution via Anvil: {workflow_id}")
 
-            # Step 1: Topic Analysis
-            logger.info("Performing topic analysis...")
-            topic_analysis = await self._analyze_topic(workflow_data)
-            result.output["topic_analysis"] = topic_analysis
+            # Anvil 엔진 초기화 및 핸들러 등록
+            engine = AnvilWorkflowEngine()
 
-            # Step 2: Source Discovery
-            logger.info("Discovering sources...")
-            source_discovery = await self._discover_sources(workflow_data)
-            result.output["source_discovery"] = source_discovery
+            # 각 워크플로우 단계를 핸들러로 등록
+            # 핸들러는 context를 받아 결과를 반환하는 async 함수
+            async def handle_analyze(ctx: Dict) -> Dict:
+                return await self._analyze_topic(workflow_data)
 
-            # Step 3: Content Gathering
-            logger.info("Gathering content...")
-            content_gathering = await self._gather_content(workflow_data)
-            result.output["content_gathering"] = content_gathering
+            async def handle_discover(ctx: Dict) -> Dict:
+                return await self._discover_sources(workflow_data)
 
-            # Step 4: Report Generation
-            logger.info("Generating report...")
-            report_generation = await self._generate_report(workflow_data, result.output)
-            result.output["report_generation"] = report_generation
+            async def handle_gather(ctx: Dict) -> Dict:
+                return await self._gather_content(workflow_data)
 
-            result.status = WorkflowStatus.COMPLETED
+            async def handle_report(ctx: Dict) -> Dict:
+                return await self._generate_report(workflow_data, result.output)
+
+            engine.register_handler("_analyze_topic", handle_analyze)
+            engine.register_handler("_discover_sources", handle_discover)
+            engine.register_handler("_gather_content", handle_gather)
+            engine.register_handler("_generate_report", handle_report)
+
+            # DAG 태스크 등록 (순차 의존성 체인)
+            engine.add_task(AnvilTask(
+                task_id="step_1_analyze",
+                name="Topic Analysis",
+                handler="_analyze_topic",
+            ))
+            engine.add_task(AnvilTask(
+                task_id="step_2_discover",
+                name="Source Discovery",
+                handler="_discover_sources",
+                dependencies=["step_1_analyze"],
+            ))
+            engine.add_task(AnvilTask(
+                task_id="step_3_gather",
+                name="Content Gathering",
+                handler="_gather_content",
+                dependencies=["step_2_discover"],
+            ))
+            engine.add_task(AnvilTask(
+                task_id="step_4_report",
+                name="Report Generation",
+                handler="_generate_report",
+                dependencies=["step_3_gather"],
+            ))
+
+            # DAG 실행
+            anvil_result = await engine.execute(context={})
+
+            # Anvil 결과를 기존 result.output 포맷에 매핑
+            task_results = anvil_result.get("results", {})
+            result.output["topic_analysis"] = task_results.get("step_1_analyze", {})
+            result.output["source_discovery"] = task_results.get("step_2_discover", {})
+            result.output["content_gathering"] = task_results.get("step_3_gather", {})
+            result.output["report_generation"] = task_results.get("step_4_report", {})
+
+            if anvil_result.get("status") == "completed":
+                result.status = WorkflowStatus.COMPLETED
+            else:
+                result.status = WorkflowStatus.FAILED
+                result.error_message = f"Anvil execution: {anvil_result.get('failed', 0)} tasks failed"
+
             result.end_time = datetime.now()
-
-            logger.info(f"Workflow completed successfully: {workflow_id}")
+            logger.info(f"Workflow completed via Anvil: {workflow_id}")
 
         except Exception as e:
             result.status = WorkflowStatus.FAILED
