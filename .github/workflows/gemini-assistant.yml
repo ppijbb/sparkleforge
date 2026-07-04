@@ -71,7 +71,7 @@ jobs:
               --body-file gemini-review-feedback.md
           done
 
-  # 1단계: 코드 변경점 리뷰 (OpenRouter / Groq 등 무료 API 직접 호출)
+  # 1단계: 코드 변경점 리뷰 (SparkleForge 오케스트레이터 호출)
   code-review:
     if: >-
       (github.event_name == 'pull_request' &&
@@ -92,87 +92,18 @@ jobs:
       - name: Extract Git Diff
         run: git diff HEAD~1 HEAD > diff.txt || echo "" > diff.txt
         
-      - name: OpenRouter Diff Review
+      - name: SparkleForge Diff Review
         env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
         run: |
-          if [ -z "$OPENROUTER_API_KEY" ]; then
-            echo "No OpenRouter key found, skipping."
-            echo "Skipped" > review_result.txt
-            exit 0
-          fi
+          python -m pip install --upgrade pip
+          python -m pip install aiohttp openai
+          python scripts/opencode_github_worker.py code-review --diff diff.txt
           
-          # jq를 사용하여 안전하게 JSON 페이로드 생성 (따옴표 이스케이프 문제 방지)
-          jq -n --arg diff "$(cat diff.txt)" '{
-            # Using a balanced mix of high-tier and resilient models for code review
-            model: "google/gemini-2.5-pro",
-            messages: [
-              {role: "system", content: "You are an expert code reviewer. If the primary model is unavailable, the system will fallback to gemini-2.0-flash-lite-preview:free."},
-              {role: "system", content: "You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly."},
-              {role: "user", content: $diff}
-            ]
-          }' > payload.json
-          
-          # curl을 통해 직접 API 찌르기
-          RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://openrouter.ai/api/v1/chat/completions" \
-            -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @payload.json || true)
-          if [ -z "$RAW_RESPONSE" ]; then
-            echo "Skipped: OpenRouter returned an empty response." > review_result.txt
-            exit 0
-          fi
-          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
-            ERROR_MESSAGE=$(echo "$RAW_RESPONSE" | jq -r '.error.message // .error')
-            echo "Skipped: OpenRouter API error: $ERROR_MESSAGE" > review_result.txt
-            exit 0
-          fi
-          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || true)
-          if [ -z "$CONTENT" ] || [ "$CONTENT" = "null" ]; then
-            echo "Skipped: OpenRouter returned no review content." > review_result.txt
-            exit 0
-          fi
-          printf '%s\n' "$CONTENT" > review_result.txt
-            
-      - name: Cerebras Diff Review
-        env:
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-        run: |
-          if [ -z "$CEREBRAS_API_KEY" ]; then
-            echo "No Cerebras key found, skipping."
-            echo "Skipped" > cerebras_result.txt
-            exit 0
-          fi
-          
-          jq -n --arg diff "$(cat diff.txt)" '{
-            # Using a resilient model selection for architecture review
-            model: "meta-llama/llama-3.3-70b-instruct",
-            messages: [
-              {role: "system", content: "You are a security and architecture reviewer. Read this diff and point out critical logical or security flaws only."},
-              {role: "user", content: $diff}
-            ]
-          }' > cerebras_payload.json
-          
-          RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://api.cerebras.ai/v1/chat/completions" \
-            -H "Authorization: Bearer $CEREBRAS_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @cerebras_payload.json || true)
-          if [ -z "$RAW_RESPONSE" ]; then
-            echo "Skipped: Cerebras returned an empty response." > cerebras_result.txt
-            exit 0
-          fi
-          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null 2>&1; then
-            ERROR_MESSAGE=$(echo "$RAW_RESPONSE" | jq -r '.error.message // .error')
-            echo "Skipped: Cerebras API error: $ERROR_MESSAGE" > cerebras_result.txt
-            exit 0
-          fi
-          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || true)
-          if [ -z "$CONTENT" ] || [ "$CONTENT" = "null" ]; then
-            echo "Skipped: Cerebras returned no review content." > cerebras_result.txt
-            exit 0
-          fi
-          printf '%s\n' "$CONTENT" > cerebras_result.txt
-
       - name: Leave PR review summary
         if: github.event_name == 'pull_request'
         env:
@@ -184,13 +115,9 @@ jobs:
             exit 1
           fi
           {
-            echo "## OpenCode review seed"
+            echo "## SparkleForge review seed"
             echo
-            echo "### OpenRouter"
             cat review_result.txt
-            echo
-            echo "### Cerebras"
-            cat cerebras_result.txt
             echo
             echo "_This comment is used by the issue triage job to create follow-up work._"
           } > review-comment.md
@@ -202,11 +129,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: review-results
-          path: |
-            review_result.txt
-            cerebras_result.txt
+          path: review_result.txt
 
-  # 2단계: 리뷰 분석 및 작업 분할/이슈 생성 (Groq / Cerebras API 직접 호출)
+  # 2단계: 리뷰 분석 및 작업 분할/이슈 생성 (SparkleForge 오케스트레이터 호출)
   issue-triage:
     needs: code-review
     if: >-
@@ -230,176 +155,63 @@ jobs:
         with:
           name: review-results
           
-      - name: Groq API Triage & Issue Create
+      - name: SparkleForge Triage & Issue Create
         id: create_issue
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
             echo "::error::PAT repository secret is required to create issues and dispatch opencode-auto-fix.yml as part of the automatic issue-to-PR flow."
-            echo "::error::Create a PAT secret with contents, issues, pull requests, and actions write access."
             exit 1
           fi
 
-          if [ ! -f review_result.txt ] || [ -z "$GROQ_API_KEY" ]; then
-            echo "No review result or Groq key found."
-            exit 0
-          fi
-
-          OPENROUTER_REVIEW=$(cat review_result.txt)
-          CEREBRAS_REVIEW=$(cat cerebras_result.txt 2>/dev/null || echo '')
-
-          if [[ "$OPENROUTER_REVIEW" == Skipped* ]] && { [ -z "$CEREBRAS_REVIEW" ] || [[ "$CEREBRAS_REVIEW" == Skipped* ]]; }; then
-            echo "All AI reviews were skipped; not creating an issue."
+          if [ ! -f review_result.txt ]; then
+            echo "No review result found."
             exit 0
           fi
           
-          # 두 리뷰를 하나로 합침
-          COMBINED_REVIEW="OpenRouter Review:\n$OPENROUTER_REVIEW\n\nCerebras Review:\n$CEREBRAS_REVIEW"
+          python -m pip install --upgrade pip
+          python -m pip install aiohttp openai
+          python scripts/opencode_github_worker.py issue-triage --review-file review_result.txt
           
-          CURRENT_DATE=$(date +"%Y-%m-%d %H:%M:%S")
-          
-          cat > groq_system_prompt.txt <<'PROMPT'
-          You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
-          CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
-          If should_create_issue is true, the title MUST use the repository's plain Conventional Commit prefix style (e.g. 'fix: ...', 'feat: ...').
-          The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top (replace __CURRENT_DATE__ with the actual date):
-          > **Date**: __CURRENT_DATE__
-          > **Issue Type**: [Classify as Parent Issue or Sub-issue (Anvil Phase A)]
-          > **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
-          > **Metrics & Justification**: [Provide a concrete, logical proof or metric of why this code must be changed. Do not use simple judgments.]
-
-          Below the header, provide a highly specific explanation of what is wrong and an actionable plan to fix it.
-          If should_create_issue is false, title and body must be empty strings.
-          PROMPT
-          sed -i "s/__CURRENT_DATE__/$CURRENT_DATE/g" groq_system_prompt.txt
-
-          # Groq 무료 티어 중 최고성능 모델을 통해 이슈 내용 생성
-          jq -n --arg review "$COMBINED_REVIEW" \
-            --rawfile system_msg groq_system_prompt.txt \
-            '{
-              # Using high-tier model for triage to ensure quality
-              model: "llama-3.3-70b-versatile",
-              messages: [
-                {role: "system", content: $system_msg},
-                {role: "user", content: $review}
-              ],
-              response_format: { type: "json_object" }
-            }' > groq_payload.json
-          
-          # 만들어진 텍스트에서 제목과 본문 추출 (마크다운 백틱 제거 로직 포함)
-          RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://api.groq.com/openai/v1/chat/completions" \
-            -H "Authorization: Bearer $GROQ_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @groq_payload.json)
-          
-          if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null; then
-            echo "Groq API returned an error:"
-            echo "$RAW_RESPONSE" | jq -r '.error.message // .error'
-            exit 1
+          if [ ! -f triage_result.json ]; then
+            echo "Triage produced no result."
+            exit 0
           fi
-
-          CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty')
           
-          if [ -n "$CONTENT" ]; then
-            if ! echo "$CONTENT" | jq -e . >/dev/null; then
-              echo "Groq response content was not valid JSON; skipping issue creation."
-              echo "Content preview:"
-              echo "$CONTENT" | head -c 1000
-              echo
-              exit 0
-            fi
-            
-            SHOULD_CREATE=$(echo "$CONTENT" | jq -r '.should_create_issue // false')
-            ISSUE_TITLE=$(echo "$CONTENT" | jq -r '.title // "fix: issue identified in review"')
-            ISSUE_BODY=$(echo "$CONTENT" | jq -r '.body // empty')
-            ISSUE_TITLE=$(echo "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-            case "$ISSUE_TITLE" in
-              "🔧 fix:"*)
-                ISSUE_TITLE="fix:${ISSUE_TITLE#*:}"
-                ;;
-              "✨ feature:"*)
-                ISSUE_TITLE="feat:${ISSUE_TITLE#*:}"
-                ;;
-              "♻️ refactor:"*)
-                ISSUE_TITLE="refactor:${ISSUE_TITLE#*:}"
-                ;;
-              "🧹 chore:"*)
-                ISSUE_TITLE="chore:${ISSUE_TITLE#*:}"
-                ;;
-              "fix:"*|"Fix:"*)
-                ISSUE_TITLE="fix:${ISSUE_TITLE#*:}"
-                ;;
-              "feat:"*|"Feat:"*|"feature:"*|"Feature:"*)
-                ISSUE_TITLE="feat:${ISSUE_TITLE#*:}"
-                ;;
-              "refactor:"*|"Refactor:"*)
-                ISSUE_TITLE="refactor:${ISSUE_TITLE#*:}"
-                ;;
-              "chore:"*|"Chore:"*)
-                ISSUE_TITLE="chore:${ISSUE_TITLE#*:}"
-                ;;
-              *)
-                ISSUE_TITLE="fix: $ISSUE_TITLE"
-                ;;
-            esac
-            ISSUE_TYPE="${ISSUE_TITLE%%:*}"
-            ISSUE_SUBJECT="${ISSUE_TITLE#*:}"
-            ISSUE_SUBJECT=$(printf '%s\n' "$ISSUE_SUBJECT" | sed -E \
-              -e 's/^[[:space:]]+|[[:space:]]+$//g' \
-              -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
-              -e 's/[[:space:]]*\(#[0-9]+\)$//' \
-              -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
-            if [ -z "$ISSUE_SUBJECT" ]; then
-              ISSUE_SUBJECT="fix: issue identified in review"
-            fi
-            ISSUE_TITLE="$ISSUE_TYPE: $ISSUE_SUBJECT"
-
-            NORMALIZED_TITLE=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]')
-            if [ "$SHOULD_CREATE" != "true" ]; then
-              echo "Triage decided no actionable issue should be created."
-              exit 0
-            fi
-            if [ -z "$ISSUE_TITLE" ] || [ "$ISSUE_TITLE" = "null" ] || [ -z "$ISSUE_BODY" ]; then
-              echo "Triage did not provide an actionable issue title/body."
-              exit 0
-            fi
-            if [[ "$NORMALIZED_TITLE" == *"no issue"* ]] ||
-               [[ "$NORMALIZED_TITLE" == *"nothing to fix"* ]] ||
-               [[ "$NORMALIZED_TITLE" == *"no actionable"* ]] ||
-               [[ "$NORMALIZED_TITLE" == *"no problem"* ]]; then
-              echo "Blocked non-actionable issue title: $ISSUE_TITLE"
-              exit 0
-            fi
-            
-            # 이슈 생성
-            # PAT 사용 시 해당 계정으로 생성 → issues 이벤트가 다른 workflow를 트리거 가능
-            # PAT 없을 경우 github.token(bot) → issues 이벤트로 다른 workflow 트리거 불가
-            # 따라서 이슈 번호를 추출해 opencode-auto-fix.yml을 직접 gh workflow run으로 트리거함
-            ISSUE_URL=$(gh issue create \
-              --repo "${{ github.repository }}" \
-              --title "$ISSUE_TITLE" \
-              --body "$ISSUE_BODY" \
-              --assignee "ppijbb")
-            echo "Created issue: $ISSUE_URL"
-            ISSUE_NUMBER="${ISSUE_URL##*/}"
-            {
-              echo "issue_url=$ISSUE_URL"
-              echo "issue_number=$ISSUE_NUMBER"
-            } >> "$GITHUB_OUTPUT"
-
-            gh workflow run opencode-auto-fix.yml \
-              --repo "${{ github.repository }}" \
-              --field issue_number="$ISSUE_NUMBER" \
-              --field max_iterations="3"
-
-            echo "Created issue #$ISSUE_NUMBER and dispatched opencode-auto-fix.yml."
-          else
-            echo "Error: AI response content is empty."
-            echo "Raw response: $RAW_RESPONSE"
+          SHOULD_CREATE=$(jq -r '.should_create_issue // false' triage_result.json)
+          ISSUE_TITLE=$(jq -r '.title // empty' triage_result.json)
+          ISSUE_BODY=$(jq -r '.body // empty' triage_result.json)
+          
+          if [ "$SHOULD_CREATE" != "true" ] || [ -z "$ISSUE_TITLE" ] || [ -z "$ISSUE_BODY" ]; then
+            echo "Triage decided no actionable issue should be created."
+            exit 0
           fi
+          
+          ISSUE_URL=$(gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --assignee "ppijbb")
+          echo "Created issue: $ISSUE_URL"
+          ISSUE_NUMBER="${ISSUE_URL##*/}"
+          {
+            echo "issue_url=$ISSUE_URL"
+            echo "issue_number=$ISSUE_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+          gh workflow run opencode-auto-fix.yml \
+            --repo "${{ github.repository }}" \
+            --field issue_number="$ISSUE_NUMBER" \
+            --field max_iterations="3"
+
+          echo "Created issue #$ISSUE_NUMBER and dispatched opencode-auto-fix.yml."
 
   merge-decision:
     needs: code-review
@@ -427,7 +239,11 @@ jobs:
 
       - name: Decide and merge PR
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -436,16 +252,28 @@ jobs:
             echo "::error::PAT repository secret is required to auto-merge reviewed PRs into dev."
             exit 1
           fi
-          OPENROUTER_REVIEW=$(cat review_result.txt 2>/dev/null || echo 'Missing OpenRouter review')
-          CEREBRAS_REVIEW=$(cat cerebras_result.txt 2>/dev/null || echo 'Missing Cerebras review')
-          PR_META=$(gh pr view "$PR_NUMBER" \
+          
+          gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
-            --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName,statusCheckRollup)
-          PR_TITLE=$(echo "$PR_META" | jq -r '.title // empty')
+            --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName,statusCheckRollup > pr_meta.json
+            
+          python -m pip install --upgrade pip
+          python -m pip install aiohttp openai
+          python scripts/opencode_github_worker.py merge-decision --pr-meta-file pr_meta.json --review-file review_result.txt
+          
+          if [ ! -f merge_decision.json ]; then
+            echo "Merge decider produced no result."
+            exit 0
+          fi
+          
+          SHOULD_MERGE=$(jq -r '.should_merge // false' merge_decision.json)
+          REASON=$(jq -r '.reason // "No reason provided."' merge_decision.json)
+          
+          PR_TITLE=$(jq -r '.title // empty' pr_meta.json)
           MERGE_SUBJECT=$(python scripts/validate_commit_messages.py --normalize-title "$PR_TITLE")
-          MERGE_STATE=$(echo "$PR_META" | jq -r '.mergeStateStatus // "UNKNOWN"')
-          BASE_BRANCH=$(echo "$PR_META" | jq -r '.baseRefName // "UNKNOWN"')
-          NOT_READY_CHECKS=$(echo "$PR_META" | jq -r '
+          MERGE_STATE=$(jq -r '.mergeStateStatus // "UNKNOWN"' pr_meta.json)
+          BASE_BRANCH=$(jq -r '.baseRefName // "UNKNOWN"' pr_meta.json)
+          NOT_READY_CHECKS=$(jq -r '
             [.statusCheckRollup[]? |
               select(
                 (.status != "COMPLETED") or
@@ -453,70 +281,7 @@ jobs:
                  .conclusion != "SUCCESS" and
                  .conclusion != "SKIPPED")
               )] | length
-          ')
-
-          SHOULD_MERGE=false
-          REASON="No merge decision was made."
-          HAS_OPENROUTER_REVIEW=true
-          HAS_CEREBRAS_REVIEW=true
-          if [ -z "$OPENROUTER_REVIEW" ] ||
-             [ "$OPENROUTER_REVIEW" = "null" ] ||
-             [[ "$OPENROUTER_REVIEW" == Missing* ]] ||
-             [[ "$OPENROUTER_REVIEW" == Skipped* ]]; then
-            HAS_OPENROUTER_REVIEW=false
-          fi
-          if [ -z "$CEREBRAS_REVIEW" ] ||
-             [ "$CEREBRAS_REVIEW" = "null" ] ||
-             [[ "$CEREBRAS_REVIEW" == Missing* ]] ||
-             [[ "$CEREBRAS_REVIEW" == Skipped* ]]; then
-            HAS_CEREBRAS_REVIEW=false
-          fi
-
-          if [ "$HAS_OPENROUTER_REVIEW" != "true" ] && [ "$HAS_CEREBRAS_REVIEW" != "true" ]; then
-            SHOULD_MERGE=true
-            REASON="AI review providers returned no actionable review content; relying on GitHub mergeability and required checks."
-          elif [ -z "$GROQ_API_KEY" ]; then
-            SHOULD_MERGE=true
-            REASON="No Groq key found for final AI gate; relying on available review comments, GitHub mergeability, and required checks."
-          else
-
-            jq -n \
-              --arg meta "$PR_META" \
-              --arg openrouter "$OPENROUTER_REVIEW" \
-              --arg cerebras "$CEREBRAS_REVIEW" \
-              --arg system_msg "You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, or any concrete issue. Do not block solely because one provider skipped or returned no content if another review is available. Keep reason concise." \
-              '{
-                # Using high-tier model for merge gate to ensure safety
-                model: "llama-3.3-70b-versatile",
-                messages: [
-                  {role: "system", content: $system_msg},
-                  {role: "user", content: ("PR metadata:\n" + $meta + "\n\nOpenRouter review:\n" + $openrouter + "\n\nCerebras review:\n" + $cerebras)}
-                ],
-                response_format: { type: "json_object" }
-              }' > merge_decision_payload.json
-
-            RAW_RESPONSE=$(curl -s --connect-timeout 10 --max-time 60 -X POST "https://api.groq.com/openai/v1/chat/completions" \
-              -H "Authorization: Bearer $GROQ_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d @merge_decision_payload.json)
-
-            if echo "$RAW_RESPONSE" | jq -e '.error' >/dev/null; then
-              echo "Groq API returned an error:"
-              echo "$RAW_RESPONSE" | jq -r '.error.message // .error'
-              exit 1
-            fi
-
-            CONTENT=$(echo "$RAW_RESPONSE" | jq -r '.choices[0].message.content // empty')
-            if ! echo "$CONTENT" | jq -e . >/dev/null; then
-              echo "Merge decision content was not valid JSON; skipping auto-merge."
-              echo "$CONTENT" | head -c 1000
-              echo
-              exit 0
-            fi
-
-            SHOULD_MERGE=$(echo "$CONTENT" | jq -r '.should_merge // false')
-            REASON=$(echo "$CONTENT" | jq -r '.reason // "No reason provided."')
-          fi
+          ' pr_meta.json)
 
           {
             echo "## Auto Merge Decision"
@@ -544,10 +309,6 @@ jobs:
           fi
 
           if [ "$NOT_READY_CHECKS" != "0" ] || [ "$MERGE_STATE" != "CLEAN" ]; then
-            # This repo does not have GitHub's native auto-merge feature enabled,
-            # so `gh pr merge --auto` fails hard (enablePullRequestAutoMerge error).
-            # Leave the PR for the scheduled auto-merge-ready-fix-prs job, which
-            # polls and merges directly once checks finish and state is CLEAN.
             echo "Checks are still settling or merge state is $MERGE_STATE; deferring to the scheduled auto-merge-ready-fix-prs job."
             exit 0
           fi

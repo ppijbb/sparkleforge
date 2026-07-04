@@ -545,16 +545,174 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     return 0
 
 
+async def code_review(diff_path: Path) -> int:
+    if not diff_path.exists():
+        print(f"Error: Diff file {diff_path} not found.", file=sys.stderr)
+        return 1
+    diff = diff_path.read_text(encoding="utf-8")
+    if not diff.strip():
+        Path("review_result.txt").write_text("No changes or empty diff.", encoding="utf-8")
+        return 0
+    
+    from src.core.llm_manager import MultiModelOrchestrator, TaskType
+    orchestrator = MultiModelOrchestrator()
+    prompt = f"You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly.\n\nGit Diff:\n{diff}"
+    system_message = "You are an expert code reviewer. If the primary model is unavailable, the system will fallback."
+    
+    result = await orchestrator.execute_with_model(
+        prompt=prompt,
+        task_type=TaskType.RESEARCH,
+        system_message=system_message,
+        use_cascade=False
+    )
+    
+    Path("review_result.txt").write_text(result.content, encoding="utf-8")
+    print("✅ Code review completed and saved to review_result.txt")
+    return 0
+
+
+async def issue_triage(review_path: Path, cerebras_path: Path | None = None) -> int:
+    if not review_path.exists():
+        print(f"Error: Review file {review_path} not found.", file=sys.stderr)
+        return 1
+    openrouter_review = review_path.read_text(encoding="utf-8")
+    cerebras_review = ""
+    if cerebras_path and cerebras_path.exists():
+        cerebras_review = cerebras_path.read_text(encoding="utf-8")
+        
+    combined_review = f"OpenRouter Review:\n{openrouter_review}\n\nCerebras Review:\n{cerebras_review}"
+    
+    from src.core.llm_manager import MultiModelOrchestrator, TaskType
+    import datetime
+    
+    orchestrator = MultiModelOrchestrator()
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    prompt = f"""You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
+CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
+If should_create_issue is true, the title MUST use the repository's plain Conventional Commit prefix style (e.g. 'fix: ...', 'feat: ...').
+The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
+> **Date**: {current_date}
+> **Issue Type**: [Classify as Parent Issue or Sub-issue (Anvil Phase A)]
+> **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
+> **Metrics & Justification**: [Provide a concrete, logical proof or metric of why this code must be changed. Do not use simple judgments.]
+
+Below the header, provide a highly specific explanation of what is wrong and an actionable plan to fix it.
+If should_create_issue is false, title and body must be empty strings.
+
+Review Content:
+{combined_review}"""
+
+    system_message = "You are an elite triage agent. Return only a JSON object."
+    
+    result = await orchestrator.execute_with_model(
+        prompt=prompt,
+        task_type=TaskType.ANALYSIS,
+        system_message=system_message,
+        use_cascade=False
+    )
+    
+    raw_content = result.content.strip()
+    if raw_content.startswith("```"):
+        lines = raw_content.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        raw_content = "\n".join(lines).strip()
+        
+    try:
+        import json
+        json.loads(raw_content)
+        Path("triage_result.json").write_text(raw_content, encoding="utf-8")
+        print("✅ Triage completed and saved to triage_result.json")
+        return 0
+    except Exception as je:
+        print(f"Error: Invalid JSON response: {je}", file=sys.stderr)
+        print(f"Raw response:\n{result.content}", file=sys.stderr)
+        return 1
+
+
+async def merge_decision(pr_meta_path: Path, review_path: Path, cerebras_path: Path | None = None) -> int:
+    if not pr_meta_path.exists():
+        print(f"Error: PR metadata file {pr_meta_path} not found.", file=sys.stderr)
+        return 1
+    pr_meta = pr_meta_path.read_text(encoding="utf-8")
+    
+    openrouter_review = ""
+    if review_path.exists():
+        openrouter_review = review_path.read_text(encoding="utf-8")
+        
+    cerebras_review = ""
+    if cerebras_path and cerebras_path.exists():
+        cerebras_review = cerebras_path.read_text(encoding="utf-8")
+        
+    from src.core.llm_manager import MultiModelOrchestrator, TaskType
+    import json
+    
+    orchestrator = MultiModelOrchestrator()
+    prompt = f"""You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, or any concrete issue. Do not block solely because one provider skipped or returned no content if another review is available. Keep reason concise.
+
+PR Metadata:
+{pr_meta}
+
+OpenRouter Review:
+{openrouter_review}
+
+Cerebras Review:
+{cerebras_review}"""
+
+    system_message = "You are a merge decision gate. Return only a JSON object."
+    
+    result = await orchestrator.execute_with_model(
+        prompt=prompt,
+        task_type=TaskType.VERIFICATION,
+        system_message=system_message,
+        use_cascade=False
+    )
+    
+    raw_content = result.content.strip()
+    if raw_content.startswith("```"):
+        lines = raw_content.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        raw_content = "\n".join(lines).strip()
+        
+    try:
+        json.loads(raw_content)
+        Path("merge_decision.json").write_text(raw_content, encoding="utf-8")
+        print("✅ Merge decision completed and saved to merge_decision.json")
+        return 0
+    except Exception as je:
+        print(f"Error: Invalid JSON response: {je}", file=sys.stderr)
+        print(f"Raw response:\n{result.content}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["fix-issue"])
+    parser.add_argument("command", choices=["fix-issue", "code-review", "issue-triage", "merge-decision"])
     parser.add_argument("--issue-context", default="issue-context.md")
     parser.add_argument("--extra-context", default=None)
+    parser.add_argument("--diff", default="diff.txt")
+    parser.add_argument("--review-file", default="review_result.txt")
+    parser.add_argument("--cerebras-file", default="cerebras_result.txt")
+    parser.add_argument("--pr-meta-file", default="pr_meta.json")
     args = parser.parse_args()
 
     if args.command == "fix-issue":
         extra_context = Path(args.extra_context) if args.extra_context else None
         return asyncio.run(fix_issue(Path(args.issue_context), extra_context))
+    elif args.command == "code-review":
+        return asyncio.run(code_review(Path(args.diff)))
+    elif args.command == "issue-triage":
+        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
+        return asyncio.run(issue_triage(Path(args.review_file), cerebras_file))
+    elif args.command == "merge-decision":
+        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
+        return asyncio.run(merge_decision(Path(args.pr_meta_file), Path(args.review_file), cerebras_file))
 
     return 2
 
