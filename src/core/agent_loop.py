@@ -409,10 +409,12 @@ Autonomous problem-solving contract:
         return provider in self.TOOL_CAPABLE_PROVIDERS
 
     def _select_tool_capable_model(self, task_type: TaskType) -> str | None:
-        """Prefer providers that can return OpenAI-compatible tool_calls."""
+        """Prefer providers that can return OpenAI-compatible tool_calls (rate-limited 제외)."""
         models = getattr(self.orchestrator, "models", {}) or {}
-        preferred = ("nvidia", "openrouter", "groq", "openai")
-        for provider in preferred:
+        limited = getattr(self.orchestrator, "_is_provider_rate_limited", lambda _p: False)
+        for provider in self.TOOL_CAPABLE_PROVIDERS:
+            if limited(provider):
+                continue
             for name, config in models.items():
                 if getattr(config, "provider", None) != provider:
                     continue

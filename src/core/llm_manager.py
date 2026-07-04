@@ -347,10 +347,8 @@ class MultiModelOrchestrator:
 
         # Provider 로테이션 추적
         self.provider_rotation_index = 0  # 현재 Provider 인덱스
-        self.provider_rotation_order = [
-            "nvidia",
-            "google",
-        ]  # 로테이션 순서
+        # 키가 설정된 무료 provider를 모두 로테이션 풀에 포함
+        self.provider_rotation_order = self._build_provider_rotation_order()
         self.provider_rate_limited = {}  # Rate limit에 걸린 Provider (timestamp)
         self.provider_usage_count = {
             provider: 0 for provider in self.provider_rotation_order
@@ -932,6 +930,23 @@ class MultiModelOrchestrator:
     # Provider별 rate limit 쿨다운 (초). NIM 429는 순간 동시성 제한이라 짧게 잡는다.
     PROVIDER_RATE_LIMIT_COOLDOWN = {"nvidia": 30}
     DEFAULT_RATE_LIMIT_COOLDOWN = 300
+
+    @staticmethod
+    def _build_provider_rotation_order() -> List[str]:
+        """API 키가 있는 provider로 로테이션 순서 구성 (설정 모델 provider 우선)."""
+        order = []
+        if os.getenv("NVIDIA_API_KEY"):
+            order.append("nvidia")
+        if os.getenv("OPENROUTER_API_KEY"):
+            order.append("openrouter")
+            order.append("cerebras")  # OpenRouter 경유
+        if os.getenv("GROQ_API_KEY"):
+            order.append("groq")
+        if os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"):
+            order.append("google")
+        if os.getenv("OPENAI_API_KEY"):
+            order.append("openai")
+        return order or ["google"]
 
     def _is_provider_rate_limited(self, provider: str) -> bool:
         """Provider가 rate limit에 걸렸는지 확인 (쿨다운 후 자동 해제)."""
@@ -2015,14 +2030,14 @@ class MultiModelOrchestrator:
         if skip_providers is None:
             skip_providers = []
 
-        # 사용자 지정 우선순위: nvidia (설정 모델) -> google
-        fallback_order = [
-            "nvidia",
-            "google",
-        ]
+        # 키가 있는 무료 provider 풀 전체를 순서대로 시도
+        fallback_order = list(self.provider_rotation_order)
 
         for provider in fallback_order:
             if provider in skip_providers:
+                continue
+            check = "openrouter" if provider == "cerebras" else provider
+            if self._is_provider_rate_limited(check):
                 continue
 
             # 해당 provider의 사용 가능한 모델 찾기
