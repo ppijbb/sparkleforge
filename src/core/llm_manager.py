@@ -2365,17 +2365,34 @@ class MultiModelOrchestrator:
             messages.append({"role": "user", "content": prompt})
 
         try:
-            # NVIDIA API 호출 (OpenAI 라이브러리 연동)
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: client.chat.completions.create(
-                    model=model_config.model_id,
-                    messages=messages,
-                    temperature=model_config.temperature,
-                    max_tokens=model_config.max_tokens,
-                    **kwargs,
-                ),
-            )
+            # NVIDIA API 호출 (OpenAI 라이브러리 연동) — 429는 백오프 후 재시도
+            max_retries = 3
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: client.chat.completions.create(
+                            model=model_config.model_id,
+                            messages=messages,
+                            temperature=model_config.temperature,
+                            max_tokens=model_config.max_tokens,
+                            **kwargs,
+                        ),
+                    )
+                    break
+                except Exception as retry_e:
+                    retry_str = str(retry_e).lower()
+                    is_rate_limit = "429" in retry_str or "too many requests" in retry_str
+                    if is_rate_limit and attempt < max_retries - 1:
+                        wait_time = 10 * (attempt + 1)
+                        logger.warning(
+                            f"NVIDIA NIM 429, retrying in {wait_time}s "
+                            f"({attempt + 1}/{max_retries - 1})"
+                        )
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
 
             content = response.choices[0].message.content
             tool_calls = getattr(response.choices[0].message, "tool_calls", [])
