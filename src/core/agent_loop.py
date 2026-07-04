@@ -100,6 +100,7 @@ Autonomous problem-solving contract:
         history = list(messages)
         retry_count = 0
         max_retries = 3
+        tool_capable_waits = 0
 
         while budget.remaining > 0:
             budget.consume()
@@ -175,6 +176,27 @@ Autonomous problem-solving contract:
             history.append(assistant_msg)
 
             if not tool_calls:
+                # Tool 불가 provider로 폴백된 응답은 '완료'로 인정하지 않는다.
+                # (예: NIM 429 → Gemini 폴백 시 파일 수정 없이 완료 보고하는 환각 방지)
+                if tools and not self._is_tool_capable_result(result):
+                    if tool_capable_waits < 3 and budget.remaining > 0:
+                        tool_capable_waits += 1
+                        history.pop()  # 폴백 응답은 히스토리에서 제거
+                        logger.warning(
+                            "[AgentLoop] Non-tool-capable model %s answered without tool calls; "
+                            "waiting 35s for tool-capable provider (%d/3)",
+                            result.model_used,
+                            tool_capable_waits,
+                        )
+                        await asyncio.sleep(35)
+                        continue
+                    errors.append(
+                        {
+                            "type": "tool_capable_model_unavailable",
+                            "message": f"Final answer produced by non-tool-capable model {result.model_used}",
+                        }
+                    )
+                    metadata["tool_capable_model_unavailable"] = True
                 # No tool calls, we are done
                 if tools:
                     metadata.setdefault("tool_calling_disabled_reason", "model_returned_no_tool_calls")
@@ -374,6 +396,17 @@ Autonomous problem-solving contract:
                 )
         return normalized
 
+
+    TOOL_CAPABLE_PROVIDERS = ("nvidia", "openrouter", "groq", "openai")
+
+    def _is_tool_capable_result(self, result: Any) -> bool:
+        """응답을 생성한 모델이 tool_calls를 반환할 수 있는 provider인지 확인."""
+        models = getattr(self.orchestrator, "models", {}) or {}
+        config = models.get(getattr(result, "model_used", None))
+        provider = getattr(config, "provider", None)
+        if provider is None:
+            provider = ((getattr(result, "metadata", None) or {}).get("provider"))
+        return provider in self.TOOL_CAPABLE_PROVIDERS
 
     def _select_tool_capable_model(self, task_type: TaskType) -> str | None:
         """Prefer providers that can return OpenAI-compatible tool_calls."""
