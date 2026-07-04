@@ -428,14 +428,44 @@ Autonomous problem-solving contract:
             return f"{system_message.strip()}\n\n{self.AUTONOMOUS_PROBLEM_SOLVING_CONTRACT.strip()}"
         return self.AUTONOMOUS_PROBLEM_SOLVING_CONTRACT.strip()
 
+    # Docker 샌드박스가 필요한 도구 (샌드박스 불가 시 노출 제외)
+    SANDBOX_TOOLS = ("python_coder", "code_interpreter")
+
+    def _sandbox_available(self) -> bool:
+        """Docker 샌드박스 실행 가능 여부 (결과 캐시)."""
+        if not hasattr(self, "_sandbox_ok"):
+            try:
+                from src.core.sandbox.docker_sandbox import get_sandbox
+
+                sandbox = get_sandbox()
+                runtime = getattr(sandbox.config, "runtime", None)
+                allow_fallback = getattr(sandbox.config, "allow_default_runtime_fallback", False)
+                import docker as _docker
+
+                client = _docker.from_env()
+                client.ping()
+                runtimes = (client.info().get("Runtimes") or {}).keys()
+                self._sandbox_ok = (not runtime) or (runtime in runtimes) or allow_fallback
+            except Exception:
+                self._sandbox_ok = False
+            if not self._sandbox_ok:
+                logger.warning(
+                    "[AgentLoop] Docker sandbox unavailable; hiding sandbox tools %s",
+                    self.SANDBOX_TOOLS,
+                )
+        return self._sandbox_ok
+
     def _get_openai_tools(self) -> List[Dict[str, Any]]:
         """Converts MCP tools to OpenAI tool format."""
         openai_tools = []
         alias_map: Dict[str, str] = {}
         used_aliases = set()
         registry_tools = getattr(getattr(self.mcp_hub, "registry", None), "tools", {}) or {}
+        sandbox_ok = self._sandbox_available()
 
         for name, info in registry_tools.items():
+            if not sandbox_ok and name in self.SANDBOX_TOOLS:
+                continue
             alias = self._openai_tool_name(name)
             if alias in used_aliases:
                 suffix = 2
