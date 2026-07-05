@@ -193,8 +193,9 @@ class SerialDevice(PhysicalDevice):
         device_id: str,
         port: str = "/dev/ttyUSB0",
         baudrate: int = 9600,
-        backend: str = BACKEND_AUTO,
         timeout: float = 2.0,
+        *,
+        backend: str = BACKEND_AUTO,
     ):
         super().__init__(device_id, backend)
         self.port = port
@@ -264,9 +265,10 @@ class USBHIDDevice(PhysicalDevice):
         device_id: str,
         vendor_id: int = 0x046d,
         product_id: int = 0xc077,
-        backend: str = BACKEND_AUTO,
         read_size: int = 64,
         read_timeout_ms: int = 1000,
+        *,
+        backend: str = BACKEND_AUTO,
     ):
         super().__init__(device_id, backend)
         self.vendor_id = vendor_id
