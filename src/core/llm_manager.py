@@ -845,6 +845,7 @@ class MultiModelOrchestrator:
     def _initialize_clients(self):
         """모델 클라이언트 초기화."""
         try:
+            google_available = genai is not None and ChatGoogleGenerativeAI is not None
             genai.configure(api_key=self.llm_config.api_key)
 
             for model_name, model_config in self.models.items():
@@ -1364,6 +1365,11 @@ class MultiModelOrchestrator:
         self, model_name: str, prompt: str, system_message: str = None, **kwargs
     ) -> Dict[str, Any]:
         """Gemini 모델 실행 (rate limit 재시도 포함). Prompt caching: static prefix first."""
+        if genai is None or model_name not in self.model_clients:
+            raise RuntimeError(
+                f"Model '{model_name}' requires Google GenAI libraries which are not installed. "
+                "Install with: pip install google-generativeai langchain-google-genai"
+            )
         client = self.model_clients[model_name]
         model_config = self.models[model_name]
 
@@ -2438,6 +2444,11 @@ class MultiModelOrchestrator:
         self, model_name: str, prompt: str, system_message: str = None, **kwargs
     ) -> Dict[str, Any]:
         """LangChain 모델 실행."""
+        if ChatGoogleGenerativeAI is None or model_name not in self.model_clients:
+            raise RuntimeError(
+                f"Model '{model_name}' requires langchain-google-genai which is not installed. "
+                "Install with: pip install langchain-google-genai"
+            )
         client = self.model_clients[model_name]
 
         # 메시지 구성
