@@ -121,7 +121,7 @@ async def judge_score(rubric: str, transcript: str, context: str = "") -> GradeR
 async def _call_judge(rubric: str, transcript: str, context: str) -> GradeResult:
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
 
-    orchestrator = MultiModelOrchestrator()
+    orchestrator = MultiModelOrchestrator()  # type: ignore[call-arg]
     prompt = (
         "You are grading whether an autonomous agent's output satisfies a rubric.\n"
         f"Rubric: {rubric}\n\n"
