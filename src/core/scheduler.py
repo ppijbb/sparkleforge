@@ -540,7 +540,16 @@ class Scheduler:
                 logger.warning(f"Failed to evaluate/set TrustContext in schedule callback: {trust_err}")
 
             try:
-                if self.coordinator and self.coordinator.active_workers:
+                # Direct coordinator delegation only in standalone mode (no execution
+                # callback). With a callback installed, cross-node routing is owned by
+                # the AutomationEngine so agent routing and chains still apply.
+                delegate_directly = (
+                    self.coordinator
+                    and self.coordinator.active_workers
+                    and self.execution_callback is None
+                    and schedule.metadata.get("execution_target", "auto") != "local"
+                )
+                if delegate_directly:
                     # Construct task payload and delegate via CoordinatorNode
                     payload = {
                         "command": schedule.user_query,

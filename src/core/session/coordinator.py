@@ -5,9 +5,14 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.core.session.remote_session import RemoteSession
+from src.core.session.secure_envelope import (
+    decrypt_credential_envelope,
+    encrypt_credential_envelope,
+)
 from src.core.trust_gate import TrustContext
 from src.core.guard.credential_vault import CredentialVault
 from src.core.guard.guard_plane import GuardPlane
+from src.core.guard.credential_vault import CredentialVault
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +25,22 @@ class NodeStatus(str, Enum):
 class CoordinatorNode:
     """Coordinator Node managing multiple Worker Nodes, pairing, heartbeat, and failover."""
 
-    def __init__(self, guard_plane: Optional[GuardPlane] = None):
+    def __init__(
+        self,
+        guard_plane: Optional[GuardPlane] = None,
+        vault: Optional[CredentialVault] = None,
+    ):
         self.guard_plane = guard_plane or GuardPlane()
+        # Shared, caller-configured vault. Intentionally no default instance:
+        # an implicitly created vault would be empty and turn a configuration
+        # error into an opaque retrieval failure at delegation time.
+        self._vault = vault
         self.active_workers: Dict[str, RemoteSession] = {}
         self.worker_statuses: Dict[str, NodeStatus] = {}
         self.worker_loads: Dict[str, int] = {}
         self.heartbeat_failures: Dict[str, int] = {}
+        # Per-worker pairing secrets used to seal credential envelopes
+        self.worker_secrets: Dict[str, str] = {}
         
         # Track tasks: task_id -> worker_id
         self.task_assignments: Dict[str, str] = {}
@@ -36,12 +51,24 @@ class CoordinatorNode:
         self._is_running = False
         self._round_robin_index = 0
 
-    def register_worker(self, worker_id: str, session: RemoteSession) -> None:
-        """Register (pair) a new worker node."""
+    def register_worker(
+        self,
+        worker_id: str,
+        session: RemoteSession,
+        shared_secret: Optional[str] = None,
+    ) -> None:
+        """Register (pair) a new worker node.
+
+        ``shared_secret`` is the pairing secret used to encrypt credential
+        envelopes for this worker; without it, credential delegation to the
+        worker is refused.
+        """
         self.active_workers[worker_id] = session
         self.worker_statuses[worker_id] = NodeStatus.ONLINE
         self.worker_loads[worker_id] = 0
         self.heartbeat_failures[worker_id] = 0
+        if shared_secret:
+            self.worker_secrets[worker_id] = shared_secret
         logger.info(f"Worker node '{worker_id}' paired and registered successfully.")
 
     async def discover_workers(
@@ -83,6 +110,8 @@ class CoordinatorNode:
             del self.worker_loads[worker_id]
         if worker_id in self.heartbeat_failures:
             del self.heartbeat_failures[worker_id]
+        if worker_id in self.worker_secrets:
+            del self.worker_secrets[worker_id]
         logger.info(f"Worker node '{worker_id}' deregistered.")
 
     def start_heartbeat_loop(self, interval: float = 2.0, max_failures: int = 3) -> None:
@@ -216,26 +245,42 @@ class CoordinatorNode:
     ) -> bool:
         """Hand off a vault credential to a worker node with a bounded lifetime.
 
-        The credential is read from the local CredentialVault and sent with an
-        absolute expiry timestamp; workers must discard it after expiry.
+        The credential is read from the shared CredentialVault, sealed into an
+        AES-256-GCM envelope with the worker's pairing secret, and sent with an
+        absolute expiry timestamp; workers must discard it after expiry. The
+        plaintext value never crosses the transport.
         """
         session = self._get_online_session(worker_id)
         if session is None:
             return False
 
-        vault = vault or CredentialVault()
-        value = vault.retrieve(credential_key)
+        active_vault = vault or self._vault
+        if active_vault is None:
+            logger.error(
+                "No CredentialVault configured for credential delegation; "
+                "pass one to CoordinatorNode(vault=...) or delegate_credential(vault=...)."
+            )
+            return False
+
+        shared_secret = self.worker_secrets.get(worker_id)
+        if not shared_secret:
+            logger.error(
+                f"No pairing secret registered for worker '{worker_id}'; "
+                "refusing to transmit credential without envelope encryption."
+            )
+            return False
+
+        value = active_vault.retrieve(credential_key)
         if value is None:
             logger.error(f"Credential '{credential_key}' not found in vault; cannot delegate.")
             return False
 
+        envelope = encrypt_credential_envelope(
+            shared_secret, credential_key, value, time.time() + ttl_seconds
+        )
         ok = await session.send_payload(
             "receive_credential",
-            {
-                "key": credential_key,
-                "value": value,
-                "expires_at": time.time() + ttl_seconds,
-            },
+            {"key": credential_key, "envelope": envelope},
         )
         if not ok:
             logger.warning(f"Credential delegation to worker '{worker_id}' failed.")
@@ -267,13 +312,19 @@ class CoordinatorNode:
                     success = False
         return success
 
-
 class WorkerNode:
     """Worker Node listening to Coordinator commands and returning results."""
 
-    def __init__(self, worker_id: str, guard_plane: Optional[GuardPlane] = None):
+    def __init__(
+        self,
+        worker_id: str,
+        guard_plane: Optional[GuardPlane] = None,
+        shared_secret: Optional[str] = None,
+    ):
         self.worker_id = worker_id
         self.guard_plane = guard_plane or GuardPlane()
+        # Pairing secret matching the coordinator's; needed to open credential envelopes
+        self._shared_secret = shared_secret
         self.trust_context = TrustContext.default()
         # Delegated state from coordinator: namespace -> {key: value}
         self.shared_memory: Dict[str, Dict[str, Any]] = {}
@@ -328,8 +379,20 @@ class WorkerNode:
         )
         return True
 
-    async def handle_receive_credential(self, key: str, value: str, expires_at: float) -> bool:
-        """Receive a time-bounded delegated credential from coordinator."""
+    async def handle_receive_credential(self, key: str, envelope: str) -> bool:
+        """Receive an encrypted, time-bounded delegated credential from coordinator."""
+        if not self._shared_secret:
+            logger.warning(
+                f"Worker '{self.worker_id}' has no pairing secret; rejecting credential '{key}'."
+            )
+            return False
+
+        opened = decrypt_credential_envelope(self._shared_secret, key, envelope)
+        if opened is None:
+            logger.warning(f"Worker '{self.worker_id}' could not open credential envelope '{key}'.")
+            return False
+        value, expires_at = opened["value"], opened["expires_at"]
+
         now = time.time()
         # Evict expired entries so the store cannot grow unbounded
         for stale_key in [k for k, entry in self._delegated_credentials.items() if entry["expires_at"] <= now]:
