@@ -16,6 +16,14 @@ A clear and concise description of what the bug is.
 3. Scroll down to '....'
 4. See error
 
+## 🔬 Reproduce-First Evidence (required for auto-created issues)
+- [ ] A failing test or reproduction script proving the defect is attached
+- [ ] External API claims were verified by installing the package and introspecting it (e.g. `inspect.signature`), not by static reasoning alone
+- [ ] Diff paths referenced are valid repository paths (no `a/tests/` style diff-prefix misroutes)
+- [ ] Checked existing open/recently closed issues and PRs for duplicates
+
+> If reproduction is not possible, the issue will be labeled `unverified` and routed to the unverified queue instead of being auto-fixed.
+
 ## 🎯 Expected Behavior
 A clear and concise description of what you expected to happen.
 

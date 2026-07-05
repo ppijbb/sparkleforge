@@ -194,6 +194,42 @@ jobs:
             exit 0
           fi
           
+          # Reproduce-first gate: require a failing test/reproduction script in the
+          # triage result. Without it, downgrade to 'unverified' instead of auto-fixing.
+          REPRO_EVIDENCE=$(jq -r '.reproduction_evidence // empty' triage_result.json)
+          HAS_REPRO=$(jq -r '(.reproduction_evidence | length) > 0' triage_result.json)
+
+          if [ "$HAS_REPRO" != "true" ]; then
+            echo "Triage did not include reproduction evidence; creating issue with 'unverified' label and skipping auto-fix dispatch."
+            gh label create unverified \
+              --repo "${{ github.repository }}" \
+              --color B60205 \
+              --description "Auto-created issue lacks reproduction evidence; routed to unverified queue." \
+              --force >/dev/null 2>&1 || true
+            ISSUE_URL=$(gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "$ISSUE_TITLE" \
+              --body "$ISSUE_BODY" \
+              --label unverified \
+              --assignee "ppijbb")
+            echo "Created unverified issue: $ISSUE_URL"
+            echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+            echo "issue_number=${ISSUE_URL##*/}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Duplicate detection against existing open/recently closed issues and PRs.
+          SIMILAR_ISSUES=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state all \
+            --limit 50 \
+            --json number,title,state \
+            --jq '[.[] | select(.title | test($ISSUE_TITLE; "i"))] | length')
+          if [ "$SIMILAR_ISSUES" -gt 1 ]; then
+            echo "Duplicate issue title detected ($SIMILAR_ISSUES matches); suppressing creation."
+            exit 0
+          fi
+
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
             --title "$ISSUE_TITLE" \
