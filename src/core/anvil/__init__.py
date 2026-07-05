@@ -8,6 +8,13 @@ from .dynamic_checklist_generator import (
 )
 from .engine import AnvilTask, AnvilWorkflowEngine
 from .exception_handler import ChecklistExceptionHandler, RecoveryAction
+from .method_resolver import (
+    MethodResolver,
+    ResolutionAttempt,
+    ResolutionStrategy,
+    ResolvedMethod,
+)
+from .mode_controller import ExecutionMode, ModeController, ModeTransition
 from .progress_tracker import ProgressSnapshot, ProgressTracker
 from .request_analyzer import RequestAnalysis, RequestAnalyzer
 from .skill_repository import Skill, SkillRepository
@@ -27,4 +34,11 @@ __all__ = [
     "ProgressSnapshot",
     "ChecklistExceptionHandler",
     "RecoveryAction",
+    "MethodResolver",
+    "ResolvedMethod",
+    "ResolutionAttempt",
+    "ResolutionStrategy",
+    "ModeController",
+    "ExecutionMode",
+    "ModeTransition",
 ]
