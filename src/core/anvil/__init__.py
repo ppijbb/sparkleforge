@@ -8,6 +8,13 @@ from .dynamic_checklist_generator import (
 )
 from .engine import AnvilTask, AnvilWorkflowEngine
 from .exception_handler import ChecklistExceptionHandler, RecoveryAction
+from .hitl_checkpoint import (
+    CheckpointDecision,
+    CheckpointResult,
+    CheckpointStage,
+    HITLCheckpointManager,
+)
+from .intent_guardrail import IntentAssessment, IntentGuardrail
 from .progress_tracker import ProgressSnapshot, ProgressTracker
 from .request_analyzer import RequestAnalysis, RequestAnalyzer
 from .skill_repository import Skill, SkillRepository
@@ -27,4 +34,10 @@ __all__ = [
     "ProgressSnapshot",
     "ChecklistExceptionHandler",
     "RecoveryAction",
+    "HITLCheckpointManager",
+    "CheckpointStage",
+    "CheckpointDecision",
+    "CheckpointResult",
+    "IntentGuardrail",
+    "IntentAssessment",
 ]
