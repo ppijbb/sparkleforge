@@ -845,22 +845,30 @@ class MultiModelOrchestrator:
     def _initialize_clients(self):
         """모델 클라이언트 초기화."""
         try:
-            genai.configure(api_key=self.llm_config.api_key)
+            if genai is not None:
+                genai.configure(api_key=self.llm_config.api_key)
+            else:
+                logger.warning(
+                    "google-generativeai library not installed. Install with: pip install google-generativeai"
+                )
 
             for model_name, model_config in self.models.items():
                 if model_config.provider == "google":
+                    if genai is None:
+                        continue
                     # Google Generative AI 클라이언트
                     self.model_clients[model_name] = genai.GenerativeModel(model_config.model_id)
 
                     # LangChain 클라이언트 (선택적)
                     # Note: ChatGoogleGenerativeAI does not support safety_settings parameter
                     # Safety settings are handled at the genai.GenerativeModel level
-                    self.model_clients[f"{model_name}_langchain"] = ChatGoogleGenerativeAI(
-                        model=model_config.model_id,
-                        temperature=model_config.temperature,
-                        max_tokens=model_config.max_tokens,
-                        google_api_key=self.llm_config.api_key,
-                    )
+                    if ChatGoogleGenerativeAI is not None:
+                        self.model_clients[f"{model_name}_langchain"] = ChatGoogleGenerativeAI(
+                            model=model_config.model_id,
+                            temperature=model_config.temperature,
+                            max_tokens=model_config.max_tokens,
+                            google_api_key=self.llm_config.api_key,
+                        )
 
                 elif model_config.provider == "openrouter":
                     # OpenRouter 클라이언트는 HTTP 요청으로 직접 처리
