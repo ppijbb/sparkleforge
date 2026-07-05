@@ -17,9 +17,18 @@ class AutomationEngine:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, scheduler: Optional[Scheduler] = None, event_bus: Optional[EventBus] = None):
+    def __init__(
+        self,
+        scheduler: Optional[Scheduler] = None,
+        event_bus: Optional[EventBus] = None,
+        coordinator: Any = None,
+    ):
         self.scheduler = scheduler or get_scheduler()
         self.event_bus = event_bus or EventBus()
+        if coordinator is not None:
+            self.coordinator = coordinator
+        elif not hasattr(self, "coordinator"):
+            self.coordinator = getattr(self.scheduler, "coordinator", None)
 
         if hasattr(self, "_initialized") and self._initialized:
             # Re-apply callback wrapping in case testing fixtures reset scheduler callbacks
@@ -51,23 +60,59 @@ class AutomationEngine:
                 break
 
         metadata = schedule.metadata if schedule else {}
-        
+
         # 1. Multi-agent Routing
         routed_query = self.route_task(user_query, metadata)
 
-        # 2. Execution
-        result = None
-        if self._orig_callback:
-            result = await self._orig_callback(routed_query, session_id)
-        else:
-            logger.warning("AutomationEngine: No original scheduler callback configured. Execution skipped.")
-            result = {"status": "skipped", "reason": "no callback"}
+        # 2. Execution (cross-node delegation when eligible, otherwise local)
+        result = await self._execute_routed(routed_query, session_id, schedule, metadata)
 
         # 3. Chain Triggering (downstream tasks)
         if schedule:
             asyncio.create_task(self._trigger_chain(schedule.schedule_id))
 
         return result
+
+    async def _execute_routed(
+        self,
+        routed_query: str,
+        session_id: str,
+        schedule: Optional[ScheduleConfig],
+        metadata: Dict[str, Any],
+    ) -> Any:
+        """Execute a routed task, delegating cross-node via the coordinator when eligible.
+
+        ``execution_target`` metadata controls placement: "local" forces local
+        execution, "remote" requires a worker node (failure is fatal), and
+        "auto" (default) prefers a worker but falls back to local execution.
+        """
+        target = metadata.get("execution_target", "auto")
+        if target != "local" and self.coordinator is not None and getattr(self.coordinator, "active_workers", None):
+            task_id = schedule.schedule_id if schedule else session_id
+            payload = {
+                "command": routed_query,
+                "timeout": (schedule.timeout_seconds if schedule and schedule.timeout_seconds else 30.0),
+            }
+            logger.info(f"AutomationEngine [Cross-node]: Delegating task '{task_id}' via coordinator.")
+            ok = await self.coordinator.delegate_task(task_id, payload)
+            if ok:
+                return {
+                    "status": "success",
+                    "message": "Delegated execution succeeded.",
+                    "routed_query": routed_query,
+                }
+            if target == "remote":
+                raise RuntimeError(
+                    f"Cross-node delegation failed for task '{task_id}' and execution_target is 'remote'."
+                )
+            logger.warning(
+                f"AutomationEngine [Cross-node]: Delegation failed for '{task_id}'; falling back to local execution."
+            )
+
+        if self._orig_callback:
+            return await self._orig_callback(routed_query, session_id)
+        logger.warning("AutomationEngine: No original scheduler callback configured. Execution skipped.")
+        return {"status": "skipped", "reason": "no callback"}
 
     def route_task(self, query: str, metadata: Dict[str, Any]) -> str:
         """Route task to specialized agent based on routing metadata or tags."""
@@ -90,12 +135,15 @@ class AutomationEngine:
         parent_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         tags: Optional[List[str]] = None,
+        execution_target: Optional[str] = None,  # local, remote, auto
     ) -> ScheduleConfig:
         """Create an automation task ruleset."""
         metadata = metadata or {}
         tags = tags or []
-        
+
         metadata["trigger_type"] = trigger_type
+        if execution_target:
+            metadata["execution_target"] = execution_target
         if event_type:
             metadata["event_type"] = event_type
         if webhook_id:
