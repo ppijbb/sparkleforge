@@ -154,7 +154,148 @@ async def test_scheduler_routes_via_coordinator():
         mock_worker_session.execute.assert_called_once_with("df -h", timeout=15.0)
 
 
-# --- 5. WorkerNode Local Handling Tests ---
+# --- 5. Node Discovery Tests ---
+
+@pytest.mark.asyncio
+async def test_discover_workers_pairs_responsive_nodes():
+    coordinator = CoordinatorNode()
+
+    responsive = AsyncMock(spec=RemoteSession)
+    responsive.connect.return_value = True
+
+    unresponsive = AsyncMock(spec=RemoteSession)
+    unresponsive.connect.side_effect = Exception("Connection refused")
+
+    silent = AsyncMock(spec=RemoteSession)
+    silent.connect.return_value = False
+
+    discovered = await coordinator.discover_workers({
+        "node-a": responsive,
+        "node-b": unresponsive,
+        "node-c": silent,
+    })
+
+    assert discovered == ["node-a"]
+    assert "node-a" in coordinator.active_workers
+    assert coordinator.worker_statuses["node-a"] == NodeStatus.ONLINE
+    assert "node-b" not in coordinator.active_workers
+    assert "node-c" not in coordinator.active_workers
+
+
+@pytest.mark.asyncio
+async def test_discover_workers_skips_already_registered():
+    coordinator = CoordinatorNode()
+    existing = AsyncMock(spec=RemoteSession)
+    coordinator.register_worker("node-a", existing)
+
+    candidate = AsyncMock(spec=RemoteSession)
+    discovered = await coordinator.discover_workers({"node-a": candidate})
+
+    assert discovered == []
+    candidate.connect.assert_not_called()
+    assert coordinator.active_workers["node-a"] is existing
+
+
+# --- 6. Memory & Credential Delegation Tests ---
+
+@pytest.mark.asyncio
+async def test_delegate_memory_to_worker():
+    coordinator = CoordinatorNode()
+    mock_session = AsyncMock(spec=RemoteSession)
+    mock_session.send_payload.return_value = True
+    coordinator.register_worker("worker-1", mock_session)
+
+    entries = {"project": "sparkleforge", "phase": "Z"}
+    ok = await coordinator.delegate_memory("worker-1", "anvil", entries)
+
+    assert ok is True
+    mock_session.send_payload.assert_called_once_with(
+        "sync_memory", {"namespace": "anvil", "entries": entries}
+    )
+
+
+@pytest.mark.asyncio
+async def test_delegate_memory_refused_for_offline_worker():
+    coordinator = CoordinatorNode()
+    mock_session = AsyncMock(spec=RemoteSession)
+    coordinator.register_worker("worker-1", mock_session)
+    coordinator.worker_statuses["worker-1"] = NodeStatus.OFFLINE
+
+    ok = await coordinator.delegate_memory("worker-1", "anvil", {"k": "v"})
+
+    assert ok is False
+    mock_session.send_payload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delegate_credential_with_ttl():
+    coordinator = CoordinatorNode()
+    mock_session = AsyncMock(spec=RemoteSession)
+    mock_session.send_payload.return_value = True
+    coordinator.register_worker("worker-1", mock_session)
+
+    mock_vault = MagicMock()
+    mock_vault.retrieve.return_value = "s3cret-token"
+
+    ok = await coordinator.delegate_credential(
+        "worker-1", "api_key", ttl_seconds=60.0, vault=mock_vault
+    )
+
+    assert ok is True
+    action, payload = mock_session.send_payload.call_args[0]
+    assert action == "receive_credential"
+    assert payload["key"] == "api_key"
+    assert payload["value"] == "s3cret-token"
+    import time as time_module
+    assert payload["expires_at"] > time_module.time()
+
+
+@pytest.mark.asyncio
+async def test_delegate_credential_missing_from_vault():
+    coordinator = CoordinatorNode()
+    mock_session = AsyncMock(spec=RemoteSession)
+    coordinator.register_worker("worker-1", mock_session)
+
+    mock_vault = MagicMock()
+    mock_vault.retrieve.return_value = None
+
+    ok = await coordinator.delegate_credential("worker-1", "missing_key", vault=mock_vault)
+
+    assert ok is False
+    mock_session.send_payload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_worker_receives_memory_and_credential():
+    worker = WorkerNode(worker_id="worker-1")
+
+    assert await worker.handle_sync_memory("anvil", {"k1": "v1"}) is True
+    assert await worker.handle_sync_memory("anvil", {"k2": "v2"}) is True
+    assert worker.shared_memory["anvil"] == {"k1": "v1", "k2": "v2"}
+
+    import time as time_module
+    future = time_module.time() + 60.0
+    assert await worker.handle_receive_credential("api_key", "s3cret", future) is True
+    assert worker.get_delegated_credential("api_key") == "s3cret"
+
+
+@pytest.mark.asyncio
+async def test_worker_discards_expired_credential():
+    worker = WorkerNode(worker_id="worker-1")
+
+    import time as time_module
+    past = time_module.time() - 1.0
+    # Already-expired handoff is rejected outright
+    assert await worker.handle_receive_credential("stale_key", "old", past) is False
+    assert worker.get_delegated_credential("stale_key") is None
+
+    # Valid handoff expires after its TTL passes
+    assert await worker.handle_receive_credential("api_key", "s3cret", time_module.time() + 0.05) is True
+    await asyncio.sleep(0.06)
+    assert worker.get_delegated_credential("api_key") is None
+
+
+# --- 7. WorkerNode Local Handling Tests ---
 
 @pytest.mark.asyncio
 async def test_worker_node_blocks_unauthorized_command_locally():

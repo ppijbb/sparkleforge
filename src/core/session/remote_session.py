@@ -36,6 +36,11 @@ class RemoteSession(abc.ABC):
         self.trust_context = trust
         return True
 
+    @abc.abstractmethod
+    async def send_payload(self, action: str, payload: Dict[str, Any]) -> bool:
+        """Send a structured control payload (memory sync, credential handoff, etc.) to the remote node."""
+        pass
+
     @property
     @abc.abstractmethod
     def is_connected(self) -> bool:
@@ -172,15 +177,18 @@ class WebSocketRemoteSession(RemoteSession):
 
     async def send_trust_context(self, trust: TrustContext) -> bool:
         await super().send_trust_context(trust)
+        return await self.send_payload("update_trust", {"trust_context": trust.to_dict()})
+
+    async def send_payload(self, action: str, payload: Dict[str, Any]) -> bool:
         if not self._connected or not self._ws:
             return False
 
-        payload = {"action": "update_trust", "trust_context": trust.to_dict()}
+        message = {"action": action, **payload}
         try:
-            await self._ws.send(json.dumps(payload))
+            await self._ws.send(json.dumps(message))
             return True
         except Exception as e:
-            logger.error(f"Failed to propagate trust context over WebSocket: {e}")
+            logger.error(f"Failed to send '{action}' payload over WebSocket: {e}")
             self._connected = False
             return False
 
@@ -221,6 +229,18 @@ class SSHRemoteSession(RemoteSession):
     async def disconnect(self) -> None:
         self._connected = False
         logger.info("SSH remote session disconnected.")
+
+    async def send_payload(self, action: str, payload: Dict[str, Any]) -> bool:
+        """Deliver a control payload by writing JSON into the remote node's sync inbox."""
+        message = json.dumps({"action": action, **payload})
+        escaped = message.replace("'", "'\\''")
+        inbox_dir = "~/.sparkleforge/sync"
+        command = (
+            f"mkdir -p {inbox_dir} && "
+            f"printf '%s' '{escaped}' > {inbox_dir}/{action}.json"
+        )
+        res = await self.execute(command, timeout=15.0)
+        return res.get("status") == "success"
 
     async def execute(self, command: str, timeout: float = 30.0) -> Dict[str, Any]:
         # Propagate trust context by injecting it into environment before execution

@@ -1,10 +1,12 @@
 import asyncio
 import logging
+import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.core.session.remote_session import RemoteSession
 from src.core.trust_gate import TrustContext
+from src.core.guard.credential_vault import CredentialVault
 from src.core.guard.guard_plane import GuardPlane
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,32 @@ class CoordinatorNode:
         self.worker_loads[worker_id] = 0
         self.heartbeat_failures[worker_id] = 0
         logger.info(f"Worker node '{worker_id}' paired and registered successfully.")
+
+    async def discover_workers(
+        self,
+        candidates: Dict[str, RemoteSession],
+        probe_timeout: float = 5.0,
+    ) -> List[str]:
+        """Probe candidate node sessions and auto-pair those that respond.
+
+        Candidates already registered are skipped; unresponsive candidates are
+        left unregistered so discovery can be retried later.
+        """
+        discovered: List[str] = []
+        for worker_id, session in candidates.items():
+            if worker_id in self.active_workers:
+                continue
+            try:
+                connected = await asyncio.wait_for(session.connect(), timeout=probe_timeout)
+            except Exception as e:
+                logger.warning(f"Discovery probe failed for candidate '{worker_id}': {e}")
+                continue
+            if connected:
+                self.register_worker(worker_id, session)
+                discovered.append(worker_id)
+            else:
+                logger.info(f"Candidate node '{worker_id}' did not respond to discovery probe.")
+        return discovered
 
     def deregister_worker(self, worker_id: str) -> None:
         """Deregister a worker node."""
@@ -163,6 +191,59 @@ class CoordinatorNode:
             await self._handle_failover(selected_worker)
             return False
 
+    async def delegate_memory(self, worker_id: str, namespace: str, entries: Dict[str, Any]) -> bool:
+        """Delegate (replicate) shared memory entries to a specific worker node."""
+        session = self._get_online_session(worker_id)
+        if session is None:
+            return False
+        ok = await session.send_payload(
+            "sync_memory",
+            {"namespace": namespace, "entries": entries},
+        )
+        if not ok:
+            logger.warning(f"Memory delegation to worker '{worker_id}' failed.")
+        return ok
+
+    async def delegate_credential(
+        self,
+        worker_id: str,
+        credential_key: str,
+        ttl_seconds: float = 300.0,
+        vault: Optional[CredentialVault] = None,
+    ) -> bool:
+        """Hand off a vault credential to a worker node with a bounded lifetime.
+
+        The credential is read from the local CredentialVault and sent with an
+        absolute expiry timestamp; workers must discard it after expiry.
+        """
+        session = self._get_online_session(worker_id)
+        if session is None:
+            return False
+
+        vault = vault or CredentialVault()
+        value = vault.retrieve(credential_key)
+        if value is None:
+            logger.error(f"Credential '{credential_key}' not found in vault; cannot delegate.")
+            return False
+
+        ok = await session.send_payload(
+            "receive_credential",
+            {
+                "key": credential_key,
+                "value": value,
+                "expires_at": time.time() + ttl_seconds,
+            },
+        )
+        if not ok:
+            logger.warning(f"Credential delegation to worker '{worker_id}' failed.")
+        return ok
+
+    def _get_online_session(self, worker_id: str) -> Optional[RemoteSession]:
+        if self.worker_statuses.get(worker_id) != NodeStatus.ONLINE:
+            logger.error(f"Worker '{worker_id}' is not online; delegation refused.")
+            return None
+        return self.active_workers.get(worker_id)
+
     async def sync_policy(self, deny_names: List[str], deny_prefixes: List[str]) -> bool:
         """Broadcast updated GuardPlane capabilities/policies to all active workers."""
         logger.info("Broadcasting policy synchronization to workers...")
@@ -191,6 +272,10 @@ class WorkerNode:
         self.worker_id = worker_id
         self.guard_plane = guard_plane or GuardPlane()
         self.trust_context = TrustContext.default()
+        # Delegated state from coordinator: namespace -> {key: value}
+        self.shared_memory: Dict[str, Dict[str, Any]] = {}
+        # Delegated credentials: key -> {"value": str, "expires_at": float}
+        self._delegated_credentials: Dict[str, Dict[str, Any]] = {}
 
     async def handle_ping(self) -> Dict[str, Any]:
         """Respond to coordinator heartbeats."""
@@ -230,3 +315,32 @@ class WorkerNode:
         self.trust_context = TrustContext.from_dict(trust_dict)
         logger.info(f"Worker '{self.worker_id}' synchronized trust policy: {self.trust_context}")
         return True
+
+    async def handle_sync_memory(self, namespace: str, entries: Dict[str, Any]) -> bool:
+        """Receive delegated memory entries from coordinator."""
+        self.shared_memory.setdefault(namespace, {}).update(entries)
+        logger.info(
+            f"Worker '{self.worker_id}' synchronized {len(entries)} memory entries "
+            f"into namespace '{namespace}'."
+        )
+        return True
+
+    async def handle_receive_credential(self, key: str, value: str, expires_at: float) -> bool:
+        """Receive a time-bounded delegated credential from coordinator."""
+        if expires_at <= time.time():
+            logger.warning(f"Worker '{self.worker_id}' rejected already-expired credential '{key}'.")
+            return False
+        self._delegated_credentials[key] = {"value": value, "expires_at": expires_at}
+        logger.info(f"Worker '{self.worker_id}' received delegated credential '{key}'.")
+        return True
+
+    def get_delegated_credential(self, key: str) -> Optional[str]:
+        """Return a delegated credential value, discarding it if expired."""
+        entry = self._delegated_credentials.get(key)
+        if entry is None:
+            return None
+        if entry["expires_at"] <= time.time():
+            del self._delegated_credentials[key]
+            logger.info(f"Worker '{self.worker_id}' discarded expired credential '{key}'.")
+            return None
+        return entry["value"]
