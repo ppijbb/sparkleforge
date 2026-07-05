@@ -554,6 +554,7 @@ async def code_review(diff_path: Path) -> int:
         Path("review_result.txt").write_text("No changes or empty diff.", encoding="utf-8")
         return 0
     
+    ensure_config_loaded()
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
     orchestrator = MultiModelOrchestrator()
     prompt = f"You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly.\n\nGit Diff:\n{diff}"
@@ -582,6 +583,8 @@ async def issue_triage(review_path: Path, cerebras_path: Path | None = None) -> 
         
     combined_review = f"OpenRouter Review:\n{openrouter_review}\n\nCerebras Review:\n{cerebras_review}"
     
+    ensure_config_loaded()
+
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
     import datetime
     
@@ -647,6 +650,8 @@ async def merge_decision(pr_meta_path: Path, review_path: Path, cerebras_path: P
     if cerebras_path and cerebras_path.exists():
         cerebras_review = cerebras_path.read_text(encoding="utf-8")
         
+    ensure_config_loaded()
+
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
     import json
     
@@ -715,6 +720,13 @@ def main() -> int:
         return asyncio.run(merge_decision(Path(args.pr_meta_file), Path(args.review_file), cerebras_file))
 
     return 2
+
+
+def ensure_config_loaded() -> None:
+    """Bootstrap configuration-derived environment variables before orchestrator use."""
+    from src.core.env_configurator import ensure_config_loaded as _ensure_config_loaded
+
+    _ensure_config_loaded()
 
 
 if __name__ == "__main__":
