@@ -80,7 +80,7 @@
     },
     "filesystem": {
       "category": "data",
-      "description": "파일시스템 접근 (MCP embedded server)",
+      "description": "파일시스템 접근: 읽기/목록/쓰기/수정/삭제 (로컬 저장소 파일 작업)",
       "parameters": {
         "path": {
           "type": "string",
@@ -89,9 +89,24 @@
         },
         "operation": {
           "type": "string",
-          "description": "작업 유형 (read, list)",
-          "enum": ["read", "list"],
+          "description": "작업 유형",
+          "enum": ["read", "list", "write", "create", "edit", "delete"],
           "default": "read",
+          "required": false
+        },
+        "content": {
+          "type": "string",
+          "description": "write/create 시 파일 전체 내용",
+          "required": false
+        },
+        "old_string": {
+          "type": "string",
+          "description": "edit 시 교체할 기존 문자열",
+          "required": false
+        },
+        "new_string": {
+          "type": "string",
+          "description": "edit 시 새 문자열",
           "required": false
         }
       },

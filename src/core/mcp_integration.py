@@ -510,7 +510,6 @@ class UniversalMCPHub:
         self._load_tools_config()
         self._initialize_tools()
         self._initialize_clients()
-        self._load_mcp_servers_from_config()
 
     def _load_tools_config(self):
         """tools_config.json에서 Tool 메타데이터 로드."""
@@ -1216,6 +1215,9 @@ class UniversalMCPHub:
     def _load_mcp_servers_from_config(self):
         """MCP 서버 설정을 config에서 로드하고 환경변수 치환."""
         # 중복 실행 방지
+        if not hasattr(self, "_mcp_servers_loaded"):
+            self._mcp_servers_loaded = False
+
         if hasattr(self, "_mcp_servers_loaded") and self._mcp_servers_loaded:
             logger.debug("[MCP][load.skip] MCP server configs already loaded, skipping")
             return
@@ -1393,6 +1395,19 @@ class UniversalMCPHub:
         self, server_name: str, server_config: Dict[str, Any], timeout: float = None
     ):
         """MCP 서버에 연결 - Connection pooling with health check and auto-reconnection."""
+        # Lazy loading: 설정이 로드되지 않았다면 로드
+        if not self.mcp_server_configs:
+            self._load_mcp_servers_from_config()
+
+        # 설정이 없는 서버는 연결 불가
+        if server_name not in self.mcp_server_configs:
+            logger.error(f"[MCP][connect.error] No config for server={server_name}")
+            return False
+
+        # 이미 연결 중인지 확인 (재귀 방지)
+        if server_name in self.mcp_sessions and not self.stopping:
+            return True
+
         if self.stopping:
             logger.warning(f"[MCP][skip.stopping] server={server_name}")
             return False
@@ -2539,23 +2554,11 @@ class UniversalMCPHub:
         """MCP 서버를 통해 도구 실행 (with connection pooling and health check)."""
         # Connection pooling: Check if connection exists and is healthy
         if server_name not in self.mcp_sessions:
-            # Try to connect if not in sessions
-            logger.debug(f"Server {server_name} not in sessions, attempting connection...")
-            if server_name in self.mcp_server_configs:
-                server_config = self.mcp_server_configs[server_name]
-                connected = await self._connect_to_mcp_server(server_name, server_config)
-                if not connected:
-                    logger.error(f"Failed to connect to server {server_name}")
-                    return None
-            else:
-                logger.error(
-                    f"Server {server_name} not in mcp_sessions and no config found. Available: {list(self.mcp_sessions.keys())}"
-                )
+            # Lazy loading: 연결 시점에 연결 시도
+            connected = await self.ensure_server_connected(server_name)
+            if not connected:
                 return None
-        else:
-            # Health check existing connection
-            is_healthy = await self._check_connection_health(server_name)
-            if not is_healthy:
+        elif not await self._check_connection_health(server_name):
                 logger.warning(f"Connection to {server_name} is unhealthy, reconnecting...")
                 # Auto-reconnection
                 if server_name in self.mcp_server_configs:
@@ -2572,6 +2575,20 @@ class UniversalMCPHub:
                     logger.error(f"Cannot reconnect to {server_name}: no config found")
                     return None
 
+        return await self._execute_via_mcp_server_internal(server_name, tool_name, params)
+
+    async def ensure_server_connected(self, server_name: str) -> bool:
+        """서버 연결 보장 (Lazy loading)."""
+        if not self.mcp_server_configs:
+            self._load_mcp_servers_from_config()
+        if server_name in self.mcp_server_configs:
+            return await self._connect_to_mcp_server(server_name, self.mcp_server_configs[server_name])
+        return False
+
+    async def _execute_via_mcp_server_internal(
+        self, server_name: str, tool_name: str, params: Dict[str, Any]
+    ) -> Any | None:
+        """실제 도구 실행 로직."""
         if server_name not in self.mcp_sessions:
             logger.error(f"Server {server_name} still not in mcp_sessions after connection attempt")
             return None
@@ -3049,7 +3066,7 @@ class UniversalMCPHub:
                 # ToolResult를 Dict로 변환하여 반환
                 if tool_name.startswith("browser") or tool_name == "browser":
                     result = await _execute_browser_tool(tool_name, parameters)  # noqa: F823
-                elif tool_name.startswith("shell") or tool_name == "shell":
+                elif tool_name.startswith(("shell", "run_")) or tool_name == "shell":
                     result = await _execute_shell_tool(tool_name, parameters)  # noqa: F823
                 elif (
                     tool_name.startswith(
@@ -3485,9 +3502,17 @@ class UniversalMCPHub:
         ]:
             logger.info(f"[MCP][exec.shell] Routing {tool_name} to _execute_shell_tool")
             try:
-                from src.core.mcp_integration import ToolResult, _execute_shell_tool
+                # IMPORTANT: avoid binding the name `_execute_shell_tool` in this scope.
+                # If we import it with the same identifier, Python treats it as a local variable
+                # across the whole function (leading to UnboundLocalError in the local-tool branch).
+                from src.core.mcp_integration import (
+                    ToolResult,
+                )
+                from src.core.mcp_integration import (
+                    _execute_shell_tool as shell_execute_tool,
+                )
 
-                tool_result = await _execute_shell_tool(tool_name, parameters)
+                tool_result = await shell_execute_tool(tool_name, parameters)
                 execution_time = time.time() - start_time
 
                 result_summary = ""
@@ -3656,9 +3681,17 @@ class UniversalMCPHub:
         ]:
             logger.info(f"[MCP][exec.file] Routing {tool_name} to _execute_file_tool")
             try:
-                from src.core.mcp_integration import ToolResult, _execute_file_tool
+                # IMPORTANT: avoid binding the name `_execute_file_tool` in this scope.
+                # If we import it with the same identifier, Python treats it as a local variable
+                # across the whole function (leading to UnboundLocalError in the local-tool branch).
+                from src.core.mcp_integration import (
+                    ToolResult,
+                )
+                from src.core.mcp_integration import (
+                    _execute_file_tool as file_execute_tool,
+                )
 
-                tool_result = await _execute_file_tool(tool_name, parameters)
+                tool_result = await file_execute_tool(tool_name, parameters)
                 execution_time = time.time() - start_time
 
                 result_summary = ""
@@ -4109,9 +4142,14 @@ class UniversalMCPHub:
 
                         tool_result = await _execute_search_tool(tool_name, parameters)
                     elif category == ToolCategory.DATA:
-                        from src.core.mcp_integration import _execute_data_tool
+                        # IMPORTANT: alias to avoid shadowing the module-level name in this scope
+                        # (a same-name local import makes it local across the whole function,
+                        # causing UnboundLocalError in the earlier local-tool branch).
+                        from src.core.mcp_integration import (
+                            _execute_data_tool as data_execute_tool,
+                        )
 
-                        tool_result = await _execute_data_tool(tool_name, parameters)
+                        tool_result = await data_execute_tool(tool_name, parameters)
                     elif category == ToolCategory.CODE:
                         from src.core.mcp_integration import _execute_code_tool
 
@@ -4125,10 +4163,12 @@ class UniversalMCPHub:
 
                         tool_result = await _execute_git_tool(tool_name, parameters)
                     else:
-                        # 기본적으로 데이터 도구로 처리
-                        from src.core.mcp_integration import _execute_data_tool
+                        # 기본적으로 데이터 도구로 처리 (동일 이름 shadowing 방지 alias)
+                        from src.core.mcp_integration import (
+                            _execute_data_tool as data_execute_tool,
+                        )
 
-                        tool_result = await _execute_data_tool(tool_name, parameters)
+                        tool_result = await data_execute_tool(tool_name, parameters)
 
                     execution_time = time.time() - start_time
 
@@ -7373,6 +7413,33 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 return True
             except Exception:
                 return False
+
+        if tool_name == "filesystem":
+            # 범용 filesystem 도구: operation/action 파라미터를 구체 도구로 매핑
+            operation = str(parameters.get("operation") or parameters.get("action") or "").lower()
+            op_map = {
+                "create": "create_file",
+                "read": "read_file",
+                "write": "write_file",
+                "edit": "edit_file",
+                "list": "list_files",
+                "delete": "delete_file",
+            }
+            mapped = op_map.get(operation)
+            if not mapped:
+                raise ValueError(f"Unknown filesystem operation: {operation or '(missing)'}")
+            # read 대상이 디렉토리면 목록 조회로 처리
+            target = parameters.get("path") or parameters.get("file_path") or ""
+            if mapped == "read_file" and target and Path(target).is_dir():
+                mapped = "list_files"
+            if "file_path" not in parameters and "path" in parameters:
+                parameters = {**parameters, "file_path": parameters["path"]}
+            if mapped == "list_files" and "directory_path" not in parameters:
+                parameters = {
+                    **parameters,
+                    "directory_path": parameters.get("path", parameters.get("file_path", ".")),
+                }
+            return await _execute_file_tool(mapped, parameters)
 
         if tool_name == "create_file":
             file_path = parameters.get("file_path", "")

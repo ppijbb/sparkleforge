@@ -19,8 +19,17 @@ class ErrorClassifier:
     def classify(exception: Exception) -> ErrorCategory:
         error_msg = str(exception).lower()
 
-        # Rate limits
-        if any(kw in error_msg for kw in ["rate limit", "429", "too many requests"]):
+        # Rate limits (모든 provider가 일시 소진된 경우 포함 — 대기 후 회복 가능)
+        if any(
+            kw in error_msg
+            for kw in [
+                "rate limit",
+                "429",
+                "too many requests",
+                "all fallback models failed",
+                "no available models",
+            ]
+        ):
             return ErrorCategory.RETRYABLE
 
         # Timeouts

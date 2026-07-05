@@ -12,8 +12,10 @@ from typing import Any, Dict
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
+from src.core.anvil.engine import AnvilWorkflowEngine
+from src.core.anvil.skill_repository import SkillRepository
 from src.core.harness_state import HarnessState, create_initial_harness_state
-from src.core.llm_manager import TaskType
+from src.core.llm_manager import TaskType, get_llm_orchestrator
 from src.core.prompt_builder import get_system_prompt
 from src.core.task_router import RoutePath, TaskRouter
 
@@ -26,6 +28,9 @@ class AgentHarness:
     def __init__(self):
         self.router = TaskRouter()
         self.memory = MemorySaver()
+        self.skill_repository = SkillRepository()
+        self.anvil_engine = AnvilWorkflowEngine(skill_repository=self.skill_repository)
+        self.orchestrator = get_llm_orchestrator()
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -239,7 +244,7 @@ class AgentHarness:
         return state
 
     async def _node_executor(self, state: HarnessState) -> Dict[str, Any]:
-        """[Node] 병렬 에이전트로 태스크 처리 (기존 Executor)"""
+        """[Node] 병렬 에이전트로 태스크 처리 (Anvil 엔진 + 레거시 Fallback)"""
         logger.info("[Harness] Executor Node")
         state["workflow"]["phase"] = "execute"
 
@@ -254,39 +259,81 @@ class AgentHarness:
         except Exception as e:
             logger.warning(f"[Harness] MCP Hub initialization failed: {e}")
 
-        # 에이전트 동적 할당 (TaskRouter 활용)
         tasks = state["workflow"]["tasks"]
-        agent_assignments = {}
-        for task in tasks:
-            agent_id = task.get("task_id")
-            # LLM이 태스크 성격에 맞는 전문가 에이전트 선정 (async)
-            assigned_agent = await self.router.assign_agent_for_task(task)
-            agent_assignments[agent_id] = assigned_agent
-            logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
 
-        executor = ParallelAgentExecutor()
-        session_id = state["workflow"]["session_id"]
+        # --- Anvil Engine 경로: 핸들러가 등록된 태스크가 있으면 Anvil로 실행 ---
+        anvil_tasks = []
+        legacy_tasks = []
+        for task_data in tasks:
+            handler_name = task_data.get("handler") or task_data.get("description", "")
+            if handler_name and handler_name in self.anvil_engine.handler_registry:
+                anvil_tasks.append(task_data)
+            else:
+                legacy_tasks.append(task_data)
 
-        # Execute tasks using parallel execution engine with dynamic assignments
-        results = await executor.execute_parallel_tasks(
-            tasks=tasks,
-            agent_assignments=agent_assignments,
-            execution_plan={"strategy": "parallel_groups"},
-            objective_id=session_id,
-        )
+        # Anvil 엔진으로 실행 가능한 태스크 처리
+        if anvil_tasks:
+            from src.core.anvil.engine import AnvilTask
 
-        # Update tasks with results
-        execution_results = results.get("execution_results", [])
-        if execution_results:
-            for i, res in enumerate(execution_results):
-                if i < len(tasks):
-                    tasks[i]["result"] = res.get("result")
-                    tasks[i]["status"] = res.get("status")
+            self.anvil_engine.reset()
+            for td in anvil_tasks:
+                anvil_task = AnvilTask(
+                    task_id=td.get("task_id", ""),
+                    name=td.get("description", td.get("task_id", "")),
+                    handler=td.get("handler", td.get("description", "")),
+                    metadata=td,
+                )
+                self.anvil_engine.add_task(anvil_task)
 
-        state["workflow"]["tasks"] = tasks
+            anvil_results = await self.anvil_engine.execute(context=state["context"])
+            logger.info(
+                f"[Harness] Anvil engine processed {len(anvil_tasks)} tasks: {anvil_results.get('status')}"
+            )
+
+            # Anvil 결과를 tasks에 반영
+            for td in anvil_tasks:
+                tid = td.get("task_id", "")
+                if tid in self.anvil_engine.tasks:
+                    at = self.anvil_engine.tasks[tid]
+                    td["result"] = at.result
+                    td["status"] = at.status
+
+        # --- 레거시 경로: 기존 ParallelAgentExecutor로 나머지 태스크 처리 ---
+        if legacy_tasks:
+            # 에이전트 동적 할당 (TaskRouter 활용)
+            agent_assignments = {}
+            for task in legacy_tasks:
+                agent_id = task.get("task_id")
+                # LLM이 태스크 성격에 맞는 전문가 에이전트 선정 (async)
+                assigned_agent = await self.router.assign_agent_for_task(task)
+                agent_assignments[agent_id] = assigned_agent
+                logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
+
+            executor = ParallelAgentExecutor()
+            session_id = state["workflow"]["session_id"]
+
+            # Execute tasks using parallel execution engine with dynamic assignments
+            results = await executor.execute_parallel_tasks(
+                tasks=legacy_tasks,
+                agent_assignments=agent_assignments,
+                execution_plan={"strategy": "parallel_groups"},
+                objective_id=session_id,
+            )
+
+            # Update tasks with results
+            execution_results = results.get("execution_results", [])
+            if execution_results:
+                for i, res in enumerate(execution_results):
+                    if i < len(legacy_tasks):
+                        legacy_tasks[i]["result"] = res.get("result")
+                        legacy_tasks[i]["status"] = res.get("status")
+
+        # 태스크 목록 재합성
+        all_tasks = anvil_tasks + legacy_tasks
+        state["workflow"]["tasks"] = all_tasks
         state["workflow"][
             "final_output"
-        ] = f"Executed {len(tasks)} tasks via dynamic agent army. See individual results."
+        ] = f"Executed {len(all_tasks)} tasks ({len(anvil_tasks)} via Anvil, {len(legacy_tasks)} via Legacy)."
         return state
 
     async def _node_subagent_delegate(self, state: HarnessState) -> Dict[str, Any]:
@@ -377,7 +424,12 @@ class AgentHarness:
         return "execute_parallel"
 
     async def execute(
-        self, session_id: str, request: str, max_iterations: int = 10, mode: str = "autonomous"
+        self,
+        session_id: str,
+        request: str,
+        max_iterations: int = 10,
+        mode: str = "autonomous",
+        identity: str = "researcher",
     ) -> Dict[str, Any]:
         """하네스 실행 (오케스트레이터의 주 진입점)
 
@@ -401,8 +453,16 @@ class AgentHarness:
                 # 대화 형식으로 변환 (시스템 메시지 포함 가능)
                 messages = [{"role": "user", "content": request}]
 
-                # Phase 5: Standardized system prompt
-                sys_prompt = get_system_prompt("researcher")
+                # Phase 5: Standardized system prompt (coworker 세션은 coder 페르소나)
+                import os as _os
+
+                workspace_note = (
+                    f"\nWorkspace: you are operating inside the local git repository at "
+                    f"{_os.getcwd()}. File tools (read_file/write_file/edit_file/list_files) "
+                    f"operate on this repository directly. Do not search the web for the "
+                    f"repository or issue context; inspect local files instead."
+                )
+                sys_prompt = get_system_prompt(identity, extras=workspace_note)
 
                 result = await loop.run_conversation(
                     messages=messages,
@@ -423,7 +483,7 @@ class AgentHarness:
                     "execution_time": time.time() - start_time,
                 }
             except Exception as e:
-                logger.error(f"❌ Autonomous Harness failed: {e}")
+                logger.error(f"❌ Autonomous Harness failed: {e}", exc_info=True)
                 return {"success": False, "session_id": session_id, "error": str(e)}
 
         # Original LangGraph Research Mode
