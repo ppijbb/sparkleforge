@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING
 from src.core.scheduler import get_scheduler, Scheduler, ScheduleConfig, ScheduleExecution, ScheduleStatus
 from src.core.observe.event_bus import EventBus
 
@@ -9,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 class AutomationEngine:
     """Orchestrates system automation triggers (cron, event, webhook, chains) and routes tasks to expert agents."""
+    _UNSET = object()
+    _UNSET = object()
 
     _instance = None
 
@@ -16,8 +19,9 @@ class AutomationEngine:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-
-    def __init__(self, scheduler: Optional[Scheduler] = None, event_bus: Optional[EventBus] = None):
+    def __init__(self, scheduler: Optional[Scheduler] = None, event_bus: Optional[EventBus] = None, coordinator: Any = _UNSET):
+        if coordinator is not self._UNSET:
+            self.coordinator = coordinator
         self.scheduler = scheduler or get_scheduler()
         self.event_bus = event_bus or EventBus()
 
@@ -27,6 +31,8 @@ class AutomationEngine:
             return
 
         logger.info("Initializing Automation Engine...")
+        if not hasattr(self, "coordinator"):
+            self.coordinator = getattr(self.scheduler, "coordinator", None)
         self._initialized = True
         self._event_subscriptions = {}
         
