@@ -16,14 +16,16 @@ def clean_scheduler():
     scheduler.running_tasks.clear()
     # Detach callback
     scheduler.set_execution_callback(None)
-    # Detach any coordinator left on the singleton engine by a previous test
+    # Detach any coordinator/timeout override left on the singleton by a previous test
     if AutomationEngine._instance is not None:
         AutomationEngine._instance.coordinator = None
+        AutomationEngine._instance.__dict__.pop("DEFAULT_ROUTED_TIMEOUT", None)
     yield
     scheduler.schedules.clear()
     scheduler.executions.clear()
     if AutomationEngine._instance is not None:
         AutomationEngine._instance.coordinator = None
+        AutomationEngine._instance.__dict__.pop("DEFAULT_ROUTED_TIMEOUT", None)
 
 
 def make_mock_coordinator(delegate_result: bool = True) -> AsyncMock:
@@ -330,6 +332,72 @@ async def test_chain_triggers_after_cross_node_delegation():
     delegated_ids = [call.args[0] for call in engine.coordinator.delegate_task.call_args_list]
     assert parent.schedule_id in delegated_ids
     assert child.schedule_id in delegated_ids
+
+
+@pytest.mark.asyncio
+async def test_cross_node_delegation_hard_timeout_falls_back_to_local():
+    """A hung coordinator.delegate_task must not block the engine forever (#316)."""
+    coordinator = AsyncMock()
+    coordinator.active_workers = {"remote-worker": object()}
+
+    async def hang_forever(task_id, payload):
+        await asyncio.sleep(10)
+        return True
+
+    coordinator.delegate_task.side_effect = hang_forever
+    engine = AutomationEngine(coordinator=coordinator)
+    # Isolate the engine-internal timeout boundary: leave schedule.timeout_seconds
+    # unset so the scheduler's own outer asyncio.wait_for doesn't also fire and
+    # race with the one under test.
+    engine.DEFAULT_ROUTED_TIMEOUT = 0.05
+
+    local_calls = []
+    async def mock_callback(query, session_id):
+        local_calls.append(query)
+        return {"status": "ok"}
+
+    engine._orig_callback = mock_callback
+
+    auto = engine.create_automation(
+        name="hung_auto_job",
+        user_query="auto job",
+        trigger_type="cron",
+        cron_expression="0 9 * * *",
+    )
+
+    await asyncio.wait_for(get_scheduler().run_now(auto.schedule_id), timeout=2.0)
+
+    # Timed out, target is "auto" so it fell back to local execution instead of hanging
+    assert local_calls == ["auto job"]
+
+
+@pytest.mark.asyncio
+async def test_cross_node_delegation_hard_timeout_fatal_for_remote_target():
+    coordinator = AsyncMock()
+    coordinator.active_workers = {"remote-worker": object()}
+
+    async def hang_forever(task_id, payload):
+        await asyncio.sleep(10)
+        return True
+
+    coordinator.delegate_task.side_effect = hang_forever
+    engine = AutomationEngine(coordinator=coordinator)
+    engine.DEFAULT_ROUTED_TIMEOUT = 0.05
+    engine._orig_callback = None
+
+    auto = engine.create_automation(
+        name="hung_remote_job",
+        user_query="remote job",
+        trigger_type="cron",
+        cron_expression="0 9 * * *",
+        execution_target="remote",
+    )
+
+    await asyncio.wait_for(get_scheduler().run_now(auto.schedule_id), timeout=2.0)
+
+    execution = get_scheduler().executions[-1]
+    assert execution.status == "failed"
+    assert "timed out" in execution.error
 
 
 @pytest.mark.asyncio

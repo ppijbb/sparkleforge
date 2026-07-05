@@ -137,9 +137,25 @@ class GPIODevice(PhysicalDevice):
             self._line_requests[pin] = request
         request.set_value(pin, Value.ACTIVE if state else Value.INACTIVE)
 
+    def _hw_read_pin(self, pin: int) -> int:
+        from gpiod.line import Value
+        request = self._line_requests[pin]
+        return 1 if request.get_value(pin) == Value.ACTIVE else 0
+
     def read(self) -> Dict[int, int]:
+        """Return current pin states.
+
+        For pins previously driven through the hardware backend, this queries
+        the physical line rather than trusting the local write cache, so a
+        line forced to a different state outside this process (or a failed
+        write) is reflected. Pins never requested as lines fall back to the
+        cache (this adapter only requests output lines).
+        """
         if not self._connected:
             raise RuntimeError("Device not connected")
+        if self.active_backend == BACKEND_HARDWARE:
+            for pin in self._line_requests:
+                self.pins[pin] = self._hw_read_pin(pin)
         return dict(self.pins)
 
     def write(self, data: Dict[int, int]) -> bool:
@@ -193,8 +209,9 @@ class SerialDevice(PhysicalDevice):
         device_id: str,
         port: str = "/dev/ttyUSB0",
         baudrate: int = 9600,
-        backend: str = BACKEND_AUTO,
         timeout: float = 2.0,
+        *,
+        backend: str = BACKEND_AUTO,
     ):
         super().__init__(device_id, backend)
         self.port = port
@@ -264,9 +281,10 @@ class USBHIDDevice(PhysicalDevice):
         device_id: str,
         vendor_id: int = 0x046d,
         product_id: int = 0xc077,
-        backend: str = BACKEND_AUTO,
         read_size: int = 64,
         read_timeout_ms: int = 1000,
+        *,
+        backend: str = BACKEND_AUTO,
     ):
         super().__init__(device_id, backend)
         self.vendor_id = vendor_id
@@ -296,7 +314,12 @@ class USBHIDDevice(PhysicalDevice):
         if not self._connected:
             raise RuntimeError("Device not connected")
         if self.active_backend == BACKEND_HARDWARE:
-            self._hid.write(list(data))
+            # hidapi's write() returns bytes actually written (or a negative
+            # value on failure); trusting a fixed True here would mask a
+            # partial or failed write from the caller.
+            written = self._hid.write(list(data))
+            logger.debug(f"USBHIDDevice '{self.device_id}' wrote: {data.hex()}")
+            return written == len(data)
         logger.debug(f"USBHIDDevice '{self.device_id}' wrote: {data.hex()}")
         return True
 

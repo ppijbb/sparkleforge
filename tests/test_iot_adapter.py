@@ -181,6 +181,9 @@ def test_gpio_hardware_backend_with_driver():
         def set_value(self, pin, value):
             self.values[pin] = value
 
+        def get_value(self, pin):
+            return self.values[pin]
+
         def release(self):
             self.released = True
 
@@ -225,6 +228,85 @@ def test_gpio_hardware_backend_with_driver():
         gpio.disconnect()
         assert chip.closed is True
         assert all(r.released for r in requests)
+
+
+def test_gpio_hardware_read_queries_driver_not_just_cache():
+    """read() must reflect the physical line state, not only the last-written cache (#319)."""
+
+    class FakeLineRequest:
+        def __init__(self):
+            self.values = {}
+
+        def set_value(self, pin, value):
+            self.values[pin] = value
+
+        def get_value(self, pin):
+            return self.values[pin]
+
+        def release(self):
+            pass
+
+    class FakeChip:
+        def __init__(self, path):
+            pass
+
+        def request_lines(self, consumer, config):
+            return FakeLineRequest()
+
+        def close(self):
+            pass
+
+    fake_line_module = MagicMock()
+    fake_line_module.Direction.OUTPUT = "output"
+    fake_line_module.Value.ACTIVE = "active"
+    fake_line_module.Value.INACTIVE = "inactive"
+
+    fake_gpiod_module = MagicMock()
+    fake_gpiod_module.Chip = FakeChip
+    fake_gpiod_module.line = fake_line_module
+
+    with patch.dict(sys.modules, {"gpiod": fake_gpiod_module, "gpiod.line": fake_line_module}):
+        gpio = GPIODevice("drift_gpio", backend="hardware")
+        gpio.connect()
+        gpio.write({4: 1})
+
+        # Something external forces the physical line to a different value
+        # than what this process last wrote; read() must surface that drift.
+        gpio._line_requests[4].values[4] = "inactive"
+        assert gpio.read() == {4: 0}
+        gpio.disconnect()
+
+
+def test_usb_hid_write_reports_failure_on_short_write():
+    """write() must not claim success when hidapi reports a short/failed write (#319)."""
+
+    class FlakyHIDHandle:
+        def open(self, vendor_id, product_id):
+            pass
+
+        def write(self, data):
+            return -1  # hidapi failure sentinel
+
+        def close(self):
+            pass
+
+    fake_hid_module = MagicMock()
+    fake_hid_module.device = FlakyHIDHandle
+
+    with patch.dict(sys.modules, {"hid": fake_hid_module}):
+        hid_dev = USBHIDDevice("flaky_hid", backend="hardware")
+        assert hid_dev.connect() is True
+        assert hid_dev.write(b"\xaa\xbb") is False
+
+
+def test_serial_backend_is_keyword_only():
+    with pytest.raises(TypeError):
+        SerialDevice("id", "/dev/ttyUSB0", 9600, 2.0, "auto")  # backend passed positionally
+
+
+def test_usb_hid_backend_is_keyword_only():
+    with pytest.raises(TypeError):
+        USBHIDDevice("id", 0x046d, 0xc077, 64, 1000, "auto")  # backend passed positionally
 
 
 def test_robot_arm_passes_backend_to_serial_adapter():
