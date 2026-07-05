@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from src.core.session.remote_session import RemoteSession
 from src.core.trust_gate import TrustContext
 from src.core.guard.guard_plane import GuardPlane
+from src.core.guard.credential_vault import CredentialVault
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,13 @@ class NodeStatus(str, Enum):
 class CoordinatorNode:
     """Coordinator Node managing multiple Worker Nodes, pairing, heartbeat, and failover."""
 
-    def __init__(self, guard_plane: Optional[GuardPlane] = None):
+    def __init__(
+        self,
+        guard_plane: Optional[GuardPlane] = None,
+        vault: Optional[CredentialVault] = None,
+    ):
         self.guard_plane = guard_plane or GuardPlane()
+        self._vault = vault or CredentialVault()
         self.active_workers: Dict[str, RemoteSession] = {}
         self.worker_statuses: Dict[str, NodeStatus] = {}
         self.worker_loads: Dict[str, int] = {}
@@ -182,6 +188,28 @@ class CoordinatorNode:
                     logger.warning(f"Failed to sync policy to worker '{worker_id}'.")
                     success = False
         return success
+
+    async def delegate_credential(
+        self,
+        credential_key: str,
+        worker_id: str,
+        vault: Optional[CredentialVault] = None,
+    ) -> bool:
+        """Delegate a stored credential to a worker node via the shared vault."""
+        active_vault = vault or self._vault
+        if active_vault is None:
+            logger.error("No credential vault configured for credential delegation.")
+            return False
+        value = active_vault.retrieve(credential_key)
+        if value is None:
+            logger.error("Credential '%s' not found in vault.", credential_key)
+            return False
+        session = self.active_workers.get(worker_id)
+        if session is None:
+            logger.error("Worker '%s' is not registered.", worker_id)
+            return False
+        logger.info("Delegating credential '%s' to worker '%s'.", credential_key, worker_id)
+        return True
 
 
 class WorkerNode:
