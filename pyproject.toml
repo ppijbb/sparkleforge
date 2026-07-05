@@ -94,6 +94,11 @@ dev = [
     "sphinx>=7.2.0",
     "sphinx-rtd-theme>=2.0.0",
 ]
+iot = [
+    "pyserial>=3.5",
+    "hidapi>=0.14.0",
+    "gpiod>=2.1.0; sys_platform == 'linux'",
+]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
