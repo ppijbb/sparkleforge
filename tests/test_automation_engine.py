@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import AsyncMock
 import pytest
 from src.core.bootstrap_graph import BootstrapGraph
 from src.core.automation.automation_engine import AutomationEngine
@@ -15,9 +16,21 @@ def clean_scheduler():
     scheduler.running_tasks.clear()
     # Detach callback
     scheduler.set_execution_callback(None)
+    # Detach any coordinator left on the singleton engine by a previous test
+    if AutomationEngine._instance is not None:
+        AutomationEngine._instance.coordinator = None
     yield
     scheduler.schedules.clear()
     scheduler.executions.clear()
+    if AutomationEngine._instance is not None:
+        AutomationEngine._instance.coordinator = None
+
+
+def make_mock_coordinator(delegate_result: bool = True) -> AsyncMock:
+    coordinator = AsyncMock()
+    coordinator.active_workers = {"remote-worker": object()}
+    coordinator.delegate_task.return_value = delegate_result
+    return coordinator
 
 
 @pytest.mark.asyncio
@@ -174,6 +187,149 @@ async def test_multi_agent_routing():
 
     assert len(routed_queries) == 1
     assert routed_queries[0] == "[Agent: gui] click submit"
+
+
+# --- Cross-node AutomationEngine Routing Tests (#313) ---
+
+@pytest.mark.asyncio
+async def test_cross_node_delegation_via_engine():
+    engine = AutomationEngine(coordinator=make_mock_coordinator(delegate_result=True))
+
+    local_calls = []
+    async def mock_callback(query, session_id):
+        local_calls.append(query)
+        return {"status": "ok"}
+
+    engine._orig_callback = mock_callback
+
+    auto = engine.create_automation(
+        name="remote_job",
+        user_query="collect metrics",
+        trigger_type="cron",
+        cron_expression="0 9 * * *",
+        metadata={"agent_expertise": "ops"},
+    )
+
+    await get_scheduler().run_now(auto.schedule_id)
+    await asyncio.sleep(0.2)
+
+    # Delegated cross-node with the routed query; local callback bypassed
+    task_id, payload = engine.coordinator.delegate_task.call_args[0]
+    assert task_id == auto.schedule_id
+    assert payload["command"] == "[Agent: ops] collect metrics"
+    assert local_calls == []
+
+    execution = get_scheduler().executions[-1]
+    assert execution.status == "completed"
+    assert execution.result["message"] == "Delegated execution succeeded."
+
+
+@pytest.mark.asyncio
+async def test_cross_node_delegation_falls_back_to_local():
+    engine = AutomationEngine(coordinator=make_mock_coordinator(delegate_result=False))
+
+    local_calls = []
+    async def mock_callback(query, session_id):
+        local_calls.append(query)
+        return {"status": "ok"}
+
+    engine._orig_callback = mock_callback
+
+    auto = engine.create_automation(
+        name="auto_job",
+        user_query="cleanup temp",
+        trigger_type="cron",
+        cron_expression="0 9 * * *",
+    )
+
+    await get_scheduler().run_now(auto.schedule_id)
+    await asyncio.sleep(0.2)
+
+    # Delegation was attempted, failed, and execution fell back to local
+    engine.coordinator.delegate_task.assert_called_once()
+    assert local_calls == ["cleanup temp"]
+    assert get_scheduler().executions[-1].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_execution_target_remote_fails_without_local_fallback():
+    engine = AutomationEngine(coordinator=make_mock_coordinator(delegate_result=False))
+
+    local_calls = []
+    async def mock_callback(query, session_id):
+        local_calls.append(query)
+        return {"status": "ok"}
+
+    engine._orig_callback = mock_callback
+
+    auto = engine.create_automation(
+        name="remote_only_job",
+        user_query="gpu benchmark",
+        trigger_type="cron",
+        cron_expression="0 9 * * *",
+        execution_target="remote",
+    )
+
+    await get_scheduler().run_now(auto.schedule_id)
+    await asyncio.sleep(0.2)
+
+    assert local_calls == []
+    execution = get_scheduler().executions[-1]
+    assert execution.status == "failed"
+    assert "delegation failed" in execution.error
+
+
+@pytest.mark.asyncio
+async def test_execution_target_local_skips_delegation():
+    engine = AutomationEngine(coordinator=make_mock_coordinator(delegate_result=True))
+
+    local_calls = []
+    async def mock_callback(query, session_id):
+        local_calls.append(query)
+        return {"status": "ok"}
+
+    engine._orig_callback = mock_callback
+
+    auto = engine.create_automation(
+        name="local_job",
+        user_query="rotate logs",
+        trigger_type="cron",
+        cron_expression="0 9 * * *",
+        execution_target="local",
+    )
+
+    await get_scheduler().run_now(auto.schedule_id)
+    await asyncio.sleep(0.2)
+
+    engine.coordinator.delegate_task.assert_not_called()
+    assert local_calls == ["rotate logs"]
+
+
+@pytest.mark.asyncio
+async def test_chain_triggers_after_cross_node_delegation():
+    engine = AutomationEngine(coordinator=make_mock_coordinator(delegate_result=True))
+    engine._orig_callback = None
+
+    parent = engine.create_automation(
+        name="remote_parent",
+        user_query="run remote parent",
+        trigger_type="cron",
+        cron_expression="0 9 * * *",
+    )
+    child = engine.create_automation(
+        name="remote_child",
+        user_query="run remote child",
+        trigger_type="chain",
+        parent_id=parent.schedule_id,
+    )
+
+    await get_scheduler().run_now(parent.schedule_id)
+    await asyncio.sleep(0.5)
+
+    # Both parent and downstream chained child were delegated cross-node
+    delegated_ids = [call.args[0] for call in engine.coordinator.delegate_task.call_args_list]
+    assert parent.schedule_id in delegated_ids
+    assert child.schedule_id in delegated_ids
 
 
 @pytest.mark.asyncio
