@@ -233,12 +233,15 @@ class SSHRemoteSession(RemoteSession):
 
     async def send_payload(self, action: str, payload: Dict[str, Any]) -> bool:
         """Deliver a control payload by writing JSON into the remote node's sync inbox."""
+        # Action becomes part of the remote file path — restrict to safe characters
+        if not action or not all(c.isalnum() or c in "_-" for c in action):
+            logger.error(f"Rejected send_payload with unsafe action name: {action!r}")
+            return False
         message = json.dumps({"action": action, **payload})
-        escaped = message.replace("'", "'\\''")
         inbox_dir = "~/.sparkleforge/sync"
         command = (
             f"mkdir -p {inbox_dir} && "
-            f"printf '%s' '{escaped}' > {inbox_dir}/{action}.json"
+            f"printf '%s' {shlex.quote(message)} > {inbox_dir}/{action}.json"
         )
         res = await self.execute(command, timeout=15.0)
         return res.get("status") == "success"

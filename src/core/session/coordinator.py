@@ -54,21 +54,24 @@ class CoordinatorNode:
         Candidates already registered are skipped; unresponsive candidates are
         left unregistered so discovery can be retried later.
         """
-        discovered: List[str] = []
-        for worker_id, session in candidates.items():
-            if worker_id in self.active_workers:
-                continue
+        async def probe(worker_id: str, session: RemoteSession) -> Optional[str]:
             try:
                 connected = await asyncio.wait_for(session.connect(), timeout=probe_timeout)
             except Exception as e:
                 logger.warning(f"Discovery probe failed for candidate '{worker_id}': {e}")
-                continue
+                return None
             if connected:
                 self.register_worker(worker_id, session)
-                discovered.append(worker_id)
-            else:
-                logger.info(f"Candidate node '{worker_id}' did not respond to discovery probe.")
-        return discovered
+                return worker_id
+            logger.info(f"Candidate node '{worker_id}' did not respond to discovery probe.")
+            return None
+
+        results = await asyncio.gather(*(
+            probe(worker_id, session)
+            for worker_id, session in candidates.items()
+            if worker_id not in self.active_workers
+        ))
+        return [worker_id for worker_id in results if worker_id is not None]
 
     def deregister_worker(self, worker_id: str) -> None:
         """Deregister a worker node."""
@@ -327,7 +330,12 @@ class WorkerNode:
 
     async def handle_receive_credential(self, key: str, value: str, expires_at: float) -> bool:
         """Receive a time-bounded delegated credential from coordinator."""
-        if expires_at <= time.time():
+        now = time.time()
+        # Evict expired entries so the store cannot grow unbounded
+        for stale_key in [k for k, entry in self._delegated_credentials.items() if entry["expires_at"] <= now]:
+            del self._delegated_credentials[stale_key]
+
+        if expires_at <= now:
             logger.warning(f"Worker '{self.worker_id}' rejected already-expired credential '{key}'.")
             return False
         self._delegated_credentials[key] = {"value": value, "expires_at": expires_at}
