@@ -8,6 +8,13 @@ from .dynamic_checklist_generator import (
 )
 from .engine import AnvilTask, AnvilWorkflowEngine
 from .exception_handler import ChecklistExceptionHandler, RecoveryAction
+from .hitl_checkpoint import (
+    CheckpointDecision,
+    CheckpointResult,
+    CheckpointStage,
+    HITLCheckpointManager,
+)
+from .intent_guardrail import IntentAssessment, IntentGuardrail
 from .method_resolver import (
     MethodResolver,
     ResolutionAttempt,
@@ -34,6 +41,12 @@ __all__ = [
     "ProgressSnapshot",
     "ChecklistExceptionHandler",
     "RecoveryAction",
+    "HITLCheckpointManager",
+    "CheckpointStage",
+    "CheckpointDecision",
+    "CheckpointResult",
+    "IntentGuardrail",
+    "IntentAssessment",
     "MethodResolver",
     "ResolvedMethod",
     "ResolutionAttempt",
