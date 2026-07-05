@@ -5,22 +5,73 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+BACKEND_AUTO = "auto"
+BACKEND_HARDWARE = "hardware"
+BACKEND_MOCK = "mock"
+
 
 class PhysicalDevice(abc.ABC):
-    """Abstract base class representing a physical or IoT device adapter."""
+    """Abstract base class representing a physical or IoT device adapter.
 
-    def __init__(self, device_id: str):
+    Adapters support three backends selected via ``backend``:
+    - "auto" (default): try the real hardware driver, fall back to mock when
+      the driver library or the device itself is unavailable
+    - "hardware": require the real driver; ``connect`` fails without it
+    - "mock": always use the in-memory mock, even when hardware is present
+
+    ``active_backend`` reports which backend a connected device is using.
+    """
+
+    def __init__(self, device_id: str, backend: str = BACKEND_AUTO):
+        if backend not in (BACKEND_AUTO, BACKEND_HARDWARE, BACKEND_MOCK):
+            raise ValueError(f"Unknown backend '{backend}'")
         self.device_id = device_id
+        self.backend = backend
+        self.active_backend: Optional[str] = None
         self._connected = False
 
-    @abc.abstractmethod
     def connect(self) -> bool:
-        """Establish connection to the hardware device."""
-        pass
+        """Establish connection to the device, honoring the backend policy."""
+        if self.backend in (BACKEND_AUTO, BACKEND_HARDWARE):
+            try:
+                self._hw_connect()
+                self.active_backend = BACKEND_HARDWARE
+                self._connected = True
+                logger.info(f"{type(self).__name__} '{self.device_id}' connected (hardware backend).")
+                return True
+            except Exception as e:
+                if self.backend == BACKEND_HARDWARE:
+                    logger.error(
+                        f"{type(self).__name__} '{self.device_id}': hardware backend required "
+                        f"but unavailable: {e}"
+                    )
+                    return False
+                logger.info(
+                    f"{type(self).__name__} '{self.device_id}': hardware unavailable ({e}); "
+                    "falling back to mock backend."
+                )
+        self.active_backend = BACKEND_MOCK
+        self._connected = True
+        logger.info(f"{type(self).__name__} '{self.device_id}' connected (mock backend).")
+        return True
 
-    @abc.abstractmethod
     def disconnect(self) -> None:
-        """Close connection to the hardware device."""
+        """Close connection to the device."""
+        if self._connected and self.active_backend == BACKEND_HARDWARE:
+            try:
+                self._hw_disconnect()
+            except Exception as e:
+                logger.warning(f"{type(self).__name__} '{self.device_id}': error during hardware disconnect: {e}")
+        self._connected = False
+        self.active_backend = None
+        logger.info(f"{type(self).__name__} '{self.device_id}' disconnected.")
+
+    def _hw_connect(self) -> None:
+        """Open the real hardware driver. Raise to signal unavailability."""
+        raise NotImplementedError(f"{type(self).__name__} has no hardware backend")
+
+    def _hw_disconnect(self) -> None:
+        """Release the real hardware driver."""
         pass
 
     @abc.abstractmethod
@@ -44,25 +95,52 @@ class PhysicalDevice(abc.ABC):
 
 
 class GPIODevice(PhysicalDevice):
-    """Mock GPIO device adapter for pin-level control."""
+    """GPIO device adapter for pin-level control.
 
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.pins: Dict[int, int] = {}  # pin_number -> state (0 or 1)
+    Hardware backend drives output lines through libgpiod v2 (``gpiod``
+    package) on the given character device; mock backend keeps pin states
+    in memory only.
+    """
 
-    def connect(self) -> bool:
-        self._connected = True
-        logger.info(f"Mock GPIODevice '{self.device_id}' connected.")
-        return True
+    def __init__(self, device_id: str, backend: str = BACKEND_AUTO, chip_path: str = "/dev/gpiochip0"):
+        super().__init__(device_id, backend)
+        self.chip_path = chip_path
+        self.pins: Dict[int, int] = {}  # pin_number -> last driven state (0 or 1)
+        self._gpiod = None
+        self._chip = None
+        self._line_requests: Dict[int, Any] = {}
 
-    def disconnect(self) -> None:
-        self._connected = False
-        logger.info(f"Mock GPIODevice '{self.device_id}' disconnected.")
+    def _hw_connect(self) -> None:
+        import gpiod
+        self._gpiod = gpiod
+        self._chip = gpiod.Chip(self.chip_path)
+
+    def _hw_disconnect(self) -> None:
+        for request in self._line_requests.values():
+            try:
+                request.release()
+            except Exception:
+                pass
+        self._line_requests.clear()
+        if self._chip is not None:
+            self._chip.close()
+            self._chip = None
+
+    def _hw_set_pin(self, pin: int, state: int) -> None:
+        from gpiod.line import Direction, Value
+        request = self._line_requests.get(pin)
+        if request is None:
+            request = self._chip.request_lines(
+                consumer=self.device_id,
+                config={pin: self._gpiod.LineSettings(direction=Direction.OUTPUT)},
+            )
+            self._line_requests[pin] = request
+        request.set_value(pin, Value.ACTIVE if state else Value.INACTIVE)
 
     def read(self) -> Dict[int, int]:
         if not self._connected:
             raise RuntimeError("Device not connected")
-        return self.pins
+        return dict(self.pins)
 
     def write(self, data: Dict[int, int]) -> bool:
         """Expects data as a dict of {pin_number: state}."""
@@ -71,6 +149,8 @@ class GPIODevice(PhysicalDevice):
         for pin, state in data.items():
             if state not in (0, 1):
                 raise ValueError("State must be 0 or 1")
+            if self.active_backend == BACKEND_HARDWARE:
+                self._hw_set_pin(pin, state)
             self.pins[pin] = state
             logger.debug(f"GPIODevice '{self.device_id}': Pin {pin} set to {state}")
         return True
@@ -79,7 +159,7 @@ class GPIODevice(PhysicalDevice):
         """Expects format: 'set_pin <pin> <0|1>' or 'get_pin <pin>'."""
         if not self._connected:
             return {"status": "failed", "stderr": "Device not connected"}
-        
+
         parts = cmd.strip().split()
         if not parts:
             return {"status": "failed", "stderr": "Empty command"}
@@ -102,27 +182,42 @@ class GPIODevice(PhysicalDevice):
 
 
 class SerialDevice(PhysicalDevice):
-    """Mock RS232/Serial device adapter."""
+    """RS232/Serial device adapter.
 
-    def __init__(self, device_id: str, port: str = "/dev/ttyUSB0", baudrate: int = 9600):
-        super().__init__(device_id)
+    Hardware backend speaks to the port through pyserial; mock backend
+    simulates a device echoing canned responses.
+    """
+
+    def __init__(
+        self,
+        device_id: str,
+        port: str = "/dev/ttyUSB0",
+        baudrate: int = 9600,
+        backend: str = BACKEND_AUTO,
+        timeout: float = 2.0,
+    ):
+        super().__init__(device_id, backend)
         self.port = port
         self.baudrate = baudrate
+        self.timeout = timeout
         self.tx_buffer: str = ""
         self.rx_buffer: str = ""
+        self._serial = None
 
-    def connect(self) -> bool:
-        self._connected = True
-        logger.info(f"Mock SerialDevice '{self.device_id}' connected on {self.port} at {self.baudrate} baud.")
-        return True
+    def _hw_connect(self) -> None:
+        import serial
+        self._serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
 
-    def disconnect(self) -> None:
-        self._connected = False
-        logger.info(f"Mock SerialDevice '{self.device_id}' disconnected.")
+    def _hw_disconnect(self) -> None:
+        if self._serial is not None:
+            self._serial.close()
+            self._serial = None
 
     def read(self) -> str:
         if not self._connected:
             raise RuntimeError("Device not connected")
+        if self.active_backend == BACKEND_HARDWARE:
+            return self._serial.readline().decode("utf-8", errors="replace")
         data = self.rx_buffer
         self.rx_buffer = ""
         return data
@@ -132,8 +227,11 @@ class SerialDevice(PhysicalDevice):
             raise RuntimeError("Device not connected")
         self.tx_buffer += data
         logger.debug(f"SerialDevice '{self.device_id}' TX: {data}")
-        # Simulated echo or automatic parser
-        self._simulate_rx_response(data)
+        if self.active_backend == BACKEND_HARDWARE:
+            self._serial.write(data.encode("utf-8"))
+        else:
+            # Simulated echo or automatic parser
+            self._simulate_rx_response(data)
         return True
 
     def _simulate_rx_response(self, data: str) -> None:
@@ -155,30 +253,50 @@ class SerialDevice(PhysicalDevice):
 
 
 class USBHIDDevice(PhysicalDevice):
-    """Mock USB HID device adapter."""
+    """USB HID device adapter.
 
-    def __init__(self, device_id: str, vendor_id: int = 0x046d, product_id: int = 0xc077):
-        super().__init__(device_id)
+    Hardware backend uses the hidapi bindings (``hid`` package); mock backend
+    returns canned reports.
+    """
+
+    def __init__(
+        self,
+        device_id: str,
+        vendor_id: int = 0x046d,
+        product_id: int = 0xc077,
+        backend: str = BACKEND_AUTO,
+        read_size: int = 64,
+        read_timeout_ms: int = 1000,
+    ):
+        super().__init__(device_id, backend)
         self.vendor_id = vendor_id
         self.product_id = product_id
+        self.read_size = read_size
+        self.read_timeout_ms = read_timeout_ms
+        self._hid = None
 
-    def connect(self) -> bool:
-        self._connected = True
-        logger.info(f"Mock USBHIDDevice '{self.device_id}' (VID:{self.vendor_id:#x}, PID:{self.product_id:#x}) connected.")
-        return True
+    def _hw_connect(self) -> None:
+        import hid
+        self._hid = hid.device()
+        self._hid.open(self.vendor_id, self.product_id)
 
-    def disconnect(self) -> None:
-        self._connected = False
-        logger.info(f"Mock USBHIDDevice '{self.device_id}' disconnected.")
+    def _hw_disconnect(self) -> None:
+        if self._hid is not None:
+            self._hid.close()
+            self._hid = None
 
     def read(self) -> bytes:
         if not self._connected:
             raise RuntimeError("Device not connected")
+        if self.active_backend == BACKEND_HARDWARE:
+            return bytes(self._hid.read(self.read_size, self.read_timeout_ms))
         return b"\x00\x01\x02\x03"
 
     def write(self, data: bytes) -> bool:
         if not self._connected:
             raise RuntimeError("Device not connected")
+        if self.active_backend == BACKEND_HARDWARE:
+            self._hid.write(list(data))
         logger.debug(f"USBHIDDevice '{self.device_id}' wrote: {data.hex()}")
         return True
 
@@ -193,11 +311,16 @@ class USBHIDDevice(PhysicalDevice):
 # --- IoT Device Implementations (using Adapters) ---
 
 class RobotArmDevice:
-    """Robot Arm device control wrapper using a Serial adapter."""
+    """Robot Arm device control wrapper using a Serial adapter.
 
-    def __init__(self, device_id: str, serial_port: str = "/dev/ttyUSB1"):
+    The joint protocol (``SET_JOINT_<id>:<angle>``) is spoken over the serial
+    adapter, so the arm follows the adapter's backend: real serial hardware
+    when available, in-memory mock otherwise.
+    """
+
+    def __init__(self, device_id: str, serial_port: str = "/dev/ttyUSB1", backend: str = BACKEND_AUTO):
         self.device_id = device_id
-        self.adapter = SerialDevice(f"{device_id}_serial", port=serial_port)
+        self.adapter = SerialDevice(f"{device_id}_serial", port=serial_port, backend=backend)
         self.joints: Dict[int, int] = {1: 0, 2: 0, 3: 0, 4: 0}
 
     def connect(self) -> bool:
@@ -210,11 +333,15 @@ class RobotArmDevice:
     def is_connected(self) -> bool:
         return self.adapter.is_connected
 
+    @property
+    def active_backend(self) -> Optional[str]:
+        return self.adapter.active_backend
+
     def execute_command(self, cmd: str) -> Dict[str, Any]:
         """Expects format: 'move_joint <joint_id> <angle>'."""
         if not self.is_connected:
             return {"status": "failed", "stderr": "Robot arm not connected"}
-        
+
         parts = cmd.strip().split()
         if len(parts) < 3 or parts[0].lower() != "move_joint":
             return {"status": "failed", "stderr": "Invalid format. Use: 'move_joint <joint_id> <angle>'"}
@@ -228,7 +355,7 @@ class RobotArmDevice:
                 return {"status": "failed", "stderr": "Angle must be between -180 and 180"}
 
             self.joints[joint] = angle
-            # Send physical command over serial mock
+            # Send physical command over the serial adapter
             self.adapter.write(f"SET_JOINT_{joint}:{angle}\n")
             return {
                 "status": "success",
@@ -240,19 +367,12 @@ class RobotArmDevice:
 
 
 class SensorDevice(PhysicalDevice):
-    """Telemetry sensor device returning climate data."""
+    """Telemetry sensor device returning climate data (mock backend only)."""
 
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, backend: str = BACKEND_MOCK):
+        super().__init__(device_id, backend)
         self.temp_base = 22.0
         self.humi_base = 45.0
-
-    def connect(self) -> bool:
-        self._connected = True
-        return True
-
-    def disconnect(self) -> None:
-        self._connected = False
 
     def read(self) -> Dict[str, float]:
         if not self._connected:
@@ -279,18 +399,11 @@ class SensorDevice(PhysicalDevice):
 
 
 class CameraDevice(PhysicalDevice):
-    """Mock IoT Camera device capturing images."""
+    """IoT Camera device capturing images (mock backend only)."""
 
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(self, device_id: str, backend: str = BACKEND_MOCK):
+        super().__init__(device_id, backend)
         self.resolution = "1920x1080"
-
-    def connect(self) -> bool:
-        self._connected = True
-        return True
-
-    def disconnect(self) -> None:
-        self._connected = False
 
     def read(self) -> bytes:
         if not self._connected:
@@ -304,7 +417,7 @@ class CameraDevice(PhysicalDevice):
     def execute_command(self, cmd: str) -> Dict[str, Any]:
         if not self._connected:
             return {"status": "failed", "stderr": "Camera not connected"}
-        
+
         parts = cmd.strip().split()
         action = parts[0].lower() if parts else ""
         if action == "capture":
