@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import re
 import subprocess
 import sys
@@ -21,6 +22,37 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.core.cli_agents.open_code_agent import OpenCodeAgent
+
+# CI 잡은 LLM_PROVIDER/LLM_MODEL과 API 키만 주입하므로, 설정 로더가 요구하는
+# 나머지 필수 변수에 안전한 기본값을 채운다. 시크릿 성격의 키에는 기본값을 두지 않는다.
+_CONFIG_ENV_DEFAULTS = {
+    "LLM_TEMPERATURE": "0.2",
+    "LLM_MAX_TOKENS": "8192",
+    "BUDGET_LIMIT": "5.0",
+    "ENABLE_COST_OPTIMIZATION": "true",
+}
+_MODEL_ROLE_KEYS = (
+    "PLANNING_MODEL",
+    "REASONING_MODEL",
+    "VERIFICATION_MODEL",
+    "GENERATION_MODEL",
+    "COMPRESSION_MODEL",
+)
+
+
+def ensure_config_loaded() -> None:
+    """MultiModelOrchestrator 생성 전에 전역 LLM 설정을 1회 로드한다."""
+    from src.core import researcher_config
+
+    if researcher_config.config is not None:
+        return
+    for key, value in _CONFIG_ENV_DEFAULTS.items():
+        os.environ.setdefault(key, value)
+    default_model = os.getenv("LLM_MODEL")
+    if default_model:
+        for key in _MODEL_ROLE_KEYS:
+            os.environ.setdefault(key, default_model)
+    researcher_config.load_config_from_env()
 
 
 def run(cmd: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -555,6 +587,7 @@ async def code_review(diff_path: Path) -> int:
         return 0
     
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
+    ensure_config_loaded()
     orchestrator = MultiModelOrchestrator()
     prompt = f"You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly.\n\nGit Diff:\n{diff}"
     system_message = "You are an expert code reviewer. If the primary model is unavailable, the system will fallback."
@@ -584,7 +617,8 @@ async def issue_triage(review_path: Path, cerebras_path: Path | None = None) -> 
     
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
     import datetime
-    
+
+    ensure_config_loaded()
     orchestrator = MultiModelOrchestrator()
     current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -649,7 +683,8 @@ async def merge_decision(pr_meta_path: Path, review_path: Path, cerebras_path: P
         
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
     import json
-    
+
+    ensure_config_loaded()
     orchestrator = MultiModelOrchestrator()
     prompt = f"""You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, or any concrete issue. Do not block solely because one provider skipped or returned no content if another review is available. Keep reason concise.
 
