@@ -43,6 +43,8 @@ class AutomationEngine:
     async def _wrapped_execution_callback(self, user_query: str, session_id: str) -> Any:
         """Internal callback wrapper to run multi-agent routing, execute query, and trigger downstream chains."""
         # Resolve the active schedule configuration for this execution
+        task_id = session_id
+        payload: Dict[str, Any] = {}
         schedule = None
         for s in self.scheduler.schedules.values():
             # If the query matches (simple heuristic)
@@ -55,7 +57,19 @@ class AutomationEngine:
         # 1. Multi-agent Routing
         routed_query = self.route_task(user_query, metadata)
 
-        # 2. Execution
+        # 2. Execution (with hard timeout enforcement for delegated tasks)
+        timeout = float(payload.get("timeout", metadata.get("timeout", 30.0)))
+        if hasattr(self, "coordinator") and self.coordinator is not None:
+            try:
+                await asyncio.wait_for(
+                    self.coordinator.delegate_task(task_id, payload),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"Cross-node delegation for task '{task_id}' timed out after {timeout}s"
+                )
+
         result = None
         if self._orig_callback:
             result = await self._orig_callback(routed_query, session_id)
