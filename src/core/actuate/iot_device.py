@@ -46,7 +46,7 @@ class PhysicalDevice(abc.ABC):
 class GPIODevice(PhysicalDevice):
     """Mock GPIO device adapter for pin-level control."""
 
-    def __init__(self, device_id: str):
+    def __init__(self, device_id: str, backend: str = "mock"):
         super().__init__(device_id)
         self.pins: Dict[int, int] = {}  # pin_number -> state (0 or 1)
 
@@ -63,6 +63,15 @@ class GPIODevice(PhysicalDevice):
         if not self._connected:
             raise RuntimeError("Device not connected")
         return self.pins
+
+    def _hw_read(self) -> Dict[int, int]:
+        """Read physical GPIO line states via libgpiod v2."""
+        values = self._request.get_values()
+        return {offset: 1 if values[offset] == self._Value.ACTIVE else 0 for offset in self.pins}
+
+    def _hw_set_pin(self, pin: int, state: int) -> None:
+        """Drive a single GPIO line via libgpiod v2."""
+        self._request.set_value({pin: self._Value.ACTIVE if state else self._Value.INACTIVE})
 
     def write(self, data: Dict[int, int]) -> bool:
         """Expects data as a dict of {pin_number: state}."""
