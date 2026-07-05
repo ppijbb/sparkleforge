@@ -866,7 +866,7 @@ class MultiModelOrchestrator:
                         self.model_clients[f"{model_name}_langchain"] = ChatGoogleGenerativeAI(
                             model=model_config.model_id,
                             temperature=model_config.temperature,
-                            max_tokens=model_config.max_tokens,
+                            max_output_tokens=model_config.max_tokens,
                             google_api_key=self.llm_config.api_key,
                         )
 
