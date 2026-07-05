@@ -129,7 +129,7 @@ async def _call_judge(rubric: str, transcript: str, context: str) -> GradeResult
         f"Agent output/transcript:\n{transcript[:4000]}\n\n"
         "Respond with a single line: SCORE=<0.0-1.0> REASON=<short reason>"
     )
-    result = await orchestrator.execute_with_model(prompt=prompt, task_type=TaskType.RESEARCH)
+    result = await orchestrator.execute_with_model(prompt=prompt, task_type=TaskType.RESEARCH, max_tokens=256)
     content = getattr(result, "content", "") or ""
 
     score = 0.0
