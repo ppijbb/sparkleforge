@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 class AutomationEngine:
     """Orchestrates system automation triggers (cron, event, webhook, chains) and routes tasks to expert agents."""
 
+    DEFAULT_ROUTED_TIMEOUT = 30.0
+
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -89,12 +91,25 @@ class AutomationEngine:
         target = metadata.get("execution_target", "auto")
         if target != "local" and self.coordinator is not None and getattr(self.coordinator, "active_workers", None):
             task_id = schedule.schedule_id if schedule else session_id
-            payload = {
-                "command": routed_query,
-                "timeout": (schedule.timeout_seconds if schedule and schedule.timeout_seconds else 30.0),
-            }
+            timeout = float(
+                schedule.timeout_seconds if schedule and schedule.timeout_seconds else self.DEFAULT_ROUTED_TIMEOUT
+            )
+            payload = {"command": routed_query, "timeout": timeout}
             logger.info(f"AutomationEngine [Cross-node]: Delegating task '{task_id}' via coordinator.")
-            ok = await self.coordinator.delegate_task(task_id, payload)
+            try:
+                ok = await asyncio.wait_for(self.coordinator.delegate_task(task_id, payload), timeout=timeout)
+            except asyncio.TimeoutError:
+                # Hard boundary: never block the scheduler loop indefinitely on a hung
+                # coordinator/worker, even though the timeout is also passed down to
+                # the session layer as an (advisory, implementation-dependent) hint.
+                logger.error(
+                    f"AutomationEngine [Cross-node]: Delegation for '{task_id}' timed out after {timeout}s."
+                )
+                if target == "remote":
+                    raise RuntimeError(
+                        f"Cross-node delegation for task '{task_id}' timed out after {timeout}s."
+                    )
+                ok = False
             if ok:
                 return {
                     "status": "success",
