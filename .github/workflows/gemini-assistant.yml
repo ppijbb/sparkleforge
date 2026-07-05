@@ -101,7 +101,7 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
         run: |
           python -m pip install --upgrade pip
-          python -m pip install aiohttp openai
+          python -m pip install aiohttp openai google-generativeai langchain-google-genai
           python scripts/opencode_github_worker.py code-review --diff diff.txt
           
       - name: Leave PR review summary
@@ -177,7 +177,7 @@ jobs:
           fi
           
           python -m pip install --upgrade pip
-          python -m pip install aiohttp openai
+          python -m pip install aiohttp openai google-generativeai langchain-google-genai
           python scripts/opencode_github_worker.py issue-triage --review-file review_result.txt
           
           if [ ! -f triage_result.json ]; then
@@ -258,7 +258,7 @@ jobs:
             --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName,statusCheckRollup > pr_meta.json
             
           python -m pip install --upgrade pip
-          python -m pip install aiohttp openai
+          python -m pip install aiohttp openai google-generativeai langchain-google-genai
           python scripts/opencode_github_worker.py merge-decision --pr-meta-file pr_meta.json --review-file review_result.txt
           
           if [ ! -f merge_decision.json ]; then
