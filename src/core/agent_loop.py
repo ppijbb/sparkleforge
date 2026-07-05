@@ -100,6 +100,7 @@ Autonomous problem-solving contract:
         history = list(messages)
         retry_count = 0
         max_retries = 3
+        tool_capable_waits = 0
 
         while budget.remaining > 0:
             budget.consume()
@@ -169,12 +170,34 @@ Autonomous problem-solving contract:
             tool_calls_count += len(tool_calls)
 
             # Add Assistant response to history
+            # (잘린/불량 JSON 인자를 그대로 넣으면 이후 모든 API 호출이 400으로 오염됨)
             assistant_msg = {"role": "assistant", "content": content}
             if tool_calls:
-                assistant_msg["tool_calls"] = tool_calls
+                assistant_msg["tool_calls"] = self._sanitize_tool_calls_for_history(tool_calls)
             history.append(assistant_msg)
 
             if not tool_calls:
+                # Tool 불가 provider로 폴백된 응답은 '완료'로 인정하지 않는다.
+                # (예: NIM 429 → Gemini 폴백 시 파일 수정 없이 완료 보고하는 환각 방지)
+                if tools and not self._is_tool_capable_result(result):
+                    if tool_capable_waits < 3 and budget.remaining > 0:
+                        tool_capable_waits += 1
+                        history.pop()  # 폴백 응답은 히스토리에서 제거
+                        logger.warning(
+                            "[AgentLoop] Non-tool-capable model %s answered without tool calls; "
+                            "waiting 35s for tool-capable provider (%d/3)",
+                            result.model_used,
+                            tool_capable_waits,
+                        )
+                        await asyncio.sleep(35)
+                        continue
+                    errors.append(
+                        {
+                            "type": "tool_capable_model_unavailable",
+                            "message": f"Final answer produced by non-tool-capable model {result.model_used}",
+                        }
+                    )
+                    metadata["tool_capable_model_unavailable"] = True
                 # No tool calls, we are done
                 if tools:
                     metadata.setdefault("tool_calling_disabled_reason", "model_returned_no_tool_calls")
@@ -336,6 +359,27 @@ Autonomous problem-solving contract:
             result["error"] = error
         return result
 
+    @staticmethod
+    def _sanitize_tool_calls_for_history(tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """히스토리에 저장할 tool_calls의 arguments가 유효한 JSON 문자열임을 보장."""
+        sanitized = []
+        for tc in tool_calls:
+            tc_copy = json.loads(json.dumps(tc))
+            fn = tc_copy.get("function", {})
+            args = fn.get("arguments", "{}")
+            if isinstance(args, str):
+                try:
+                    json.loads(args)
+                except (json.JSONDecodeError, ValueError):
+                    fn["arguments"] = "{}"
+            else:
+                try:
+                    fn["arguments"] = json.dumps(args)
+                except (TypeError, ValueError):
+                    fn["arguments"] = "{}"
+            sanitized.append(tc_copy)
+        return sanitized
+
     def _normalize_tool_calls(self, tool_calls: Any) -> List[Dict[str, Any]]:
         """Convert provider-specific tool call objects into OpenAI-like dictionaries."""
         if not tool_calls:
@@ -375,11 +419,24 @@ Autonomous problem-solving contract:
         return normalized
 
 
-    def _select_tool_capable_model(self, task_type: TaskType) -> str | None:
-        """Prefer providers that can return OpenAI-compatible tool_calls."""
+    TOOL_CAPABLE_PROVIDERS = ("nvidia", "openrouter", "groq", "openai")
+
+    def _is_tool_capable_result(self, result: Any) -> bool:
+        """응답을 생성한 모델이 tool_calls를 반환할 수 있는 provider인지 확인."""
         models = getattr(self.orchestrator, "models", {}) or {}
-        preferred = ("openrouter", "groq", "openai")
-        for provider in preferred:
+        config = models.get(getattr(result, "model_used", None))
+        provider = getattr(config, "provider", None)
+        if provider is None:
+            provider = ((getattr(result, "metadata", None) or {}).get("provider"))
+        return provider in self.TOOL_CAPABLE_PROVIDERS
+
+    def _select_tool_capable_model(self, task_type: TaskType) -> str | None:
+        """Prefer providers that can return OpenAI-compatible tool_calls (rate-limited 제외)."""
+        models = getattr(self.orchestrator, "models", {}) or {}
+        limited = getattr(self.orchestrator, "_is_provider_rate_limited", lambda _p: False)
+        for provider in self.TOOL_CAPABLE_PROVIDERS:
+            if limited(provider):
+                continue
             for name, config in models.items():
                 if getattr(config, "provider", None) != provider:
                     continue
@@ -393,14 +450,44 @@ Autonomous problem-solving contract:
             return f"{system_message.strip()}\n\n{self.AUTONOMOUS_PROBLEM_SOLVING_CONTRACT.strip()}"
         return self.AUTONOMOUS_PROBLEM_SOLVING_CONTRACT.strip()
 
+    # Docker 샌드박스가 필요한 도구 (샌드박스 불가 시 노출 제외)
+    SANDBOX_TOOLS = ("python_coder", "code_interpreter")
+
+    def _sandbox_available(self) -> bool:
+        """Docker 샌드박스 실행 가능 여부 (결과 캐시)."""
+        if not hasattr(self, "_sandbox_ok"):
+            try:
+                from src.core.sandbox.docker_sandbox import get_sandbox
+
+                sandbox = get_sandbox()
+                runtime = getattr(sandbox.config, "runtime", None)
+                allow_fallback = getattr(sandbox.config, "allow_default_runtime_fallback", False)
+                import docker as _docker
+
+                client = _docker.from_env()
+                client.ping()
+                runtimes = (client.info().get("Runtimes") or {}).keys()
+                self._sandbox_ok = (not runtime) or (runtime in runtimes) or allow_fallback
+            except Exception:
+                self._sandbox_ok = False
+            if not self._sandbox_ok:
+                logger.warning(
+                    "[AgentLoop] Docker sandbox unavailable; hiding sandbox tools %s",
+                    self.SANDBOX_TOOLS,
+                )
+        return self._sandbox_ok
+
     def _get_openai_tools(self) -> List[Dict[str, Any]]:
         """Converts MCP tools to OpenAI tool format."""
         openai_tools = []
         alias_map: Dict[str, str] = {}
         used_aliases = set()
         registry_tools = getattr(getattr(self.mcp_hub, "registry", None), "tools", {}) or {}
+        sandbox_ok = self._sandbox_available()
 
         for name, info in registry_tools.items():
+            if not sandbox_ok and name in self.SANDBOX_TOOLS:
+                continue
             alias = self._openai_tool_name(name)
             if alias in used_aliases:
                 suffix = 2
