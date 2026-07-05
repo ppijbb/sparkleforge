@@ -167,7 +167,57 @@ async def test_teleport_ssh_session_execution():
         assert "whoami" in args[3]
 
 
-# --- 4. SecureShellExecutor Adapter Routing Tests ---
+# --- 4. SSH send_payload Security Regression Tests ---
+
+@pytest.mark.asyncio
+async def test_ssh_send_payload_quotes_shell_metacharacters():
+    session = SSHRemoteSession(host="remote-node")
+
+    mock_proc = AsyncMock()
+    mock_proc.communicate.return_value = (b"", b"")
+    mock_proc.returncode = 0
+
+    with patch("asyncio.create_subprocess_exec", return_callable=AsyncMock) as mock_exec:
+        mock_exec.return_value = mock_proc
+
+        malicious_payload = {
+            "entries": {
+                "quote_breakout": "'; rm -rf / #",
+                "backticks": "`touch /tmp/pwned`",
+                "substitution": "$(reboot)",
+                "newline": "line1\nline2",
+            }
+        }
+        ok = await session.send_payload("sync_memory", malicious_payload)
+        assert ok is True
+
+        wrapped_command = mock_exec.call_args[0][-1]
+        # The JSON message must be passed as a single quoted literal:
+        # no metacharacter may survive outside quotes in the remote command
+        import shlex
+        tokens = shlex.split(wrapped_command.split(";", 1)[-1])
+        rejoined = " ".join(tokens)
+        assert "rm -rf / #" in rejoined  # literal data, parseable back out
+        assert "$(reboot)" in rejoined
+        assert "`touch /tmp/pwned`" in rejoined
+        # The payload must arrive as valid JSON after shell unquoting
+        json_token = next(t for t in tokens if t.startswith("{"))
+        parsed = json.loads(json_token)
+        assert parsed["entries"]["quote_breakout"] == "'; rm -rf / #"
+
+
+@pytest.mark.asyncio
+async def test_ssh_send_payload_rejects_unsafe_action_name():
+    session = SSHRemoteSession(host="remote-node")
+
+    with patch("asyncio.create_subprocess_exec", return_callable=AsyncMock) as mock_exec:
+        for bad_action in ["../../etc/cron.d/evil", "a;b", "a b", "", "x`y`"]:
+            ok = await session.send_payload(bad_action, {"k": "v"})
+            assert ok is False, f"action {bad_action!r} should be rejected"
+        mock_exec.assert_not_called()
+
+
+# --- 5. SecureShellExecutor Adapter Routing Tests ---
 
 @pytest.mark.asyncio
 async def test_executor_delegates_to_remote_session():
