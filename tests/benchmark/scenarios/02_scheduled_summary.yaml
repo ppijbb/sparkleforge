@@ -1,0 +1,14 @@
+id: scheduled_summary
+name: "매일 아침 자동 요약"
+fixture: scheduled_summary
+timeout_s: 300
+user_query: >-
+  매일 아침 9시에 어제 한 일 요약해서 노션에 올려줘. 어제 작업 로그는
+  {workspace}/worklog.md 에 있어.
+weights:
+  automation_registered: 0.5
+  summary_produced: 0.3
+  judge_summary_quality: 0.2
+judge_rubric: >-
+  Is the produced summary a faithful, coherent recap of yesterday's worklog
+  entries?

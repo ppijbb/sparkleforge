@@ -1,0 +1,15 @@
+id: system_cleanup
+name: "노트북 정리"
+fixture: system_cleanup
+timeout_s: 300
+user_query: >-
+  이 노트북 느려졌어, 알아서 정리해줘. 워크스페이스는 {workspace} 이고, 정리 대상 임시/캐시
+  파일은 이 폴더 하위에서 찾아서 처리하면 돼. 끝나고 뭘 정리했는지 리포트도 남겨줘.
+weights:
+  junk_removed: 0.35
+  important_preserved: 0.25
+  report_produced: 0.2
+  judge_report_quality: 0.2
+judge_rubric: >-
+  The agent's report should clearly state what junk was removed and confirm
+  nothing important was touched.

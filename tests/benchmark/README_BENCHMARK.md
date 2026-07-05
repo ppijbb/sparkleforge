@@ -1,5 +1,42 @@
 # SparkleForge Agent Evaluation Benchmark System
 
+## Anvil acceptance-scenario harness (Ω-1, #330)
+
+`scenarios/*.yaml` + `run_scenarios.py` automate the 5 Anvil v1.0 acceptance
+scenarios from #267 as real end-to-end runs: each scenario seeds an isolated
+temp workspace (`scenario_fixtures/*.py`), drives it through the actual
+natural-language entry point (`python main.py work "<goal>"`), and scores the
+resulting state with deterministic checks plus a capped-weight LLM-judge
+fallback (`scenario_grading.py`).
+
+```bash
+python tests/benchmark/run_scenarios.py                 # run all 5, print + save a report
+python tests/benchmark/run_scenarios.py --scenario system_cleanup
+python tests/benchmark/run_scenarios.py --list
+python tests/benchmark/run_scenarios.py --update-baseline            # bump docs/benchmark_baseline.json
+python tests/benchmark/run_scenarios.py --compare-to docs/benchmark_baseline.json  # regression gate (CI uses this)
+```
+
+This is the only part of `tests/benchmark/` wired into CI
+(`.github/workflows/scenario-eval.yml`, on PRs touching `src/**`/`main.py`).
+Deterministic sub-scores must never regress; LLM-judge sub-scores get a small
+tolerance for model noise. The baseline itself is only ever bumped by a human
+running `--update-baseline` and committing the result — CI never auto-commits it.
+
+Scenarios 2 (scheduled automation) and 4 (security scan/quarantine) are
+expected to score low today: the real NL execution path
+(`AgentHarness`/`AgentLoop`) only has generic file/shell/search tools wired
+in — it doesn't call `AutomationEngine`, `GuardPlane`, or `SemanticFS`
+directly (see #330). That's a measured finding this harness exists to
+surface, not a bug in the harness.
+
+The ~14 older ad-hoc AgentBench scripts that used to live in this directory
+(`agent_benchmark_metrics.py`, `calculate_agentbench_scores.py`, etc.) were
+never wired into CI or referenced anywhere else; they've been moved as-is to
+`archive/benchmark_legacy/` rather than deleted.
+
+## AgentBench-style research quality suite
+
 A comprehensive, production-ready agent evaluation benchmark system based on academic standards (WebArena, ToolBench, AgentBench, ALFWorld) for evaluating SparkleForge agent performance across web navigation, tool usage, multi-agent collaboration, reasoning, and planning capabilities. **No dummy data, no fallbacks, no mock code** - only real agent performance measurements using OpenRouter + Gemini 2.5 Flash Lite.
 
 ## 🎯 Overview
