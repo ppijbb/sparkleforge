@@ -1,10 +1,15 @@
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.trust_gate import TrustContext, TrustLevel
 from src.core.session.remote_session import RemoteSession
 from src.core.session.coordinator import CoordinatorNode, WorkerNode, NodeStatus
+from src.core.session.secure_envelope import (
+    decrypt_credential_envelope,
+    encrypt_credential_envelope,
+)
 from src.core.scheduler import Scheduler, ScheduleConfig
 
 
@@ -232,7 +237,7 @@ async def test_delegate_credential_with_ttl():
     coordinator = CoordinatorNode()
     mock_session = AsyncMock(spec=RemoteSession)
     mock_session.send_payload.return_value = True
-    coordinator.register_worker("worker-1", mock_session)
+    coordinator.register_worker("worker-1", mock_session, shared_secret="pairing-secret")
 
     mock_vault = MagicMock()
     mock_vault.retrieve.return_value = "s3cret-token"
@@ -245,16 +250,21 @@ async def test_delegate_credential_with_ttl():
     action, payload = mock_session.send_payload.call_args[0]
     assert action == "receive_credential"
     assert payload["key"] == "api_key"
-    assert payload["value"] == "s3cret-token"
+    # The plaintext secret must never appear anywhere in the wire payload
+    assert "value" not in payload
+    assert "s3cret-token" not in json.dumps(payload)
+    # The receiving side can open the envelope with the same pairing secret
+    opened = decrypt_credential_envelope("pairing-secret", "api_key", payload["envelope"])
+    assert opened["value"] == "s3cret-token"
     import time as time_module
-    assert payload["expires_at"] > time_module.time()
+    assert opened["expires_at"] > time_module.time()
 
 
 @pytest.mark.asyncio
 async def test_delegate_credential_missing_from_vault():
     coordinator = CoordinatorNode()
     mock_session = AsyncMock(spec=RemoteSession)
-    coordinator.register_worker("worker-1", mock_session)
+    coordinator.register_worker("worker-1", mock_session, shared_secret="pairing-secret")
 
     mock_vault = MagicMock()
     mock_vault.retrieve.return_value = None
@@ -266,33 +276,102 @@ async def test_delegate_credential_missing_from_vault():
 
 
 @pytest.mark.asyncio
+async def test_delegate_credential_uses_shared_vault_from_init():
+    mock_vault = MagicMock()
+    mock_vault.retrieve.return_value = "s3cret-token"
+    coordinator = CoordinatorNode(vault=mock_vault)
+
+    mock_session = AsyncMock(spec=RemoteSession)
+    mock_session.send_payload.return_value = True
+    coordinator.register_worker("worker-1", mock_session, shared_secret="pairing-secret")
+
+    ok = await coordinator.delegate_credential("worker-1", "api_key")
+
+    assert ok is True
+    mock_vault.retrieve.assert_called_once_with("api_key")
+
+
+@pytest.mark.asyncio
+async def test_delegate_credential_fails_without_configured_vault():
+    coordinator = CoordinatorNode()
+    mock_session = AsyncMock(spec=RemoteSession)
+    coordinator.register_worker("worker-1", mock_session, shared_secret="pairing-secret")
+
+    ok = await coordinator.delegate_credential("worker-1", "api_key")
+
+    assert ok is False
+    mock_session.send_payload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delegate_credential_refused_without_pairing_secret():
+    mock_vault = MagicMock()
+    mock_vault.retrieve.return_value = "s3cret-token"
+    coordinator = CoordinatorNode(vault=mock_vault)
+
+    mock_session = AsyncMock(spec=RemoteSession)
+    coordinator.register_worker("worker-1", mock_session)
+
+    ok = await coordinator.delegate_credential("worker-1", "api_key")
+
+    assert ok is False
+    mock_session.send_payload.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_worker_receives_memory_and_credential():
-    worker = WorkerNode(worker_id="worker-1")
+    worker = WorkerNode(worker_id="worker-1", shared_secret="pairing-secret")
 
     assert await worker.handle_sync_memory("anvil", {"k1": "v1"}) is True
     assert await worker.handle_sync_memory("anvil", {"k2": "v2"}) is True
     assert worker.shared_memory["anvil"] == {"k1": "v1", "k2": "v2"}
 
     import time as time_module
-    future = time_module.time() + 60.0
-    assert await worker.handle_receive_credential("api_key", "s3cret", future) is True
+    envelope = encrypt_credential_envelope(
+        "pairing-secret", "api_key", "s3cret", time_module.time() + 60.0
+    )
+    assert await worker.handle_receive_credential("api_key", envelope) is True
     assert worker.get_delegated_credential("api_key") == "s3cret"
 
 
 @pytest.mark.asyncio
 async def test_worker_discards_expired_credential():
-    worker = WorkerNode(worker_id="worker-1")
+    worker = WorkerNode(worker_id="worker-1", shared_secret="pairing-secret")
 
     import time as time_module
-    past = time_module.time() - 1.0
     # Already-expired handoff is rejected outright
-    assert await worker.handle_receive_credential("stale_key", "old", past) is False
+    stale = encrypt_credential_envelope(
+        "pairing-secret", "stale_key", "old", time_module.time() - 1.0
+    )
+    assert await worker.handle_receive_credential("stale_key", stale) is False
     assert worker.get_delegated_credential("stale_key") is None
 
     # Valid handoff expires after its TTL passes
-    assert await worker.handle_receive_credential("api_key", "s3cret", time_module.time() + 0.05) is True
+    short_lived = encrypt_credential_envelope(
+        "pairing-secret", "api_key", "s3cret", time_module.time() + 0.05
+    )
+    assert await worker.handle_receive_credential("api_key", short_lived) is True
     await asyncio.sleep(0.06)
     assert worker.get_delegated_credential("api_key") is None
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_envelope_with_wrong_secret():
+    worker = WorkerNode(worker_id="worker-1", shared_secret="pairing-secret")
+
+    import time as time_module
+    envelope = encrypt_credential_envelope(
+        "different-secret", "api_key", "s3cret", time_module.time() + 60.0
+    )
+    assert await worker.handle_receive_credential("api_key", envelope) is False
+    assert worker.get_delegated_credential("api_key") is None
+
+    # A worker without a pairing secret rejects any envelope
+    unpaired = WorkerNode(worker_id="worker-2")
+    valid = encrypt_credential_envelope(
+        "pairing-secret", "api_key", "s3cret", time_module.time() + 60.0
+    )
+    assert await unpaired.handle_receive_credential("api_key", valid) is False
 
 
 # --- 7. WorkerNode Local Handling Tests ---
