@@ -2,6 +2,7 @@ import abc
 import asyncio
 import json
 import logging
+import shlex
 from typing import Any, Dict, Optional
 import websockets
 
@@ -225,10 +226,11 @@ class SSHRemoteSession(RemoteSession):
     async def execute(self, command: str, timeout: float = 30.0) -> Dict[str, Any]:
         # Propagate trust context by injecting it into environment before execution
         trust_json = json.dumps(self.trust_context.to_dict())
-        escaped_trust = trust_json.replace("'", "'\\''")
-        
+        # Use shlex.quote for safe shell escaping of the JSON trust context payload.
+        escaped_trust = shlex.quote(trust_json)
+
         # Build command that exports the trust context environment variable
-        wrapped_command = f"export SPARKLEFORGE_TRUST_CONTEXT='{escaped_trust}'; {command}"
+        wrapped_command = f"export SPARKLEFORGE_TRUST_CONTEXT={escaped_trust}; {command}"
 
         # Construct execution argument list
         if self.use_teleport:
