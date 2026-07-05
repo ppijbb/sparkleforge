@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 class AutomationEngine:
     """Orchestrates system automation triggers (cron, event, webhook, chains) and routes tasks to expert agents."""
 
+    DEFAULT_ROUTED_TIMEOUT = 30.0
+
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -23,17 +25,14 @@ class AutomationEngine:
         event_bus: Optional[EventBus] = None,
         coordinator: Any = None,
     ):
-        self.scheduler = scheduler or get_scheduler()
-        self.event_bus = event_bus or EventBus()
-        if coordinator is not None:
-            self.coordinator = coordinator
-        elif not hasattr(self, "coordinator"):
-            self.coordinator = getattr(self.scheduler, "coordinator", None)
-
-        if hasattr(self, "_initialized") and self._initialized:
+        if getattr(self, "_initialized", False):
             # Re-apply callback wrapping in case testing fixtures reset scheduler callbacks
             self.scheduler.set_execution_callback(self._wrapped_execution_callback)
             return
+
+        self.scheduler = scheduler or get_scheduler()
+        self.event_bus = event_bus or EventBus()
+        self.coordinator = coordinator if coordinator is not None else getattr(self.scheduler, "coordinator", None)
 
         logger.info("Initializing Automation Engine...")
         self._initialized = True
@@ -91,14 +90,14 @@ class AutomationEngine:
             task_id = schedule.schedule_id if schedule else session_id
             payload = {
                 "command": routed_query,
-                "timeout": (schedule.timeout_seconds if schedule and schedule.timeout_seconds else 30.0),
+                "timeout": (schedule.timeout_seconds if schedule and schedule.timeout_seconds else self.DEFAULT_ROUTED_TIMEOUT),
             }
             logger.info(f"AutomationEngine [Cross-node]: Delegating task '{task_id}' via coordinator.")
-            ok = await self.coordinator.delegate_task(task_id, payload)
-            if ok:
+            result = await self.coordinator.delegate_task(task_id, payload)
+            if result:
                 return {
                     "status": "success",
-                    "message": "Delegated execution succeeded.",
+                    "result": result,
                     "routed_query": routed_query,
                 }
             if target == "remote":
