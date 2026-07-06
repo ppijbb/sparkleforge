@@ -619,7 +619,11 @@ async def code_review(diff_path: Path) -> int:
     return 0
 
 
-async def issue_triage(review_path: Path, cerebras_path: Path | None = None) -> int:
+async def issue_triage(
+    review_path: Path,
+    cerebras_path: Path | None = None,
+    open_issues_path: Path | None = None,
+) -> int:
     if not review_path.exists():
         print(f"Error: Review file {review_path} not found.", file=sys.stderr)
         return 1
@@ -627,18 +631,34 @@ async def issue_triage(review_path: Path, cerebras_path: Path | None = None) -> 
     cerebras_review = ""
     if cerebras_path and cerebras_path.exists():
         cerebras_review = cerebras_path.read_text(encoding="utf-8")
-        
+
     combined_review = f"OpenRouter Review:\n{openrouter_review}\n\nCerebras Review:\n{cerebras_review}"
-    
+
+    open_issues_section = "None known."
+    if open_issues_path and open_issues_path.exists():
+        try:
+            import json as _json
+
+            open_issues = _json.loads(open_issues_path.read_text(encoding="utf-8"))
+            if open_issues:
+                open_issues_section = "\n".join(
+                    f"- #{item['number']}: {item['title']}" for item in open_issues
+                )
+        except Exception:
+            pass
+
     from src.core.llm_manager import MultiModelOrchestrator, TaskType
     import datetime
 
     ensure_config_loaded()
     orchestrator = MultiModelOrchestrator()
     current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     prompt = f"""You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
 CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
+DEDUPLICATION: The following issues are currently OPEN in this repository:
+{open_issues_section}
+If the finding you would report is already substantially covered by one of the open issues above (even if it would be worded differently), set should_create_issue to false — do not file a near-duplicate.
 If should_create_issue is true, the title MUST use the repository's plain Conventional Commit prefix style (e.g. 'fix: ...', 'feat: ...').
 The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
 > **Date**: {current_date}
@@ -750,6 +770,7 @@ def main() -> int:
     parser.add_argument("--review-file", default="review_result.txt")
     parser.add_argument("--cerebras-file", default="cerebras_result.txt")
     parser.add_argument("--pr-meta-file", default="pr_meta.json")
+    parser.add_argument("--open-issues-file", default=None)
     args = parser.parse_args()
 
     if args.command == "fix-issue":
@@ -759,7 +780,8 @@ def main() -> int:
         return asyncio.run(code_review(Path(args.diff)))
     elif args.command == "issue-triage":
         cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
-        return asyncio.run(issue_triage(Path(args.review_file), cerebras_file))
+        open_issues_file = Path(args.open_issues_file) if args.open_issues_file else None
+        return asyncio.run(issue_triage(Path(args.review_file), cerebras_file, open_issues_file))
     elif args.command == "merge-decision":
         cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
         return asyncio.run(merge_decision(Path(args.pr_meta_file), Path(args.review_file), cerebras_file))
