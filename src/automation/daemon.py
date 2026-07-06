@@ -1,4 +1,4 @@
-"""CDP WS holder + Unix socket relay. One daemon per BU_NAME."""
+"""CDP WS holder + IPC relay. One daemon per BU_NAME. POSIX uses AF_UNIX; Windows uses TCP loopback."""
 
 import asyncio
 import json
@@ -28,9 +28,19 @@ def _load_env():
 _load_env()
 
 NAME = os.environ.get("BU_NAME", "default")
-SOCK = f"/tmp/bu-{NAME}.sock"
-LOG = f"/tmp/bu-{NAME}.log"
-PID = f"/tmp/bu-{NAME}.pid"
+IS_WINDOWS = os.name == "nt" or sys.platform.startswith("win")
+_TMP = os.path.join(os.environ.get("LOCALAPPDATA", "") if IS_WINDOWS else "/tmp", "sparkleforge")
+os.makedirs(_TMP, exist_ok=True)
+SOCK = os.path.join(_TMP, f"bu-{NAME}.sock")
+LOG = os.path.join(_TMP, f"bu-{NAME}.log")
+PID = os.path.join(_TMP, f"bu-{NAME}.pid")
+if IS_WINDOWS:
+    # Windows lacks AF_UNIX reliability; use TCP loopback for IPC.
+    HOST = "127.0.0.1"
+    PORT = int(os.environ.get("BU_PORT", "0")) or _port_for(NAME)
+else:
+    HOST = None
+    PORT = None
 BUF = 500
 PROFILES = [
     Path.home() / "Library/Application Support/Google/Chrome",
@@ -59,6 +69,15 @@ INTERNAL = ("chrome://", "chrome-untrusted://", "devtools://", "chrome-extension
 BU_API = "https://api.browser-use.com/api/v3"
 REMOTE_ID = os.environ.get("BU_BROWSER_ID")
 API_KEY = os.environ.get("BROWSER_USE_API_KEY")
+
+
+def _port_for(name: str) -> int:
+    """Stable deterministic port for a daemon name on Windows."""
+    import hashlib
+
+    h = hashlib.sha256(name.encode("utf-8")).digest()
+    port = 49152 + (int.from_bytes(h[:2], "big") % 16384)
+    return port
 
 
 def log(msg):
@@ -237,7 +256,7 @@ class Daemon:
 
 
 async def serve(d):
-    if os.path.exists(SOCK):
+    if not IS_WINDOWS and os.path.exists(SOCK):
         os.unlink(SOCK)
 
     async def handler(reader, writer):
@@ -258,9 +277,13 @@ async def serve(d):
         finally:
             writer.close()
 
-    server = await asyncio.start_unix_server(handler, path=SOCK)
-    os.chmod(SOCK, 0o600)
-    log(f"listening on {SOCK} (name={NAME}, remote={REMOTE_ID or 'local'})")
+    if IS_WINDOWS:
+        server = await asyncio.start_server(handler, HOST, PORT)
+        log(f"listening on {HOST}:{PORT} (name={NAME}, remote={REMOTE_ID or 'local'})")
+    else:
+        server = await asyncio.start_unix_server(handler, path=SOCK)
+        os.chmod(SOCK, 0o600)
+        log(f"listening on {SOCK} (name={NAME}, remote={REMOTE_ID or 'local'})")
     async with server:
         await d.stop.wait()
 
@@ -273,18 +296,25 @@ async def main():
 
 def already_running():
     try:
+        if IS_WINDOWS:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            s.connect((HOST, PORT))
+            s.close()
+            return True
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(1)
         s.connect(SOCK)
         s.close()
         return True
-    except (TimeoutError, FileNotFoundError, ConnectionRefusedError):
+    except (TimeoutError, FileNotFoundError, ConnectionRefusedError, OSError):
         return False
 
 
 if __name__ == "__main__":
     if already_running():
-        print(f"daemon already running on {SOCK}", file=sys.stderr)
+        endpoint = f"{HOST}:{PORT}" if IS_WINDOWS else SOCK
+        print(f"daemon already running on {endpoint}", file=sys.stderr)
         sys.exit(0)
     open(LOG, "w").close()
     open(PID, "w").write(str(os.getpid()))
