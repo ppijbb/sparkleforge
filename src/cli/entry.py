@@ -42,7 +42,7 @@ def _inject_stdin_query_for_run() -> None:
 
     query = sys.stdin.read().strip()
     if query:
-        sys.argv.insert(2, query)
+        sys.argv.append(query)
 
 
 def main_entry() -> None:
