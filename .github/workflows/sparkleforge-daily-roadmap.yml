@@ -152,8 +152,8 @@ jobs:
         run: |
           set +e
           timeout 10m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-2.0-flash-exp \
-            --output sparkleforge-roadmap.md --task "Anvil Phase Z-2: Coordinator Mode" \
-            --format markdown --task "Anvil Phase Z-1: Remote Session (WebSocket/SSH/Teleport integration)" \
+            --output sparkleforge-roadmap.md --format markdown \
+            --task "SparkleForge Daily Roadmap" \
             --input daily-roadmap-prompt.md > sparkleforge-roadmap-console.log \
             2> sparkleforge-roadmap-error.log
           RC=$?
