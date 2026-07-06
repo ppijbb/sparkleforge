@@ -172,20 +172,26 @@ def build_prompt(
     file_contents_str: str,
     extra_context: str,
     tool_context: str = "",
+    force_diff: bool = False,
 ) -> str:
+    if force_diff:
+        step_by_step = """This is your FINAL attempt. File requests will no longer be honored.
+You MUST output a single unified git diff now, using the file contents already provided below."""
+    else:
+        step_by_step = """Step-by-step process:
+1. Review the issue context and the repository snapshot.
+2. If you need to see the contents of a file, request it using this format:
+   <parameter name="file_path">path/to/file.py</parameter>
+3. Once you have enough information, output a single unified git diff."""
     return f"""
 You are an autonomous coding agent editing the SparkleForge repository.
 
 Your goal is to fix the issue described below.
 
-Step-by-step process:
-1. Review the issue context and the repository snapshot.
-2. If you need to see the contents of a file, request it using this format:
-   <parameter name="file_path">path/to/file.py</parameter>
-3. Once you have enough information, output a single unified git diff.
+{step_by_step}
 
 Rules:
-- Output ONLY the unified diff or a file request. No prose.
+- Output ONLY the unified diff{"" if force_diff else " or a file request"}. No prose.
 - Do not change generated artifacts or lockfiles.
 - Keep the patch minimal.
 - CRITICAL: Always emit diffs in `git diff` format:
@@ -509,11 +515,16 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     response = ""
     diff = ""
     system_message = (
-        "You are a careful coding agent. Return only a git-apply compatible unified diff "
-        "for the requested fix. Do not use tools, XML tags, markdown narration, or prose. "
+        "You are a careful coding agent working against a real repository. "
+        "On each turn, output EITHER a file request using "
+        '<parameter name="file_path">path/to/file.py</parameter> '
+        "OR a git-apply compatible unified diff — never both, and no other "
+        "prose, markdown narration, or tool calls. "
         "The diff context lines must match the file exactly."
     )
-    for llm_attempt in range(2):
+    max_llm_attempts = 3
+    for llm_attempt in range(max_llm_attempts):
+        is_final_attempt = llm_attempt == max_llm_attempts - 1
         prompt = build_prompt(
             snapshot=snapshot,
             status=status,
@@ -521,6 +532,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             file_contents_str=file_contents_str,
             extra_context=extra_context,
             tool_context=tool_context,
+            force_diff=is_final_attempt,
         )
         result = await agent.execute_query(prompt, system_message=system_message)
         if not result.get("success"):
@@ -534,8 +546,11 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         if diff:
             break
 
+        if is_final_attempt:
+            break
+
         paths = requested_read_paths(response)
-        if not paths or llm_attempt == 1:
+        if not paths:
             break
 
         requested_context = []
