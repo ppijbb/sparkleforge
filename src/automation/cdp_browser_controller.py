@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import socket
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,6 +24,13 @@ logger = logging.getLogger(__name__)
 # Constants matching browser-harness
 NAME = os.environ.get("BU_NAME", "default")
 INTERNAL = ("chrome://", "chrome-untrusted://", "devtools://", "chrome-extension://", "about:")
+IS_WINDOWS = os.name == "nt" or sys.platform.startswith("win")
+_TMP = os.path.join(os.environ.get("LOCALAPPDATA", "") if IS_WINDOWS else "/tmp", "sparkleforge")
+os.makedirs(_TMP, exist_ok=True)
+if IS_WINDOWS:
+    import hashlib
+
+    _PORT = 49152 + (int.from_bytes(hashlib.sha256(NAME.encode("utf-8")).digest()[:2], "big") % 16384)
 _KC = {
     "Enter": 13,
     "Tab": 9,
@@ -86,17 +94,34 @@ class VerificationResult:
 # --- Helper functions adapted from browser-harness admin.py ---
 def _paths(name):
     n = name or NAME
-    return f"/tmp/bu-{n}.sock", f"/tmp/bu-{n}.pid"
+    sock = os.path.join(_TMP, f"bu-{n}.sock")
+    pid = os.path.join(_TMP, f"bu-{n}.pid")
+    return sock, pid
+
+
+def _endpoint(name):
+    n = name or NAME
+    if IS_WINDOWS:
+        port = 49152 + (int.from_bytes(hashlib.sha256(n.encode("utf-8")).digest()[:2], "big") % 16384)
+        return ("127.0.0.1", port)
+    return (None, _paths(n)[0])
 
 
 def daemon_alive(name=None):
     try:
+        if IS_WINDOWS:
+            host, port = _endpoint(name)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            s.connect((host, port))
+            s.close()
+            return True
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(1)
         s.connect(_paths(name)[0])
         s.close()
         return True
-    except (TimeoutError, FileNotFoundError, ConnectionRefusedError):
+    except (TimeoutError, FileNotFoundError, ConnectionRefusedError, OSError):
         return False
 
 
@@ -105,9 +130,15 @@ def ensure_daemon(wait=60.0, name=None, env=None):
     if daemon_alive(name):
         # Probe with a real CDP call
         try:
-            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            s.settimeout(3)
-            s.connect(_paths(name)[0])
+            if IS_WINDOWS:
+                host, port = _endpoint(name)
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(3)
+                s.connect((host, port))
+            else:
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.settimeout(3)
+                s.connect(_paths(name)[0])
             s.sendall(b'{"method":"Target.getTargets","params":{}}\n')
             data = b""
             while not data.endswith(b"\n"):
@@ -158,9 +189,15 @@ def restart_daemon(name=None):
 
     sock, pid_path = _paths(name)
     try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(5)
-        s.connect(sock)
+        if IS_WINDOWS:
+            host, port = _endpoint(name)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(5)
+            s.connect((host, port))
+        else:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(5)
+            s.connect(sock)
         s.sendall(b'{"meta":"shutdown"}\n')
         s.recv(1024)
         s.close()
@@ -243,9 +280,14 @@ class CDPBrowserController:
     # --- Core CDP Communication ---
     def _send(self, req: Dict[str, Any]) -> Dict[str, Any]:
         """Send JSON request over Unix socket to daemon."""
-        sock_path = _paths(self._name)[0]
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.connect(sock_path)
+        if IS_WINDOWS:
+            host, port = _endpoint(self._name)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((host, port))
+        else:
+            sock_path = _paths(self._name)[0]
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(sock_path)
         s.sendall((json.dumps(req) + "\n").encode())
         data = b""
         while not data.endswith(b"\n"):
@@ -491,7 +533,7 @@ class CDPBrowserController:
     async def take_screenshot(self, filename: str | None = None, full_page: bool = True) -> str:
         await self._ensure_initialized()
         if filename is None:
-            filename = f"/tmp/screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            filename = os.path.join(_TMP, f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         r = self.cdp("Page.captureScreenshot", format="png", captureBeyondViewport=full_page)
         with open(filename, "wb") as f:
             f.write(base64.b64decode(r["data"]))

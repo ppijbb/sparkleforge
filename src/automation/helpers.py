@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import socket
+import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -25,13 +26,29 @@ def _load_env():
 _load_env()
 
 NAME = os.environ.get("BU_NAME", "default")
-SOCK = f"/tmp/bu-{NAME}.sock"
+IS_WINDOWS = os.name == "nt" or sys.platform.startswith("win")
+_TMP = os.path.join(os.environ.get("LOCALAPPDATA", "") if IS_WINDOWS else "/tmp", "sparkleforge")
+os.makedirs(_TMP, exist_ok=True)
+SOCK = os.path.join(_TMP, f"bu-{NAME}.sock")
+if IS_WINDOWS:
+    import hashlib
+
+    _PORT = 49152 + (int.from_bytes(hashlib.sha256(NAME.encode("utf-8")).digest()[:2], "big") % 16384)
+    HOST = "127.0.0.1"
+    PORT = _PORT
+else:
+    HOST = None
+    PORT = None
 INTERNAL = ("chrome://", "chrome-untrusted://", "devtools://", "chrome-extension://", "about:")
 
 
 def _send(req):
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(SOCK)
+    if IS_WINDOWS:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((HOST, PORT))
+    else:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(SOCK)
     s.sendall((json.dumps(req) + "\n").encode())
     data = b""
     while not data.endswith(b"\n"):
@@ -145,8 +162,10 @@ def scroll(x, y, dy=-300, dx=0):
 
 
 # --- visual ---
-def screenshot(path="/tmp/shot.png", full=False):
+def screenshot(path=None, full=False):
     r = cdp("Page.captureScreenshot", format="png", captureBeyondViewport=full)
+    if path is None:
+        path = os.path.join(_TMP, "shot.png")
     open(path, "wb").write(base64.b64decode(r["data"]))
     return path
 
