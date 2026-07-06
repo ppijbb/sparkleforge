@@ -176,10 +176,16 @@ jobs:
             exit 0
           fi
           
+          gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --limit 100 \
+            --json number,title > open_issues.json
+
           python -m pip install --upgrade pip
           python -m pip install aiohttp openai google-generativeai langchain-google-genai
-          python scripts/opencode_github_worker.py issue-triage --review-file review_result.txt
-          
+          python scripts/opencode_github_worker.py issue-triage --review-file review_result.txt --open-issues-file open_issues.json
+
           if [ ! -f triage_result.json ]; then
             echo "Triage produced no result."
             exit 0
