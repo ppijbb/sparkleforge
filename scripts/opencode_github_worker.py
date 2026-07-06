@@ -550,15 +550,12 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             break
 
         paths = requested_read_paths(response)
-        if not paths:
-            break
-
         requested_context = []
         for path in paths[:3]:
             if path in all_files and Path(path).is_file():
                 requested_context.append(read_full_file(path))
         if not requested_context:
-            break
+            continue
 
         tool_context = (
             "Requested file contents are provided below (with exact line numbers). "
@@ -570,8 +567,9 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
 
     if not diff:
         print("OpenCode did not return an applicable diff.", file=sys.stderr)
-        print(response[:4000], file=sys.stderr)
         return 1
+    if not diff.strip():
+        raise ValueError("OpenCode produced an empty patch.")
 
     patch_path = Path("opencode.patch")
     before_signature = repository_change_signature()
