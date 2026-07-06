@@ -172,7 +172,9 @@ def build_prompt(
     file_contents_str: str,
     extra_context: str,
     tool_context: str = "",
+    force_diff: bool = False,
 ) -> str:
+    allowed_actions = "a unified git diff" if force_diff else "a file request or a unified git diff"
     return f"""
 You are an autonomous coding agent editing the SparkleForge repository.
 
@@ -185,7 +187,7 @@ Step-by-step process:
 3. Once you have enough information, output a single unified git diff.
 
 Rules:
-- Output ONLY the unified diff or a file request. No prose.
+- Output ONLY {allowed_actions}. No prose.
 - Do not change generated artifacts or lockfiles.
 - Keep the patch minimal.
 - CRITICAL: Always emit diffs in `git diff` format:
@@ -508,6 +510,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     tool_context = ""
     response = ""
     diff = ""
+    force_diff = False
     system_message = (
         "You are a careful coding agent. Return only a git-apply compatible unified diff "
         "for the requested fix. Do not use tools, XML tags, markdown narration, or prose. "
@@ -521,6 +524,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             file_contents_str=file_contents_str,
             extra_context=extra_context,
             tool_context=tool_context,
+            force_diff=force_diff,
         )
         result = await agent.execute_query(prompt, system_message=system_message)
         if not result.get("success"):
@@ -552,6 +556,14 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             + "\n\n".join(requested_context)
             + "\n"
         )
+
+        if llm_attempt == 0:
+            force_diff = True
+            system_message = (
+                "You are a careful coding agent. Return only a git-apply compatible unified diff "
+                "for the requested fix. Do not use tools, XML tags, markdown narration, or prose. "
+                "File requests will no longer be honored. The diff context lines must match the file exactly."
+            )
 
     if not diff:
         print("OpenCode did not return an applicable diff.", file=sys.stderr)
