@@ -667,16 +667,21 @@ Review Content:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         raw_content = "\n".join(lines).strip()
-        
+
     try:
         import json
-        json.loads(raw_content)
+        data = json.loads(raw_content)
+        if not isinstance(data, dict) or "should_create_issue" not in data or "title" not in data or "body" not in data:
+            raise KeyError("Missing required fields: should_create_issue, title, or body")
         Path("triage_result.json").write_text(raw_content, encoding="utf-8")
         print("✅ Triage completed and saved to triage_result.json")
         return 0
-    except Exception as je:
-        print(f"Error: Invalid JSON response: {je}", file=sys.stderr)
+    except (json.JSONDecodeError, KeyError) as je:
+        print(f"Error: Failed to parse or validate triage JSON: {je}", file=sys.stderr)
         print(f"Raw response:\n{result.content}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: Unexpected error during triage: {e}", file=sys.stderr)
         return 1
 
 
