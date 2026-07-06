@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python 파일 문법 오류 점검 스크립트"""
+"""Python 파일 문법 오류 점검 스크립트. CI 헬스체크 회귀 감지용으로도 사용됨."""
 
 import ast
 import sys
@@ -9,6 +9,7 @@ project_root = Path(__file__).parent.parent
 src_dir = project_root / "src"
 
 errors = []
+checked = 0
 
 for py_file in src_dir.rglob("*.py"):
     if "__pycache__" in str(py_file):
@@ -17,6 +18,7 @@ for py_file in src_dir.rglob("*.py"):
     try:
         with open(py_file, encoding="utf-8") as f:
             content = f.read()
+        checked += 1
 
         # Try to parse
         ast.parse(content, filename=str(py_file))
@@ -50,5 +52,5 @@ if errors:
         print()
     sys.exit(1)
 else:
-    print("✅ 모든 Python 파일 문법 오류 없음")
+    print(f"✅ 모든 Python 파일 문법 오류 없음 ({checked}개 파일 점검 완료)")
     sys.exit(0)
