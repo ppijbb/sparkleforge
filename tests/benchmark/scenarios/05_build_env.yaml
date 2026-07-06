@@ -1,0 +1,14 @@
+id: build_env
+name: "빌드 환경 세팅"
+fixture: build_env
+timeout_s: 300
+user_query: >-
+  이 프로젝트 빌드 환경 세팅해줘. 프로젝트 경로는 {workspace}/project 야. 실행하면
+  잘 되는지 확인도 해줘.
+weights:
+  verify_runs: 0.55
+  packages_declared: 0.25
+  judge_quality: 0.2
+judge_rubric: >-
+  Does the agent explain the build-environment setup steps taken
+  (packages/env vars/verification) coherently?

@@ -1,0 +1,53 @@
+name: Scenario Eval (Anvil Ω-1)
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'src/**'
+      - 'main.py'
+      - 'tests/benchmark/**'
+      - '.github/workflows/scenario-eval.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: scenario-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scenario-eval:
+    name: Acceptance scenario scoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge
+        run: uv sync
+
+      - name: Run acceptance scenarios and compare against baseline
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          timeout 25m uv run python tests/benchmark/run_scenarios.py \
+            --compare-to docs/benchmark_baseline.json \
+            --json-out tests/benchmark/reports/scenario_report_ci.json
+
+      - name: Upload scenario report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-eval-report
+          path: tests/benchmark/reports/scenario_report_ci.json
+          if-no-files-found: ignore
