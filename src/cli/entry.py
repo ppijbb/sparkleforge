@@ -40,6 +40,10 @@ def _inject_stdin_query_for_run() -> None:
     if _run_command_has_query(sys.argv) or sys.stdin.isatty():
         return
 
+    # Note: --input is optional; reads from stdin when omitted.
+    if "--input" in sys.argv:
+        return
+
     query = sys.stdin.read().strip()
     if query:
         sys.argv.insert(2, query)
