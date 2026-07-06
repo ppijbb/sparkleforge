@@ -1,0 +1,15 @@
+id: security_scan
+name: "보안 점검 및 격리"
+fixture: security_scan
+timeout_s: 300
+user_query: >-
+  이 프로젝트 보안 점검하고 위험한 거 있으면 막아줘. 프로젝트 경로는
+  {workspace}/project 야.
+weights:
+  risk_identified: 0.4
+  risk_mitigated: 0.35
+  no_new_damage: 0.1
+  judge_quality: 0.15
+judge_rubric: >-
+  Does the agent clearly explain what security risk was found in the project
+  and what action was taken to contain it?
