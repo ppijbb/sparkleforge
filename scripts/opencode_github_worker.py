@@ -23,6 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.core.cli_agents.open_code_agent import OpenCodeAgent
 
+from src.core.context_compaction.config import CompactionConfig
+
 # CI 잡은 LLM_PROVIDER/LLM_MODEL과 API 키만 주입하므로, 설정 로더가 요구하는
 # 나머지 필수 변수에 안전한 기본값을 채운다. 시크릿 성격의 키에는 기본값을 두지 않는다.
 _CONFIG_ENV_DEFAULTS = {
@@ -115,17 +117,18 @@ def requested_read_paths(text: str) -> list[str]:
     return [path.strip() for path in paths if path.strip()]
 
 
-def read_full_file(path: str, limit: int = 200_000) -> str:
-    """Return full file contents with line numbers, truncated to limit chars."""
+def read_full_file(path: str) -> str:
+    """Return full file contents with line numbers, respecting context limits."""
+    limit = CompactionConfig().max_context_tokens
     file_path = Path(path)
     if not file_path.is_file():
         return ""
     content = file_path.read_text(encoding="utf-8")
-    if len(content) > limit:
-        lines = content[:limit].splitlines()
+    if len(content) > limit * 4: # Rough char-to-token estimate
+        lines = content[:limit * 4].splitlines()
         numbered = [f"{i+1:5d}: {line}" for i, line in enumerate(lines)]
         return (
-            f"--- {path} (truncated to {limit} chars) ---\n"
+            f"--- {path} (truncated to {limit * 4} chars) ---\n"
             + "\n".join(numbered)
             + "\n...[truncated]\n"
         )
