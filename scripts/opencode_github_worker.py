@@ -173,7 +173,8 @@ def build_prompt(
     extra_context: str,
     tool_context: str = "",
 ) -> str:
-    return f"""
+    allow_file_requests = tool_context == ""
+    header = f"""
 You are an autonomous coding agent editing the SparkleForge repository.
 
 Your goal is to fix the issue described below.
@@ -182,7 +183,6 @@ Step-by-step process:
 1. Review the issue context and the repository snapshot.
 2. If you need to see the contents of a file, request it using this format:
    <parameter name="file_path">path/to/file.py</parameter>
-3. Once you have enough information, output a single unified git diff.
 
 Rules:
 - Output ONLY the unified diff or a file request. No prose.
@@ -195,6 +195,17 @@ Rules:
   The `a/` and `b/` prefixes are MANDATORY. Never omit them.
 - The file contents below include EXACT line numbers. Your diff MUST use
   the correct line numbers as shown. The context lines must match exactly.
+"""
+    if allow_file_requests:
+        header += (
+            "\n3. Once you have enough information, output a single unified git diff."
+        )
+    else:
+        header += (
+            "\nThis is your final attempt. File requests will NOT be honored. "
+            "You MUST output a single unified git diff now."
+        )
+    return f"""{header}
 
 Repository snapshot:
 {snapshot}
@@ -510,10 +521,10 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     diff = ""
     system_message = (
         "You are a careful coding agent. Return only a git-apply compatible unified diff "
-        "for the requested fix. Do not use tools, XML tags, markdown narration, or prose. "
+        "for the requested fix. Do not use markdown narration or prose. "
         "The diff context lines must match the file exactly."
     )
-    for llm_attempt in range(2):
+    for llm_attempt in range(3):
         prompt = build_prompt(
             snapshot=snapshot,
             status=status,
@@ -534,8 +545,8 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         if diff:
             break
 
-        paths = requested_read_paths(response)
-        if not paths or llm_attempt == 1:
+        paths = requested_read_paths(response) if llm_attempt < 2 else []
+        if not paths:
             break
 
         requested_context = []
