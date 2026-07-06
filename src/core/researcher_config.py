@@ -478,6 +478,53 @@ class CascadeConfig(BaseModel):
     )
 
 
+class CostBudgetConfig(BaseModel):
+    """비용·지연 인지 모델 라우팅 및 예산 거버넌스 설정 (Anvil Phase Ω-4)."""
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="난이도 기반 모델 티어링 및 예산 강제 활성화",
+    )
+    # 난이도 추정기 임계값 (0.0~1.0)
+    small_tier_max_difficulty: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="이 난이도 이하면 소형 티어 선택",
+    )
+    medium_tier_max_difficulty: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="이 난이도 이하면 중형 티어 선택 (초과 시 대형)",
+    )
+    # 예산 정책 (세션/스케줄/노드 단위)
+    session_token_limit: int = Field(
+        default=200_000, ge=0, description="세션별 토큰 한도 (0=무제한)"
+    )
+    session_cost_limit: float = Field(
+        default=1.0, ge=0.0, description="세션별 비용 한도 (0=무제한)"
+    )
+    schedule_token_limit: int = Field(
+        default=100_000, ge=0, description="스케줄 자동화별 토큰 한도 (0=무제한)"
+    )
+    schedule_cost_limit: float = Field(
+        default=0.5, ge=0.0, description="스케줄 자동화별 비용 한도 (0=무제한)"
+    )
+    node_token_limit: int = Field(
+        default=50_000, ge=0, description="노드 단위 토큰 한도 (0=무제한)"
+    )
+    node_cost_limit: float = Field(
+        default=0.2, ge=0.0, description="노드 단위 비용 한도 (0=무제한)"
+    )
+    over_budget_action: str = Field(
+        default="halt",
+        description="예산 초과 시 동작: halt | escalate | hitl",
+    )
+
+
 class ApprovalGateConfig(BaseModel):
     """선택적 승인 게이트: 위험 도구 실행 전 사용자 승인 (OAC/Cline 스타일)."""
 
@@ -745,6 +792,10 @@ class ResearcherSystemConfig(BaseModel):
     cascade: CascadeConfig = Field(
         default_factory=CascadeConfig, description="Cascade configuration"
     )
+    cost_budget: CostBudgetConfig = Field(
+        default_factory=CostBudgetConfig,
+        description="Cost/latency-aware model routing and budget governance (Anvil Ω-4)",
+    )
     approval_gate: ApprovalGateConfig = Field(
         default_factory=ApprovalGateConfig,
         description="Approval gate for risky tools",
@@ -939,6 +990,13 @@ def get_cascade_config() -> CascadeConfig:
     if config is None:
         raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
     return config.cascade
+
+
+def get_cost_budget_config() -> CostBudgetConfig:
+    """Get cost/latency-aware routing and budget governance configuration."""
+    if config is None:
+        raise RuntimeError("Configuration not loaded. Call load_config_from_env() first.")
+    return config.cost_budget
 
 
 def get_council_config() -> CouncilConfig:
@@ -1273,6 +1331,24 @@ def load_config_from_env() -> ResearcherSystemConfig:
         cost_cap_per_run=get_optional_env("CASCADE_COST_CAP_PER_RUN", None, float),
     )
 
+    # Load CostBudget configuration (Anvil Phase Ω-4)
+    cost_budget_config = CostBudgetConfig(
+        enabled=get_optional_env("COST_BUDGET_ENABLED", True, bool),
+        small_tier_max_difficulty=get_optional_env(
+            "COST_BUDGET_SMALL_TIER_MAX_DIFFICULTY", 0.3, float
+        ),
+        medium_tier_max_difficulty=get_optional_env(
+            "COST_BUDGET_MEDIUM_TIER_MAX_DIFFICULTY", 0.6, float
+        ),
+        session_token_limit=get_optional_env("COST_BUDGET_SESSION_TOKEN_LIMIT", 200_000, int),
+        session_cost_limit=get_optional_env("COST_BUDGET_SESSION_COST_LIMIT", 1.0, float),
+        schedule_token_limit=get_optional_env("COST_BUDGET_SCHEDULE_TOKEN_LIMIT", 100_000, int),
+        schedule_cost_limit=get_optional_env("COST_BUDGET_SCHEDULE_COST_LIMIT", 0.5, float),
+        node_token_limit=get_optional_env("COST_BUDGET_NODE_TOKEN_LIMIT", 50_000, int),
+        node_cost_limit=get_optional_env("COST_BUDGET_NODE_COST_LIMIT", 0.2, float),
+        over_budget_action=get_optional_env("COST_BUDGET_OVER_BUDGET_ACTION", "halt"),
+    )
+
     # Load PromptRefiner configuration (Optional with defaults)
     prompt_refiner_config = PromptRefinerConfig(
         enabled=get_optional_env("PROMPT_REFINER_ENABLED", True, bool),
@@ -1339,6 +1415,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
         reliability=reliability_config,
         council=council_config,
         cascade=cascade_config,
+        cost_budget=cost_budget_config,
         approval_gate=approval_gate_config,
         agent_security=agent_security_config,
         agent_tools=agent_tool_config,

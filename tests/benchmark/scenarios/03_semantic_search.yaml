@@ -1,0 +1,15 @@
+id: semantic_search
+name: "외장하드 영수증 정리"
+fixture: semantic_search
+timeout_s: 300
+user_query: >-
+  이 외장하드에서 작년(2025년) 출장 영수증만 모아서 한 폴더에 정리해줘. 외장하드 경로는
+  {workspace}/external_drive 야. 지금은 2026년이야.
+weights:
+  recall: 0.4
+  precision: 0.3
+  organized: 0.15
+  judge_explanation: 0.15
+judge_rubric: >-
+  Does the agent's output clearly explain which receipts were collected and
+  why (2025 trips only)?
