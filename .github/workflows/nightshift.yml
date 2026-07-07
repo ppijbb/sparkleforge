@@ -1,0 +1,90 @@
+name: Nightshift Autonomous Implementation
+
+# Nightshift retries the auto-fix-failed backlog overnight (issues the daytime
+# opencode-auto-fix.yml pipeline already tried and gave up on, and which its
+# own 30-minute sweep explicitly never retries automatically), gated by a
+# reproduce-first test that must go red before implementing and green before
+# a Draft PR opens. It never merges. All of the actual logic lives in
+# src/core/nightshift/ and is invoked here as a normal CLI command — this
+# workflow is intentionally just a scheduler/trigger.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Specific GitHub issue number to process (leave empty to sweep the backlog)'
+        required: false
+        type: string
+      max_iterations:
+        description: 'Maximum implementation repair attempts after the reproduction test goes red'
+        required: false
+        default: '4'
+        type: string
+  schedule:
+    - cron: "30 16 * * *"
+
+concurrency:
+  group: nightshift-${{ github.event.inputs.issue_number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  nightshift-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Validate automation PAT
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required for Nightshift's issue-to-draft-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
+            exit 1
+          fi
+          gh auth status
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - name: Configure git identity
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          ACTOR_LOGIN=$(gh api user --jq '.login')
+          ACTOR_ID=$(gh api user --jq '.id')
+          git config user.name "$ACTOR_LOGIN"
+          git config user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge (with dev/test dependencies)
+        run: uv sync
+
+      - name: Run Nightshift
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
+          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
+        run: |
+          ARGS=(nightshift run --max-iterations "${{ github.event.inputs.max_iterations || '4' }}")
+          if [ -n "${{ github.event.inputs.issue_number }}" ]; then
+            ARGS+=(--issue "${{ github.event.inputs.issue_number }}")
+          else
+            ARGS+=(--backlog-label auto-fix-failed)
+          fi
+          uv run python main.py "${ARGS[@]}"
