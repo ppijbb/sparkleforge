@@ -8,6 +8,7 @@
 import asyncio
 import logging
 import re
+import tempfile
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List
@@ -53,10 +54,10 @@ class ShellExecutor:
     # 허용된 작업 디렉토리 (기본값)
     DEFAULT_ALLOWED_DIRS = [
         Path.cwd(),
-        Path("./outputs"),
-        Path("./workspace"),
-        Path("./temp"),
-        Path("./storage"),
+        Path.cwd() / "outputs",
+        Path.cwd() / "workspace",
+        Path(tempfile.gettempdir()) / "sparkleforge",
+        Path.cwd() / "storage",
     ]
 
     def __init__(

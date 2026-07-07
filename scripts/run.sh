@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Cross-platform entry point: scripts/run.py mirrors this logic for Windows/PowerShell.
+
 # Local Researcher - Run Script
 # This script sets up and runs the Local Researcher system
 
