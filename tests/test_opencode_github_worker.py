@@ -5,6 +5,7 @@ from scripts.opencode_github_worker import (
     _budgeted_relevant_file_contents,
     _budgeted_requested_tool_context,
     _normalize_diff,
+    _parse_triage_response,
     _per_file_context_limit,
     _prompt_fits_budget,
 )
@@ -314,3 +315,22 @@ def test_budgeted_requested_tool_context_counts_existing_file_context(tmp_path) 
         extra_context="",
         tool_context=tool_context,
     )
+
+
+def test_parse_triage_response_accepts_fenced_json() -> None:
+    parsed = _parse_triage_response(
+        """```json
+{"should_create_issue": true, "title": "fix: bug", "body": "details"}
+```"""
+    )
+
+    assert parsed["should_create_issue"] is True
+    assert parsed["title"] == "fix: bug"
+
+
+def test_parse_triage_response_defaults_to_no_issue_for_prose() -> None:
+    parsed = _parse_triage_response(
+        "We need to decide if any listed issue qualifies, but this is not JSON."
+    )
+
+    assert parsed == {"should_create_issue": False, "title": "", "body": ""}
