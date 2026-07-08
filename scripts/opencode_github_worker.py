@@ -305,6 +305,44 @@ def _budgeted_requested_tool_context(
     return ""
 
 
+def _strip_fenced_response(raw_content: str) -> str:
+    raw_content = raw_content.strip()
+    if not raw_content.startswith("```"):
+        return raw_content
+    lines = raw_content.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _parse_triage_response(raw_content: str) -> dict[str, object]:
+    import json
+
+    raw_content = _strip_fenced_response(raw_content)
+    candidates = [raw_content]
+    start = raw_content.find("{")
+    end = raw_content.rfind("}")
+    if 0 <= start < end:
+        candidates.append(raw_content[start : end + 1])
+
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(data, dict)
+            and "should_create_issue" in data
+            and "title" in data
+            and "body" in data
+        ):
+            return data
+
+    return {"should_create_issue": False, "title": "", "body": ""}
+
+
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -495,27 +533,23 @@ Review Content:
         use_cascade=False
     )
     
-    raw_content = result.content.strip()
-    if raw_content.startswith("```"):
-        lines = raw_content.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        raw_content = "\n".join(lines).strip()
-
     try:
         import json
-        data = json.loads(raw_content)
-        if not isinstance(data, dict) or "should_create_issue" not in data or "title" not in data or "body" not in data:
-            raise KeyError("Missing required fields: should_create_issue, title, or body")
-        Path("triage_result.json").write_text(raw_content, encoding="utf-8")
+
+        data = _parse_triage_response(result.content)
+        raw_clean = _strip_fenced_response(result.content)
+        if (
+            data == {"should_create_issue": False, "title": "", "body": ""}
+            and raw_clean
+            and not raw_clean.startswith("{")
+        ):
+            print("Triage response was not actionable JSON; defaulting to no issue.")
+        Path("triage_result.json").write_text(
+            json.dumps(data, ensure_ascii=False),
+            encoding="utf-8",
+        )
         print("✅ Triage completed and saved to triage_result.json")
         return 0
-    except (json.JSONDecodeError, KeyError) as je:
-        print(f"Error: Failed to parse or validate triage JSON: {je}", file=sys.stderr)
-        print(f"Raw response:\n{result.content}", file=sys.stderr)
-        return 1
     except Exception as e:
         print(f"Error: Unexpected error during triage: {e}", file=sys.stderr)
         return 1
