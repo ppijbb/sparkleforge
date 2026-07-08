@@ -24,6 +24,13 @@ from .method_resolver import (
 from .mode_controller import ExecutionMode, ModeController, ModeTransition
 from .progress_tracker import ProgressSnapshot, ProgressTracker
 from .request_analyzer import RequestAnalysis, RequestAnalyzer
+from .skill_distillation import (
+    DistilledSkillMatch,
+    SkillDistiller,
+    SkillDraft,
+    WorkflowStep,
+    WorkflowTrace,
+)
 from .skill_repository import Skill, SkillRepository
 
 __all__ = [
@@ -54,4 +61,9 @@ __all__ = [
     "ModeController",
     "ExecutionMode",
     "ModeTransition",
+    "WorkflowStep",
+    "WorkflowTrace",
+    "SkillDraft",
+    "DistilledSkillMatch",
+    "SkillDistiller",
 ]
