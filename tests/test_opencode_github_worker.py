@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from scripts.opencode_github_worker import (
     _apply_patch,
     _budgeted_relevant_file_contents,
@@ -334,3 +336,13 @@ def test_parse_triage_response_defaults_to_no_issue_for_prose() -> None:
     )
 
     assert parsed == {"should_create_issue": False, "title": "", "body": ""}
+
+
+def test_parse_triage_response_rejects_json_missing_required_fields() -> None:
+    with pytest.raises(ValueError, match="missing required"):
+        _parse_triage_response('{"title": "fix: bug", "body": "details"}')
+
+
+def test_parse_triage_response_rejects_malformed_json_shape() -> None:
+    with pytest.raises(ValueError, match="looked like JSON"):
+        _parse_triage_response('{"should_create_issue": true, "title": "fix: bug"')
