@@ -289,16 +289,37 @@ def _invalid_patch_path_reason(repo_path: str) -> str | None:
     return None
 
 
+def _diff_git_header_paths(line: str) -> tuple[str, str] | None:
+    prefix = "diff --git a/"
+    if not line.startswith(prefix):
+        return None
+
+    rest = line[len(prefix) :].rstrip()
+    separator = " b/"
+    separator_index = rest.rfind(separator)
+    if separator_index <= 0:
+        return None
+
+    left = rest[:separator_index]
+    right = rest[separator_index + len(separator) :]
+    if not left or not right:
+        return None
+    return left, right
+
+
 def _validate_patch_paths(diff_text: str) -> str:
     invalid: list[str] = []
 
-    for match in re.finditer(r"^diff --git a/(.+?) b/(.+)$", diff_text, flags=re.MULTILINE):
-        for repo_path in (match.group(1), match.group(2)):
+    for line in diff_text.splitlines():
+        paths = _diff_git_header_paths(line)
+        if paths is None:
+            continue
+        for repo_path in paths:
             reason = _invalid_patch_path_reason(repo_path)
             if reason:
                 invalid.append(reason)
 
-    for match in re.finditer(r"^(?:---|\+\+\+) (.+)$", diff_text, flags=re.MULTILINE):
+    for match in re.finditer(r"^(?:---|\+\+\+) (.+?)\s*$", diff_text, flags=re.MULTILINE):
         repo_path = _header_repo_path(match.group(1))
         if repo_path is None:
             continue
@@ -326,9 +347,10 @@ def _split_multifile_patch(diff_text: str) -> list[tuple[str, str]]:
         part = part.strip()
         if not part:
             continue
-        m = re.match(r"^diff --git a/(\S+) b/(\S+)", part)
-        if m:
-            filepath = m.group(2)  # use b/ path (destination)
+        first_line = part.splitlines()[0]
+        paths = _diff_git_header_paths(first_line)
+        if paths:
+            filepath = paths[1]  # use b/ path (destination)
             segments.append((filepath, part + "\n"))
     return segments
 
