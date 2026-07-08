@@ -340,7 +340,11 @@ def _parse_triage_response(raw_content: str) -> dict[str, object]:
         ):
             return data
 
-    return {"should_create_issue": False, "title": "", "body": ""}
+    raise ValueError(
+        "Malformed triage response: missing required keys "
+        "'should_create_issue', 'title', or 'body'. Raw response:\n"
+        f"{raw_content}"
+    )
 
 
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
