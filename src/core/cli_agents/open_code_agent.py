@@ -26,6 +26,27 @@ OPENROUTER_FALLBACKS = [
     "deepseek/deepseek-r1-0528",
 ]
 GOOGLE_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
+DEFAULT_CONTEXT_WINDOW = 128_000
+GOOGLE_GEMINI_CONTEXT_WINDOW = 1_000_000
+MODEL_CONTEXT_WINDOWS = {
+    "moonshotai/kimi": 128_000,
+    "qwen/": 128_000,
+    "deepseek/": 128_000,
+    "z-ai/": 128_000,
+    "glm-": 128_000,
+}
+
+
+def _positive_int_env(name: str) -> int | None:
+    raw = os.getenv(name)
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Ignoring invalid integer env %s=%r", name, raw)
+        return None
+    return value if value > 0 else None
 
 
 # OPENCODE_PRIMARY: "google" = Gemini 우선 (한도 절약), "openrouter" = OpenRouter 우선, "nvidia" = NVIDIA NIM
@@ -60,6 +81,37 @@ class OpenCodeAgent(BaseCLIAgent):
             output_format="text",
         )
         super().__init__(config)
+
+    def context_window(self) -> int:
+        """Return the best-known input+output context window for the active model."""
+        override = _positive_int_env("OPEN_CODE_CONTEXT_WINDOW") or _positive_int_env(
+            "LLM_CONTEXT_WINDOW"
+        )
+        if override:
+            return override
+
+        model = self._model.lower()
+        google_model = self._google_model().lower()
+        if self._primary == "google" and google_model.startswith("gemini-"):
+            return GOOGLE_GEMINI_CONTEXT_WINDOW
+        if model.startswith(("google/gemini", "google/models/gemini", "models/gemini")):
+            return GOOGLE_GEMINI_CONTEXT_WINDOW
+        if google_model.startswith("gemini-") and model.startswith("gemini-"):
+            return GOOGLE_GEMINI_CONTEXT_WINDOW
+
+        for prefix, window in MODEL_CONTEXT_WINDOWS.items():
+            if model.startswith(prefix):
+                return window
+        return DEFAULT_CONTEXT_WINDOW
+
+    def prompt_context_budget(self, reserve_output_tokens: int | None = None) -> int:
+        """Return a conservative prompt-input token budget for one model call."""
+        reserved_output = (
+            reserve_output_tokens
+            if reserve_output_tokens is not None
+            else self._max_tokens
+        )
+        return max(1_000, self.context_window() - reserved_output - 4_000)
 
     async def execute_query(self, query: str, **kwargs) -> Dict[str, Any]:
         system_msg = kwargs.get("system_message") or "You are a helpful research assistant."

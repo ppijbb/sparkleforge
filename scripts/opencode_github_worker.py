@@ -50,6 +50,9 @@ _MODEL_ROLE_KEYS = (
     "GENERATION_MODEL",
     "COMPRESSION_MODEL",
 )
+_CHARS_PER_TOKEN = 4
+_PROMPT_SAFETY_TOKENS = 1_000
+_MAX_FILE_CONTEXT_CHARS = 200_000
 
 
 def ensure_config_loaded() -> None:
@@ -97,6 +100,71 @@ def _infer_relevant_files(issue_context: str, all_files: list[str]) -> list[str]
     return relevant[:8]
 
 
+def _estimate_tokens(text: str) -> int:
+    if not text:
+        return 0
+    return max(1, (len(text) + _CHARS_PER_TOKEN - 1) // _CHARS_PER_TOKEN)
+
+
+def _available_file_context_chars(
+    agent: OpenCodeAgent,
+    *,
+    snapshot: str,
+    status: str,
+    issue_context: str,
+    file_contents_str: str = "",
+    extra_context: str = "",
+    tool_context: str = "",
+    force_diff: bool = False,
+) -> int:
+    fixed_prompt = build_prompt(
+        snapshot=snapshot,
+        status=status,
+        issue_context=issue_context,
+        file_contents_str=file_contents_str,
+        extra_context=extra_context,
+        tool_context=tool_context,
+        force_diff=force_diff,
+    )
+    remaining_tokens = (
+        agent.prompt_context_budget()
+        - _estimate_tokens(fixed_prompt)
+        - _PROMPT_SAFETY_TOKENS
+    )
+    if remaining_tokens <= 0:
+        return 0
+    return remaining_tokens * _CHARS_PER_TOKEN
+
+
+def _per_file_context_limit(
+    agent: OpenCodeAgent,
+    file_count: int,
+    *,
+    snapshot: str,
+    status: str,
+    issue_context: str,
+    file_contents_str: str = "",
+    extra_context: str = "",
+    tool_context: str = "",
+    force_diff: bool = False,
+) -> int:
+    if file_count <= 0:
+        return 0
+    available_chars = _available_file_context_chars(
+        agent,
+        snapshot=snapshot,
+        status=status,
+        issue_context=issue_context,
+        file_contents_str=file_contents_str,
+        extra_context=extra_context,
+        tool_context=tool_context,
+        force_diff=force_diff,
+    )
+    if available_chars <= 0:
+        return 0
+    return max(1, min(_MAX_FILE_CONTEXT_CHARS, available_chars // file_count))
+
+
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -106,13 +174,25 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     status = run(["git", "status", "--short"]).stdout
 
     all_files = snapshot.splitlines()
+    agent = OpenCodeAgent()
 
-    # Always provide full file contents for relevant files (not just snippets)
+    # Provide relevant files within the active model's prompt budget.
     relevant_files = _infer_relevant_files(issue_context, all_files)
+    initial_files = relevant_files[:5]
+    per_file_limit = _per_file_context_limit(
+        agent,
+        len(initial_files),
+        snapshot=snapshot,
+        status=status,
+        issue_context=issue_context,
+        extra_context=extra_context,
+    )
     relevant_contents = []
-    for f in relevant_files:
+    for f in initial_files:
+        if per_file_limit <= 0:
+            break
         try:
-            content = read_full_file(f)
+            content = read_full_file(f, limit=per_file_limit)
             if content:
                 relevant_contents.append(content)
         except Exception:
@@ -124,7 +204,6 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             f"Relevant File Contents (with exact line numbers):\n{file_contents_str}\n"
         )
 
-    agent = OpenCodeAgent()
     tool_context = ""
     response = ""
     diff = ""
@@ -165,9 +244,22 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
 
         paths = requested_read_paths(response)
         requested_context = []
-        for path in paths[:3]:
-            if path in all_files and Path(path).is_file():
-                requested_context.append(read_full_file(path))
+        requested_paths = [
+            path for path in paths[:3] if path in all_files and Path(path).is_file()
+        ]
+        per_requested_file_limit = _per_file_context_limit(
+            agent,
+            len(requested_paths),
+            snapshot=snapshot,
+            status=status,
+            issue_context=issue_context,
+            file_contents_str=file_contents_str,
+            extra_context=extra_context,
+        )
+        for path in requested_paths:
+            if per_requested_file_limit <= 0:
+                break
+            requested_context.append(read_full_file(path, limit=per_requested_file_limit))
         if not requested_context:
             continue
 
