@@ -11,7 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
-from tests.benchmark.scenario_grading import is_runtime_artifact, judge_score, read_text_safe
+from tests.benchmark.scenario_grading import (
+    is_runtime_artifact,
+    judge_score,
+    read_text_safe,
+    rubric_from_context,
+)
 
 RECEIPTS_2025 = {
     "Trips/2025-03-Seoul/receipt_2025-03-12.txt": "RECEIPT_MARKER_2025_SEOUL",
@@ -87,7 +92,10 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
         organized_score = (0.5, f"receipts found but scattered across {all_dest_dirs}")
 
     judge = await judge_score(
-        rubric="Does the agent's output clearly explain which receipts were collected and why (2025 trips only)?",
+        rubric=rubric_from_context(
+            ctx,
+            "Does the agent's output clearly explain which receipts were collected and why (2025 trips only)?",
+        ),
         transcript=stdout[:4000],
         context=f"expected markers: {ctx['expected_markers']}, decoys: {ctx['decoy_markers']}",
     )

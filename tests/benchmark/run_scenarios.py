@@ -57,6 +57,17 @@ JUDGE_REGRESSION_TOLERANCE = 0.15
 DETERMINISTIC_REGRESSION_TOLERANCE = 0.0
 
 
+def require_openrouter_api_key() -> bool:
+    """Return whether judge-dependent scenario scoring can run."""
+    if os.environ.get("OPENROUTER_API_KEY", "").strip():
+        return True
+    print(
+        "[scenario-eval] OPENROUTER_API_KEY is required for judge-dependent scenario scoring.",
+        file=sys.stderr,
+    )
+    return False
+
+
 def load_scenarios(only_id: str | None = None) -> List[Dict[str, Any]]:
     specs = []
     for path in sorted(SCENARIOS_DIR.glob("*.yaml")):
@@ -106,8 +117,8 @@ def run_agent(user_query: str, workspace: Path, timeout_s: int) -> Dict[str, Any
     except subprocess.TimeoutExpired as e:
         return {
             "returncode": -1,
-            "stdout": (e.stdout or b"").decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or ""),
-            "stderr": (e.stderr or b"").decode("utf-8", "replace") if isinstance(e.stderr, bytes) else (e.stderr or ""),
+            "stdout": e.stdout or "",
+            "stderr": e.stderr or "",
             "timed_out": True,
             "duration_s": time.time() - start,
         }
@@ -120,6 +131,7 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
     try:
         ctx = await asyncio.to_thread(fixture_module.build, workspace)
         ctx.setdefault("workspace", str(workspace))
+        ctx["judge_rubric"] = spec.get("judge_rubric", "")
         user_query = spec["user_query"].format(**ctx)
 
         exec_result = await asyncio.to_thread(run_agent, user_query, workspace, spec.get("timeout_s", 300))
@@ -252,6 +264,9 @@ async def _main() -> int:
         for spec in specs:
             print(f"{spec['id']}: {spec.get('name', '')}")
         return 0
+
+    if not require_openrouter_api_key():
+        return 1
 
     report = await run_all(specs, parallel=args.parallel)
     print_summary(report)

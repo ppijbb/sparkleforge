@@ -15,6 +15,7 @@ from tests.benchmark.scenario_grading import (
     judge_score,
     keyword_hit,
     new_files,
+    rubric_from_context,
     snapshot_tree,
     unchanged,
 )
@@ -81,9 +82,10 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
         report_produced = (0.0, "no cleanup report found in new files or stdout")
 
     judge = await judge_score(
-        rubric=(
+        rubric=rubric_from_context(
+            ctx,
             "The agent's report should clearly state what junk was removed and confirm "
-            "nothing important was touched."
+            "nothing important was touched.",
         ),
         transcript=report_text[:4000],
         context="System cleanup scenario",

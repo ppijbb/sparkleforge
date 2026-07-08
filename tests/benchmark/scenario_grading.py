@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 GradeResult = Tuple[float, str]
 
 
+def rubric_from_context(ctx: Dict[str, Any], fallback: str) -> str:
+    """Return the scenario YAML rubric when present, otherwise a fixture fallback."""
+    rubric = str(ctx.get("judge_rubric") or "").strip()
+    return rubric or fallback
+
+
 def snapshot_tree(root: Path) -> Dict[str, str]:
     """Map every regular file under root (relative path -> sha256 hex digest)."""
     snapshot: Dict[str, str] = {}

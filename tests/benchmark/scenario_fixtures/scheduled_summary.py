@@ -23,6 +23,7 @@ from tests.benchmark.scenario_grading import (
     judge_score,
     keyword_hit,
     new_files,
+    rubric_from_context,
     snapshot_tree,
 )
 
@@ -78,6 +79,18 @@ def _crontab_lines() -> list[str]:
         return []
 
 
+def _is_nine_am_cron(expr: str) -> bool:
+    parts = expr.split()
+    if len(parts) < 5:
+        return False
+    minute, hour = parts[0], parts[1]
+    return hour == "9" and (minute == "0" or minute.startswith("*/"))
+
+
+def _crontab_cron_expr(line: str) -> str:
+    return " ".join(line.split()[:5])
+
+
 def build(workspace: Path) -> Dict[str, Any]:
     (workspace / "worklog.md").write_text(WORKLOG_CONTENT, encoding="utf-8")
 
@@ -97,13 +110,11 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
     for sid in new_schedule_ids:
         record = records.get(sid, {})
         cron_expr = str(record.get("cron_expression", ""))
-        if cron_expr.split() and cron_expr.split()[0].strip() in {"0", "*/9", "9"} and " 9 " in f" {cron_expr} ":
-            nine_am_schedules.append(sid)
-        elif cron_expr.strip().startswith("0 9 "):
+        if _is_nine_am_cron(cron_expr):
             nine_am_schedules.append(sid)
 
     new_crontab = [ln for ln in _crontab_lines() if ln not in ctx["crontab_lines_before"]]
-    crontab_nine_am = [ln for ln in new_crontab if "0 9 * * *" in ln or " 9 " in f" {ln} "]
+    crontab_nine_am = [ln for ln in new_crontab if _is_nine_am_cron(_crontab_cron_expr(ln))]
 
     if nine_am_schedules or crontab_nine_am:
         automation_registered = (
@@ -132,7 +143,10 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
         summary_produced = (0.0, "no summary of worklog.md content found in new files or stdout")
 
     judge = await judge_score(
-        rubric="Is the produced summary a faithful, coherent recap of yesterday's worklog entries?",
+        rubric=rubric_from_context(
+            ctx,
+            "Is the produced summary a faithful, coherent recap of yesterday's worklog entries?",
+        ),
         transcript=summary_text[:4000],
         context=f"worklog.md content: {WORKLOG_CONTENT}",
     )
