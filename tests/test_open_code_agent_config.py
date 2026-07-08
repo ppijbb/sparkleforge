@@ -11,6 +11,15 @@ def test_open_code_agent_uses_cli_model_override_for_google_api(monkeypatch):
     assert agent._max_tokens == 2048
 
 
+def test_open_code_agent_strips_nested_google_models_prefix(monkeypatch):
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+
+    agent = OpenCodeAgent(model_path="google/models/gemini-2.0-flash-exp")
+
+    assert agent._google_model() == "gemini-2.0-flash-exp"
+    assert agent._model == "google/models/gemini-2.0-flash-exp"
+
+
 def test_open_code_agent_keeps_openrouter_model_for_openrouter(monkeypatch):
     monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
 

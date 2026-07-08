@@ -99,7 +99,10 @@ class OpenCodeAgent(BaseCLIAgent):
 
     def _google_model(self) -> str:
         if self._model.startswith("google/"):
-            return self._model.split("/", 1)[1]
+            stripped = self._model.split("/", 1)[1]
+            if stripped.startswith("models/"):
+                stripped = stripped.split("/", 1)[1]
+            return stripped
         if self._model.startswith("models/"):
             return self._model.split("/", 1)[1]
         if self._model.startswith("gemini-"):
