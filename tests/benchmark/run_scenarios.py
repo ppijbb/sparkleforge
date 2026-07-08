@@ -115,10 +115,16 @@ def run_agent(user_query: str, workspace: Path, timeout_s: int) -> Dict[str, Any
             "duration_s": time.time() - start,
         }
     except subprocess.TimeoutExpired as e:
+        stdout = e.stdout
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        stderr = e.stderr
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
         return {
             "returncode": -1,
-            "stdout": e.stdout or "",
-            "stderr": e.stderr or "",
+            "stdout": stdout or "",
+            "stderr": stderr or "",
             "timed_out": True,
             "duration_s": time.time() - start,
         }
