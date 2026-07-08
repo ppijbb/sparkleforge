@@ -266,6 +266,51 @@ def _normalize_diff(diff_text: str) -> str:
     return _repair_hunk_headers(_normalize_diff_paths(diff_text))
 
 
+def _header_repo_path(raw_path: str) -> str | None:
+    path = raw_path.split("\t", 1)[0].strip()
+    if path == "/dev/null":
+        return None
+    if path.startswith(("a/", "b/")):
+        return path[2:]
+    return path
+
+
+def _invalid_patch_path_reason(repo_path: str) -> str | None:
+    if not repo_path:
+        return "empty patch path"
+    if repo_path.startswith("/") or repo_path == ".." or repo_path.startswith("../") or "/../" in repo_path:
+        return f"path escapes repository: {repo_path}"
+    if repo_path.startswith(("a/", "b/")):
+        return (
+            "diff-prefix path is embedded in repository path: "
+            f"{repo_path}. Use tests/foo.py, not a/tests/foo.py."
+        )
+    return None
+
+
+def _validate_patch_paths(diff_text: str) -> str:
+    invalid: list[str] = []
+
+    for match in re.finditer(r"^diff --git a/(\S+) b/(\S+)", diff_text, flags=re.MULTILINE):
+        for repo_path in (match.group(1), match.group(2)):
+            reason = _invalid_patch_path_reason(repo_path)
+            if reason:
+                invalid.append(reason)
+
+    for match in re.finditer(r"^(?:---|\+\+\+) (\S+)", diff_text, flags=re.MULTILINE):
+        repo_path = _header_repo_path(match.group(1))
+        if repo_path is None:
+            continue
+        reason = _invalid_patch_path_reason(repo_path)
+        if reason:
+            invalid.append(reason)
+
+    if not invalid:
+        return ""
+    unique = list(dict.fromkeys(invalid))
+    return "Invalid patch path(s):\n- " + "\n- ".join(unique)
+
+
 def _split_multifile_patch(diff_text: str) -> list[tuple[str, str]]:
     """Split a multi-file diff into (filepath, patch_segment) pairs.
 
@@ -295,6 +340,9 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
     # Write to a temp file
     tmp = Path("opencode-single.patch")
     diff_text = _normalize_diff(diff_text)
+    path_error = _validate_patch_paths(diff_text)
+    if path_error:
+        return False, path_error
     tmp.write_text(diff_text, encoding="utf-8")
     strip = _detect_strip_level(diff_text)
     errors: list[str] = []
@@ -355,6 +403,10 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
         print("[patch] Normalised diff paths and hunk headers.", file=sys.stderr)
         patch_path.write_text(normalised, encoding="utf-8")
         diff_text = normalised
+
+    path_error = _validate_patch_paths(diff_text)
+    if path_error:
+        return False, path_error
 
     strip = _detect_strip_level(diff_text)
 

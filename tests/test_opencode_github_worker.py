@@ -94,3 +94,26 @@ diff --git a/scripts/setup.sh b/scripts/setup.sh
     assert success is False
     assert "Patch only applied partially" in error
     assert "scripts/setup.sh" in error
+
+
+def test_apply_patch_rejects_embedded_diff_prefix_paths(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    patch = tmp_path / "opencode.patch"
+    patch.write_text(
+        """diff --git a/a/tests/test_bad_path.py b/a/tests/test_bad_path.py
+--- a/a/tests/test_bad_path.py
++++ b/a/tests/test_bad_path.py
+@@ -0,0 +1,2 @@
++def test_bad_path():
++    assert True
+""",
+        encoding="utf-8",
+    )
+
+    success, error = _apply_patch(patch)
+
+    assert success is False
+    assert "diff-prefix path is embedded" in error
+    assert "a/tests/test_bad_path.py" in error
+    assert not (tmp_path / "a" / "tests" / "test_bad_path.py").exists()
