@@ -278,7 +278,8 @@ def _header_repo_path(raw_path: str) -> str | None:
 def _invalid_patch_path_reason(repo_path: str) -> str | None:
     if not repo_path:
         return "empty patch path"
-    if repo_path.startswith("/") or repo_path == ".." or repo_path.startswith("../") or "/../" in repo_path:
+    parts = [part for part in repo_path.split("/") if part]
+    if repo_path.startswith("/") or ".." in parts:
         return f"path escapes repository: {repo_path}"
     if repo_path.startswith(("a/", "b/")):
         return (
@@ -291,13 +292,13 @@ def _invalid_patch_path_reason(repo_path: str) -> str | None:
 def _validate_patch_paths(diff_text: str) -> str:
     invalid: list[str] = []
 
-    for match in re.finditer(r"^diff --git a/(\S+) b/(\S+)", diff_text, flags=re.MULTILINE):
+    for match in re.finditer(r"^diff --git a/(.+?) b/(.+)$", diff_text, flags=re.MULTILINE):
         for repo_path in (match.group(1), match.group(2)):
             reason = _invalid_patch_path_reason(repo_path)
             if reason:
                 invalid.append(reason)
 
-    for match in re.finditer(r"^(?:---|\+\+\+) (\S+)", diff_text, flags=re.MULTILINE):
+    for match in re.finditer(r"^(?:---|\+\+\+) (.+)$", diff_text, flags=re.MULTILINE):
         repo_path = _header_repo_path(match.group(1))
         if repo_path is None:
             continue
