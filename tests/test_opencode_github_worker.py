@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from scripts.opencode_github_worker import _apply_patch, _normalize_diff
-from src.core.patch_ops import _validate_patch_paths
+from src.core.patch_ops import _split_multifile_patch, _validate_patch_paths
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -159,3 +159,43 @@ def test_validate_patch_paths_allows_spaces_in_filenames() -> None:
 """
 
     assert _validate_patch_paths(diff) == ""
+
+
+def test_validate_patch_paths_parses_diff_git_separator_from_right() -> None:
+    diff = """diff --git a/docs/foo b/bar.txt b/docs/foo b/bar.txt
+--- a/docs/foo b/bar.txt
++++ b/docs/foo b/bar.txt
+@@ -1 +1 @@
+-old
++new
+"""
+
+    assert _validate_patch_paths(diff) == ""
+
+
+def test_validate_patch_paths_rejects_embedded_prefix_with_trailing_whitespace() -> None:
+    diff = (
+        "diff --git a/tests/test_bad_path.py b/tests/test_bad_path.py\n"
+        "--- a/a/tests/test_bad_path.py   \n"
+        "+++ b/a/tests/test_bad_path.py   \n"
+        "@@ -0,0 +1,2 @@\n"
+        "+def test_bad_path():\n"
+        "+    assert True\n"
+    )
+
+    error = _validate_patch_paths(diff)
+
+    assert "diff-prefix path is embedded" in error
+    assert "a/tests/test_bad_path.py" in error
+
+
+def test_split_multifile_patch_keeps_paths_with_spaces() -> None:
+    diff = """diff --git a/docs/my note.md b/docs/my note.md
+--- a/docs/my note.md
++++ b/docs/my note.md
+@@ -1 +1 @@
+-old
++new
+"""
+
+    assert _split_multifile_patch(diff) == [("docs/my note.md", diff)]
