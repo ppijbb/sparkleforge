@@ -2,8 +2,11 @@ from pathlib import Path
 
 from scripts.opencode_github_worker import (
     _apply_patch,
+    _budgeted_relevant_file_contents,
+    _budgeted_requested_tool_context,
     _normalize_diff,
     _per_file_context_limit,
+    _prompt_fits_budget,
 )
 from src.core.patch_ops import _split_multifile_patch, _validate_patch_paths
 
@@ -255,3 +258,59 @@ def test_per_file_context_limit_shares_budget_across_files() -> None:
 
     assert five_files < one_file
     assert five_files > 0
+
+
+def test_budgeted_relevant_file_contents_shrinks_until_final_prompt_fits(tmp_path) -> None:
+    source = tmp_path / "large_module.py"
+    source.write_text("\n".join(f"line_{i} = 'value'" for i in range(2_000)), encoding="utf-8")
+    agent = DummyOpenCodeAgent(prompt_budget=3_000)
+
+    file_contents_str = _budgeted_relevant_file_contents(
+        agent,
+        [str(source)],
+        snapshot="",
+        status="",
+        issue_context="fix the large module",
+        extra_context="",
+    )
+
+    assert file_contents_str
+    assert "[truncated]" in file_contents_str
+    assert _prompt_fits_budget(
+        agent,
+        snapshot="",
+        status="",
+        issue_context="fix the large module",
+        file_contents_str=file_contents_str,
+        extra_context="",
+    )
+
+
+def test_budgeted_requested_tool_context_counts_existing_file_context(tmp_path) -> None:
+    requested = tmp_path / "requested.py"
+    requested.write_text("\n".join(f"result_{i} = {i}" for i in range(2_000)), encoding="utf-8")
+    agent = DummyOpenCodeAgent(prompt_budget=3_500)
+    file_contents_str = "Relevant File Contents (with exact line numbers):\n" + (
+        "context line\n" * 120
+    )
+
+    tool_context = _budgeted_requested_tool_context(
+        agent,
+        [str(requested)],
+        snapshot="",
+        status="",
+        issue_context="fix the requested module",
+        file_contents_str=file_contents_str,
+        extra_context="",
+    )
+
+    assert tool_context
+    assert _prompt_fits_budget(
+        agent,
+        snapshot="",
+        status="",
+        issue_context="fix the requested module",
+        file_contents_str=file_contents_str,
+        extra_context="",
+        tool_context=tool_context,
+    )

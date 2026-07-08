@@ -50,7 +50,7 @@ _MODEL_ROLE_KEYS = (
     "GENERATION_MODEL",
     "COMPRESSION_MODEL",
 )
-_CHARS_PER_TOKEN = 4
+_CHARS_PER_TOKEN = 3
 _PROMPT_SAFETY_TOKENS = 1_000
 _MAX_FILE_CONTEXT_CHARS = 200_000
 
@@ -165,6 +165,146 @@ def _per_file_context_limit(
     return max(1, min(_MAX_FILE_CONTEXT_CHARS, available_chars // file_count))
 
 
+def _prompt_fits_budget(
+    agent: OpenCodeAgent,
+    *,
+    snapshot: str,
+    status: str,
+    issue_context: str,
+    file_contents_str: str = "",
+    extra_context: str = "",
+    tool_context: str = "",
+    force_diff: bool = False,
+) -> bool:
+    prompt = build_prompt(
+        snapshot=snapshot,
+        status=status,
+        issue_context=issue_context,
+        file_contents_str=file_contents_str,
+        extra_context=extra_context,
+        tool_context=tool_context,
+        force_diff=force_diff,
+    )
+    return (
+        _estimate_tokens(prompt) + _PROMPT_SAFETY_TOKENS
+        <= agent.prompt_context_budget()
+    )
+
+
+def _read_numbered_files(paths: list[str], per_file_limit: int) -> list[str]:
+    if per_file_limit <= 0:
+        return []
+
+    contents = []
+    for path in paths:
+        try:
+            content = read_full_file(path, limit=per_file_limit)
+            if content:
+                contents.append(content)
+        except Exception:
+            pass
+    return contents
+
+
+def _format_relevant_file_contents(contents: list[str]) -> str:
+    joined = "\n\n".join(contents)
+    if not joined:
+        return ""
+    return f"Relevant File Contents (with exact line numbers):\n{joined}\n"
+
+
+def _format_requested_tool_context(contents: list[str]) -> str:
+    joined = "\n\n".join(contents)
+    if not joined:
+        return ""
+    return (
+        "Requested file contents are provided below (with exact line numbers). "
+        "You must now return only a unified diff, with no tool calls or prose. "
+        "Use the exact line numbers shown when writing the diff hunk headers.\n"
+        + joined
+        + "\n"
+    )
+
+
+def _shrink_limit(limit: int) -> int:
+    if limit <= 1:
+        return 0
+    return max(1, limit // 2)
+
+
+def _budgeted_relevant_file_contents(
+    agent: OpenCodeAgent,
+    paths: list[str],
+    *,
+    snapshot: str,
+    status: str,
+    issue_context: str,
+    extra_context: str = "",
+) -> str:
+    selected_paths = paths[:5]
+    per_file_limit = _per_file_context_limit(
+        agent,
+        len(selected_paths),
+        snapshot=snapshot,
+        status=status,
+        issue_context=issue_context,
+        extra_context=extra_context,
+    )
+    while per_file_limit > 0:
+        file_contents_str = _format_relevant_file_contents(
+            _read_numbered_files(selected_paths, per_file_limit)
+        )
+        if not file_contents_str or _prompt_fits_budget(
+            agent,
+            snapshot=snapshot,
+            status=status,
+            issue_context=issue_context,
+            file_contents_str=file_contents_str,
+            extra_context=extra_context,
+        ):
+            return file_contents_str
+        per_file_limit = _shrink_limit(per_file_limit)
+    return ""
+
+
+def _budgeted_requested_tool_context(
+    agent: OpenCodeAgent,
+    paths: list[str],
+    *,
+    snapshot: str,
+    status: str,
+    issue_context: str,
+    file_contents_str: str = "",
+    extra_context: str = "",
+) -> str:
+    selected_paths = paths[:3]
+    per_file_limit = _per_file_context_limit(
+        agent,
+        len(selected_paths),
+        snapshot=snapshot,
+        status=status,
+        issue_context=issue_context,
+        file_contents_str=file_contents_str,
+        extra_context=extra_context,
+    )
+    while per_file_limit > 0:
+        tool_context = _format_requested_tool_context(
+            _read_numbered_files(selected_paths, per_file_limit)
+        )
+        if not tool_context or _prompt_fits_budget(
+            agent,
+            snapshot=snapshot,
+            status=status,
+            issue_context=issue_context,
+            file_contents_str=file_contents_str,
+            extra_context=extra_context,
+            tool_context=tool_context,
+        ):
+            return tool_context
+        per_file_limit = _shrink_limit(per_file_limit)
+    return ""
+
+
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -178,31 +318,14 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
 
     # Provide relevant files within the active model's prompt budget.
     relevant_files = _infer_relevant_files(issue_context, all_files)
-    initial_files = relevant_files[:5]
-    per_file_limit = _per_file_context_limit(
+    file_contents_str = _budgeted_relevant_file_contents(
         agent,
-        len(initial_files),
+        relevant_files,
         snapshot=snapshot,
         status=status,
         issue_context=issue_context,
         extra_context=extra_context,
     )
-    relevant_contents = []
-    for f in initial_files:
-        if per_file_limit <= 0:
-            break
-        try:
-            content = read_full_file(f, limit=per_file_limit)
-            if content:
-                relevant_contents.append(content)
-        except Exception:
-            pass
-
-    file_contents_str = "\n\n".join(relevant_contents[:5])
-    if file_contents_str:
-        file_contents_str = (
-            f"Relevant File Contents (with exact line numbers):\n{file_contents_str}\n"
-        )
 
     tool_context = ""
     response = ""
@@ -243,33 +366,20 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             break
 
         paths = requested_read_paths(response)
-        requested_context = []
         requested_paths = [
             path for path in paths[:3] if path in all_files and Path(path).is_file()
         ]
-        per_requested_file_limit = _per_file_context_limit(
+        tool_context = _budgeted_requested_tool_context(
             agent,
-            len(requested_paths),
+            requested_paths,
             snapshot=snapshot,
             status=status,
             issue_context=issue_context,
             file_contents_str=file_contents_str,
             extra_context=extra_context,
         )
-        for path in requested_paths:
-            if per_requested_file_limit <= 0:
-                break
-            requested_context.append(read_full_file(path, limit=per_requested_file_limit))
-        if not requested_context:
+        if not tool_context:
             continue
-
-        tool_context = (
-            "Requested file contents are provided below (with exact line numbers). "
-            "You must now return only a unified diff, with no tool calls or prose. "
-            "Use the exact line numbers shown when writing the diff hunk headers.\n"
-            + "\n\n".join(requested_context)
-            + "\n"
-        )
 
     if not diff:
         print("OpenCode did not return an applicable diff.", file=sys.stderr)
