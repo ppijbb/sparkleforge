@@ -15,7 +15,12 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from tests.benchmark.scenario_grading import judge_score, keyword_hit, read_text_safe
+from tests.benchmark.scenario_grading import (
+    judge_score,
+    keyword_hit,
+    read_text_safe,
+    rubric_from_context,
+)
 
 REQUIRED_ENV = "APP_ENV"
 REQUIRED_PACKAGE = "requests"
@@ -84,9 +89,10 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
     )
 
     judge = await judge_score(
-        rubric=(
+        rubric=rubric_from_context(
+            ctx,
             "Does the agent explain the build-environment setup steps taken "
-            "(packages/env vars/verification) coherently?"
+            "(packages/env vars/verification) coherently?",
         ),
         transcript=stdout[:4000],
         context=f"required env var: {ctx['required_env']}, required package: {ctx['required_package']}",
