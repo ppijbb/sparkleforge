@@ -1649,6 +1649,32 @@ EXAMPLES:
     cli_run_parser.add_argument("--mode", help="Execution mode")
     cli_run_parser.add_argument("--files", nargs="*", help="Related files")
 
+    # nightshift 커맨드 (재현-우선 자율 이슈 수정 파이프라인)
+    nightshift_parser = subparsers.add_parser(
+        "nightshift", help="Reproduce-first autonomous issue fixer (writes a failing test, implements until green, opens a Draft PR)"
+    )
+    nightshift_subparsers = nightshift_parser.add_subparsers(
+        dest="nightshift_command", help="Nightshift commands"
+    )
+
+    # nightshift run
+    nightshift_run_parser = nightshift_subparsers.add_parser(
+        "run", help="Run Nightshift once: a single issue, or a sweep of the backlog"
+    )
+    nightshift_run_parser.add_argument("--issue", type=int, help="Specific GitHub issue number to process")
+    nightshift_run_parser.add_argument(
+        "--backlog-label", default="auto-fix-failed",
+        help="Label identifying the sweep backlog when --issue is not given (default: auto-fix-failed)",
+    )
+    nightshift_run_parser.add_argument("--max-iterations", type=int, default=4, help="Max implementation repair attempts (1-6)")
+    nightshift_run_parser.add_argument("--max-per-run", type=int, default=3, help="Max issues to process per sweep")
+
+    # nightshift status
+    nightshift_status_parser = nightshift_subparsers.add_parser("status", help="Show Nightshift queue status")
+
+    # nightshift list
+    nightshift_list_parser = nightshift_subparsers.add_parser("list", help="List Nightshift queue history")
+
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
         "--request",
@@ -1840,6 +1866,8 @@ EXAMPLES:
         cli_rc = await handle_setup_command(args)
     elif cmd == "cli":
         cli_rc = await handle_cli_command(args)
+    elif cmd == "nightshift":
+        cli_rc = await handle_nightshift_command(args)
     elif cmd == "interactive":
         cli_rc = await handle_interactive_command(args)
     elif cmd == "repl":
@@ -3055,6 +3083,73 @@ async def handle_setup_command(args):
     except Exception as e:
         logger.error(f"❌ Setup failed: {e}")
         return 1
+    return 0
+
+
+async def handle_nightshift_command(args):
+    """Nightshift(재현-우선 자율 이슈 수정 파이프라인) 커맨드 처리."""
+    from src.core.nightshift.models import NightshiftQueue
+
+    if args.nightshift_command == "run":
+        from src.core.nightshift.runner import run_nightshift_issue, run_nightshift_sweep
+
+        try:
+            if args.issue:
+                logger.info(f"🌙 Nightshift: running issue #{args.issue}")
+                item = await run_nightshift_issue(args.issue, max_iterations=args.max_iterations)
+                items = [item]
+            else:
+                logger.info(f"🌙 Nightshift: sweeping backlog label '{args.backlog_label}'")
+                items = await run_nightshift_sweep(
+                    backlog_label=args.backlog_label,
+                    max_per_run=args.max_per_run,
+                    max_iterations=args.max_iterations,
+                )
+
+            if not items:
+                logger.info("Nightshift: no eligible issues found.")
+                return 0
+
+            failed = 0
+            for item in items:
+                if item.status.value == "draft_opened":
+                    logger.info(f"✅ Issue #{item.issue_number}: Draft PR opened -> {item.pr_url}")
+                else:
+                    failed += 1
+                    logger.error(f"❌ Issue #{item.issue_number}: {item.status.value} — {item.failure_reason}")
+            return 1 if failed and failed == len(items) else 0
+
+        except Exception as e:
+            logger.error(f"❌ Nightshift run failed: {e}")
+            return 1
+
+    elif args.nightshift_command == "status":
+        try:
+            queue = NightshiftQueue()
+            items = queue.list()
+            if not items:
+                logger.info("Nightshift: queue is empty.")
+                return 0
+            for item in items[:20]:
+                logger.info(f"#{item.issue_number}: {item.status.value} (updated {item.updated_at})")
+        except Exception as e:
+            logger.error(f"❌ Failed to read Nightshift status: {e}")
+            return 1
+
+    elif args.nightshift_command == "list":
+        try:
+            queue = NightshiftQueue()
+            for item in queue.list():
+                logger.info(f"#{item.issue_number}: {item.status.value} pr={item.pr_url or '-'}")
+        except Exception as e:
+            logger.error(f"❌ Failed to list Nightshift queue: {e}")
+            return 1
+
+    else:
+        logger.error(f"❌ Unknown nightshift command: {args.nightshift_command}")
+        logger.info("Available commands: run, status, list")
+        return 1
+
     return 0
 
 

@@ -726,6 +726,17 @@ def configure_scheduler_execution(
     autonomous_orchestrator = AutonomousOrchestrator()
 
     async def execute_scheduled_query(user_query: str, session_id: str):
+        # Defense-in-depth: AutomationEngine._wrapped_execution_callback is the
+        # interception point that's actually live when a Scheduler is built via
+        # BootstrapGraph (see its own nightshift_sweep check), but this closure
+        # can still become the *only* callback if something constructs a bare
+        # Scheduler without AutomationEngine ever running.
+        for s in scheduler.schedules.values():
+            if s.user_query == user_query and s.metadata.get("nightshift_sweep"):
+                from src.core.nightshift.runner import run_nightshift_sweep
+
+                return await run_nightshift_sweep()
+
         return await autonomous_orchestrator.run_research(
             user_query,
             context={"session_id": session_id, "source": "scheduler"},

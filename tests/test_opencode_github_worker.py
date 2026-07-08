@@ -43,11 +43,13 @@ def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:
 
 
 def test_worker_git_apply_ignores_whitespace_warnings() -> None:
-    worker = (PROJECT_ROOT / "scripts" / "opencode_github_worker.py").read_text(
+    # The git-apply invocation lives in src/core/patch_ops.py (extracted from this
+    # worker script so src/core/nightshift can reuse it without duplication).
+    patch_ops = (PROJECT_ROOT / "src" / "core" / "patch_ops.py").read_text(
         encoding="utf-8"
     )
 
-    assert "--whitespace=nowarn" in worker
+    assert "--whitespace=nowarn" in patch_ops
 
 
 def test_normalize_diff_adds_missing_path_prefixes() -> None:

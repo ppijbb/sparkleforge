@@ -63,6 +63,15 @@ class AutomationEngine:
 
         metadata = schedule.metadata if schedule else {}
 
+        # Nightshift sweep: keyed off the resolved schedule's metadata (not the
+        # query string, which route_task() below may rewrite) so a recurring
+        # Nightshift schedule ticks the overnight backlog sweep instead of
+        # being treated as a research query.
+        if schedule and metadata.get("nightshift_sweep"):
+            from src.core.nightshift.runner import run_nightshift_sweep
+
+            return await run_nightshift_sweep()
+
         # 1. Multi-agent Routing
         routed_query = self.route_task(user_query, metadata)
 
