@@ -1,10 +1,22 @@
 from pathlib import Path
 
-from scripts.opencode_github_worker import _apply_patch, _normalize_diff
+from scripts.opencode_github_worker import (
+    _apply_patch,
+    _normalize_diff,
+    _per_file_context_limit,
+)
 from src.core.patch_ops import _split_multifile_patch, _validate_patch_paths
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+class DummyOpenCodeAgent:
+    def __init__(self, prompt_budget: int):
+        self.prompt_budget = prompt_budget
+
+    def prompt_context_budget(self) -> int:
+        return self.prompt_budget
 
 
 def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:
@@ -199,3 +211,47 @@ def test_split_multifile_patch_keeps_paths_with_spaces() -> None:
 """
 
     assert _split_multifile_patch(diff) == [("docs/my note.md", diff)]
+
+
+def test_per_file_context_limit_caps_large_model_budget() -> None:
+    limit = _per_file_context_limit(
+        DummyOpenCodeAgent(prompt_budget=1_000_000),
+        1,
+        snapshot="",
+        status="",
+        issue_context="short issue",
+    )
+
+    assert limit == 200_000
+
+
+def test_per_file_context_limit_returns_zero_when_prompt_budget_is_exhausted() -> None:
+    limit = _per_file_context_limit(
+        DummyOpenCodeAgent(prompt_budget=100),
+        3,
+        snapshot="src/core/patch_ops.py",
+        status="",
+        issue_context="x" * 10_000,
+    )
+
+    assert limit == 0
+
+
+def test_per_file_context_limit_shares_budget_across_files() -> None:
+    one_file = _per_file_context_limit(
+        DummyOpenCodeAgent(prompt_budget=50_000),
+        1,
+        snapshot="src/core/patch_ops.py",
+        status="",
+        issue_context="short issue",
+    )
+    five_files = _per_file_context_limit(
+        DummyOpenCodeAgent(prompt_budget=50_000),
+        5,
+        snapshot="src/core/patch_ops.py",
+        status="",
+        issue_context="short issue",
+    )
+
+    assert five_files < one_file
+    assert five_files > 0
