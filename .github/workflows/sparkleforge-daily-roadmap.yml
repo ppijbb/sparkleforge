@@ -286,9 +286,13 @@ jobs:
           EXISTING=$(gh issue list \
             --repo "${{ github.repository }}" \
             --state open \
-            --search "sparkleforge-daily-roadmap:$TODAY in:body" \
+            --search "sparkleforge-daily-roadmap:$TODAY in:body sort:created-desc" \
             --json number \
-            --jq '.[0].number // empty')
+            --jq '[.[].number] | sort | .[0] // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Roadmap issue already exists for $TODAY: #$EXISTING; it will be updated."
+          fi
 
           if [ -n "$EXISTING" ]; then
             echo "Roadmap issue already exists for $TODAY: #$EXISTING; it will be updated."
@@ -303,6 +307,9 @@ jobs:
               --jq '.[0].number // empty')
             if [ -n "$EXISTING_FIX" ]; then
               echo "Open daily roadmap issue already exists: #$EXISTING_FIX; it will be updated."
+            fi
+            if [ -n "$EXISTING_FIX" ]; then
+              echo "Open daily roadmap issue already exists: #$EXISTING_FIX; it will be updated."
               EXISTING="$EXISTING_FIX"
             fi
           fi
@@ -310,10 +317,6 @@ jobs:
           TITLE=$(sed -n '1s/^# *//p' sparkleforge-roadmap.md | head -c 180)
           if [ -z "$TITLE" ]; then
             TITLE="Daily SparkleForge improvement plan"
-          fi
-          ISSUE_TYPE="feat"
-          if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
-            ISSUE_TYPE="fix"
           fi
           SUBJECT=$(printf '%s\n' "$TITLE" | sed -E \
             -e 's/^[[:space:]]+|[[:space:]]+$//g' \
@@ -323,6 +326,10 @@ jobs:
           if [ -z "$SUBJECT" ]; then
             echo "::error::Unable to derive a specific roadmap issue title."
             exit 1
+          fi
+          ISSUE_TYPE="feat"
+          if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
+            ISSUE_TYPE="fix"
           fi
           ISSUE_TITLE="$ISSUE_TYPE: $SUBJECT"
           python scripts/validate_commit_messages.py --message "$ISSUE_TITLE"
