@@ -16,6 +16,7 @@ from src.core.anvil.engine import AnvilWorkflowEngine
 from src.core.anvil.skill_repository import SkillRepository
 from src.core.harness_state import HarnessState, create_initial_harness_state
 from src.core.llm_manager import TaskType, get_llm_orchestrator
+from src.core.semantic_file_search import register_semantic_file_search_tool
 from src.core.prompt_builder import get_system_prompt
 from src.core.task_router import RoutePath, TaskRouter
 
@@ -28,10 +29,19 @@ class AgentHarness:
     def __init__(self):
         self.router = TaskRouter()
         self.memory = MemorySaver()
+        self._register_tools()
         self.skill_repository = SkillRepository()
         self.anvil_engine = AnvilWorkflowEngine(skill_repository=self.skill_repository)
         self.orchestrator = get_llm_orchestrator()
         self.graph = self._build_graph()
+
+    def _register_tools(self) -> None:
+        """Register agent-callable tools into the shared tool pool."""
+        try:
+            register_semantic_file_search_tool()
+            logger.info("[Harness] Registered semantic_file_search tool")
+        except Exception as e:
+            logger.warning(f"[Harness] Failed to register semantic_file_search tool: {e}")
 
     def _build_graph(self):
         """LangGraph 상태 머신 구축"""
