@@ -1,8 +1,15 @@
 import asyncio
 import logging
 from typing import Any, Callable, Dict, List, Optional
-from src.core.scheduler import get_scheduler, Scheduler, ScheduleConfig, ScheduleExecution, ScheduleStatus
+
 from src.core.observe.event_bus import EventBus
+from src.core.scheduler import (
+    ScheduleConfig,
+    ScheduleExecution,
+    Scheduler,
+    ScheduleStatus,
+    get_scheduler,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +28,8 @@ class AutomationEngine:
 
     def __init__(
         self,
-        scheduler: Optional[Scheduler] = None,
-        event_bus: Optional[EventBus] = None,
+        scheduler: Scheduler | None = None,
+        event_bus: EventBus | None = None,
         coordinator: Any = None,
     ):
         self.scheduler = scheduler or get_scheduler()
@@ -63,14 +70,14 @@ class AutomationEngine:
 
         metadata = schedule.metadata if schedule else {}
 
-        # Nightshift sweep: keyed off the resolved schedule's metadata (not the
+        # Nightwelding sweep: keyed off the resolved schedule's metadata (not the
         # query string, which route_task() below may rewrite) so a recurring
-        # Nightshift schedule ticks the overnight backlog sweep instead of
+        # Nightwelding schedule ticks the overnight backlog sweep instead of
         # being treated as a research query.
-        if schedule and metadata.get("nightshift_sweep"):
-            from src.core.nightshift.runner import run_nightshift_sweep
+        if schedule and metadata.get("nightwelding_sweep"):
+            from src.core.nightwelding.runner import run_nightwelding_sweep
 
-            return await run_nightshift_sweep()
+            return await run_nightwelding_sweep()
 
         # 1. Multi-agent Routing
         routed_query = self.route_task(user_query, metadata)
@@ -88,7 +95,7 @@ class AutomationEngine:
         self,
         routed_query: str,
         session_id: str,
-        schedule: Optional[ScheduleConfig],
+        schedule: ScheduleConfig | None,
         metadata: Dict[str, Any],
     ) -> Any:
         """Execute a routed task, delegating cross-node via the coordinator when eligible.
@@ -107,7 +114,7 @@ class AutomationEngine:
             logger.info(f"AutomationEngine [Cross-node]: Delegating task '{task_id}' via coordinator.")
             try:
                 ok = await asyncio.wait_for(self.coordinator.delegate_task(task_id, payload), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Hard boundary: never block the scheduler loop indefinitely on a hung
                 # coordinator/worker, even though the timeout is also passed down to
                 # the session layer as an (advisory, implementation-dependent) hint.
@@ -153,13 +160,13 @@ class AutomationEngine:
         name: str,
         user_query: str,
         trigger_type: str = "cron",  # cron, event, webhook, chain
-        cron_expression: Optional[str] = None,
-        event_type: Optional[str] = None,
-        webhook_id: Optional[str] = None,
-        parent_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
-        execution_target: Optional[str] = None,  # local, remote, auto
+        cron_expression: str | None = None,
+        event_type: str | None = None,
+        webhook_id: str | None = None,
+        parent_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+        tags: List[str] | None = None,
+        execution_target: str | None = None,  # local, remote, auto
     ) -> ScheduleConfig:
         """Create an automation task ruleset."""
         metadata = metadata or {}

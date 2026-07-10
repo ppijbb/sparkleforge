@@ -2,13 +2,13 @@
 
 Mirrors the retry loop in .github/workflows/opencode-auto-fix.yml (the
 "OpenCode repair loop" step) but in Python, and verifies against the
-reproduction test written by src/core/nightshift/gate.py instead of a bare
+reproduction test written by src/core/nightwelding/gate.py instead of a bare
 `compileall` check.
 
 Reuses scripts/opencode_github_worker.py's `fix-issue` subcommand as a
 subprocess (the same, already-hardened usage pattern the existing GitHub
 Actions workflow already relies on) rather than importing `fix_issue()`
-in-process — see the Nightshift plan for why.
+in-process — see the Nightwelding plan for why.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ class ImplementResult:
     attempts: int = 0
 
 
-def _run(cmd: List[str], cwd: Path, timeout: Optional[int] = None) -> subprocess.CompletedProcess:
+def _run(cmd: List[str], cwd: Path, timeout: int | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
 
 

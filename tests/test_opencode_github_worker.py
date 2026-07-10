@@ -63,7 +63,7 @@ def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:
 
 def test_worker_git_apply_ignores_whitespace_warnings() -> None:
     # The git-apply invocation lives in src/core/patch_ops.py (extracted from this
-    # worker script so src/core/nightshift can reuse it without duplication).
+    # worker script so src/core/nightwelding can reuse it without duplication).
     patch_ops = (PROJECT_ROOT / "src" / "core" / "patch_ops.py").read_text(
         encoding="utf-8"
     )

@@ -1,4 +1,4 @@
-"""Unit tests for src/core/nightshift/gate.py's scope guard.
+"""Unit tests for src/core/nightwelding/gate.py's scope guard.
 
 These test the pure git-status-parsing guard logic without touching an LLM:
 the guard must accept isolated tests/test_*.py changes and reject anything
@@ -11,7 +11,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from src.core.nightshift.gate import _touched_test_files
+from src.core.nightwelding.gate import _touched_test_files
 
 
 def _init_repo(tmp_path: Path) -> Path:

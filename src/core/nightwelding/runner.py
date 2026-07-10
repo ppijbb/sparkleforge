@@ -1,8 +1,8 @@
-"""Nightshift orchestration: fetch issue -> gate -> implement -> draft PR.
+"""Nightwelding orchestration: fetch issue -> gate -> implement -> draft PR.
 
 Two entry points:
-  run_nightshift_issue(issue_number)  -- full pipeline for one issue.
-  run_nightshift_sweep(backlog_label) -- find eligible issues and run each.
+  run_nightwelding_issue(issue_number)  -- full pipeline for one issue.
+  run_nightwelding_sweep(backlog_label) -- find eligible issues and run each.
 
 The `auto-fix-failed` backlog is the default sweep target: it's the set of
 issues the daytime opencode-auto-fix.yml pipeline already tried and gave up
@@ -18,9 +18,13 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from src.core.nightshift import github_adapter, gate
-from src.core.nightshift.implement import implement_until_green
-from src.core.nightshift.models import NightshiftItem, NightshiftQueue, NightshiftStatus
+from src.core.nightwelding import gate, github_adapter
+from src.core.nightwelding.implement import implement_until_green
+from src.core.nightwelding.models import (
+    NightweldingItem,
+    NightweldingQueue,
+    NightweldingStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +45,18 @@ def _repo_slug() -> str:
     )
 
 
-async def run_nightshift_issue(
+async def run_nightwelding_issue(
     issue_number: int,
-    repo_root: Optional[Path] = None,
-    repo: Optional[str] = None,
+    repo_root: Path | None = None,
+    repo: str | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
-    queue: Optional[NightshiftQueue] = None,
-) -> NightshiftItem:
+    queue: NightweldingQueue | None = None,
+) -> NightweldingItem:
     repo_root = repo_root or Path.cwd()
     repo = repo or _repo_slug()
-    queue = queue or NightshiftQueue()
+    queue = queue or NightweldingQueue()
 
-    item = NightshiftItem(issue_number=issue_number, status=NightshiftStatus.WRITING_TEST)
+    item = NightweldingItem(issue_number=issue_number, status=NightweldingStatus.WRITING_TEST)
     queue.upsert(item)
 
     try:
@@ -62,8 +66,8 @@ async def run_nightshift_issue(
         if not commit_title_impl:
             return _fail(queue, item, repo, issue_number, f"Could not derive a valid commit title from issue title: {issue.title!r}")
 
-        base_branch = os.getenv("NIGHTSHIFT_BASE_BRANCH") or github_adapter.default_base_branch(repo)
-        branch = f"nightshift/{issue_number}-{int(time.time())}"
+        base_branch = os.getenv("NIGHTWELDING_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or github_adapter.default_base_branch(repo)
+        branch = f"nightwelding/{issue_number}-{int(time.time())}"
         github_adapter.create_branch(repo_root, branch, base_branch)
         item.branch = branch
         queue.upsert(item)
@@ -72,7 +76,7 @@ async def run_nightshift_issue(
         if not repro.success:
             return _fail(queue, item, repo, issue_number, repro.reason, log=repro.red_output)
 
-        item.status = NightshiftStatus.RED
+        item.status = NightweldingStatus.RED
         item.repro_test_files = repro.test_files
         queue.upsert(item)
 
@@ -85,11 +89,11 @@ async def run_nightshift_issue(
         if untracked:
             github_adapter._run(["git", "add", "--", *untracked], cwd=repo_root, check=False)
         github_adapter._run(
-            ["git", "commit", "-m", f"test: add reproduction test for #{issue_number} (nightshift)"],
+            ["git", "commit", "-m", f"test: add reproduction test for #{issue_number} (nightwelding)"],
             cwd=repo_root,
         )
 
-        item.status = NightshiftStatus.IMPLEMENTING
+        item.status = NightweldingStatus.IMPLEMENTING
         queue.upsert(item)
 
         implement_result = implement_until_green(
@@ -102,16 +106,16 @@ async def run_nightshift_issue(
         if not implement_result.success:
             return _fail(queue, item, repo, issue_number, implement_result.reason, log=implement_result.log)
 
-        item.status = NightshiftStatus.GREEN
+        item.status = NightweldingStatus.GREEN
         queue.upsert(item)
 
         pushed = github_adapter.push_branch(repo_root, branch, base_branch)
         if not pushed:
-            return _fail(queue, item, repo, issue_number, "Nightshift completed without commits.")
+            return _fail(queue, item, repo, issue_number, "Nightwelding completed without commits.")
 
         body = (
-            f"OpenCode-generated Nightshift fix for {issue.url}.\n\n"
-            "This PR was opened by Nightshift, an overnight autonomous-implementation "
+            f"OpenCode-generated Nightwelding fix for {issue.url}.\n\n"
+            "This PR was opened by Nightwelding, an overnight autonomous-implementation "
             "pipeline. It is intentionally a **Draft** and requires a human to review it "
             "and mark it ready before it can merge.\n\n"
             "## Reproduction\n\n"
@@ -122,75 +126,75 @@ async def run_nightshift_issue(
         )
         pr_url = github_adapter.open_draft_pr(repo, base_branch, branch, commit_title_impl, body)
         item.pr_url = pr_url
-        item.status = NightshiftStatus.DRAFT_OPENED
+        item.status = NightweldingStatus.DRAFT_OPENED
         queue.upsert(item)
 
-        github_adapter.ensure_label(repo, *github_adapter.NIGHTSHIFT_DRAFT_LABEL)
-        github_adapter.add_labels(repo, issue_number, [github_adapter.NIGHTSHIFT_DRAFT_LABEL[0]])
-        github_adapter.remove_labels(repo, issue_number, [github_adapter.NIGHTSHIFT_QUEUE_LABEL[0]])
+        github_adapter.ensure_label(repo, *github_adapter.NIGHTWELDING_DRAFT_LABEL)
+        github_adapter.add_labels(repo, issue_number, [github_adapter.NIGHTWELDING_DRAFT_LABEL[0]])
+        github_adapter.remove_labels(repo, issue_number, [github_adapter.NIGHTWELDING_QUEUE_LABEL[0]])
         github_adapter.comment_on_issue(
             repo, issue_number,
-            f"Nightshift opened a Draft PR: {pr_url}. It requires human review — mark it ready for review, then merge manually.",
+            f"Nightwelding opened a Draft PR: {pr_url}. It requires human review — mark it ready for review, then merge manually.",
         )
         return item
     except Exception as exc:  # noqa: BLE001 - surfaced via the failure report below
-        logger.exception("Nightshift run failed for issue #%s", issue_number)
+        logger.exception("Nightwelding run failed for issue #%s", issue_number)
         return _fail(queue, item, repo, issue_number, str(exc))
 
 
 def _fail(
-    queue: NightshiftQueue,
-    item: NightshiftItem,
+    queue: NightweldingQueue,
+    item: NightweldingItem,
     repo: str,
     issue_number: int,
     reason: str,
     log: str = "",
-) -> NightshiftItem:
-    item.status = NightshiftStatus.FAILED
+) -> NightweldingItem:
+    item.status = NightweldingStatus.FAILED
     item.failure_reason = reason
     queue.upsert(item)
     try:
-        github_adapter.ensure_label(repo, *github_adapter.NIGHTSHIFT_FAILED_LABEL)
-        github_adapter.add_labels(repo, issue_number, [github_adapter.NIGHTSHIFT_FAILED_LABEL[0]])
-        github_adapter.remove_labels(repo, issue_number, [github_adapter.NIGHTSHIFT_QUEUE_LABEL[0]])
+        github_adapter.ensure_label(repo, *github_adapter.NIGHTWELDING_FAILED_LABEL)
+        github_adapter.add_labels(repo, issue_number, [github_adapter.NIGHTWELDING_FAILED_LABEL[0]])
+        github_adapter.remove_labels(repo, issue_number, [github_adapter.NIGHTWELDING_QUEUE_LABEL[0]])
         comment = (
-            "Nightshift could not complete this issue overnight.\n\n"
+            "Nightwelding could not complete this issue overnight.\n\n"
             f"Reason: {reason}\n\n"
         )
         if log:
             comment += f"Log (tail):\n```text\n{log[-3000:]}\n```\n\n"
-        comment += "Re-add the `nightshift-queue` label to retry after addressing the root cause."
+        comment += "Re-add the `nightwelding-queue` label to retry after addressing the root cause."
         github_adapter.comment_on_issue(repo, issue_number, comment)
     except Exception:
-        logger.exception("Nightshift: failed to report failure for issue #%s", issue_number)
+        logger.exception("Nightwelding: failed to report failure for issue #%s", issue_number)
     return item
 
 
-async def run_nightshift_sweep(
+async def run_nightwelding_sweep(
     backlog_label: str = DEFAULT_BACKLOG_LABEL,
     limit: int = 100,
     max_per_run: int = DEFAULT_MAX_PER_RUN,
-    repo_root: Optional[Path] = None,
-    repo: Optional[str] = None,
+    repo_root: Path | None = None,
+    repo: str | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
-) -> List[NightshiftItem]:
+) -> List[NightweldingItem]:
     repo_root = repo_root or Path.cwd()
     repo = repo or _repo_slug()
-    queue = NightshiftQueue()
+    queue = NightweldingQueue()
 
     candidates = github_adapter.list_candidate_issues(
         repo,
         backlog_label=backlog_label,
         exclude_labels=[
-            github_adapter.NIGHTSHIFT_DRAFT_LABEL[0],
-            github_adapter.NIGHTSHIFT_FAILED_LABEL[0],
+            github_adapter.NIGHTWELDING_DRAFT_LABEL[0],
+            github_adapter.NIGHTWELDING_FAILED_LABEL[0],
         ],
         limit=limit,
     )
 
-    results: List[NightshiftItem] = []
+    results: List[NightweldingItem] = []
     for issue_number in candidates[:max_per_run]:
-        result = await run_nightshift_issue(
+        result = await run_nightwelding_issue(
             issue_number,
             repo_root=repo_root,
             repo=repo,

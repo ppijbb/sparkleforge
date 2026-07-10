@@ -1,11 +1,11 @@
-name: Nightshift Autonomous Implementation
+name: Nightwelding Autonomous Implementation
 
-# Nightshift retries the auto-fix-failed backlog overnight (issues the daytime
+# Nightwelding retries the auto-fix-failed backlog overnight (issues the daytime
 # opencode-auto-fix.yml pipeline already tried and gave up on, and which its
 # own 30-minute sweep explicitly never retries automatically), gated by a
 # reproduce-first test that must go red before implementing and green before
 # a Draft PR opens. It never merges. All of the actual logic lives in
-# src/core/nightshift/ and is invoked here as a normal CLI command — this
+# src/core/nightwelding/ and is invoked here as a normal CLI command — this
 # workflow is intentionally just a scheduler/trigger.
 
 on:
@@ -24,7 +24,7 @@ on:
     - cron: "30 16 * * *"
 
 concurrency:
-  group: nightshift-${{ github.event.inputs.issue_number || github.run_id }}
+  group: nightwelding-${{ github.event.inputs.issue_number || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -33,7 +33,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  nightshift-run:
+  nightwelding-run:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -43,7 +43,7 @@ jobs:
           HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
-            echo "::error::PAT repository secret is required for Nightshift's issue-to-draft-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
+            echo "::error::PAT repository secret is required for Nightwelding's issue-to-draft-PR flow. The default GITHUB_TOKEN is blocked from creating pull requests in this repository."
             exit 1
           fi
           gh auth status
@@ -71,7 +71,7 @@ jobs:
       - name: Install SparkleForge (with dev/test dependencies)
         run: uv sync
 
-      - name: Run Nightshift
+      - name: Run Nightwelding
         env:
           GH_TOKEN: ${{ secrets.PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -81,7 +81,7 @@ jobs:
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
           OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
         run: |
-          ARGS=(nightshift run --max-iterations "${{ github.event.inputs.max_iterations || '4' }}")
+          ARGS=(nightwelding run --max-iterations "${{ github.event.inputs.max_iterations || '4' }}")
           if [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ARGS+=(--issue "${{ github.event.inputs.issue_number }}")
           else
