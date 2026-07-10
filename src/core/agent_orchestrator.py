@@ -8,8 +8,7 @@ import logging
 import os
 from typing import Any, Dict, List, TypedDict
 
-from src.core.agent_harness import AgentHarness
-
+# Removed global AgentHarness import for optimization
 
 class AgentState(TypedDict, total=False):
     """Agent workflow state shared across orchestration steps."""
@@ -32,6 +31,7 @@ class AgentOrchestrator:
     """Agent Harness 기반의 경량화된 Orchestrator Wrapper"""
 
     def __init__(self, config=None):
+        from src.core.agent_harness import AgentHarness
         self.harness = AgentHarness()
         self.config = config
         self.recursion_limit = getattr(config, "recursion_limit", 20000)

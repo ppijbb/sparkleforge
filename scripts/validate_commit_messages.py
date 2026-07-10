@@ -105,7 +105,10 @@ def validate_subject(subject: str, label: str) -> list[str]:
         errors.append(f"{label}: empty commit subject is not allowed")
         return errors
 
-    if not subject.startswith("Merge branch 'main'") and subject.startswith("Merge "):
+    if subject.startswith("Merge branch 'main'"):
+        return errors
+
+    if subject.startswith("Merge "):
         errors.append(f"{label}: merge commit subjects are not allowed")
         return errors
     if EMOJI_RE.search(subject):
