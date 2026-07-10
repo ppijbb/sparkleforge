@@ -1,6 +1,7 @@
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -46,3 +47,33 @@ def test_install_script_has_valid_bash_syntax() -> None:
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_merge_branch_main_subject_passes_validation() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "validate_commit_messages",
+        PROJECT_ROOT / "scripts" / "validate_commit_messages.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    errors = module.validate_subject("Merge branch 'main'", "merge-main")
+    assert errors == [], errors
+
+
+def test_non_main_merge_subject_is_rejected() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "validate_commit_messages",
+        PROJECT_ROOT / "scripts" / "validate_commit_messages.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    errors = module.validate_subject("Merge branch 'feature/foo'", "merge-feature")
+    assert any("merge commit subjects are not allowed" in error for error in errors), errors
