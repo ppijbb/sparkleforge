@@ -93,7 +93,8 @@ def run_agent(user_query: str, workspace: Path, timeout_s: int) -> Dict[str, Any
     real developer/CI-runner home directory. scenario_fixtures/scheduled_summary.py
     reads schedules back from this same workspace-relative location.
     """
-    cmd = [sys.executable, str(MAIN_PY), "work", user_query]
+    sparkleforge_bin = shutil.which("sparkleforge")
+    cmd = [sparkleforge_bin, "work", user_query] if sparkleforge_bin else [sys.executable, str(MAIN_PY), "work", user_query]
     env = os.environ.copy()
     env["HOME"] = str(workspace)
     env["USERPROFILE"] = str(workspace)
