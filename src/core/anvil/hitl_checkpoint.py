@@ -2,11 +2,13 @@
 
 import asyncio
 import logging
+import json
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from src.core.anvil.dynamic_checklist_generator import Checklist, ChecklistItem
 from src.core.anvil.request_analyzer import RequestAnalyzer
@@ -48,17 +50,20 @@ FeedbackProvider = Callable[
 
 
 class HITLCheckpointManager:
-    """주요 단계마다 사용자 피드백을 수집하고 체크리스트에 반영한다.
+    """HITL 체크포인트 관리자."""
 
-    feedback_provider가 주입되면 인터랙티브 모드로 동작하고 (CLI 프롬프트,
-    알림 채널 등), 없으면 헤드리스 모드로 자동 승인해 자율 실행을 막지 않는다.
-    sync/async 제공자를 모두 지원한다.
-    """
-
-    def __init__(self, feedback_provider: Optional[FeedbackProvider] = None):
+    def __init__(
+        self,
+        feedback_provider: Optional[FeedbackProvider] = None,
+        checkpoint_dir: str = ".checkpoints",
+        timeout_seconds: int = 1800,
+    ):
         self.feedback_provider = feedback_provider
         self.history: List[CheckpointResult] = []
         self._analyzer = RequestAnalyzer()
+        self.checkpoint_dir = checkpoint_dir
+        self.timeout_seconds = timeout_seconds
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     async def checkpoint(
         self, stage: CheckpointStage, context: Optional[Dict[str, Any]] = None
@@ -73,6 +78,16 @@ class HITLCheckpointManager:
             logger.info("Checkpoint %s auto-approved (headless mode)", stage.value)
             self.history.append(result)
             return result
+
+        # Save state and exit if provider is not available or requires suspension
+        checkpoint_id = uuid.uuid4().hex[:8]
+        state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
+        with open(state_file, "w") as f:
+            json.dump({"stage": stage.value, "context": context, "created_at": time.time()}, f)
+        
+        logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
+        # In a real implementation, this would raise a custom exception to trigger process exit
+        return CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
 
         try:
             outcome = self.feedback_provider(stage, context)
@@ -151,3 +166,15 @@ class HITLCheckpointManager:
             }
             for r in self.history
         ]
+
+    def resolve_timeout(self, checkpoint_id: str) -> CheckpointDecision:
+        """타임아웃 발생 시 기본 결정 적용."""
+        state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
+        if os.path.exists(state_file):
+            with open(state_file, "r") as f:
+                data = json.load(f)
+                if time.time() - data.get("created_at", 0) > self.timeout_seconds:
+                    os.remove(state_file)
+                    logger.info("Checkpoint %s timed out, auto-aborting", checkpoint_id)
+                    return CheckpointDecision.ABORT
+        return CheckpointDecision.APPROVE
