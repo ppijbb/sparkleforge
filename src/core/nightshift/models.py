@@ -92,5 +92,11 @@ class NightshiftQueue:
     def get(self, issue_number: int) -> Optional[NightshiftItem]:
         return self.items.get(issue_number)
 
+    def remove(self, issue_number: int) -> bool:
+        if self.items.pop(issue_number, None) is not None:
+            self._save()
+            return True
+        return False
+
     def list(self) -> List[NightshiftItem]:
         return sorted(self.items.values(), key=lambda i: i.updated_at, reverse=True)
