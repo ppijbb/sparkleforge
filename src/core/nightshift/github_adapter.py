@@ -99,7 +99,7 @@ def list_candidate_issues(
     candidates: List[int] = []
     for issue in issues:
         labels = {label["name"] for label in issue.get("labels", [])}
-        if backlog_label not in labels:
+        if backlog_label not in labels and NIGHTSHIFT_QUEUE_LABEL[0] not in labels:
             continue
         if labels & set(exclude_labels):
             continue
@@ -111,7 +111,11 @@ def list_candidate_issues(
             ["gh", "pr", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "headRefName"]
         )
         open_prs = json.loads(pr_proc.stdout or "[]")
-        if any(pr["headRefName"].startswith(f"nightshift/{number}-") for pr in open_prs):
+        if any(
+            pr["headRefName"].startswith(f"nightshift/{number}-")
+            or pr["headRefName"].startswith(f"nightwelding/{number}-")
+            for pr in open_prs
+        ):
             continue
         eligible.append(number)
     return eligible
