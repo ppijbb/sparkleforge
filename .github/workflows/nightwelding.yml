@@ -32,6 +32,9 @@ permissions:
   issues: write
   pull-requests: write
 
+env:
+  NIGHTWELDING_BASE_BRANCH: ${{ vars.NIGHTWELDING_BASE_BRANCH || 'main' }}
+
 jobs:
   nightwelding-run:
     runs-on: ubuntu-latest
@@ -75,12 +78,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          NIGHTWELDING_BASE_BRANCH: ${{ env.NIGHTWELDING_BASE_BRANCH }}
+          NIGHTSHIFT_BASE_BRANCH: ${{ env.NIGHTWELDING_BASE_BRANCH }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
           OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
         run: |
+          echo "Resolved Nightwelding base branch: ${NIGHTWELDING_BASE_BRANCH}"
           ARGS=(nightwelding run --max-iterations "${{ github.event.inputs.max_iterations || '4' }}")
           if [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ARGS+=(--issue "${{ github.event.inputs.issue_number }}")
