@@ -1,11 +1,11 @@
-"""Thin `gh`/`git` subprocess adapter for Nightshift.
+"""Thin `gh`/`git` subprocess adapter for Nightwelding.
 
 Consistent with the rest of this project: no GitHub API client is built here,
 just subprocess calls to the `gh` CLI and `git`, exactly like the existing
 GitHub Actions workflows and scripts/opencode_github_worker.py already do.
 
 The PR body always contains the literal substring "OpenCode-generated" and
-branches always use the "nightshift/" prefix — both are load-bearing for
+branches always use the "nightwelding/" prefix — both are load-bearing for
 staying Draft-only forever: gemini-assistant.yml's `code-review` job (and,
 transitively, `merge-decision`, which needs `code-review` to succeed) skips
 any PR whose body contains that substring, and its separate
@@ -22,16 +22,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-NIGHTSHIFT_DRAFT_LABEL = ("nightshift-draft-opened", "5319E7", "Nightshift opened a Draft PR; human must review and mark it ready before it can merge.")
-NIGHTSHIFT_FAILED_LABEL = ("nightshift-failed", "B60205", "Nightshift could not reproduce the issue, or could not make the reproduction test pass.")
-NIGHTSHIFT_QUEUE_LABEL = ("nightshift-queue", "1D76DB", "Queued for Nightshift's overnight autonomous-implementation pipeline.")
+NIGHTWELDING_DRAFT_LABEL = ("nightwelding-draft-opened", "5319E7", "Nightwelding opened a Draft PR; human must review and mark it ready before it can merge.")
+NIGHTWELDING_FAILED_LABEL = ("nightwelding-failed", "B60205", "Nightwelding could not reproduce the issue, or could not make the reproduction test pass.")
+NIGHTWELDING_QUEUE_LABEL = ("nightwelding-queue", "1D76DB", "Queued for Nightwelding's overnight autonomous-implementation pipeline.")
 
 
 class GitHubAdapterError(RuntimeError):
     pass
 
 
-def _run(cmd: List[str], cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+def _run(cmd: List[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
     proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
     if check and proc.returncode != 0:
         raise GitHubAdapterError(f"{' '.join(cmd)} failed ({proc.returncode}): {proc.stderr.strip()}")
@@ -43,7 +43,7 @@ def default_base_branch(repo: str) -> str:
     return proc.stdout.strip()
 
 
-def normalize_commit_title(issue_title: str, repo_root: Path) -> Optional[str]:
+def normalize_commit_title(issue_title: str, repo_root: Path) -> str | None:
     """Derive a conventional-commit title from an issue title.
 
     Returns None if the title can't be normalized into a valid commit
@@ -91,7 +91,8 @@ def list_candidate_issues(
     limit: int = 100,
 ) -> List[int]:
     """Open issues carrying `backlog_label`, not carrying any of `exclude_labels`,
-    and with no existing open PR from a `nightshift/$N-` branch."""
+    and with no existing open PR from a `nightwelding/$N-` branch.
+    """
     proc = _run(
         ["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "number,labels"]
     )
@@ -165,7 +166,7 @@ def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
     )
 
 
-def find_open_pr(repo: str, branch: str, base_branch: str) -> Optional[str]:
+def find_open_pr(repo: str, branch: str, base_branch: str) -> str | None:
     proc = _run(
         ["gh", "pr", "list", "--repo", repo, "--head", branch, "--base", base_branch, "--state", "open", "--json", "url"],
         check=False,
@@ -177,7 +178,8 @@ def find_open_pr(repo: str, branch: str, base_branch: str) -> Optional[str]:
 def open_draft_pr(repo: str, base_branch: str, branch: str, title: str, body: str) -> str:
     """Open a Draft PR. `body` MUST already contain the literal substring
     'OpenCode-generated' — callers are responsible for that (see module
-    docstring for why)."""
+    docstring for why).
+    """
     if "OpenCode-generated" not in body:
         raise GitHubAdapterError("PR body must contain the literal substring 'OpenCode-generated'.")
 

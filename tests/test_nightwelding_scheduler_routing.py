@@ -1,13 +1,13 @@
-"""Regression test for Nightshift's scheduler sentinel routing.
+"""Regression test for Nightwelding's scheduler sentinel routing.
 
 AutomationEngine._wrapped_execution_callback is the interception point that
 is actually live once BootstrapGraph runs (it unconditionally constructs
 AutomationEngine, which claims scheduler.execution_callback before
 configure_scheduler_execution() ever gets a chance to install the research
-callback -- see src/core/nightshift/runner.py's module docstring / the
-Nightshift plan for the full trace). This test locks in that a schedule
-tagged metadata={"nightshift_sweep": True} short-circuits straight to
-run_nightshift_sweep() *before* route_task()/run_research() are ever reached
+callback -- see src/core/nightwelding/runner.py's module docstring / the
+Nightwelding plan for the full trace). This test locks in that a schedule
+tagged metadata={"nightwelding_sweep": True} short-circuits straight to
+run_nightwelding_sweep() *before* route_task()/run_research() are ever reached
 -- the exact thing that's easy to silently regress since the dead-code path
 (configure_scheduler_execution's own closure) looks superficially correct on
 its own.
@@ -36,14 +36,14 @@ def automation_engine(scheduler):
     AutomationEngine._instance = None
 
 
-async def test_nightshift_sweep_schedule_short_circuits_before_route_task(
+async def test_nightwelding_sweep_schedule_short_circuits_before_route_task(
     automation_engine, scheduler, monkeypatch
 ) -> None:
     schedule = scheduler.create_schedule(
-        name="nightshift",
+        name="nightwelding",
         cron_expression="30 16 * * *",
-        user_query="__nightshift_sweep__",
-        metadata={"nightshift_sweep": True},
+        user_query="__nightwelding_sweep__",
+        metadata={"nightwelding_sweep": True},
     )
 
     sweep_called = []
@@ -53,7 +53,7 @@ async def test_nightshift_sweep_schedule_short_circuits_before_route_task(
         return ["fake-result"]
 
     monkeypatch.setattr(
-        "src.core.nightshift.runner.run_nightshift_sweep", fake_sweep
+        "src.core.nightwelding.runner.run_nightwelding_sweep", fake_sweep
     )
 
     route_task_called = []
@@ -72,7 +72,7 @@ async def test_nightshift_sweep_schedule_short_circuits_before_route_task(
     assert result == ["fake-result"]
 
 
-async def test_non_nightshift_schedule_still_routes_normally(
+async def test_non_nightwelding_schedule_still_routes_normally(
     automation_engine, scheduler, monkeypatch
 ) -> None:
     schedule = scheduler.create_schedule(
@@ -83,7 +83,7 @@ async def test_non_nightshift_schedule_still_routes_normally(
 
     sweep_called = []
     monkeypatch.setattr(
-        "src.core.nightshift.runner.run_nightshift_sweep",
+        "src.core.nightwelding.runner.run_nightwelding_sweep",
         lambda: sweep_called.append(True),
     )
 

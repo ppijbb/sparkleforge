@@ -1649,31 +1649,31 @@ EXAMPLES:
     cli_run_parser.add_argument("--mode", help="Execution mode")
     cli_run_parser.add_argument("--files", nargs="*", help="Related files")
 
-    # nightshift 커맨드 (재현-우선 자율 이슈 수정 파이프라인)
-    nightshift_parser = subparsers.add_parser(
-        "nightshift", help="Reproduce-first autonomous issue fixer (writes a failing test, implements until green, opens a Draft PR)"
+    # nightwelding 커맨드 (재현-우선 자율 이슈 수정 파이프라인)
+    nightwelding_parser = subparsers.add_parser(
+        "nightwelding", help="Reproduce-first autonomous issue fixer (writes a failing test, implements until green, opens a Draft PR)"
     )
-    nightshift_subparsers = nightshift_parser.add_subparsers(
-        dest="nightshift_command", help="Nightshift commands"
+    nightwelding_subparsers = nightwelding_parser.add_subparsers(
+        dest="nightwelding_command", help="Nightwelding commands"
     )
 
-    # nightshift run
-    nightshift_run_parser = nightshift_subparsers.add_parser(
-        "run", help="Run Nightshift once: a single issue, or a sweep of the backlog"
+    # nightwelding run
+    nightwelding_run_parser = nightwelding_subparsers.add_parser(
+        "run", help="Run Nightwelding once: a single issue, or a sweep of the backlog"
     )
-    nightshift_run_parser.add_argument("--issue", type=int, help="Specific GitHub issue number to process")
-    nightshift_run_parser.add_argument(
+    nightwelding_run_parser.add_argument("--issue", type=int, help="Specific GitHub issue number to process")
+    nightwelding_run_parser.add_argument(
         "--backlog-label", default="auto-fix-failed",
         help="Label identifying the sweep backlog when --issue is not given (default: auto-fix-failed)",
     )
-    nightshift_run_parser.add_argument("--max-iterations", type=int, default=4, help="Max implementation repair attempts (1-6)")
-    nightshift_run_parser.add_argument("--max-per-run", type=int, default=3, help="Max issues to process per sweep")
+    nightwelding_run_parser.add_argument("--max-iterations", type=int, default=4, help="Max implementation repair attempts (1-6)")
+    nightwelding_run_parser.add_argument("--max-per-run", type=int, default=3, help="Max issues to process per sweep")
 
-    # nightshift status
-    nightshift_status_parser = nightshift_subparsers.add_parser("status", help="Show Nightshift queue status")
+    # nightwelding status
+    nightwelding_status_parser = nightwelding_subparsers.add_parser("status", help="Show Nightwelding queue status")
 
-    # nightshift list
-    nightshift_list_parser = nightshift_subparsers.add_parser("list", help="List Nightshift queue history")
+    # nightwelding list
+    nightwelding_list_parser = nightwelding_subparsers.add_parser("list", help="List Nightwelding queue history")
 
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
@@ -1866,8 +1866,8 @@ EXAMPLES:
         cli_rc = await handle_setup_command(args)
     elif cmd == "cli":
         cli_rc = await handle_cli_command(args)
-    elif cmd == "nightshift":
-        cli_rc = await handle_nightshift_command(args)
+    elif cmd == "nightwelding":
+        cli_rc = await handle_nightwelding_command(args)
     elif cmd == "interactive":
         cli_rc = await handle_interactive_command(args)
     elif cmd == "repl":
@@ -2595,8 +2595,9 @@ async def handle_work_command_from_query(args):
 async def handle_session_command(args):
     """REPL 밖에서 세션을 조회하는 커맨드 처리 (session list / session show <id>)."""
     from rich.console import Console
-    from src.core.session_control import SessionControl
+
     from src.cli.commands.session import session_list_command, session_show_command
+    from src.core.session_control import SessionControl
 
     class _SessionCliShim:
         def __init__(self):
@@ -3086,28 +3087,31 @@ async def handle_setup_command(args):
     return 0
 
 
-async def handle_nightshift_command(args):
-    """Nightshift(재현-우선 자율 이슈 수정 파이프라인) 커맨드 처리."""
-    from src.core.nightshift.models import NightshiftQueue
+async def handle_nightwelding_command(args):
+    """Nightwelding(재현-우선 자율 이슈 수정 파이프라인) 커맨드 처리."""
+    from src.core.nightwelding.models import NightweldingQueue
 
-    if args.nightshift_command == "run":
-        from src.core.nightshift.runner import run_nightshift_issue, run_nightshift_sweep
+    if args.nightwelding_command == "run":
+        from src.core.nightwelding.runner import (
+            run_nightwelding_issue,
+            run_nightwelding_sweep,
+        )
 
         try:
             if args.issue:
-                logger.info(f"🌙 Nightshift: running issue #{args.issue}")
-                item = await run_nightshift_issue(args.issue, max_iterations=args.max_iterations)
+                logger.info(f"🌙 Nightwelding: running issue #{args.issue}")
+                item = await run_nightwelding_issue(args.issue, max_iterations=args.max_iterations)
                 items = [item]
             else:
-                logger.info(f"🌙 Nightshift: sweeping backlog label '{args.backlog_label}'")
-                items = await run_nightshift_sweep(
+                logger.info(f"🌙 Nightwelding: sweeping backlog label '{args.backlog_label}'")
+                items = await run_nightwelding_sweep(
                     backlog_label=args.backlog_label,
                     max_per_run=args.max_per_run,
                     max_iterations=args.max_iterations,
                 )
 
             if not items:
-                logger.info("Nightshift: no eligible issues found.")
+                logger.info("Nightwelding: no eligible issues found.")
                 return 0
 
             failed = 0
@@ -3120,33 +3124,33 @@ async def handle_nightshift_command(args):
             return 1 if failed and failed == len(items) else 0
 
         except Exception as e:
-            logger.error(f"❌ Nightshift run failed: {e}")
+            logger.error(f"❌ Nightwelding run failed: {e}")
             return 1
 
-    elif args.nightshift_command == "status":
+    elif args.nightwelding_command == "status":
         try:
-            queue = NightshiftQueue()
+            queue = NightweldingQueue()
             items = queue.list()
             if not items:
-                logger.info("Nightshift: queue is empty.")
+                logger.info("Nightwelding: queue is empty.")
                 return 0
             for item in items[:20]:
                 logger.info(f"#{item.issue_number}: {item.status.value} (updated {item.updated_at})")
         except Exception as e:
-            logger.error(f"❌ Failed to read Nightshift status: {e}")
+            logger.error(f"❌ Failed to read Nightwelding status: {e}")
             return 1
 
-    elif args.nightshift_command == "list":
+    elif args.nightwelding_command == "list":
         try:
-            queue = NightshiftQueue()
+            queue = NightweldingQueue()
             for item in queue.list():
                 logger.info(f"#{item.issue_number}: {item.status.value} pr={item.pr_url or '-'}")
         except Exception as e:
-            logger.error(f"❌ Failed to list Nightshift queue: {e}")
+            logger.error(f"❌ Failed to list Nightwelding queue: {e}")
             return 1
 
     else:
-        logger.error(f"❌ Unknown nightshift command: {args.nightshift_command}")
+        logger.error(f"❌ Unknown nightwelding command: {args.nightwelding_command}")
         logger.info("Available commands: run, status, list")
         return 1
 

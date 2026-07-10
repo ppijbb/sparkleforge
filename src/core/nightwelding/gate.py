@@ -1,9 +1,9 @@
 """Reproduce-first gate: write a failing test before any fix is attempted.
 
-Nightshift's core safety property: an implementation attempt only begins once
+Nightwelding's core safety property: an implementation attempt only begins once
 a test exists that demonstrably fails against the current repository, and a
 PR only opens once that same test demonstrably passes. This module owns the
-"must fail first" half; src/core/nightshift/implement.py owns the "must pass
+"must fail first" half; src/core/nightwelding/implement.py owns the "must pass
 after" half.
 """
 
@@ -101,7 +101,7 @@ def _touched_test_files(repo_root: Path) -> tuple[bool, List[str]]:
 
 async def write_reproduction_test(
     issue_context: str,
-    repo_root: Optional[Path] = None,
+    repo_root: Path | None = None,
 ) -> ReproResult:
     repo_root = repo_root or Path.cwd()
     snapshot = patch_ops.repo_snapshot()

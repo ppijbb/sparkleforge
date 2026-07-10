@@ -1,7 +1,7 @@
-"""Data model and JSON-backed store for Nightshift work items.
+"""Data model and JSON-backed store for Nightwelding work items.
 
 Mirrors src/core/scheduler.py's storage convention: a JSON file under
-~/.sparkleforge/nightshift/.
+~/.sparkleforge/nightwelding/.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-class NightshiftStatus(str, Enum):
+class NightweldingStatus(str, Enum):
     QUEUED = "queued"
     WRITING_TEST = "writing_test"
     RED = "red"
@@ -25,13 +25,13 @@ class NightshiftStatus(str, Enum):
 
 
 @dataclass
-class NightshiftItem:
+class NightweldingItem:
     issue_number: int
-    status: NightshiftStatus = NightshiftStatus.QUEUED
+    status: NightweldingStatus = NightweldingStatus.QUEUED
     repro_test_files: List[str] = field(default_factory=list)
-    branch: Optional[str] = None
-    pr_url: Optional[str] = None
-    failure_reason: Optional[str] = None
+    branch: str | None = None
+    pr_url: str | None = None
+    failure_reason: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -43,10 +43,10 @@ class NightshiftItem:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "NightshiftItem":
+    def from_dict(cls, data: Dict[str, Any]) -> NightweldingItem:
         data = dict(data)
         if isinstance(data.get("status"), str):
-            data["status"] = NightshiftStatus(data["status"])
+            data["status"] = NightweldingStatus(data["status"])
         if isinstance(data.get("created_at"), str):
             data["created_at"] = datetime.fromisoformat(data["created_at"])
         if isinstance(data.get("updated_at"), str):
@@ -54,16 +54,16 @@ class NightshiftItem:
         return cls(**data)
 
 
-class NightshiftQueue:
-    """JSON-backed store of NightshiftItem history, keyed by issue number."""
+class NightweldingQueue:
+    """JSON-backed store of NightweldingItem history, keyed by issue number."""
 
-    def __init__(self, storage_path: Optional[Path] = None):
+    def __init__(self, storage_path: Path | None = None):
         if storage_path is None:
-            storage_path = Path.home() / ".sparkleforge" / "nightshift"
+            storage_path = Path.home() / ".sparkleforge" / "nightwelding"
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self.queue_file = self.storage_path / "queue.json"
-        self.items: Dict[int, NightshiftItem] = {}
+        self.items: Dict[int, NightweldingItem] = {}
         self._load()
 
     def _load(self) -> None:
@@ -72,7 +72,7 @@ class NightshiftQueue:
         try:
             data = json.loads(self.queue_file.read_text(encoding="utf-8"))
             for item_data in data.get("items", []):
-                item = NightshiftItem.from_dict(item_data)
+                item = NightweldingItem.from_dict(item_data)
                 self.items[item.issue_number] = item
         except Exception:
             pass
@@ -84,12 +84,12 @@ class NightshiftQueue:
         }
         self.queue_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    def upsert(self, item: NightshiftItem) -> None:
+    def upsert(self, item: NightweldingItem) -> None:
         item.updated_at = datetime.now()
         self.items[item.issue_number] = item
         self._save()
 
-    def get(self, issue_number: int) -> Optional[NightshiftItem]:
+    def get(self, issue_number: int) -> NightweldingItem | None:
         return self.items.get(issue_number)
 
     def remove(self, issue_number: int) -> bool:
@@ -98,5 +98,5 @@ class NightshiftQueue:
             return True
         return False
 
-    def list(self) -> List[NightshiftItem]:
+    def list(self) -> List[NightweldingItem]:
         return sorted(self.items.values(), key=lambda i: i.updated_at, reverse=True)
