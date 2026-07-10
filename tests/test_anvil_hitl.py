@@ -158,3 +158,15 @@ class TestHITLCheckpointManager:
         assert len(summary) == 2
         assert summary[0]["stage"] == CheckpointStage.AFTER_PLANNING.value
         assert summary[1]["decision"] == CheckpointDecision.APPROVE.value
+
+    @pytest.mark.asyncio
+    async def test_timeout_resolution(self, tmp_path):
+        manager = HITLCheckpointManager(checkpoint_dir=str(tmp_path), timeout_seconds=1)
+        # Manually create a timed-out checkpoint file
+        cp_id = "test_timeout"
+        with open(tmp_path / f"{cp_id}.json", "w") as f:
+            import json, time
+            json.dump({"created_at": time.time() - 10}, f)
+        
+        decision = manager.resolve_timeout(cp_id)
+        assert decision == CheckpointDecision.ABORT
