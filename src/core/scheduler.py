@@ -692,6 +692,81 @@ class Scheduler:
         }
 
 
+def register_scheduler_tools() -> None:
+    """Expose Scheduler management APIs as agent-callable tools.
+
+    The tools are registered into the shared ToolRegistry so the AgentHarness
+    can discover and invoke them dynamically during execution. They wrap the
+    global Scheduler singleton (``get_scheduler()``) so registrations persist
+    across agent invocations within the same process.
+    """
+    from src.core.tools.registry import ToolCategory, ToolMetadata, registry
+
+    scheduler = get_scheduler()
+
+    def create_automation_task(
+        name: str,
+        cron_expression: str,
+        user_query: str,
+        enabled: bool = True,
+        metadata: Dict[str, Any] | None = None,
+        tags: List[str] | None = None,
+        max_runs: int | None = None,
+        timeout_seconds: int | None = None,
+    ) -> Dict[str, Any]:
+        """Register a cron-based automation task with the Scheduler."""
+        schedule = scheduler.create_schedule(
+            name=name,
+            cron_expression=cron_expression,
+            user_query=user_query,
+            enabled=enabled,
+            metadata=metadata,
+            tags=tags,
+            max_runs=max_runs,
+            timeout_seconds=timeout_seconds,
+        )
+        return schedule.to_dict()
+
+    def list_automation_tasks(
+        enabled_only: bool = False,
+        tags: List[str] | None = None,
+    ) -> List[Dict[str, Any]]:
+        """List registered automation tasks from the Scheduler."""
+        schedules = scheduler.list_schedules(enabled_only=enabled_only, tags=tags)
+        return [s.to_dict() for s in schedules]
+
+    create_metadata = ToolMetadata(
+        name="create_automation_task",
+        description=(
+            "Register a cron-based automation task with the SparkleForge "
+            "Scheduler. Returns the created schedule configuration."
+        ),
+        parameters={
+            "name": {"type": "string"},
+            "cron_expression": {"type": "string"},
+            "user_query": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "metadata": {"type": "object"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "max_runs": {"type": "integer"},
+            "timeout_seconds": {"type": "integer"},
+        },
+        category=ToolCategory.UTILITY,
+        tags=["scheduler", "automation"],
+        source="local",
+    )
+    list_metadata = ToolMetadata(
+        name="list_automation_tasks",
+        description="List automation tasks registered with the SparkleForge Scheduler.",
+        parameters={"enabled_only": {"type": "boolean"}, "tags": {"type": "array"}},
+        category=ToolCategory.UTILITY,
+        tags=["scheduler", "automation"],
+        source="local",
+    )
+    registry.register(create_metadata, create_automation_task, create_automation_task)
+    registry.register(list_metadata, list_automation_tasks, list_automation_tasks)
+
+
 # 전역 인스턴스
 _scheduler: Scheduler | None = None
 

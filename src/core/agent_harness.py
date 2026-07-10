@@ -16,6 +16,7 @@ from src.core.anvil.engine import AnvilWorkflowEngine
 from src.core.anvil.skill_repository import SkillRepository
 from src.core.harness_state import HarnessState, create_initial_harness_state
 from src.core.llm_manager import TaskType, get_llm_orchestrator
+from src.core.scheduler import get_scheduler
 from src.core.semantic_file_search import register_semantic_file_search_tool
 from src.core.prompt_builder import get_system_prompt
 from src.core.task_router import RoutePath, TaskRouter
@@ -38,6 +39,7 @@ class AgentHarness:
     def _register_tools(self) -> None:
         """Register agent-callable tools into the shared tool pool."""
         try:
+            register_scheduler_tools()
             register_semantic_file_search_tool()
             logger.info("[Harness] Registered semantic_file_search tool")
         except Exception as e:
