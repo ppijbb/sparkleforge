@@ -119,28 +119,10 @@ from src.core.config import HTTPServerSpec
 from src.core.mcp_auto_discovery import FastMCPMulti
 from src.core.mcp_tool_loader import MCPToolLoader
 from src.core.mcp_tool_loader import ToolInfo as MCPToolInfo
-from src.core.mcp_helpers import _execute_search_tool_sync, _execute_academic_tool_sync, _execute_data_tool_sync, _execute_code_tool_sync
 from src.core.observability import start_tool_span
 from src.core.researcher_config import get_llm_config, get_mcp_config
 
 logger = logging.getLogger(__name__)
-
-
-def _execute_search_tool_sync(*args, **kwargs):
-    from src.core.mcp_helpers import _execute_search_tool_sync as _impl
-    return _impl(*args, **kwargs)
-
-def _execute_academic_tool_sync(*args, **kwargs):
-    from src.core.mcp_helpers import _execute_academic_tool_sync as _impl
-    return _impl(*args, **kwargs)
-
-def _execute_data_tool_sync(*args, **kwargs):
-    from src.core.mcp_helpers import _execute_data_tool_sync as _impl
-    return _impl(*args, **kwargs)
-
-def _execute_code_tool_sync(*args, **kwargs):
-    from src.core.mcp_helpers import _execute_code_tool_sync as _impl
-    return _impl(*args, **kwargs)
 
 
 def _parse_json_text(value: str, *, context: str) -> tuple[bool, Any]:
