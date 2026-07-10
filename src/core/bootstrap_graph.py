@@ -100,11 +100,6 @@ class BootstrapGraph:
                 self._stage_memory_context,
                 depends_on=("config", "database", "observation_plane", "actuation_plane", "automation_engine"),
             ),
-            BootstrapStage(
-                "guard_plane",
-                self._stage_guard_plane,
-                depends_on=("config", "trust_gate", "actuation_plane"),
-            ),
         ]
 
     async def _stage_config(self) -> dict[str, Any]:
@@ -224,15 +219,6 @@ class BootstrapGraph:
             "history_analyzer": ha,
             "context_lane": cl,
             "initialized": all(x is not None for x in [sm, ha, cl]),
-        }
-
-    async def _stage_guard_plane(self) -> dict[str, Any]:
-        from src.core.guard.guard_plane import GuardPlane
-
-        gp = GuardPlane()
-        return {
-            "guard_plane": gp,
-            "initialized": gp is not None,
         }
 
     async def run(self) -> BootstrapResult:
