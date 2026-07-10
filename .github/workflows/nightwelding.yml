@@ -93,4 +93,4 @@ jobs:
           else
             ARGS+=(--backlog-label auto-fix-failed)
           fi
-          uv run python main.py "${ARGS[@]}"
+          uv run sparkleforge "${ARGS[@]}"
