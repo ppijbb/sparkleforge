@@ -46,3 +46,15 @@
 {"key": "python_code", "value": "def hello(): pass", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-04-08T23:46:45.666402"}
 {"key": "test_data", "value": "research findings", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-04-08T23:46:45.666541"}
 {"key": "analysis", "value": "data analysis results", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-04-08T23:46:45.666644"}
+{"key": "test_key", "value": "test_value", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:39:37.605482"}
+{"key": "session_key", "value": "session_value", "scope": "session", "session_id": "test_session", "agent_id": null, "timestamp": "2026-07-11T15:39:37.607786"}
+{"key": "agent_key", "value": "agent_value", "scope": "agent", "session_id": "test_session", "agent_id": "test_agent", "timestamp": "2026-07-11T15:39:37.609910"}
+{"key": "python_code", "value": "def hello(): pass", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:39:37.611619"}
+{"key": "test_data", "value": "research findings", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:39:37.611800"}
+{"key": "analysis", "value": "data analysis results", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:39:37.611939"}
+{"key": "test_key", "value": "test_value", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:40:41.854335"}
+{"key": "session_key", "value": "session_value", "scope": "session", "session_id": "test_session", "agent_id": null, "timestamp": "2026-07-11T15:40:41.855758"}
+{"key": "agent_key", "value": "agent_value", "scope": "agent", "session_id": "test_session", "agent_id": "test_agent", "timestamp": "2026-07-11T15:40:41.856768"}
+{"key": "python_code", "value": "def hello(): pass", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:40:41.857586"}
+{"key": "test_data", "value": "research findings", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:40:41.857679"}
+{"key": "analysis", "value": "data analysis results", "scope": "global", "session_id": null, "agent_id": null, "timestamp": "2026-07-11T15:40:41.857729"}
