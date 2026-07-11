@@ -7,6 +7,7 @@ from src.core.anvil.hitl_checkpoint import (
     CheckpointDecision,
     CheckpointStage,
     HITLCheckpointManager,
+    HITLProviderError,
 )
 from src.core.anvil.intent_guardrail import IntentGuardrail, _tokenize
 from src.core.anvil.request_analyzer import RequestAnalyzer
@@ -118,6 +119,48 @@ class TestHITLCheckpointManager:
         manager = HITLCheckpointManager(feedback_provider=provider)
         result = await manager.checkpoint(CheckpointStage.BEFORE_FINAL_REPORT)
         assert result.decision == CheckpointDecision.APPROVE
+
+    @pytest.mark.asyncio
+    async def test_provider_returning_none_suspends_and_saves_state(self, tmp_path):
+        def provider(stage, context):
+            return None
+
+        manager = HITLCheckpointManager(
+            feedback_provider=provider, checkpoint_dir=str(tmp_path)
+        )
+        result = await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
+
+        assert result.decision == CheckpointDecision.ABORT
+        assert manager.aborted()
+        state_file = tmp_path / f"{result.checkpoint_id}.json"
+        assert state_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_malformed_provider_response_raises_instead_of_approving(self):
+        def provider(stage, context):
+            return "not a tuple"
+
+        manager = HITLCheckpointManager(feedback_provider=provider)
+        with pytest.raises(HITLProviderError):
+            await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
+
+    @pytest.mark.asyncio
+    async def test_string_decision_value_is_normalized(self):
+        def provider(stage, context):
+            return "revise", "짧게 요약해줘"
+
+        manager = HITLCheckpointManager(feedback_provider=provider)
+        result = await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
+        assert result.decision == CheckpointDecision.REVISE
+
+    @pytest.mark.asyncio
+    async def test_invalid_decision_string_raises(self):
+        def provider(stage, context):
+            return "maybe", "..."
+
+        manager = HITLCheckpointManager(feedback_provider=provider)
+        with pytest.raises(HITLProviderError):
+            await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
 
     @pytest.mark.asyncio
     async def test_apply_feedback_adds_checklist_items(self):

@@ -51,6 +51,16 @@ FeedbackProvider = Callable[
 ]
 
 
+class HITLSuspensionSignal(Exception):
+    """Raised when a HITL feedback provider signals execution suspension
+    (returns ``None``). Domain-specific control flow — never a stdlib I/O error."""
+
+
+class HITLProviderError(Exception):
+    """Raised when a HITL feedback provider returns a malformed response
+    (not a ``(decision, feedback)`` tuple). Never silently defaults to approve."""
+
+
 class HITLCheckpointManager:
     """HITL 체크포인트 관리자."""
 
@@ -88,28 +98,49 @@ class HITLCheckpointManager:
             if asyncio.iscoroutine(outcome):
                 outcome = await outcome
             if outcome is None:
-                raise BlockingIOError("Suspension required")
+                raise HITLSuspensionSignal("feedback provider returned None")
+            if not isinstance(outcome, tuple) or len(outcome) != 2:
+                raise HITLProviderError(
+                    f"expected (decision, feedback) tuple, got {type(outcome).__name__}"
+                )
             decision, feedback = outcome
+            if isinstance(decision, str):
+                try:
+                    decision = CheckpointDecision(decision)
+                except ValueError:
+                    raise HITLProviderError(f"invalid decision value: {decision!r}")
+            elif not isinstance(decision, CheckpointDecision):
+                raise HITLProviderError(
+                    f"expected CheckpointDecision, got {type(decision).__name__}"
+                )
+        except HITLSuspensionSignal:
+            # Save state and exit; the provider requires suspension.
+            checkpoint_id = uuid.uuid4().hex[:8]
+            state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
+            with open(state_file, "w") as f:
+                json.dump(
+                    {"stage": stage.value, "context": context, "created_at": time.time()},
+                    f,
+                    default=str,
+                )
+
+            logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
+
+            if self.webhook_url:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        await session.post(self.webhook_url, json={"checkpoint_id": checkpoint_id, "stage": stage.value})
+                    logger.info("Webhook notification sent for checkpoint %s", checkpoint_id)
+                except Exception as ex:
+                    logger.error("Failed to send webhook notification: %s", ex)
+
+            result = CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
+            self.history.append(result)
+            return result
+        except HITLProviderError:
+            # Malformed provider response must never be silently treated as approval.
+            raise
         except Exception as e:
-            if isinstance(e, BlockingIOError) or "suspend" in str(e).lower():
-                # Save state and exit if provider requires suspension
-                checkpoint_id = uuid.uuid4().hex[:8]
-                state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
-                with open(state_file, "w") as f:
-                    json.dump({"stage": stage.value, "context": context, "created_at": time.time()}, f)
-                
-                logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
-
-                if self.webhook_url:
-                    try:
-                        async with aiohttp.ClientSession() as session:
-                            await session.post(self.webhook_url, json={"checkpoint_id": checkpoint_id, "stage": stage.value})
-                        logger.info("Webhook notification sent for checkpoint %s", checkpoint_id)
-                    except Exception as ex:
-                        logger.error("Failed to send webhook notification: %s", ex)
-
-                return CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
-
             logger.warning(
                 "Feedback provider failed at %s, defaulting to approve: %s",
                 stage.value,
