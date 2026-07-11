@@ -10,12 +10,15 @@ import sys
 from pathlib import Path
 import chromadb
 
-# Add project root to path
-from src.core.researcher_config import load_config_from_env
-load_config_from_env()
+# Add project root to path so `src` is importable without PYTHONPATH
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.core.shared_memory import SharedMemory, MemoryScope, init_shared_memory
 from src.core.agent_orchestrator import AgentOrchestrator, AgentState
+
+from src.core.researcher_config import load_config_from_env
+load_config_from_env()
 
 
 class TestSharedMemory:
