@@ -98,3 +98,11 @@ LLM_TEMPERATURE=0.1
 LLM_MAX_TOKENS=4000
 
 # Multi-Model Orchestration (Gemini 2.
+"""
+
+# OpenRouter Configuration (필수)
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+
+# LLM Configuration (Gemini 2.5 Flash Lite 우선)
+LLM_PROVIDER=openrouter
+LLM_MODEL=google/gemini-3.1-flash-lite-preview

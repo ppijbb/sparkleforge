@@ -353,6 +353,123 @@ def test_camera_device():
     camera.disconnect()
 
 
+def test_sensor_hardware_backend_with_driver():
+    class FakeDHT:
+        def __init__(self, pin):
+            self.pin = pin
+            self.exited = False
+            self._reads = [
+                (float("nan"), float("nan")),
+                (22.5, 46.0),
+            ]
+
+        @property
+        def temperature(self):
+            return self._reads[0][0]
+
+        @property
+        def humidity(self):
+            return self._reads[0][1]
+
+        def exit(self):
+            self.exited = True
+
+    fake_dht_module = MagicMock()
+    fake_dht_module.DHT22 = FakeDHT
+
+    with patch.dict(sys.modules, {"adafruit_dht": fake_dht_module}):
+        sensor = SensorDevice("real_sensor", backend="hardware", pin=18)
+        assert sensor.connect() is True
+        assert sensor.active_backend == "hardware"
+        assert sensor._dht.pin == 18
+
+        # First read returns NaN, second succeeds
+        data = sensor.read()
+        assert data["temperature"] == 22.5
+        assert data["humidity"] == 46.0
+
+        dht = sensor._dht
+        sensor.disconnect()
+        assert dht.exited is True
+
+
+def test_sensor_hardware_read_failure_falls_back():
+    class FlakyDHT:
+        def __init__(self, pin):
+            self.pin = pin
+
+        @property
+        def temperature(self):
+            raise RuntimeError("sensor not responding")
+
+        @property
+        def humidity(self):
+            raise RuntimeError("sensor not responding")
+
+        def exit(self):
+            pass
+
+    fake_dht_module = MagicMock()
+    fake_dht_module.DHT22 = FlakyDHT
+
+    with patch.dict(sys.modules, {"adafruit_dht": fake_dht_module}):
+        sensor = SensorDevice("flaky_sensor", backend="hardware", pin=4)
+        assert sensor.connect() is True
+        with pytest.raises(RuntimeError):
+            sensor.read()
+
+
+def test_camera_hardware_backend_with_driver():
+    class FakeVideoCapture:
+        def __init__(self, source):
+            self.source = source
+            self.opened = True
+            self.released = False
+
+        def isOpened(self):
+            return self.opened
+
+        def read(self):
+            return True, "fake-frame"
+
+        def release(self):
+            self.released = True
+
+    fake_cv2_module = MagicMock()
+    fake_cv2_module.VideoCapture = FakeVideoCapture
+    fake_cv2_module.imencode.return_value = (True, bytearray(b"\xff\xd8\xff\xe0\x00\x10JFIF"))
+
+    with patch.dict(sys.modules, {"cv2": fake_cv2_module}):
+        camera = CameraDevice("real_cam", backend="hardware", source=1)
+        assert camera.connect() is True
+        assert camera.active_backend == "hardware"
+        assert camera._cap.source == 1
+
+        frame = camera.read()
+        assert frame.startswith(b"\xff\xd8\xff\xe0")
+
+        cap = camera._cap
+        camera.disconnect()
+        assert cap.released is True
+
+
+def test_camera_hardware_open_failure():
+    class ClosedVideoCapture:
+        def __init__(self, source):
+            self.source = source
+
+        def isOpened(self):
+            return False
+
+    fake_cv2_module = MagicMock()
+    fake_cv2_module.VideoCapture = ClosedVideoCapture
+
+    with patch.dict(sys.modules, {"cv2": fake_cv2_module}):
+        camera = CameraDevice("closed_cam", backend="hardware", source=0)
+        assert camera.connect() is False
+        assert camera.is_connected is False
+
+
 # --- 3. Observe Telemetry Integration Tests ---
 
 @pytest.mark.asyncio
