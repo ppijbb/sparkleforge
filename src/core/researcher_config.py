@@ -1107,6 +1107,21 @@ def load_config_from_env() -> ResearcherSystemConfig:
     _llm_provider = get_optional_env("LLM_PROVIDER", "opencode")
     if not _llm_provider or (isinstance(_llm_provider, str) and not _llm_provider.strip()):
         _llm_provider = "opencode"
+
+    # Provider별 실제로 필요한 API 키만 필수로 요구하고,
+    # 무관한 키는 optional로 처리한다 (Issue #470).
+    _provider_api_key_env = {
+        "google": "GOOGLE_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "groq": "GROQ_API_KEY",
+    }
+    _provider_api_key_env_name = _provider_api_key_env.get(_llm_provider, "GOOGLE_API_KEY")
+
+    def _provider_api_key() -> str:
+        return os.getenv(_provider_api_key_env_name) or os.getenv("GOOGLE_API_KEY") or ""
+
     if _llm_provider == "opencode":
         llm_config = LLMConfig(
             provider="opencode",
@@ -1125,20 +1140,21 @@ def load_config_from_env() -> ResearcherSystemConfig:
             open_code_model_path=get_optional_env("OPEN_CODE_MODEL_PATH", "kimi-k2.5"),
         )
     else:
+        _primary_model = get_required_env("LLM_MODEL")
         llm_config = LLMConfig(
             provider=_llm_provider,
-            primary_model=get_required_env("LLM_MODEL"),
-            temperature=get_required_env("LLM_TEMPERATURE", float),
-            max_tokens=get_required_env("LLM_MAX_TOKENS", int),
-            api_key=get_required_env("GOOGLE_API_KEY"),
-            planning_model=get_required_env("PLANNING_MODEL"),
-            reasoning_model=get_required_env("REASONING_MODEL"),
-            verification_model=get_required_env("VERIFICATION_MODEL"),
-            generation_model=get_required_env("GENERATION_MODEL"),
-            compression_model=get_required_env("COMPRESSION_MODEL"),
-            openrouter_api_key=get_required_env("OPENROUTER_API_KEY"),
-            budget_limit=get_required_env("BUDGET_LIMIT", float),
-            enable_cost_optimization=get_required_env("ENABLE_COST_OPTIMIZATION", bool),
+            primary_model=_primary_model,
+            temperature=get_optional_env("LLM_TEMPERATURE", 0.2, float),
+            max_tokens=get_optional_env("LLM_MAX_TOKENS", 8192, int),
+            api_key=_provider_api_key(),
+            planning_model=get_optional_env("PLANNING_MODEL", _primary_model),
+            reasoning_model=get_optional_env("REASONING_MODEL", _primary_model),
+            verification_model=get_optional_env("VERIFICATION_MODEL", _primary_model),
+            generation_model=get_optional_env("GENERATION_MODEL", _primary_model),
+            compression_model=get_optional_env("COMPRESSION_MODEL", _primary_model),
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or "",
+            budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
+            enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
         )
 
     # Load Agent configuration (기본값 있음)
