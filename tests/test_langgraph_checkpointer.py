@@ -42,6 +42,7 @@ def _build_graph(checkpointer):
     return workflow.compile(checkpointer=checkpointer)
 
 
+@pytest.mark.asyncio
 async def test_sqlite_checkpointer_survives_simulated_process_restart(tmp_path):
     db_path = str(tmp_path / "checkpoints.db")
     config = {"configurable": {"thread_id": "resume-test"}}
@@ -64,6 +65,7 @@ async def test_sqlite_checkpointer_survives_simulated_process_restart(tmp_path):
     assert final["counter"] == 11
 
 
+@pytest.mark.asyncio
 async def test_build_sqlite_checkpointer_creates_parent_directory(tmp_path):
     db_path = str(tmp_path / "nested" / "dir" / "checkpoints.db")
     checkpointer = build_sqlite_checkpointer(db_path)
