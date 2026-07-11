@@ -125,13 +125,28 @@ async def delegate_to_agent(
 ) -> Dict[str, Any]:
     """Invoke `role` at runtime, bounded by delegation depth and journaled.
 
-    Mutates `state["delegation_depth"]` for the duration of the call so that
-    nested delegations (a delegated agent that itself delegates) are bounded
-    by the same counter, then restores it on the way out.
+    Depth is tracked exclusively through `context`, not `state` (issue #516):
+    `state` is a single mutable object shared across the whole orchestrator
+    run, so a nested call (a delegated agent that itself delegates further)
+    would always observe the pre-increment depth once the parent's cleanup
+    restored it, making the guard ineffective for chains longer than one hop.
+    It also meant concurrent delegations dispatched via `asyncio.gather`
+    would race on the same `state["delegation_depth"]` key. `context` is a
+    fresh dict per call (each adapter receives its own `{**context,
+    "delegation_depth": depth + 1}`), so both problems disappear: a nested
+    `delegate_to_agent` call just needs to pass its received `context` back
+    in, and concurrent siblings never share a mutable counter.
+
+    `state` is only consulted for `max_delegation_depth` on the outermost
+    call (when `context` doesn't already carry one forward).
     """
     context = dict(context or {})
-    depth = int(state.get("delegation_depth") or 0)
-    max_depth = int(state.get("max_delegation_depth") or DEFAULT_MAX_DELEGATION_DEPTH)
+    depth = int(context.get("delegation_depth") or 0)
+    max_depth = int(
+        context.get("max_delegation_depth")
+        or state.get("max_delegation_depth")
+        or DEFAULT_MAX_DELEGATION_DEPTH
+    )
 
     journal = ActionJournal()
 
@@ -168,9 +183,9 @@ async def delegate_to_agent(
         metadata={"role": role, "depth": depth + 1, "task_id": task.get("id") or task.get("task_id")},
     )
 
-    state["delegation_depth"] = depth + 1
+    child_context = {**context, "delegation_depth": depth + 1, "max_delegation_depth": max_depth}
     try:
-        result = await adapter(task, {**context, "delegation_depth": depth + 1})
+        result = await adapter(task, child_context)
     except Exception as e:  # noqa: BLE001 - surfaced to caller, not swallowed
         logger.warning("Delegation to '%s' failed: %s", role, e)
         journal.update_outcome(entry.entry_id, outcome="failure", error=str(e))
@@ -178,5 +193,3 @@ async def delegate_to_agent(
     else:
         journal.update_outcome(entry.entry_id, outcome="success")
         return {"role": role, "success": True, "result": result, "delegation_depth": depth + 1}
-    finally:
-        state["delegation_depth"] = depth
