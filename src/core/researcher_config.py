@@ -351,6 +351,27 @@ class PromptRefinerConfig:
 
 
 @dataclass
+class GeminiCacheConfig:
+    """Gemini Context/Prompt Caching configuration (Issue #459).
+
+    Caches the static prefix (system prompt, tool schemas, loaded skills)
+    for Gemini models to reduce Time-To-First-Token (TTFT) and token costs.
+    """
+
+    enabled: bool = True
+    # Minimum prefix token count required to enable caching (Gemini requires >= 1024).
+    min_prefix_tokens: int = 1024
+    # Time-To-Live for cached prefixes in seconds (default ~1 hour).
+    ttl_seconds: int = 3600
+    # Reuse cached context handle across conversation turns in long-running loops.
+    reuse_across_turns: bool = True
+    # Gracefully fallback to normal requests if caching is unsupported or expires.
+    fallback_on_error: bool = True
+    # Only cache prefixes for Gemini-family models.
+    gemini_model_prefixes: tuple = ("gemini",)
+
+
+@dataclass
 class OverseerConfig:
     """Greedy Overseer configuration for research quality enforcement."""
 
