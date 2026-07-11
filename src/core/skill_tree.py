@@ -1,7 +1,7 @@
 """Skill Tree - Per-agent hierarchical skill management and retrieval.
 
 Provides SkillTreeNode/SkillTree, SkillPerformanceTracker, HotSkillCache,
-and SkillRetriever (BM25 + FlashRank reranking) for task-specific skill selection.
+and SkillRetriever (BM25 + Vector similarity + FlashRank reranking) for task-specific skill selection.
 """
 
 import json
@@ -13,7 +13,7 @@ from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.core.skills_manager import SkillManager
@@ -388,8 +388,19 @@ class HotSkillCache:
         return skills[:top_k]
 
 
+def prepare_skill_document(skill: Any) -> str:
+    """임베딩 생성을 위한 스킬 문서 포맷팅."""
+    parts = [
+        f"Skill: {getattr(skill, 'skill_id', '')}",
+        f"Description: {getattr(skill, 'description', '') or ''}",
+        f"Tags: {', '.join(getattr(skill, 'tags', []) or [])}",
+        f"Capabilities: {', '.join(getattr(skill, 'capabilities', []) or [])}",
+    ]
+    return "\n".join(parts)
+
+
 class SkillRetriever:
-    """Hybrid skill retrieval: hot cache -> BM25-style keyword -> FlashRank rerank."""
+    """Hybrid skill retrieval: hot cache -> BM25 + Vector similarity -> FlashRank rerank."""
 
     def __init__(
         self,
@@ -397,6 +408,8 @@ class SkillRetriever:
         hot_cache: HotSkillCache | None = None,
         tracker: SkillPerformanceTracker | None = None,
         flashrank_model: str = "ms-marco-TinyBERT-L-2-v2",
+        embedding_provider: Any = None,
+        hybrid_alpha: float = 0.3,
     ) -> None:
         self.skill_manager = skill_manager
         self.hot_cache = hot_cache or HotSkillCache(skill_manager)
@@ -404,6 +417,10 @@ class SkillRetriever:
         self._ranker = None
         self._flashrank_model = flashrank_model
         self._keyword_map = self._build_keyword_map()
+        self._embedding_provider = embedding_provider
+        self._hybrid_alpha = hybrid_alpha
+        self._skill_vectors: Dict[str, Any] = {}
+        self._vectors_built = False
 
     def _build_keyword_map(self) -> Dict[str, List[str]]:
         return {
@@ -468,6 +485,78 @@ class SkillRetriever:
                 logger.warning("FlashRank Ranker unavailable: %s", e)
         return self._ranker
 
+    def _get_embedding_provider(self) -> Any:
+        """임베딩 제공자 지연 로딩 (환경변수로 Gemini 전환 가능)."""
+        if self._embedding_provider is None:
+            try:
+                import os
+
+                from src.core.memory_embeddings import get_embedding_provider
+
+                provider_type = os.getenv("SPARKLEFORGE_EMBEDDING_PROVIDER", "local")
+                self._embedding_provider = get_embedding_provider(provider_type)
+            except Exception as e:
+                logger.warning("Embedding provider unavailable: %s", e)
+                self._embedding_provider = None
+        return self._embedding_provider
+
+    async def _build_skill_vectors(self, all_metadata: List[Any]) -> bool:
+        """활성화된 스킬에 대한 임베딩 벡터 캐싱."""
+        provider = self._get_embedding_provider()
+        if provider is None:
+            return False
+        try:
+            import numpy as np
+
+            stale = set(self._skill_vectors.keys()) != {m.skill_id for m in all_metadata}
+            if self._vectors_built and not stale:
+                return True
+            docs = [prepare_skill_document(m) for m in all_metadata]
+            if not docs:
+                self._skill_vectors = {}
+                self._vectors_built = True
+                return True
+            embeddings = await provider.embed_documents(docs)
+            embeddings = np.asarray(embeddings, dtype=np.float32)
+            self._skill_vectors = {
+                m.skill_id: embeddings[i] for i, m in enumerate(all_metadata)
+            }
+            self._vectors_built = True
+            logger.debug("Built skill vectors for %d skills", len(self._skill_vectors))
+            return True
+        except Exception as e:
+            logger.warning("Failed to build skill vectors, fallback to BM25: %s", e)
+            self._skill_vectors = {}
+            self._vectors_built = False
+            return False
+
+    async def _vector_scores(self, query: str, all_metadata: List[Any]) -> Dict[str, float]:
+        """쿼리와 각 스킬 간 코사인 유사도 점수 반환."""
+        if not await self._build_skill_vectors(all_metadata):
+            return {}
+        try:
+            import numpy as np
+
+            provider = self._get_embedding_provider()
+            query_vec = np.asarray(await provider.embed_query(query), dtype=np.float32)
+            scores: Dict[str, float] = {}
+            for meta in all_metadata:
+                vec = self._skill_vectors.get(meta.skill_id)
+                if vec is None:
+                    continue
+                q_norm = np.linalg.norm(query_vec)
+                v_norm = np.linalg.norm(vec)
+                if q_norm == 0 or v_norm == 0:
+                    scores[meta.skill_id] = 0.0
+                else:
+                    scores[meta.skill_id] = float(
+                        np.dot(query_vec.flatten(), vec.flatten()) / (q_norm * v_norm)
+                    )
+            return scores
+        except Exception as e:
+            logger.warning("Vector scoring failed: %s", e)
+            return {}
+
     def _bm25_style_score(self, query: str, metadata: Any) -> float:
         query_lower = query.lower()
         words = set(re.findall(r"\b\w+\b", query_lower))
@@ -491,20 +580,29 @@ class SkillRetriever:
         if not all_metadata:
             return []
 
+        vector_scores = await self._vector_scores(query, all_metadata)
+
         if agent_skill_tree:
             hot_ids = agent_skill_tree.get_hot_skills(top_k=top_k * 2)
             for sid in hot_ids:
                 meta = self.skill_manager.get_skill_by_id(sid)
                 if meta:
                     score = self._bm25_style_score(query, meta)
+                    vscore = vector_scores.get(sid, 0.0)
+                    score = self._hybrid_alpha * score + (1.0 - self._hybrid_alpha) * vscore
                     candidates.append((sid, score, meta, ["agent_tree_hot"]))
 
         for meta in all_metadata:
             if any(c[0] == meta.skill_id for c in candidates):
                 continue
             score = self._bm25_style_score(query, meta)
-            if score > 0:
-                candidates.append((meta.skill_id, score, meta, ["bm25"]))
+            vscore = vector_scores.get(meta.skill_id, 0.0)
+            hybrid = self._hybrid_alpha * score + (1.0 - self._hybrid_alpha) * vscore
+            if hybrid > 0:
+                reasons = ["bm25"] if score > 0 else []
+                if vscore > 0:
+                    reasons.append("vector")
+                candidates.append((meta.skill_id, hybrid, meta, reasons))
 
         if not candidates:
             candidates = [(m.skill_id, 0.1, m, ["fallback"]) for m in all_metadata[: top_k * 2]]
