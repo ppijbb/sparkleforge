@@ -81,10 +81,34 @@ class HITLCheckpointManager:
 
     @staticmethod
     def _write_state_file(state_file: str, data: Dict[str, Any]) -> None:
-        tmp_file = f"{state_file}.tmp"
-        with open(tmp_file, "w") as f:
-            json.dump(data, f, default=str)
-        os.replace(tmp_file, state_file)
+        # Atomic + durable write: write to a temp file, fsync it, then rename
+        # into place so a crash mid-write never leaves a corrupt checkpoint at
+        # the canonical resume path.
+        temp_file = f"{state_file}.tmp"
+        try:
+            with open(temp_file, "w") as f:
+                json.dump(data, f, default=str)
+                f.flush()
+                os.fsync(f.fileno())
+        except BaseException:
+            # A crash mid-write must never leave a stray temp file behind —
+            # only the previous valid state (untouched) or the new one.
+            try:
+                os.remove(temp_file)
+            except OSError:
+                pass
+            raise
+        os.replace(temp_file, state_file)
+        # fsync the parent directory so the rename itself is durable on POSIX.
+        dir_fd = os.open(os.path.dirname(state_file) or ".", os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        except OSError:
+            # Directory fsync is best-effort; some filesystems/platforms
+            # (e.g., network FS, Windows) don't support it.
+            pass
+        finally:
+            os.close(dir_fd)
 
     async def checkpoint(
         self, stage: CheckpointStage, context: Dict[str, Any] | None = None
