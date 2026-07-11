@@ -390,16 +390,47 @@ class RobotArmDevice:
 
 
 class SensorDevice(PhysicalDevice):
-    """Telemetry sensor device returning climate data (mock backend only)."""
+    """Telemetry sensor device returning climate data.
 
-    def __init__(self, device_id: str, backend: str = BACKEND_MOCK):
+    Hardware backend reads temperature/humidity from a DHT11/DHT22 sensor
+    through the ``adafruit_dht`` library on the configured GPIO pin; mock
+    backend simulates slight variations around a baseline climate.
+    """
+
+    def __init__(self, device_id: str, backend: str = BACKEND_AUTO, pin: int = 4):
         super().__init__(device_id, backend)
+        self.pin = pin
         self.temp_base = 22.0
         self.humi_base = 45.0
+        self._dht = None
+
+    def _hw_connect(self) -> None:
+        import adafruit_dht
+        self._dht = adafruit_dht.DHT22(self.pin)
+
+    def _hw_disconnect(self) -> None:
+        if self._dht is not None:
+            try:
+                self._dht.exit()
+            except Exception:
+                pass
+            self._dht = None
 
     def read(self) -> Dict[str, float]:
         if not self._connected:
             raise RuntimeError("Sensor not connected")
+        if self.active_backend == BACKEND_HARDWARE:
+            # DHT sensors occasionally return NaN/spurious readings; retry a
+            # few times before giving up so callers get real telemetry.
+            for _ in range(5):
+                try:
+                    temp = float(self._dht.temperature)
+                    humi = float(self._dht.humidity)
+                    if temp == temp and humi == humi:  # reject NaN
+                        return {"temperature": round(temp, 1), "humidity": round(humi, 1)}
+                except Exception:
+                    continue
+            raise RuntimeError("DHT sensor read failed after retries")
         # Simulate slight variations
         temp = round(self.temp_base + random.uniform(-1.0, 1.0), 1)
         humi = round(self.humi_base + random.uniform(-3.0, 3.0), 1)
@@ -422,15 +453,42 @@ class SensorDevice(PhysicalDevice):
 
 
 class CameraDevice(PhysicalDevice):
-    """IoT Camera device capturing images (mock backend only)."""
+    """IoT Camera device capturing images.
 
-    def __init__(self, device_id: str, backend: str = BACKEND_MOCK):
+    Hardware backend grabs frames from a connected USB/CSI camera through
+    ``opencv-python`` (``cv2.VideoCapture``); mock backend returns a canned
+    JPEG header.
+    """
+
+    def __init__(self, device_id: str, backend: str = BACKEND_AUTO, source: int = 0):
         super().__init__(device_id, backend)
+        self.source = source
         self.resolution = "1920x1080"
+        self._cap = None
+
+    def _hw_connect(self) -> None:
+        import cv2
+        self._cv2 = cv2
+        self._cap = cv2.VideoCapture(self.source)
+        if not self._cap.isOpened():
+            raise RuntimeError(f"Could not open camera source {self.source}")
+
+    def _hw_disconnect(self) -> None:
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
 
     def read(self) -> bytes:
         if not self._connected:
             raise RuntimeError("Camera not connected")
+        if self.active_backend == BACKEND_HARDWARE:
+            ok, frame = self._cap.read()
+            if not ok or frame is None:
+                raise RuntimeError("Camera frame capture failed")
+            ok, buf = self._cv2.imencode(".jpg", frame)
+            if not ok:
+                raise RuntimeError("Camera frame encoding failed")
+            return bytes(buf)
         # Return mock JPEG header
         return b"\xff\xd8\xff\xe0\x00\x10JFIF"
 
