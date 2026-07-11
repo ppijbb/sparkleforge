@@ -1,14 +1,14 @@
 """Skills Selector - Automatic Skills identification and selection
 
 작업 요청 시 관련 Skills를 자동으로 감지 및 로드하는 시스템.
-SkillRetriever (BM25 + FlashRank reranking) 기반 선택 및 의존성 그래프 활용.
+SkillRetriever (BM25 + Vector similarity + FlashRank reranking) 기반 선택 및 의존성 그래프 활용.
 """
 
 import asyncio
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.core.skills_loader import Skill, SkillMetadata
 from src.core.skills_manager import SkillManager, get_skill_manager
@@ -27,13 +27,14 @@ class SkillMatch:
 
 
 class SkillSelector:
-    """자동 Skills 식별 및 선택 클래스 (SkillRetriever + FlashRank 기반)."""
+    """자동 Skills 식별 및 선택 클래스 (SkillRetriever + Vector + FlashRank 기반)."""
 
-    def __init__(self, skill_manager: SkillManager | None = None):
+    def __init__(self, skill_manager: SkillManager | None = None, embedding_provider: Any = None):
         """초기화."""
         self.skill_manager = skill_manager or get_skill_manager()
         self.keyword_map = self._build_keyword_map()
         self._retriever = None
+        self._embedding_provider = embedding_provider
 
     def _get_retriever(self):
         if self._retriever is None:
@@ -50,6 +51,7 @@ class SkillSelector:
                 self.skill_manager,
                 hot_cache=hot_cache,
                 tracker=tracker,
+                embedding_provider=self._embedding_provider,
             )
         return self._retriever
 
