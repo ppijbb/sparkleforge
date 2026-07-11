@@ -426,19 +426,17 @@ SEP986ToolResult = ToolResult
 
 
 class OpenRouterClient:
-    """(비활성화) OpenRouter 경유는 사용하지 않습니다."""
+    """(비활성화) OpenRouter 경유는 사용하지 않습니다.
 
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+    Re-exported from :mod:`src.core.mcp.openrouter_client` for backward
+    compatibility. See issue #494 — this thin shim keeps existing imports
+    working while the monolithic ``mcp_integration.py`` is split by concern.
+    """
 
-    async def __aenter__(self):
-        raise RuntimeError("OpenRouter is disabled. Use Gemini direct path via llm_manager.")
+    pass
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        return False
 
-    async def generate_response(self, *args, **kwargs):
-        raise RuntimeError("OpenRouter is disabled. Use Gemini direct path via llm_manager.")
+from src.core.mcp.openrouter_client import OpenRouterClient  # noqa: E402,F811
 
 
 class UniversalMCPHub:
