@@ -6,6 +6,7 @@ import json
 import os
 import time
 import uuid
+import aiohttp
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -57,10 +58,12 @@ class HITLCheckpointManager:
         feedback_provider: Optional[FeedbackProvider] = None,
         checkpoint_dir: str = ".checkpoints",
         timeout_seconds: int = 1800,
+        webhook_url: Optional[str] = None,
     ):
         self.feedback_provider = feedback_provider
         self.history: List[CheckpointResult] = []
         self._analyzer = RequestAnalyzer()
+        self.webhook_url = webhook_url
         self.checkpoint_dir = checkpoint_dir
         self.timeout_seconds = timeout_seconds
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -86,6 +89,15 @@ class HITLCheckpointManager:
             json.dump({"stage": stage.value, "context": context, "created_at": time.time()}, f)
         
         logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
+
+        if self.webhook_url:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    await session.post(self.webhook_url, json={"checkpoint_id": checkpoint_id, "stage": stage.value})
+                logger.info("Webhook notification sent for checkpoint %s", checkpoint_id)
+            except Exception as e:
+                logger.error("Failed to send webhook notification: %s", e)
+
         # In a real implementation, this would raise a custom exception to trigger process exit
         return CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
 
