@@ -35,8 +35,75 @@ class AgentOrchestrator:
         self.harness = AgentHarness()
         self.config = config
         self.recursion_limit = getattr(config, "recursion_limit", 20000)
+        self.gemini_cache = self._init_gemini_cache()
         self.federation_enabled = getattr(config, "federation_enabled", False)
         logger.info("AgentOrchestrator initialized with AgentHarness")
+
+    def _init_gemini_cache(self):
+        """Initialize Gemini prompt caching manager (Issue #459).
+
+        Returns a lightweight cache handle store keyed by session_id. Falls back
+        to None when caching is disabled or the google-genai SDK is unavailable.
+        """
+        try:
+            from src.core.researcher_config import GeminiCacheConfig
+        except Exception:
+            return None
+
+        cache_cfg = GeminiCacheConfig()
+        try:
+            enabled_env = os.getenv("GEMINI_CACHE_ENABLED")
+            if enabled_env is not None:
+                cache_cfg.enabled = enabled_env.lower() in ("true", "1", "yes", "on")
+            ttl_env = os.getenv("GEMINI_CACHE_TTL_SECONDS")
+            if ttl_env:
+                cache_cfg.ttl_seconds = int(ttl_env)
+        except Exception:
+            pass
+
+        if not cache_cfg.enabled:
+            return None
+
+        try:
+            from google import genai  # noqa: F401
+        except Exception:
+            logger.info("[GeminiCache] google-genai SDK unavailable; caching disabled")
+            return None
+
+        return {"config": cache_cfg, "handles": {}}
+
+    def _is_gemini_model(self, model: str | None) -> bool:
+        """Check whether a model name targets a Gemini-family model."""
+        if not model:
+            return False
+        if self.gemini_cache is None:
+            return False
+        prefixes = self.gemini_cache["config"].gemini_model_prefixes
+        return any(model.lower().startswith(p) for p in prefixes)
+
+    def get_gemini_cache_config(self):
+        """Expose the active GeminiCacheConfig (or None) for downstream callers."""
+        if self.gemini_cache is None:
+            return None
+        return self.gemini_cache["config"]
+
+    def get_cached_handle(self, session_id: str) -> str | None:
+        """Return the cached Gemini context handle for a session, if any."""
+        if self.gemini_cache is None:
+            return None
+        return self.gemini_cache["handles"].get(session_id)
+
+    def set_cached_handle(self, session_id: str, handle: str) -> None:
+        """Store a cached Gemini context handle for reuse across turns."""
+        if self.gemini_cache is None:
+            return
+        self.gemini_cache["handles"][session_id] = handle
+
+    def clear_cached_handle(self, session_id: str) -> None:
+        """Drop a cached handle (e.g. on expiry or fallback)."""
+        if self.gemini_cache is None:
+            return
+        self.gemini_cache["handles"].pop(session_id, None)
 
     async def execute(
         self,
@@ -68,7 +135,10 @@ class AgentOrchestrator:
                 logger.info(f"Federated {len(sub_tasks)} sub-tasks to remote nodes.")
                 kwargs["sub_tasks"] = sub_tasks
 
-        logger.info(f"AgentOrchestrator delegating request to AgentHarness (session: {session_id})")
+        logger.info(
+            f"AgentOrchestrator delegating request to AgentHarness (session: {session_id}, "
+            f"gemini_cache={'on' if self.gemini_cache else 'off'})"
+        )
 
         # Harness 실행
         harness_result = await self.harness.execute(
