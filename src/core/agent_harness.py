@@ -38,6 +38,11 @@ class AgentHarness:
         self.orchestrator = get_llm_orchestrator()
         self.graph = self._build_graph()
 
+    async def aclose(self) -> None:
+        """Close the underlying SQLite connection."""
+        if hasattr(self.memory, "conn"):
+            await self.memory.conn.close()
+
     def _register_tools(self) -> None:
         """Register agent-callable tools into the shared tool pool."""
         try:

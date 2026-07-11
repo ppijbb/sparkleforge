@@ -82,6 +82,12 @@ class AutonomousOrchestrator:
         )
         self.graph.recursion_limit = 100
 
+    async def aclose(self) -> None:
+        """Close the underlying SQLite checkpointer connection."""
+        checkpointer = getattr(self.graph, "checkpointer", None)
+        if checkpointer is not None and hasattr(checkpointer, "conn"):
+            await checkpointer.conn.close()
+
     async def execute(
         self, request: str, context: Dict[str, Any] = None, objective_id: str = None
     ) -> Dict[str, Any]:
