@@ -523,7 +523,7 @@ async def test_guard_plane_blocks_iot_unauthorized():
     actuator.register_device("secure_cam", camera)
     
     # Agent lacks "iot_control" capability
-    res = guard.check_and_control_device(
+    res = await guard.check_and_control_device(
         agent_id="attacker_agent",
         device_id="secure_cam",
         command="capture",
@@ -555,7 +555,7 @@ async def test_guard_plane_allows_iot_after_grant():
     cap = guard.capability_manager.get_capability("iot_control")
     cap.requires_hitl = False
     
-    res = guard.check_and_control_device(
+    res = await guard.check_and_control_device(
         agent_id="operator_agent",
         device_id="lab_arm",
         command="move_joint 1 45",

@@ -80,6 +80,7 @@ dependencies = [
     "mss>=9.0.1",
     "xvfbwrapper>=0.2.9",
     "Pillow>=10.0.0",
+    "langgraph-checkpoint-sqlite>=3.1.0",
 ]
 
 [project.optional-dependencies]

@@ -1,8 +1,9 @@
 import logging
 
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 
+from src.core.langgraph_checkpointer import build_sqlite_checkpointer
 from src.core.orchestrator.analysis import AnalysisNode
 from src.core.orchestrator.compression import CompressionNode
 from src.core.orchestrator.execution import ExecutionNode
@@ -12,6 +13,8 @@ from src.core.orchestrator.synthesis import SynthesisNode
 from src.core.orchestrator.verification import VerificationNode
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_CHECKPOINT_DB_PATH = "data/orchestrator_checkpoints.db"
 
 
 def create_orchestrator_graph(
@@ -23,6 +26,7 @@ def create_orchestrator_graph(
     research_depth,
     llm_config,
     agent_config,
+    checkpointer: BaseCheckpointSaver | None = None,
 ):
     """Orchestrator LangGraph 워크플로우 구축."""
     # 노드 초기화
@@ -102,5 +106,6 @@ def create_orchestrator_graph(
     workflow.add_edge("validate_results", "synthesize_deliverable")
     workflow.add_edge("synthesize_deliverable", END)
 
-    checkpointer = AsyncSqliteSaver.from_conn_string("data/orchestrator_checkpoints.db")
-    return workflow.compile(checkpointer=checkpointer)
+    return workflow.compile(
+        checkpointer=checkpointer or build_sqlite_checkpointer(DEFAULT_CHECKPOINT_DB_PATH)
+    )
