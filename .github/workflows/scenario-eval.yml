@@ -41,7 +41,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           timeout 25m uv run python tests/benchmark/run_scenarios.py \
-            --compare-to docs/benchmark_baseline.json \
+            --compare-to tests/benchmark/baselines/scenario_baseline.json \
             --json-out tests/benchmark/reports/scenario_report_ci.json
 
       - name: Upload scenario report
