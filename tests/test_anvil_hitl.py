@@ -145,6 +145,24 @@ class TestHITLCheckpointManager:
             await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
 
     @pytest.mark.asyncio
+    async def test_string_decision_value_is_normalized(self):
+        def provider(stage, context):
+            return "revise", "짧게 요약해줘"
+
+        manager = HITLCheckpointManager(feedback_provider=provider)
+        result = await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
+        assert result.decision == CheckpointDecision.REVISE
+
+    @pytest.mark.asyncio
+    async def test_invalid_decision_string_raises(self):
+        def provider(stage, context):
+            return "maybe", "..."
+
+        manager = HITLCheckpointManager(feedback_provider=provider)
+        with pytest.raises(HITLProviderError):
+            await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
+
+    @pytest.mark.asyncio
     async def test_apply_feedback_adds_checklist_items(self):
         analysis = RequestAnalyzer().analyze("최신 LLM 동향을 조사해줘")
         checklist = DynamicChecklistGenerator().generate(analysis)

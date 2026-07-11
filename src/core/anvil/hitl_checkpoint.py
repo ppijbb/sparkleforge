@@ -104,12 +104,25 @@ class HITLCheckpointManager:
                     f"expected (decision, feedback) tuple, got {type(outcome).__name__}"
                 )
             decision, feedback = outcome
+            if isinstance(decision, str):
+                try:
+                    decision = CheckpointDecision(decision)
+                except ValueError:
+                    raise HITLProviderError(f"invalid decision value: {decision!r}")
+            elif not isinstance(decision, CheckpointDecision):
+                raise HITLProviderError(
+                    f"expected CheckpointDecision, got {type(decision).__name__}"
+                )
         except HITLSuspensionSignal:
             # Save state and exit; the provider requires suspension.
             checkpoint_id = uuid.uuid4().hex[:8]
             state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
             with open(state_file, "w") as f:
-                json.dump({"stage": stage.value, "context": context, "created_at": time.time()}, f)
+                json.dump(
+                    {"stage": stage.value, "context": context, "created_at": time.time()},
+                    f,
+                    default=str,
+                )
 
             logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
 
