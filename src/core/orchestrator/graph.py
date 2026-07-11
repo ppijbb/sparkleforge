@@ -1,5 +1,6 @@
 import logging
 
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
 
 from src.core.orchestrator.analysis import AnalysisNode
@@ -101,4 +102,5 @@ def create_orchestrator_graph(
     workflow.add_edge("validate_results", "synthesize_deliverable")
     workflow.add_edge("synthesize_deliverable", END)
 
-    return workflow.compile()
+    checkpointer = AsyncSqliteSaver.from_conn_string("data/orchestrator_checkpoints.db")
+    return workflow.compile(checkpointer=checkpointer)
