@@ -97,4 +97,68 @@ LLM_MODEL=google/gemini-3.1-flash-lite-preview
 LLM_TEMPERATURE=0.1
 LLM_MAX_TOKENS=4000
 
-# Multi-Model Orchestration (Gemini 2.
+# Multi-Model Orchestration (Gemini 2.5 Flash Lite 우선)
+MULTI_MODEL_ENABLED=true
+MULTI_MODEL_PRIMARY=google/gemini-3.1-flash-lite-preview
+MULTI_MODEL_FALLBACK=openai/gpt-4o-mini
+
+# Search Configuration
+TAVILY_API_KEY=your_tavily_api_key_here
+EXA_API_KEY=your_exa_api_key_here
+
+# Google Configuration
+GOOGLE_API_KEY=your_google_api_key_here
+
+# MCP Configuration
+MCP_BUILDER_ENABLED=true
+MCP_ALLOWED_SERVERS=local-search,search,web-fetch,arxiv
+
+# Storage Configuration
+STORAGE_PATH=./data
+CHROMADB_ENABLED=false
+
+# Logging Configuration
+LOG_LEVEL=INFO
+LOG_FILE=./logs/sparkleforge.log
+"""
+
+
+def create_env_file():
+    env_file = ROOT / ".env"
+    if env_file.exists():
+        _warn(".env file already exists, skipping creation")
+        return
+    _info("Creating .env file from template...")
+    env_file.write_text(ENV_TEMPLATE, encoding="utf-8")
+    _success(".env file created")
+
+
+def run_sparkleforge(args):
+    _info("Starting SparkleForge...")
+    cmd = [str(_python_bin()), "-m", "src.cli.entry"] + args
+    subprocess.check_call(cmd, cwd=str(ROOT))
+
+
+def main():
+    if not check_python_version():
+        sys.exit(1)
+
+    args = sys.argv[1:]
+    setup_only = "--setup-only" in args
+    if setup_only:
+        args.remove("--setup-only")
+
+    setup_venv()
+    install_dependencies()
+    create_directories()
+    create_env_file()
+
+    if setup_only:
+        _success("Setup complete. Edit .env with your API keys, then run without --setup-only.")
+        return
+
+    run_sparkleforge(args)
+
+
+if __name__ == "__main__":
+    main()
