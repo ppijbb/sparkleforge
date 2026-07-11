@@ -21,7 +21,7 @@ from benchmark_metrics import (
     MetricResult,
 )
 from benchmark_runner import BenchmarkRunner
-from benchmark_reporter import BenchmarkReporter
+from archive.benchmark_legacy.benchmark_reporter import BenchmarkReporter
 from benchmark_comparator import BenchmarkComparator
 
 # Configure logging
