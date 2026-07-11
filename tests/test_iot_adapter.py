@@ -437,3 +437,103 @@ async def test_guard_plane_allows_iot_after_grant():
     
     assert res["ok"] is True
     assert "moved to 45" in res["stdout"]
+
+
+def test_gpio_input_configuration_and_commands():
+    """Test configure_pin, read_pin, get_pin under mock and fake hardware backends."""
+    # 1. Test configure_pin in mock mode
+    gpio = GPIODevice("test_gpio_conf", backend="mock")
+    assert gpio.connect() is True
+    
+    # Configure pin 5 as input with pull_up bias and active_low
+    res = gpio.execute_command("configure_pin 5 input pull_up active_low")
+    assert res["status"] == "success"
+    assert gpio.pin_directions[5] == "input"
+    assert gpio.pin_biases[5] == "pull_up"
+    assert gpio.pin_active_lows[5] is True
+
+    # 2. Test configure_pin in fake hardware mode
+    class FakeLineRequest:
+        def __init__(self):
+            self.settings = None
+            self.released = False
+
+        def release(self):
+            self.released = True
+
+    class FakeChip:
+        def __init__(self, path):
+            self.requests = {}
+
+        def request_lines(self, consumer, config):
+            for pin, settings in config.items():
+                req = FakeLineRequest()
+                req.settings = settings
+                self.requests[pin] = req
+                return req
+
+        def close(self):
+            pass
+
+    fake_line_module = MagicMock()
+    fake_line_module.Direction.INPUT = "input"
+    fake_line_module.Direction.OUTPUT = "output"
+    fake_line_module.Bias.PULL_UP = "pull_up"
+    fake_line_module.Bias.PULL_DOWN = "pull_down"
+    fake_line_module.Bias.DISABLED = "disabled"
+    fake_line_module.Bias.AS_IS = "as_is"
+
+    class FakeLineSettings:
+        def __init__(self, direction=None, bias=None, active_low=False):
+            self.direction = direction
+            self.bias = bias
+            self.active_low = active_low
+
+    fake_gpiod_module = MagicMock()
+    fake_gpiod_module.Chip = FakeChip
+    fake_gpiod_module.LineSettings = FakeLineSettings
+    fake_gpiod_module.line = fake_line_module
+
+    with patch.dict(sys.modules, {"gpiod": fake_gpiod_module, "gpiod.line": fake_line_module}):
+        gpio_hw = GPIODevice("hw_gpio_conf", backend="hardware")
+        assert gpio_hw.connect() is True
+        
+        # Configure input pin
+        res = gpio_hw.execute_command("configure_pin 12 input pull_down active_high")
+        assert res["status"] == "success"
+        req = gpio_hw._line_requests[12]
+        assert req.settings.direction == "input"
+        assert req.settings.bias == "pull_down"
+        assert req.settings.active_low is False
+
+        # Read pin (it will try to read from the fake request)
+        fake_line_module.Value.ACTIVE = "active"
+        req.get_value = MagicMock(return_value="active")
+        
+        res = gpio_hw.execute_command("read_pin 12")
+        assert res["status"] == "success"
+        assert res["stdout"] == "1"
+
+
+def test_gpio_mock_input_commands():
+    """Test mock_input command under mock backend."""
+    gpio = GPIODevice("mock_gpio_test", backend="mock")
+    assert gpio.connect() is True
+    
+    # Configure input pin
+    gpio.execute_command("configure_pin 14 input")
+    
+    # Set mock input state
+    res = gpio.execute_command("mock_input 14 1")
+    assert res["status"] == "success"
+    
+    # Read back input pin state
+    read_res = gpio.execute_command("read_pin 14")
+    assert read_res["status"] == "success"
+    assert read_res["stdout"] == "1"
+    
+    # Get pin cache read
+    get_res = gpio.execute_command("get_pin 14")
+    assert get_res["status"] == "success"
+    assert get_res["stdout"] == "1"
+
