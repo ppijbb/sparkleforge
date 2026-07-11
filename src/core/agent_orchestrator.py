@@ -35,6 +35,7 @@ class AgentOrchestrator:
         self.harness = AgentHarness()
         self.config = config
         self.recursion_limit = getattr(config, "recursion_limit", 20000)
+        self.federation_enabled = getattr(config, "federation_enabled", False)
         logger.info("AgentOrchestrator initialized with AgentHarness")
 
     async def execute(
@@ -57,6 +58,15 @@ class AgentOrchestrator:
         # coworker 모드는 로컬 저장소를 다루는 coder 페르소나로 실행
         custom_state = kwargs.get("custom_state") or {}
         identity = "coder" if custom_state.get("mode") == "coworker" else "researcher"
+        
+        # Federation check
+        if self.federation_enabled and kwargs.get("federated"):
+            from src.core.federation.protocol import FederationClient
+            client = FederationClient()
+            sub_tasks = await client.distribute_tasks(request)
+            if sub_tasks:
+                logger.info(f"Federated {len(sub_tasks)} sub-tasks to remote nodes.")
+                kwargs["sub_tasks"] = sub_tasks
 
         logger.info(f"AgentOrchestrator delegating request to AgentHarness (session: {session_id})")
 
