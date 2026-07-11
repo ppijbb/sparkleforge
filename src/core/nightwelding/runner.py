@@ -66,7 +66,7 @@ async def run_nightwelding_issue(
         if not commit_title_impl:
             return _fail(queue, item, repo, issue_number, f"Could not derive a valid commit title from issue title: {issue.title!r}")
 
-        base_branch = os.getenv("NIGHTWELDING_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or github_adapter.default_base_branch(repo)
+        base_branch = os.getenv("NIGHTWELDING_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or github_adapter.default_base_branch(repo)
         branch = f"nightwelding/{issue_number}-{int(time.time())}"
         github_adapter.create_branch(repo_root, branch, base_branch)
         item.branch = branch
