@@ -1,5 +1,7 @@
 """Anvil M4 - HITL 체크포인트 및 의도 가드레일 테스트."""
 
+import asyncio
+
 import pytest
 
 from src.core.anvil.dynamic_checklist_generator import DynamicChecklistGenerator
@@ -134,6 +136,31 @@ class TestHITLCheckpointManager:
         assert manager.aborted()
         state_file = tmp_path / f"{result.checkpoint_id}.json"
         assert state_file.exists()
+
+    @pytest.mark.asyncio
+    async def test_suspension_state_save_does_not_block_event_loop(self, tmp_path):
+        def provider(stage, context):
+            return None
+
+        manager = HITLCheckpointManager(
+            feedback_provider=provider, checkpoint_dir=str(tmp_path)
+        )
+
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0)
+                ticks += 1
+
+        ticker_task = asyncio.ensure_future(ticker())
+        await manager.checkpoint(CheckpointStage.AFTER_PLANNING)
+        ticker_task.cancel()
+
+        # If the state save blocked the event loop synchronously, the ticker
+        # coroutine would never have had a chance to run concurrently.
+        assert ticks > 0
 
     @pytest.mark.asyncio
     async def test_malformed_provider_response_raises_instead_of_approving(self):

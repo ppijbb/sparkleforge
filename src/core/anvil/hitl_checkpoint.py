@@ -79,6 +79,11 @@ class HITLCheckpointManager:
         self.timeout_seconds = timeout_seconds
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
+    @staticmethod
+    def _write_state_file(state_file: str, data: Dict[str, Any]) -> None:
+        with open(state_file, "w") as f:
+            json.dump(data, f, default=str)
+
     async def checkpoint(
         self, stage: CheckpointStage, context: Dict[str, Any] | None = None
     ) -> CheckpointResult:
@@ -117,12 +122,13 @@ class HITLCheckpointManager:
             # Save state and exit; the provider requires suspension.
             checkpoint_id = uuid.uuid4().hex[:8]
             state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
-            with open(state_file, "w") as f:
-                json.dump(
-                    {"stage": stage.value, "context": context, "created_at": time.time()},
-                    f,
-                    default=str,
-                )
+            # Synchronous disk I/O is offloaded to a thread so it doesn't block
+            # the event loop while other agents' HITL suspensions are in flight.
+            await asyncio.to_thread(
+                self._write_state_file,
+                state_file,
+                {"stage": stage.value, "context": context, "created_at": time.time()},
+            )
 
             logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
 
