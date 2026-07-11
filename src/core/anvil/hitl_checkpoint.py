@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import aiohttp
+
 from src.core.anvil.dynamic_checklist_generator import Checklist, ChecklistItem
 from src.core.anvil.request_analyzer import RequestAnalyzer
 
@@ -57,10 +59,12 @@ class HITLCheckpointManager:
         feedback_provider: FeedbackProvider | None = None,
         checkpoint_dir: str = ".checkpoints",
         timeout_seconds: int = 1800,
+        webhook_url: str | None = None,
     ):
         self.feedback_provider = feedback_provider
         self.history: List[CheckpointResult] = []
         self._analyzer = RequestAnalyzer()
+        self.webhook_url = webhook_url
         self.checkpoint_dir = checkpoint_dir
         self.timeout_seconds = timeout_seconds
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -95,6 +99,15 @@ class HITLCheckpointManager:
                     json.dump({"stage": stage.value, "context": context, "created_at": time.time()}, f)
                 
                 logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
+
+                if self.webhook_url:
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            await session.post(self.webhook_url, json={"checkpoint_id": checkpoint_id, "stage": stage.value})
+                        logger.info("Webhook notification sent for checkpoint %s", checkpoint_id)
+                    except Exception as ex:
+                        logger.error("Failed to send webhook notification: %s", ex)
+
                 return CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
 
             logger.warning(

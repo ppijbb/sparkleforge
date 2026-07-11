@@ -3,7 +3,10 @@ import asyncio
 import json
 import logging
 import shlex
-from typing import Any, Dict, Optional
+import sqlite3
+import time
+import uuid
+from typing import Any, Dict, List, Optional
 import websockets
 
 from src.core.trust_gate import TrustContext
@@ -314,3 +317,104 @@ class SSHRemoteSession(RemoteSession):
     @property
     def is_connected(self) -> bool:
         return self._connected
+
+
+class SessionManager:
+    """Manages persistent remote session states in SQLite.
+
+    Supports serialization, recovery, pause/resume status updates, and
+    webhook notifications for HITL checkpoints.
+    """
+
+    def __init__(self, db_path: str = "sessions.db", webhook_url: Optional[str] = None):
+        self.db_path = db_path
+        self.webhook_url = webhook_url
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sessions (
+                    session_id TEXT PRIMARY KEY,
+                    state TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.commit()
+
+    def save_session(
+        self, session_id: str, state: Dict[str, Any], status: str = "active"
+    ) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, json.dumps(state), status, time.time()),
+            )
+            conn.commit()
+
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT state FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def get_session_status(self, session_id: str) -> Optional[str]:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+            return row[0] if row else None
+
+    def list_sessions(self) -> List[Dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT session_id, status, updated_at FROM sessions"
+            ).fetchall()
+            return [
+                {"session_id": r[0], "status": r[1], "updated_at": r[2]}
+                for r in rows
+            ]
+
+    def update_status(self, session_id: str, status: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                "UPDATE sessions SET status = ?, updated_at = ? WHERE session_id = ?",
+                (status, time.time(), session_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def delete_session(self, session_id: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    async def notify_webhook(
+        self, checkpoint_id: str, stage: str, payload: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        if not self.webhook_url:
+            return False
+        import aiohttp
+
+        body = {
+            "checkpoint_id": checkpoint_id,
+            "stage": stage,
+            "event": "hitl_checkpoint",
+            "timestamp": time.time(),
+        }
+        if payload:
+            body.update(payload)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.webhook_url, json=body) as resp:
+                    return resp.status < 400
+        except Exception as e:
+            logger.error("Failed to send webhook notification: %s", e)
+            return False
