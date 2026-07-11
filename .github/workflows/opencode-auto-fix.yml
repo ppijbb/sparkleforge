@@ -379,9 +379,12 @@ jobs:
             esac
           done <<< "$CHANGED_FILES"
 
-          SUBSTANTIAL=true
+          SUBSTANTIAL=unknown
           if [ "$UNCHECKED" -gt 0 ] && { [ "$NON_TRIVIAL_FILE" -eq 0 ] || [ "$CHANGED_LINES" -le 3 ]; }; then
             SUBSTANTIAL=false
+          fi
+          if [ "$SUBSTANTIAL" = "unknown" ]; then
+            SUBSTANTIAL=true
           fi
 
           if [ "$SUBSTANTIAL" = "true" ]; then
