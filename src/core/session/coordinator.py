@@ -349,7 +349,7 @@ class WorkerNode:
 
         # 2. Pass to local GuardPlane execution pipeline
         # Use capability check (default: local execution capability)
-        res = self.guard_plane.check_and_execute(
+        res = await self.guard_plane.check_and_execute(
             agent_id=self.worker_id,
             capability_name="execute_shell",
             command=command,
