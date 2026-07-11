@@ -455,22 +455,29 @@ def test_gpio_input_configuration_and_commands():
     # 2. Test configure_pin in fake hardware mode
     class FakeLineRequest:
         def __init__(self):
-            self.settings = None
+            self.settings = {}
+            self.values = {}
             self.released = False
 
         def release(self):
             self.released = True
+
+        def set_value(self, pin, value):
+            self.values[pin] = value
+
+        def get_value(self, pin):
+            return self.values.get(pin, "inactive")
 
     class FakeChip:
         def __init__(self, path):
             self.requests = {}
 
         def request_lines(self, consumer, config):
+            req = FakeLineRequest()
             for pin, settings in config.items():
-                req = FakeLineRequest()
-                req.settings = settings
+                req.settings[pin] = settings
                 self.requests[pin] = req
-                return req
+            return req
 
         def close(self):
             pass
@@ -482,6 +489,8 @@ def test_gpio_input_configuration_and_commands():
     fake_line_module.Bias.PULL_DOWN = "pull_down"
     fake_line_module.Bias.DISABLED = "disabled"
     fake_line_module.Bias.AS_IS = "as_is"
+    fake_line_module.Value.ACTIVE = "active"
+    fake_line_module.Value.INACTIVE = "inactive"
 
     class FakeLineSettings:
         def __init__(self, direction=None, bias=None, active_low=False):
@@ -502,13 +511,12 @@ def test_gpio_input_configuration_and_commands():
         res = gpio_hw.execute_command("configure_pin 12 input pull_down active_high")
         assert res["status"] == "success"
         req = gpio_hw._line_requests[12]
-        assert req.settings.direction == "input"
-        assert req.settings.bias == "pull_down"
-        assert req.settings.active_low is False
+        assert req.settings[12].direction == "input"
+        assert req.settings[12].bias == "pull_down"
+        assert req.settings[12].active_low is False
 
         # Read pin (it will try to read from the fake request)
-        fake_line_module.Value.ACTIVE = "active"
-        req.get_value = MagicMock(return_value="active")
+        req.set_value(12, "active")
         
         res = gpio_hw.execute_command("read_pin 12")
         assert res["status"] == "success"
