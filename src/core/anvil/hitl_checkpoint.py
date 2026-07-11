@@ -81,8 +81,10 @@ class HITLCheckpointManager:
 
     @staticmethod
     def _write_state_file(state_file: str, data: Dict[str, Any]) -> None:
-        with open(state_file, "w") as f:
+        tmp_file = f"{state_file}.tmp"
+        with open(tmp_file, "w") as f:
             json.dump(data, f, default=str)
+        os.replace(tmp_file, state_file)
 
     async def checkpoint(
         self, stage: CheckpointStage, context: Dict[str, Any] | None = None
@@ -124,11 +126,23 @@ class HITLCheckpointManager:
             state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
             # Synchronous disk I/O is offloaded to a thread so it doesn't block
             # the event loop while other agents' HITL suspensions are in flight.
-            await asyncio.to_thread(
-                self._write_state_file,
-                state_file,
-                {"stage": stage.value, "context": context, "created_at": time.time()},
-            )
+            try:
+                await asyncio.to_thread(
+                    self._write_state_file,
+                    state_file,
+                    {"stage": stage.value, "context": context, "created_at": time.time()},
+                )
+            except OSError as ex:
+                logger.error(
+                    "Failed to write checkpoint state file %s: %s", state_file, ex
+                )
+                result = CheckpointResult(
+                    stage=stage,
+                    decision=CheckpointDecision.ABORT,
+                    checkpoint_id=checkpoint_id,
+                )
+                self.history.append(result)
+                return result
 
             logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
 
