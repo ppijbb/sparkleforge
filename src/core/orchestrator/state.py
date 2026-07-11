@@ -86,6 +86,10 @@ class ResearchState(TypedDict):
     should_continue: bool
     error_message: str | None
 
+    # Runtime sub-agent delegation (Anvil Phase Σ-2)
+    delegation_depth: int  # 현재 위임 체인 깊이
+    max_delegation_depth: int  # 위임 깊이 상한
+
     # Innovation Stats
     innovation_stats: Dict[str, Any]
 
