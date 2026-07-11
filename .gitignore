@@ -34,6 +34,7 @@ opencode-extra-context.md
 opencode-verify.log
 issue-context.md
 .checkpoints/
+/data/
 scratch/
 krunvm/
 issue_409*.txt

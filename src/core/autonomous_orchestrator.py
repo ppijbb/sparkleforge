@@ -82,25 +82,44 @@ class AutonomousOrchestrator:
         )
         self.graph.recursion_limit = 100
 
-    async def execute(self, request: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """연구 실행 워크플로우 기동."""
-        logger.info(f"🚀 Starting modularized autonomous research: {request[:50]}...")
+    async def execute(
+        self, request: str, context: Dict[str, Any] = None, objective_id: str = None
+    ) -> Dict[str, Any]:
+        """연구 실행 워크플로우 기동.
 
-        initial_state = {
-            "user_request": request,
-            "context": context or {},
-            "autopilot_mode": _autopilot_mode_enabled(context),
-            "objective_id": f"research_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            "iteration": 0,
-            "max_iterations": 10,
-            "should_continue": True,
-            "current_step": "analyze_objectives",
-            "innovation_stats": {},
-            "messages": [],
-        }
+        Args:
+            objective_id: 기존 실행을 재개하려면 이전에 사용된 objective_id를 전달.
+                생략하면 새 objective_id를 생성해 새 실행을 시작.
+        """
+        resuming = objective_id is not None
+        objective_id = objective_id or f"research_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        config = {"configurable": {"thread_id": objective_id}}
 
         try:
-            final_state = await self.graph.ainvoke(initial_state)
+            if resuming:
+                checkpoint = await self.graph.aget_state(config)
+                if checkpoint and checkpoint.values:
+                    logger.info(f"↩️  Resuming orchestrator run '{objective_id}' from checkpoint")
+                    final_state = await self.graph.ainvoke(None, config)
+                    return final_state
+                logger.warning(
+                    f"No checkpoint found for objective_id='{objective_id}', starting fresh"
+                )
+
+            logger.info(f"🚀 Starting modularized autonomous research: {request[:50]}...")
+            initial_state = {
+                "user_request": request,
+                "context": context or {},
+                "autopilot_mode": _autopilot_mode_enabled(context),
+                "objective_id": objective_id,
+                "iteration": 0,
+                "max_iterations": 10,
+                "should_continue": True,
+                "current_step": "analyze_objectives",
+                "innovation_stats": {},
+                "messages": [],
+            }
+            final_state = await self.graph.ainvoke(initial_state, config)
             return final_state
         except Exception as e:
             logger.error(f"❌ Orchestrator execution failed: {e}")

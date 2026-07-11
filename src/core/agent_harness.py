@@ -9,12 +9,12 @@ import time
 from datetime import datetime
 from typing import Any, Dict
 
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
 
 from src.core.anvil.engine import AnvilWorkflowEngine
 from src.core.anvil.skill_repository import SkillRepository
 from src.core.harness_state import HarnessState, create_initial_harness_state
+from src.core.langgraph_checkpointer import build_sqlite_checkpointer
 from src.core.llm_manager import TaskType, get_llm_orchestrator
 from src.core.scheduler import get_scheduler, register_scheduler_tools
 from src.core.semantic_file_search import register_semantic_file_search_tool
@@ -23,13 +23,15 @@ from src.core.task_router import RoutePath, TaskRouter
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CHECKPOINT_DB_PATH = "data/checkpoints.db"
+
 
 class AgentHarness:
     """Agent Harness - 2026 표준 상태 머신 오케스트레이터"""
 
     def __init__(self):
         self.router = TaskRouter()
-        self.memory = AsyncSqliteSaver.from_conn_string("data/checkpoints.db")
+        self.memory = build_sqlite_checkpointer(DEFAULT_CHECKPOINT_DB_PATH)
         self._register_tools()
         self.skill_repository = SkillRepository()
         self.anvil_engine = AnvilWorkflowEngine(skill_repository=self.skill_repository)
