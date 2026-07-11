@@ -1,4 +1,5 @@
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -15,6 +16,15 @@ def test_install_script_macos_path_skips_linux_gvisor_setup(tmp_path: Path) -> N
     uv.write_text("#!/bin/sh\nprintf 'uv 0.0.0-test\\n'\n", encoding="utf-8")
     uv.chmod(uv.stat().st_mode | stat.S_IXUSR)
 
+    # Run install.sh in an isolated copy of the repo root, not PROJECT_ROOT itself:
+    # install.sh creates a real .env from env.example when one is missing, and
+    # running it against PROJECT_ROOT would write a placeholder-secret .env into
+    # the actual repo, contaminating os.environ for later tests in this session.
+    fake_repo = tmp_path / "repo"
+    fake_repo.mkdir()
+    shutil.copy(PROJECT_ROOT / "install.sh", fake_repo / "install.sh")
+    shutil.copy(PROJECT_ROOT / "env.example", fake_repo / "env.example")
+
     env = os.environ.copy()
     env["PATH"] = f"{fake_bin}:{env['PATH']}"
     env["SPARKLEFORGE_INSTALL_OS"] = "darwin"
@@ -22,7 +32,7 @@ def test_install_script_macos_path_skips_linux_gvisor_setup(tmp_path: Path) -> N
 
     result = subprocess.run(
         ["bash", "install.sh"],
-        cwd=PROJECT_ROOT,
+        cwd=fake_repo,
         env=env,
         text=True,
         capture_output=True,
