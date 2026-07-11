@@ -82,6 +82,18 @@ def compute_scope_overlap(issue_text: str, diff_text: str) -> dict:
 
 
 def main() -> int:
+    """Exit codes are load-bearing for the calling workflow (issue #521):
+
+    - 0: success, and either `substantial=true` or no opinion (issue named
+      no concrete symbols to check).
+    - 2: success, and confirmed `substantial=false` -- the diff does not
+      touch anything the issue names.
+    - 1: this script itself failed (bad args, unreadable issue file, `git
+      diff` failure, or any other exception) -- the caller must NOT treat
+      this the same as exit 2, or a crash silently looks like a passed
+      check. Python's default unhandled-exception exit code is already 1,
+      so uncaught exceptions naturally land here without special handling.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--issue-file", required=True, type=Path, help="Path to issue body markdown")
     parser.add_argument("--range", required=True, help="git diff revision range, e.g. origin/main...HEAD")
@@ -105,8 +117,8 @@ def main() -> int:
         print(f"substantial=true matched={result['matched']}")
         return 0
 
-    print(f"substantial=false mentioned={result['mentioned']} matched=[]", file=sys.stderr)
-    return 1
+    print(f"substantial=false mentioned={result['mentioned']} matched=[]")
+    return 2
 
 
 if __name__ == "__main__":

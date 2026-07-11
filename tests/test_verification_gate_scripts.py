@@ -6,8 +6,11 @@ Covers the pure logic behind the three new merge-gate scripts:
 - scripts/check_no_diff_prefix_paths.py
 - scripts/check_issue_scope_overlap.py
 """
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -15,6 +18,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from check_import_smoke import check_imports  # noqa: E402
 from check_no_diff_prefix_paths import find_diff_prefix_paths  # noqa: E402
 from check_issue_scope_overlap import compute_scope_overlap, extract_mentioned_symbols  # noqa: E402
+
+SCOPE_OVERLAP_SCRIPT = PROJECT_ROOT / "scripts" / "check_issue_scope_overlap.py"
 
 
 class TestImportSmoke:
@@ -107,3 +112,73 @@ class TestIssueScopeOverlap:
         assert result["substantial"] is True
         assert "delegate_to_agent" in result["matched"]
         assert "ActionJournal" in result["matched"]
+
+
+class TestScopeOverlapCLIExitCodes:
+    """Regression tests for issue #521: exit codes must let the caller tell
+    "confirmed not substantial" (2) apart from "the script itself crashed"
+    (1), or a broken check silently looks identical to a passed one."""
+
+    @pytest.fixture
+    def git_repo(self, tmp_path):
+        def run(*args):
+            subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+        run("init", "-q", "-b", "main")
+        run("config", "user.email", "t@t.com")
+        run("config", "user.name", "t")
+        (tmp_path / "file.py").write_text("x = 1\n")
+        run("add", "-A")
+        run("commit", "-q", "-m", "chore: init")
+        run("checkout", "-q", "-b", "feature")
+        return tmp_path
+
+    def test_exit_2_when_confirmed_not_substantial(self, git_repo):
+        (git_repo / "file.py").write_text("x = 1\nimport logging\n")
+        subprocess.run(["git", "add", "-A"], cwd=git_repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "fix: stub"], cwd=git_repo, check=True
+        )
+        issue_file = git_repo / "issue.md"
+        issue_file.write_text("Add `delegate_to_agent` journaled via `ActionJournal`.\n- [ ] todo\n")
+
+        result = subprocess.run(
+            [sys.executable, str(SCOPE_OVERLAP_SCRIPT), "--issue-file", str(issue_file), "--range", "main...feature"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 2, result.stdout + result.stderr
+
+    def test_exit_0_when_substantial(self, git_repo):
+        (git_repo / "file.py").write_text("x = 1\n\nasync def delegate_to_agent(): ...\n")
+        subprocess.run(["git", "add", "-A"], cwd=git_repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "fix: real"], cwd=git_repo, check=True
+        )
+        issue_file = git_repo / "issue.md"
+        issue_file.write_text("Add `delegate_to_agent`.\n- [ ] todo\n")
+
+        result = subprocess.run(
+            [sys.executable, str(SCOPE_OVERLAP_SCRIPT), "--issue-file", str(issue_file), "--range", "main...feature"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def test_exit_1_not_2_when_script_crashes(self, git_repo):
+        """A missing issue file must crash with exit 1, never exit 2 -- exit 2
+        is reserved for a confirmed substantial=false verdict, and the caller
+        workflow only trusts exit 2 for that. If a crash also produced exit
+        2, a broken check would be indistinguishable from a passed one."""
+        missing_issue_file = git_repo / "does_not_exist.md"
+
+        result = subprocess.run(
+            [sys.executable, str(SCOPE_OVERLAP_SCRIPT), "--issue-file", str(missing_issue_file), "--range", "main...feature"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "substantial=false" not in result.stdout
