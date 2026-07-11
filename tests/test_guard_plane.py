@@ -1,6 +1,7 @@
 """
 tests/test_guard_plane.py — Unit tests for Phase G: Guard (Security & Trust)
 """
+import asyncio
 import os
 import tempfile
 import time
@@ -109,6 +110,50 @@ def test_hitl_headless_rejection():
     )
     assert not gate.is_approved(req)
     assert req.status == ApprovalStatus.REJECTED
+
+
+async def test_check_and_execute_does_not_block_event_loop_during_hitl_wait():
+    """A pending HIGH-risk HITL approval must not starve other coroutines
+    on the event loop (regression test for GHSA-wqp8-67cf-3j26)."""
+    from src.core.guard.guard_plane import GuardPlane
+
+    guard = GuardPlane()
+    guard.capability_manager.reset()
+    guard.capability_manager.grant_agent("agent_1", "execute_shell")
+
+    # Approve asynchronously after a short delay instead of instantly,
+    # so request_approval() actually blocks on evt.wait() for a while.
+    def delayed_approver(req):
+        time.sleep(0.3)
+        return True
+
+    guard.hitl_gate.set_default_approver(delayed_approver)
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        for _ in range(20):
+            ticks += 1
+            await asyncio.sleep(0.02)
+
+    exec_task = asyncio.create_task(
+        guard.check_and_execute(
+            agent_id="agent_1",
+            capability_name="execute_shell",
+            command="echo hi",
+            description="regression test command",
+            dry_run=True,
+        )
+    )
+    tick_task = asyncio.create_task(ticker())
+
+    result, _ = await asyncio.gather(exec_task, tick_task)
+
+    # If request_approval() blocked the loop, the ticker would have made
+    # little to no progress while check_and_execute awaited approval.
+    assert ticks >= 10
+    assert result["ok"] is True
 
 
 def test_action_journal_record_and_update():

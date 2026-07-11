@@ -3,6 +3,7 @@ guard_plane.py — Unified entry point for all Phase G security/guard components
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, Optional
 
@@ -47,7 +48,7 @@ class GuardPlane:
             metadata={"severity": event.severity, "original_action": event.action},
         )
 
-    def check_and_execute(
+    async def check_and_execute(
         self,
         agent_id: str,
         capability_name: str,
@@ -80,7 +81,11 @@ class GuardPlane:
 
         # 3. HITL approval if needed
         if cap and cap.requires_hitl:
-            req = self.hitl_gate.request_approval(
+            # request_approval() blocks synchronously (up to APPROVAL_TIMEOUTS,
+            # 300s for CRITICAL) — run it off the event loop so a pending
+            # approval can't starve other coroutines.
+            req = await asyncio.to_thread(
+                self.hitl_gate.request_approval,
                 agent_id=agent_id,
                 action=capability_name,
                 description=description,
@@ -124,7 +129,7 @@ class GuardPlane:
             "entry_id":    entry.entry_id,
         }
 
-    def check_and_control_device(
+    async def check_and_control_device(
         self,
         agent_id: str,
         device_id: str,
@@ -155,7 +160,8 @@ class GuardPlane:
 
         # 2. HITL approval check
         if cap and cap.requires_hitl:
-            req = self.hitl_gate.request_approval(
+            req = await asyncio.to_thread(
+                self.hitl_gate.request_approval,
                 agent_id=agent_id,
                 action=capability_name,
                 description=f"Control IoT device '{device_id}' with command: '{command}'",
