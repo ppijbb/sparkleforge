@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
 
 from src.core.anvil.engine import AnvilWorkflowEngine
@@ -29,7 +29,7 @@ class AgentHarness:
 
     def __init__(self):
         self.router = TaskRouter()
-        self.memory = MemorySaver()
+        self.memory = AsyncSqliteSaver.from_conn_string("data/checkpoints.db")
         self._register_tools()
         self.skill_repository = SkillRepository()
         self.anvil_engine = AnvilWorkflowEngine(skill_repository=self.skill_repository)
