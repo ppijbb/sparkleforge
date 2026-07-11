@@ -362,14 +362,18 @@ def test_sensor_hardware_backend_with_driver():
                 (float("nan"), float("nan")),
                 (22.5, 46.0),
             ]
+            self._call_count = 0
 
         @property
         def temperature(self):
-            return self._reads[0][0]
+            idx = min(self._call_count, len(self._reads) - 1)
+            return self._reads[idx][0]
 
         @property
         def humidity(self):
-            return self._reads[0][1]
+            idx = min(self._call_count, len(self._reads) - 1)
+            self._call_count += 1
+            return self._reads[idx][1]
 
         def exit(self):
             self.exited = True
