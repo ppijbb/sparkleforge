@@ -1,4 +1,3 @@
-import pytest
 """
 Source Validation Benchmark Tests
 
@@ -17,7 +16,6 @@ from .benchmark_metrics import MetricsCollector, BenchmarkResult
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.slow
 class TestSourceValidationBenchmark:
     """Test source validation benchmark functionality."""
 
@@ -189,6 +187,7 @@ class TestSourceValidationBenchmark:
         assert result.value > 0.8
         assert result.passed
 
+    @pytest.mark.slow
     def test_source_validation_benchmark_execution(self, benchmark_runner):
         """Test that source validation benchmark can be executed."""
         results = benchmark_runner.run_source_validation_benchmark()

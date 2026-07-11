@@ -243,6 +243,7 @@ class TestPerformanceBenchmark:
         assert breakdown["Technology"]["total"] == 1
         assert breakdown["Business"]["total"] == 1
 
+    @pytest.mark.slow
     def test_concurrent_execution_simulation(self, benchmark_runner):
         """Test simulation of concurrent execution."""
         # This tests the parallel execution logic without actually running CLI

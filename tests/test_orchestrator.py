@@ -118,6 +118,7 @@ class TestAgentOrchestrator:
         assert orchestrator.harness is not None
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_execute_workflow(self):
         """Test full workflow execution returns expected keys."""
         orchestrator = AgentOrchestrator(config=None)
@@ -134,6 +135,7 @@ class TestAgentOrchestrator:
         assert "success" in result
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_stream_workflow(self):
         """Test that execute returns a result dict (streaming via harness)."""
         orchestrator = AgentOrchestrator(config=None)
@@ -150,6 +152,7 @@ class TestMultiAgentIntegration:
     """Integration tests for multi-agent system."""
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_memory_orchestrator_integration(self, temp_storage_path):
         """Test memory and orchestrator integration."""
         # Initialize memory
