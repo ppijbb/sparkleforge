@@ -363,6 +363,30 @@ class MCPIntegrationError(IntegrationError):
         )
 
 
+class PinDirectionError(BaseResearcherException):
+    """Exception raised when a GPIO pin is not in the correct direction for the requested operation."""
+
+    def __init__(self, pin: int, expected_direction: str, actual_direction: str, **kwargs):
+        details = {
+            "pin": pin,
+            "expected_direction": expected_direction,
+            "actual_direction": actual_direction,
+        }
+        if "details" in kwargs:
+            details.update(kwargs.pop("details"))
+        super().__init__(
+            message=f"GPIO pin {pin} is configured as {actual_direction}, but expected {expected_direction}",
+            category=ErrorCategory.INTEGRATION,
+            severity=ErrorSeverity.HIGH,
+            details=details,
+            suggestions=[
+                f"Configure pin {pin} explicitly as {expected_direction} before this operation",
+                "Ensure that pin read/write commands match the pin's configured direction",
+            ],
+            **kwargs,
+        )
+
+
 # Data Exceptions
 class DataError(BaseResearcherException):
     """Data-related errors."""
@@ -468,6 +492,7 @@ def create_exception_from_dict(
         "InsufficientResourcesError": InsufficientResourcesError,
         "IntegrationError": IntegrationError,
         "MCPIntegrationError": MCPIntegrationError,
+        "PinDirectionError": PinDirectionError,
         "DataError": DataError,
         "DataProcessingError": DataProcessingError,
         "SystemError": SystemError,
