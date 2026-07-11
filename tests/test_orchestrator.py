@@ -1,7 +1,11 @@
 """
 Integration test for Multi-Agent Orchestration System
 
-메모리 시스템과 오케스트레이션 기능을 테스트
+메모리 시스템과 오케스트레이션 기능을 테스트.
+
+ChromaDB is an optional dependency; tests construct SharedMemory with
+``enable_chromadb=False`` so the ``chromadb`` import must be guarded to keep
+collection working when the package is not installed.
 """
 
 import asyncio
