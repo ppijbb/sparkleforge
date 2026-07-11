@@ -18,12 +18,19 @@ from src.core.shared_memory import SharedMemory, MemoryScope, init_shared_memory
 from src.core.agent_orchestrator import AgentOrchestrator, AgentState
 
 
+@pytest.fixture
+def temp_storage_path(tmp_path):
+    """Fixture to provide a clean temporary storage path."""
+    return str(tmp_path / "test_storage")
+
+
+
 class TestSharedMemory:
     """Test shared memory system."""
 
-    def test_write_read_memory(self):
+    def test_write_read_memory(self, temp_storage_path):
         """Test basic memory write and read."""
-        memory = SharedMemory(storage_path="./test_storage", enable_chromadb=False)
+        memory = SharedMemory(storage_path=temp_storage_path, enable_chromadb=False)
 
         # Write memory
         success = memory.write(
@@ -35,9 +42,9 @@ class TestSharedMemory:
         value = memory.read(key="test_key", scope=MemoryScope.GLOBAL)
         assert value == "test_value"
 
-    def test_session_memory(self):
+    def test_session_memory(self, temp_storage_path):
         """Test session-scoped memory."""
-        memory = SharedMemory(storage_path="./test_storage", enable_chromadb=False)
+        memory = SharedMemory(storage_path=temp_storage_path, enable_chromadb=False)
 
         # Write to session
         memory.write(
@@ -53,9 +60,9 @@ class TestSharedMemory:
         )
         assert value == "session_value"
 
-    def test_agent_memory(self):
+    def test_agent_memory(self, temp_storage_path):
         """Test agent-scoped memory."""
-        memory = SharedMemory(storage_path="./test_storage", enable_chromadb=False)
+        memory = SharedMemory(storage_path=temp_storage_path, enable_chromadb=False)
 
         # Write to agent
         memory.write(
@@ -75,9 +82,9 @@ class TestSharedMemory:
         )
         assert value == "agent_value"
 
-    def test_search_memory(self):
+    def test_search_memory(self, temp_storage_path):
         """Test memory search functionality."""
-        memory = SharedMemory(storage_path="./test_storage", enable_chromadb=False)
+        memory = SharedMemory(storage_path=temp_storage_path, enable_chromadb=False)
 
         # Write multiple memories
         memory.write(
@@ -139,11 +146,11 @@ class TestMultiAgentIntegration:
     """Integration tests for multi-agent system."""
 
     @pytest.mark.asyncio
-    async def test_memory_orchestrator_integration(self):
+    async def test_memory_orchestrator_integration(self, temp_storage_path):
         """Test memory and orchestrator integration."""
         # Initialize memory
         memory = init_shared_memory(
-            storage_path="./test_storage", enable_chromadb=False
+            storage_path=temp_storage_path, enable_chromadb=False
         )
 
         # Initialize orchestrator
