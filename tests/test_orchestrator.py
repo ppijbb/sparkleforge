@@ -10,7 +10,10 @@ import sys
 from pathlib import Path
 import chromadb
 
-# Add project root to path
+# Add project root to path so `src` is importable without PYTHONPATH
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
+
 from src.core.researcher_config import load_config_from_env
 load_config_from_env()
 
