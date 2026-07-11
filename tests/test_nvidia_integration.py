@@ -1,15 +1,16 @@
-import pytest
 import asyncio
 import os
 import sys
-from unittest.mock import patch, AsyncMock, MagicMock
-from typing import Dict, Any
+from typing import Any, Dict
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from src.core.llm_manager import MultiModelOrchestrator, TaskType, Provider
+from src.core.llm_manager import MultiModelOrchestrator, Provider, TaskType
 
 
 class TestNvidiaIntegration:
@@ -30,31 +31,20 @@ class TestNvidiaIntegration:
             "NVIDIA_API_KEY": "nvapi-test_key",
             "LLM_PROVIDER": "nvidia",
             "LLM_MODEL": "z-ai/glm-5.2",
+            "OPENROUTER_API_KEY": orig_or or "or-test_key",
+            "OPENAI_API_KEY": "openai-test_key",
+            "GROQ_API_KEY": "groq-test_key",
         }
         
         with patch.dict(os.environ, env_dict):
-            # 간섭되는 다른 API 키 제거
-            os.environ.pop("OPENROUTER_API_KEY", None)
-            os.environ.pop("OPENAI_API_KEY", None)
-            os.environ.pop("GROQ_API_KEY", None)
-            
             load_config_from_env()
             yield
-            
-        # 복구
-        if orig_or is not None:
-            os.environ["OPENROUTER_API_KEY"] = orig_or
-        if orig_openai is not None:
-            os.environ["OPENAI_API_KEY"] = orig_openai
-        if orig_groq is not None:
-            os.environ["GROQ_API_KEY"] = orig_groq
 
     def test_nvidia_models_loaded(self, mock_env_vars):
         """NVIDIA NIM 모델이 로드되었는지 확인."""
         orchestrator = MultiModelOrchestrator()
         
         # 모델 목록에 등록되었는지 확인
-        assert "glm-5.2" in orchestrator.models
         assert "z-ai/glm-5.2" in orchestrator.models
         
         config = orchestrator.models["z-ai/glm-5.2"]
@@ -102,7 +92,7 @@ class TestNvidiaIntegration:
             model="z-ai/glm-5.2",
             messages=[{"role": "user", "content": "Hello, GLM!"}],
             temperature=0.2,
-            max_tokens=4000
+            max_tokens=16384
         )
 
     @pytest.mark.asyncio

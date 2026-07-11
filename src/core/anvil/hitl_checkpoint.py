@@ -1,15 +1,16 @@
 """HITL 체크포인트 - 주요 단계별 사용자 피드백 수집 및 체크리스트 반영 (M4)."""
 
 import asyncio
-import logging
 import json
+import logging
 import os
 import time
 import uuid
-import aiohttp
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import aiohttp
 
 from src.core.anvil.dynamic_checklist_generator import Checklist, ChecklistItem
 from src.core.anvil.request_analyzer import RequestAnalyzer
@@ -55,10 +56,10 @@ class HITLCheckpointManager:
 
     def __init__(
         self,
-        feedback_provider: Optional[FeedbackProvider] = None,
+        feedback_provider: FeedbackProvider | None = None,
         checkpoint_dir: str = ".checkpoints",
         timeout_seconds: int = 1800,
-        webhook_url: Optional[str] = None,
+        webhook_url: str | None = None,
     ):
         self.feedback_provider = feedback_provider
         self.history: List[CheckpointResult] = []
@@ -69,7 +70,7 @@ class HITLCheckpointManager:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     async def checkpoint(
-        self, stage: CheckpointStage, context: Optional[Dict[str, Any]] = None
+        self, stage: CheckpointStage, context: Dict[str, Any] | None = None
     ) -> CheckpointResult:
         """단계 체크포인트 실행. 제공자가 없으면 자동 승인."""
         context = context or {}
@@ -82,31 +83,33 @@ class HITLCheckpointManager:
             self.history.append(result)
             return result
 
-        # Save state and exit if provider is not available or requires suspension
-        checkpoint_id = uuid.uuid4().hex[:8]
-        state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
-        with open(state_file, "w") as f:
-            json.dump({"stage": stage.value, "context": context, "created_at": time.time()}, f)
-        
-        logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
-
-        if self.webhook_url:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    await session.post(self.webhook_url, json={"checkpoint_id": checkpoint_id, "stage": stage.value})
-                logger.info("Webhook notification sent for checkpoint %s", checkpoint_id)
-            except Exception as e:
-                logger.error("Failed to send webhook notification: %s", e)
-
-        # In a real implementation, this would raise a custom exception to trigger process exit
-        return CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
-
         try:
             outcome = self.feedback_provider(stage, context)
             if asyncio.iscoroutine(outcome):
                 outcome = await outcome
+            if outcome is None:
+                raise BlockingIOError("Suspension required")
             decision, feedback = outcome
         except Exception as e:
+            if isinstance(e, BlockingIOError) or "suspend" in str(e).lower():
+                # Save state and exit if provider requires suspension
+                checkpoint_id = uuid.uuid4().hex[:8]
+                state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
+                with open(state_file, "w") as f:
+                    json.dump({"stage": stage.value, "context": context, "created_at": time.time()}, f)
+                
+                logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
+
+                if self.webhook_url:
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            await session.post(self.webhook_url, json={"checkpoint_id": checkpoint_id, "stage": stage.value})
+                        logger.info("Webhook notification sent for checkpoint %s", checkpoint_id)
+                    except Exception as ex:
+                        logger.error("Failed to send webhook notification: %s", ex)
+
+                return CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
+
             logger.warning(
                 "Feedback provider failed at %s, defaulting to approve: %s",
                 stage.value,
@@ -183,7 +186,7 @@ class HITLCheckpointManager:
         """타임아웃 발생 시 기본 결정 적용."""
         state_file = os.path.join(self.checkpoint_dir, f"{checkpoint_id}.json")
         if os.path.exists(state_file):
-            with open(state_file, "r") as f:
+            with open(state_file) as f:
                 data = json.load(f)
                 if time.time() - data.get("created_at", 0) > self.timeout_seconds:
                     os.remove(state_file)
