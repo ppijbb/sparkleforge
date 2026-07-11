@@ -103,4 +103,88 @@ REASONING_MODEL=google/gemini-3.1-flash-lite-preview
 VERIFICATION_MODEL=google/gemini-3.1-flash-lite-preview
 GENERATION_MODEL=google/gemini-3.1-flash-lite-preview
 COMPRESSION_MODEL=google/gemini-3.1-flash-lite-preview
+
+# MCP Configuration (MCP Only - No Fallbacks)
+MCP_ENABLED=true
+MCP_TIMEOUT=30
+ENABLE_AUTO_FALLBACK=false
+
+# Application Configuration
+NODE_ENV=production
+LOG_LEVEL=INFO
 """
+
+
+def setup_config():
+    _info("Setting up configuration...")
+    env_file = ROOT / ".env"
+    if not env_file.exists():
+        env_file.write_text(ENV_TEMPLATE, encoding="utf-8")
+        _success(".env file created")
+        _warn("Please configure your API keys in the .env file")
+    else:
+        _warn(".env file already exists")
+
+
+def run_app(args):
+    _info("Starting Local Researcher...")
+    subprocess.check_call([str(_python_bin()), str(ROOT / "main.py"), *args])
+
+
+def show_usage():
+    print(f"Usage: {sys.argv[0]} [OPTIONS] [COMMAND] [ARGS...]")
+    print()
+    print("Options:")
+    print("  --setup-only    Only setup the environment, don't run")
+    print("  --help          Show this help message")
+    print()
+    print("Commands:")
+    print("  research <topic> [options]  - Start a new research project")
+    print("  status [research_id]        - Check research status")
+    print("  list [--status=STATUS]      - List research projects")
+    print("  cancel <research_id>        - Cancel a research project")
+    print("  interactive                 - Run in interactive mode")
+    print("  help                        - Show help")
+
+
+def main():
+    print("==========================================")
+    print("    Local Researcher - Run Script")
+    print("==========================================")
+    print()
+
+    args = sys.argv[1:]
+    setup_only = False
+    remaining = []
+    for i, arg in enumerate(args):
+        if arg == "--setup-only":
+            setup_only = True
+        elif arg == "--help":
+            show_usage()
+            return
+        else:
+            remaining = args[i:]
+            break
+
+    if not check_python_version():
+        sys.exit(1)
+
+    setup_venv()
+    install_dependencies()
+    create_directories()
+    setup_config()
+
+    if setup_only:
+        _success("Setup completed successfully!")
+        print()
+        print("Next steps:")
+        print("1. Configure your API keys in the .env file")
+        print(f"2. Run: {sys.argv[0]} research 'your research topic'")
+        print(f"3. Or run: {sys.argv[0]} interactive")
+        return
+
+    run_app(remaining)
+
+
+if __name__ == "__main__":
+    main()
