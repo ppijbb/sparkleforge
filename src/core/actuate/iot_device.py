@@ -3,6 +3,8 @@ import logging
 import random
 from typing import Any, Dict, Optional
 
+from src.core.exceptions import PinDirectionError
+
 logger = logging.getLogger(__name__)
 
 BACKEND_AUTO = "auto"
@@ -27,7 +29,7 @@ class PhysicalDevice(abc.ABC):
             raise ValueError(f"Unknown backend '{backend}'")
         self.device_id = device_id
         self.backend = backend
-        self.active_backend: Optional[str] = None
+        self.active_backend: str | None = None
         self._connected = False
 
     def connect(self) -> bool:
@@ -97,7 +99,7 @@ class PhysicalDevice(abc.ABC):
 class GPIODevice(PhysicalDevice):
     """GPIO device adapter for pin-level control.
 
-    Hardware backend drives output lines through libgpiod v2 (``gpiod``
+    Hardware backend drives lines through libgpiod v2 (``gpiod``
     package) on the given character device; mock backend keeps pin states
     in memory only.
     """
@@ -105,7 +107,10 @@ class GPIODevice(PhysicalDevice):
     def __init__(self, device_id: str, backend: str = BACKEND_AUTO, chip_path: str = "/dev/gpiochip0"):
         super().__init__(device_id, backend)
         self.chip_path = chip_path
-        self.pins: Dict[int, int] = {}  # pin_number -> last driven state (0 or 1)
+        self.pins: Dict[int, int] = {}  # pin_number -> last driven or read state (0 or 1)
+        self.pin_directions: Dict[int, str] = {}  # pin_number -> "input" or "output"
+        self.pin_biases: Dict[int, str] = {}  # pin -> "pull_up", "pull_down", "disabled", "as_is"
+        self.pin_active_lows: Dict[int, bool] = {}  # pin -> True/False
         self._gpiod = None
         self._chip = None
         self._line_requests: Dict[int, Any] = {}
@@ -116,49 +121,103 @@ class GPIODevice(PhysicalDevice):
         self._chip = gpiod.Chip(self.chip_path)
 
     def _hw_disconnect(self) -> None:
-        for request in self._line_requests.values():
+        for pin, request in list(self._line_requests.items()):
             try:
                 request.release()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to release pin {pin} during disconnect: {e}")
         self._line_requests.clear()
         if self._chip is not None:
             self._chip.close()
             self._chip = None
 
-    def _hw_set_pin(self, pin: int, state: int) -> None:
-        from gpiod.line import Direction, Value
+    def _hw_configure_pin(self, pin: int, direction: str, bias: str = "as_is", active_low: bool = False) -> None:
+        from gpiod.line import Bias, Direction
+        # Release if already requested to apply new configurations
+        if pin in self._line_requests:
+            try:
+                self._line_requests[pin].release()
+            except Exception as e:
+                logger.warning(f"Failed to release pin {pin} during reconfiguration: {e}")
+            del self._line_requests[pin]
+
+        dir_val = Direction.INPUT if direction == "input" else Direction.OUTPUT
+        bias_map = {
+            "pull_up": Bias.PULL_UP,
+            "pull_down": Bias.PULL_DOWN,
+            "disabled": Bias.DISABLED,
+            "as_is": Bias.AS_IS
+        }
+        bias_val = bias_map.get(bias, Bias.AS_IS)
+
+        request = self._chip.request_lines(
+            consumer=self.device_id,
+            config={
+                pin: self._gpiod.LineSettings(
+                    direction=dir_val,
+                    bias=bias_val,
+                    active_low=active_low
+                )
+            }
+        )
+        self._line_requests[pin] = request
+
+    def _hw_set_pin(self, pin: int, state: int, reconfigure: bool = False) -> None:
+        from gpiod.line import Value
         request = self._line_requests.get(pin)
-        if request is None:
-            request = self._chip.request_lines(
-                consumer=self.device_id,
-                config={pin: self._gpiod.LineSettings(direction=Direction.OUTPUT)},
+        direction = self.pin_directions.get(pin, "output")
+        # Re-configure as output if not already output
+        if direction == "input":
+            if not reconfigure:
+                raise PinDirectionError(pin, expected_direction="output", actual_direction="input")
+            self.pin_directions[pin] = "output"
+            self._hw_configure_pin(
+                pin,
+                direction="output",
+                bias=self.pin_biases.get(pin, "as_is"),
+                active_low=self.pin_active_lows.get(pin, False)
             )
-            self._line_requests[pin] = request
+            request = self._line_requests[pin]
+        elif request is None:
+            self.pin_directions[pin] = "output"
+            self._hw_configure_pin(
+                pin,
+                direction="output",
+                bias=self.pin_biases.get(pin, "as_is"),
+                active_low=self.pin_active_lows.get(pin, False)
+            )
+            request = self._line_requests[pin]
         request.set_value(pin, Value.ACTIVE if state else Value.INACTIVE)
 
     def _hw_read_pin(self, pin: int) -> int:
         from gpiod.line import Value
-        request = self._line_requests[pin]
+        direction = self.pin_directions.get(pin, "input")
+        if direction == "output":
+            raise PinDirectionError(pin, expected_direction="input", actual_direction="output")
+        request = self._line_requests.get(pin)
+        # _hw_read_pin must not call _hw_configure_pin.
+        if request is None:
+            raise PinDirectionError(pin, expected_direction="input", actual_direction="unconfigured")
         return 1 if request.get_value(pin) == Value.ACTIVE else 0
 
     def read(self) -> Dict[int, int]:
         """Return current pin states.
 
-        For pins previously driven through the hardware backend, this queries
-        the physical line rather than trusting the local write cache, so a
-        line forced to a different state outside this process (or a failed
-        write) is reflected. Pins never requested as lines fall back to the
-        cache (this adapter only requests output lines).
+        For pins previously driven or configured through the hardware backend, this
+        queries the physical line rather than trusting the local write cache.
         """
         if not self._connected:
             raise RuntimeError("Device not connected")
         if self.active_backend == BACKEND_HARDWARE:
-            for pin in self._line_requests:
-                self.pins[pin] = self._hw_read_pin(pin)
+            for pin in list(self._line_requests.keys()):
+                direction = self.pin_directions.get(pin, "input")
+                if direction == "output":
+                    pass
+                else:
+                    self.pins[pin] = self._hw_read_pin(pin)
         return dict(self.pins)
 
-    def write(self, data: Dict[int, int]) -> bool:
+    def write(self, data: Dict[int, int], reconfigure: bool = False) -> bool:
         """Expects data as a dict of {pin_number: state}."""
         if not self._connected:
             raise RuntimeError("Device not connected")
@@ -166,13 +225,18 @@ class GPIODevice(PhysicalDevice):
             if state not in (0, 1):
                 raise ValueError("State must be 0 or 1")
             if self.active_backend == BACKEND_HARDWARE:
-                self._hw_set_pin(pin, state)
+                self._hw_set_pin(pin, state, reconfigure=reconfigure)
             self.pins[pin] = state
             logger.debug(f"GPIODevice '{self.device_id}': Pin {pin} set to {state}")
         return True
 
     def execute_command(self, cmd: str) -> Dict[str, Any]:
-        """Expects format: 'set_pin <pin> <0|1>' or 'get_pin <pin>'."""
+        """Expects format:
+        - 'set_pin <pin> <0|1>'
+        - 'get_pin <pin>' / 'read_pin <pin>'
+        - 'configure_pin <pin> <input|output> [pull_up|pull_down|disabled|as_is] [active_low|active_high]'
+        - 'mock_input <pin> <0|1>'
+        """
         if not self._connected:
             return {"status": "failed", "stderr": "Device not connected"}
 
@@ -187,10 +251,54 @@ class GPIODevice(PhysicalDevice):
                 val = int(parts[2])
                 self.write({pin: val})
                 return {"status": "success", "stdout": f"Pin {pin} set to {val}"}
-            elif action == "get_pin":
+            elif action in ("get_pin", "read_pin"):
                 pin = int(parts[1])
-                val = self.pins.get(pin, 0)
+                if self.active_backend == BACKEND_HARDWARE:
+                    val = self._hw_read_pin(pin)
+                else:
+                    # In mock mode, check if we have a simulated state, default to 0
+                    val = self.pins.get(pin, 0)
+                self.pins[pin] = val
                 return {"status": "success", "stdout": str(val), "returncode": 0}
+            elif action == "configure_pin":
+                pin = int(parts[1])
+                direction = parts[2].lower()
+                if direction not in ("input", "output"):
+                    raise ValueError(f"Direction must be 'input' or 'output', got '{direction}'")
+                
+                bias = "as_is"
+                if len(parts) > 3:
+                    bias = parts[3].lower()
+                    if bias not in ("pull_up", "pull_down", "disabled", "as_is"):
+                        raise ValueError(f"Invalid bias: {bias}")
+                
+                active_low = False
+                if len(parts) > 4:
+                    active_low_str = parts[4].lower()
+                    if active_low_str in ("active_low", "true", "1"):
+                        active_low = True
+                    elif active_low_str in ("active_high", "false", "0"):
+                        active_low = False
+                    else:
+                        raise ValueError(f"Invalid active-low configuration: {active_low_str}")
+
+                self.pin_directions[pin] = direction
+                self.pin_biases[pin] = bias
+                self.pin_active_lows[pin] = active_low
+
+                if self.active_backend == BACKEND_HARDWARE:
+                    self._hw_configure_pin(pin, direction, bias, active_low)
+                
+                return {"status": "success", "stdout": f"Pin {pin} configured as {direction} ({bias}, active_low={active_low})"}
+            elif action == "mock_input":
+                if self.active_backend != BACKEND_MOCK:
+                    return {"status": "failed", "stderr": "mock_input is only supported on mock backend"}
+                pin = int(parts[1])
+                val = int(parts[2])
+                if val not in (0, 1):
+                    raise ValueError("Value must be 0 or 1")
+                self.pins[pin] = val
+                return {"status": "success", "stdout": f"Mock input for pin {pin} set to {val}"}
             else:
                 return {"status": "failed", "stderr": f"Unknown action: {action}"}
         except Exception as e:
@@ -357,7 +465,7 @@ class RobotArmDevice:
         return self.adapter.is_connected
 
     @property
-    def active_backend(self) -> Optional[str]:
+    def active_backend(self) -> str | None:
         return self.adapter.active_backend
 
     def execute_command(self, cmd: str) -> Dict[str, Any]:
