@@ -1,6 +1,7 @@
 """Anvil M4 - HITL 체크포인트 및 의도 가드레일 테스트."""
 
 import asyncio
+import json
 
 import pytest
 
@@ -240,3 +241,54 @@ class TestHITLCheckpointManager:
         
         decision = manager.resolve_timeout(cp_id)
         assert decision == CheckpointDecision.ABORT
+
+    @pytest.mark.asyncio
+    async def test_state_write_is_atomic_on_crash_mid_write(self, tmp_path, monkeypatch):
+        """A crash mid-write must never leave a corrupt checkpoint at the
+        canonical resume path — only the previous valid state or the new one."""
+        from src.core.anvil import hitl_checkpoint
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir()
+        state_file = checkpoint_dir / "cp_crash.json"
+
+        # Seed a valid previous checkpoint state.
+        previous_payload = {"stage": "after_planning", "previous": True}
+        with open(state_file, "w") as f:
+            json.dump(previous_payload, f)
+
+        # Simulate a crash mid-write by making json.dump raise after it has
+        # opened the temp file but before it finishes writing.
+        def crashing_dump(data, f, **kwargs):
+            raise RuntimeError("simulated crash mid-write")
+
+        monkeypatch.setattr(hitl_checkpoint.json, "dump", crashing_dump)
+
+        with pytest.raises(RuntimeError):
+            hitl_checkpoint.HITLCheckpointManager._write_state_file(
+                str(state_file), {"stage": "after_planning", "new": True}
+            )
+
+        # The canonical checkpoint path must still hold the previous valid
+        # state — never a partial/corrupt write.
+        with open(state_file) as f:
+            loaded = json.load(f)
+        assert loaded == previous_payload
+
+        # No leftover temp file should pollute the checkpoint directory.
+        leftovers = [
+            p.name for p in checkpoint_dir.iterdir() if p.name.endswith(".tmp")
+        ]
+        assert leftovers == []
+
+    @pytest.mark.asyncio
+    async def test_state_write_persists_valid_payload(self, tmp_path):
+        from src.core.anvil.hitl_checkpoint import HITLCheckpointManager
+
+        state_file = tmp_path / "cp_ok.json"
+        payload = {"stage": "after_planning", "context": {"k": "v"}}
+        HITLCheckpointManager._write_state_file(str(state_file), payload)
+
+        with open(state_file) as f:
+            assert json.load(f) == payload
+        assert not (tmp_path / "cp_ok.json.tmp").exists()
