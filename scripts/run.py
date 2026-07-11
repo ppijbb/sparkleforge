@@ -97,4 +97,10 @@ LLM_MODEL=google/gemini-3.1-flash-lite-preview
 LLM_TEMPERATURE=0.1
 LLM_MAX_TOKENS=4000
 
-# Multi-Model Orchestration (Gemini 2.
+# Multi-Model Orchestration (Gemini 2.5 Flash Lite 계열)
+PLANNING_MODEL=google/gemini-3.1-flash-lite-preview
+REASONING_MODEL=google/gemini-3.1-flash-lite-preview
+VERIFICATION_MODEL=google/gemini-3.1-flash-lite-preview
+GENERATION_MODEL=google/gemini-3.1-flash-lite-preview
+COMPRESSION_MODEL=google/gemini-3.1-flash-lite-preview
+"""
