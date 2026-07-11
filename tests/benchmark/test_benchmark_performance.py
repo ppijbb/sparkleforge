@@ -69,6 +69,7 @@ class TestPerformanceBenchmark:
         assert result.value == 150.0
         assert not result.passed  # Should fail threshold of 120s
 
+    @pytest.mark.slow
     def test_performance_benchmark_execution(self, benchmark_runner):
         """Test that performance benchmark can be executed."""
         results = benchmark_runner.run_performance_benchmark()

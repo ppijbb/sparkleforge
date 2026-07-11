@@ -1,3 +1,4 @@
+import pytest
 """
 Source Validation Benchmark Tests
 
@@ -16,6 +17,7 @@ from .benchmark_metrics import MetricsCollector, BenchmarkResult
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.slow
 class TestSourceValidationBenchmark:
     """Test source validation benchmark functionality."""
 
