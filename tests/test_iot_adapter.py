@@ -7,20 +7,19 @@ sys.modules['pyautogui'] = MagicMock()
 
 import pytest
 
+from src.core.actuate.actuation_plane import ActuationPlane
 from src.core.actuate.iot_device import (
+    CameraDevice,
     GPIODevice,
-    SerialDevice,
-    USBHIDDevice,
     RobotArmDevice,
     SensorDevice,
-    CameraDevice,
+    SerialDevice,
+    USBHIDDevice,
 )
-from src.core.actuate.actuation_plane import ActuationPlane
+from src.core.guard.capability_manager import CapabilityManager
+from src.core.guard.guard_plane import GuardPlane
 from src.core.observe.event_bus import EventBus
 from src.core.observe.iot_telemetry_loop import IOTTelemetryLoop
-from src.core.guard.guard_plane import GuardPlane
-from src.core.guard.capability_manager import CapabilityManager
-
 
 # --- 1. Basic Adapter Tests ---
 
@@ -174,15 +173,18 @@ def test_usb_hid_hardware_backend_with_driver():
 
 def test_gpio_hardware_backend_with_driver():
     class FakeLineRequest:
-        def __init__(self):
+        def __init__(self, pins=None):
             self.values = {}
             self.released = False
+            self.pins = pins or []
 
         def set_value(self, pin, value):
             self.values[pin] = value
 
-        def get_value(self, pin):
-            return self.values[pin]
+        def get_value(self, pin=None):
+            if pin is None:
+                pin = self.pins[0] if self.pins else None
+            return self.values.get(pin)
 
         def release(self):
             self.released = True
@@ -194,7 +196,8 @@ def test_gpio_hardware_backend_with_driver():
             self.closed = False
 
         def request_lines(self, consumer, config):
-            request = FakeLineRequest()
+            pins = list(config.keys())
+            request = FakeLineRequest(pins=pins)
             self.requests.append((consumer, config, request))
             return request
 
@@ -234,14 +237,17 @@ def test_gpio_hardware_read_queries_driver_not_just_cache():
     """read() must reflect the physical line state, not only the last-written cache (#319)."""
 
     class FakeLineRequest:
-        def __init__(self):
+        def __init__(self, pins=None):
             self.values = {}
+            self.pins = pins or []
 
         def set_value(self, pin, value):
             self.values[pin] = value
 
-        def get_value(self, pin):
-            return self.values[pin]
+        def get_value(self, pin=None):
+            if pin is None:
+                pin = self.pins[0] if self.pins else None
+            return self.values.get(pin)
 
         def release(self):
             pass
@@ -251,12 +257,13 @@ def test_gpio_hardware_read_queries_driver_not_just_cache():
             pass
 
         def request_lines(self, consumer, config):
-            return FakeLineRequest()
+            return FakeLineRequest(list(config.keys()))
 
         def close(self):
             pass
 
     fake_line_module = MagicMock()
+    fake_line_module.Direction.INPUT = "input"
     fake_line_module.Direction.OUTPUT = "output"
     fake_line_module.Value.ACTIVE = "active"
     fake_line_module.Value.INACTIVE = "inactive"
@@ -264,14 +271,14 @@ def test_gpio_hardware_read_queries_driver_not_just_cache():
     fake_gpiod_module = MagicMock()
     fake_gpiod_module.Chip = FakeChip
     fake_gpiod_module.line = fake_line_module
+    fake_gpiod_module.LineSettings = MagicMock()
 
     with patch.dict(sys.modules, {"gpiod": fake_gpiod_module, "gpiod.line": fake_line_module}):
         gpio = GPIODevice("drift_gpio", backend="hardware")
         gpio.connect()
-        gpio.write({4: 1})
+        gpio.execute_command("configure_pin 4 input")
 
-        # Something external forces the physical line to a different value
-        # than what this process last wrote; read() must surface that drift.
+        # Something external forces the physical line to a different value; read() must surface that drift.
         gpio._line_requests[4].values[4] = "inactive"
         assert gpio.read() == {4: 0}
         gpio.disconnect()
@@ -437,3 +444,195 @@ async def test_guard_plane_allows_iot_after_grant():
     
     assert res["ok"] is True
     assert "moved to 45" in res["stdout"]
+
+
+def test_gpio_input_configuration_and_commands():
+    """Test configure_pin, read_pin, get_pin under mock and fake hardware backends."""
+    # 1. Test configure_pin in mock mode
+    gpio = GPIODevice("test_gpio_conf", backend="mock")
+    assert gpio.connect() is True
+    
+    # Configure pin 5 as input with pull_up bias and active_low
+    res = gpio.execute_command("configure_pin 5 input pull_up active_low")
+    assert res["status"] == "success"
+    assert gpio.pin_directions[5] == "input"
+    assert gpio.pin_biases[5] == "pull_up"
+    assert gpio.pin_active_lows[5] is True
+
+    # 2. Test configure_pin in fake hardware mode
+    class FakeLineRequest:
+        def __init__(self):
+            self.settings = {}
+            self.values = {}
+            self.released = False
+
+        def release(self):
+            self.released = True
+
+        def set_value(self, pin, value):
+            self.values[pin] = value
+
+        def get_value(self, pin=None):
+            if pin is None:
+                pin = list(self.settings.keys())[0] if self.settings else None
+            return self.values.get(pin, "inactive")
+
+    class FakeChip:
+        def __init__(self, path):
+            self.requests = {}
+
+        def request_lines(self, consumer, config):
+            req = FakeLineRequest()
+            for pin, settings in config.items():
+                req.settings[pin] = settings
+                self.requests[pin] = req
+            return req
+
+        def close(self):
+            pass
+
+    fake_line_module = MagicMock()
+    fake_line_module.Direction.INPUT = "input"
+    fake_line_module.Direction.OUTPUT = "output"
+    fake_line_module.Bias.PULL_UP = "pull_up"
+    fake_line_module.Bias.PULL_DOWN = "pull_down"
+    fake_line_module.Bias.DISABLED = "disabled"
+    fake_line_module.Bias.AS_IS = "as_is"
+    fake_line_module.Value.ACTIVE = "active"
+    fake_line_module.Value.INACTIVE = "inactive"
+
+    class FakeLineSettings:
+        def __init__(self, direction=None, bias=None, active_low=False):
+            self.direction = direction
+            self.bias = bias
+            self.active_low = active_low
+
+    fake_gpiod_module = MagicMock()
+    fake_gpiod_module.Chip = FakeChip
+    fake_gpiod_module.LineSettings = FakeLineSettings
+    fake_gpiod_module.line = fake_line_module
+
+    with patch.dict(sys.modules, {"gpiod": fake_gpiod_module, "gpiod.line": fake_line_module}):
+        gpio_hw = GPIODevice("hw_gpio_conf", backend="hardware")
+        assert gpio_hw.connect() is True
+        
+        # Configure input pin
+        res = gpio_hw.execute_command("configure_pin 12 input pull_down active_high")
+        assert res["status"] == "success"
+        req = gpio_hw._line_requests[12]
+        assert req.settings[12].direction == "input"
+        assert req.settings[12].bias == "pull_down"
+        assert req.settings[12].active_low is False
+
+        # Read pin (it will try to read from the fake request)
+        req.set_value(12, "active")
+        
+        res = gpio_hw.execute_command("read_pin 12")
+        assert res["status"] == "success"
+        assert res["stdout"] == "1"
+
+
+def test_gpio_mock_input_commands():
+    """Test mock_input command under mock backend."""
+    gpio = GPIODevice("mock_gpio_test", backend="mock")
+    assert gpio.connect() is True
+    
+    # Configure input pin
+    gpio.execute_command("configure_pin 14 input")
+    
+    # Set mock input state
+    res = gpio.execute_command("mock_input 14 1")
+    assert res["status"] == "success"
+    
+    # Read back input pin state
+    read_res = gpio.execute_command("read_pin 14")
+    assert read_res["status"] == "success"
+    assert read_res["stdout"] == "1"
+    
+    # Get pin cache read
+    get_res = gpio.execute_command("get_pin 14")
+    assert get_res["status"] == "success"
+    assert get_res["stdout"] == "1"
+
+
+def test_gpio_direction_state_invariants():
+    """Verify that read() doesn't silently flip output pin direction, and write() on input pin raises error."""
+    class FakeLineRequest:
+        def __init__(self):
+            self.settings = {}
+            self.values = {}
+            self.released = False
+
+        def release(self):
+            self.released = True
+
+        def set_value(self, pin, value):
+            self.values[pin] = value
+
+        def get_value(self, pin=None):
+            if pin is None:
+                pin = list(self.settings.keys())[0] if self.settings else None
+            return self.values.get(pin, "inactive")
+
+    class FakeChip:
+        def __init__(self, path):
+            self.requests = {}
+
+        def request_lines(self, consumer, config):
+            req = FakeLineRequest()
+            for pin, settings in config.items():
+                req.settings[pin] = settings
+                self.requests[pin] = req
+            return req
+
+        def close(self):
+            pass
+
+    fake_line_module = MagicMock()
+    fake_line_module.Direction.INPUT = "input"
+    fake_line_module.Direction.OUTPUT = "output"
+    fake_line_module.Bias.AS_IS = "as_is"
+    fake_line_module.Value.ACTIVE = "active"
+    fake_line_module.Value.INACTIVE = "inactive"
+
+    class FakeLineSettings:
+        def __init__(self, direction=None, bias=None, active_low=False):
+            self.direction = direction
+            self.bias = bias
+            self.active_low = active_low
+
+    fake_gpiod_module = MagicMock()
+    fake_gpiod_module.Chip = FakeChip
+    fake_gpiod_module.LineSettings = FakeLineSettings
+    fake_gpiod_module.line = fake_line_module
+
+    with patch.dict(sys.modules, {"gpiod": fake_gpiod_module, "gpiod.line": fake_line_module}):
+        gpio = GPIODevice("inv_gpio", backend="hardware")
+        assert gpio.connect() is True
+
+        # Configure pin 10 as output
+        gpio.execute_command("configure_pin 10 output")
+        req10 = gpio._line_requests[10]
+        
+        # Configure pin 11 as input
+        gpio.execute_command("configure_pin 11 input")
+        req11 = gpio._line_requests[11]
+
+        # 1. Calling read() should not reconfigure pin 10 (output), but should return its cached state
+        gpio.pins[10] = 1
+        res = gpio.read()
+        assert res[10] == 1
+        assert gpio._line_requests[10] is req10  # Must not re-create/re-configure
+        assert gpio.pin_directions[10] == "output"
+
+        # 2. Writing to pin 11 (input) without reconfigure=True should raise PinDirectionError
+        from src.core.exceptions import PinDirectionError
+        with pytest.raises(PinDirectionError):
+            gpio.write({11: 1})
+
+        # 3. Writing to pin 11 with reconfigure=True should succeed and configure it as output
+        gpio.write({11: 1}, reconfigure=True)
+        assert gpio.pin_directions[11] == "output"
+        assert gpio._line_requests[11] is not req11  # Reconfigured, so it is a new request
+
+
