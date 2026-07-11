@@ -10,8 +10,9 @@ import sys
 import logging
 from pathlib import Path
 
-# Add tests directory to path for imports
+# Add tests directory and legacy benchmark directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parents[2] / "archive" / "benchmark_legacy"))
 
 from benchmark_metrics import (
     MetricsCollector,

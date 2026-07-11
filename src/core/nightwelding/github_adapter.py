@@ -100,7 +100,7 @@ def list_candidate_issues(
     candidates: List[int] = []
     for issue in issues:
         labels = {label["name"] for label in issue.get("labels", [])}
-        if backlog_label not in labels and NIGHTSHIFT_QUEUE_LABEL[0] not in labels:
+        if backlog_label not in labels and NIGHTWELDING_QUEUE_LABEL[0] not in labels:
             continue
         if labels & set(exclude_labels):
             continue
