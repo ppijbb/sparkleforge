@@ -100,6 +100,7 @@ class TestBenchmarkIntegration:
 
 
 @pytest.mark.benchmark
+@pytest.mark.slow
 class TestBenchmarkSuites:
     """Test individual benchmark suites."""
 
@@ -339,6 +340,7 @@ class TestRegressionDetection:
 
 
 @pytest.mark.ci
+@pytest.mark.slow
 class TestCIIntegration:
     """Test CI/CD integration functionality."""
 

@@ -118,6 +118,7 @@ class TestCreativeInsightsBenchmark:
         assert applicability_result.value == pytest.approx(0.35, abs=1e-9)  # Average of 0.4 and 0.3
         assert not applicability_result.passed  # Should fail threshold
 
+    @pytest.mark.slow
     def test_creative_insights_benchmark_execution(self, benchmark_runner):
         """Test that creative insights benchmark can be executed."""
         results = benchmark_runner.run_creative_insights_benchmark()

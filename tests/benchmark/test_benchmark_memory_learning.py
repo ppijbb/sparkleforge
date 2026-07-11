@@ -181,6 +181,7 @@ class TestMemoryLearningBenchmark:
             assert result.value == 0.0
             assert not result.passed
 
+    @pytest.mark.slow
     def test_memory_learning_benchmark_execution(self, benchmark_runner):
         """Test that memory learning benchmark can be executed."""
         results = benchmark_runner.run_memory_learning_benchmark()

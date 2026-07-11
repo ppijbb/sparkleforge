@@ -69,6 +69,7 @@ class TestPerformanceBenchmark:
         assert result.value == 150.0
         assert not result.passed  # Should fail threshold of 120s
 
+    @pytest.mark.slow
     def test_performance_benchmark_execution(self, benchmark_runner):
         """Test that performance benchmark can be executed."""
         results = benchmark_runner.run_performance_benchmark()
@@ -242,6 +243,7 @@ class TestPerformanceBenchmark:
         assert breakdown["Technology"]["total"] == 1
         assert breakdown["Business"]["total"] == 1
 
+    @pytest.mark.slow
     def test_concurrent_execution_simulation(self, benchmark_runner):
         """Test simulation of concurrent execution."""
         # This tests the parallel execution logic without actually running CLI

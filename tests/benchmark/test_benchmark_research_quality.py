@@ -33,6 +33,7 @@ class TestResearchQualityBenchmark:
         """Create metrics collector instance."""
         return benchmark_runner.metrics_collector
 
+    @pytest.mark.slow
     def test_research_quality_benchmark_execution(self, benchmark_runner):
         """Test that research quality benchmark can be executed."""
         results = benchmark_runner.run_research_quality_benchmark()

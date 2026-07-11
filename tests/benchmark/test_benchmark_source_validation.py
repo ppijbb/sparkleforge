@@ -187,6 +187,7 @@ class TestSourceValidationBenchmark:
         assert result.value > 0.8
         assert result.passed
 
+    @pytest.mark.slow
     def test_source_validation_benchmark_execution(self, benchmark_runner):
         """Test that source validation benchmark can be executed."""
         results = benchmark_runner.run_source_validation_benchmark()

@@ -6,11 +6,16 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from benchmark_runner import BenchmarkRunner
+
+# Real, unmocked CLI/agent execution; excluded from the default run (see pyproject.toml).
+pytestmark = pytest.mark.slow
 
 
 def test_benchmark_runner_init():
