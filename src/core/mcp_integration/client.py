@@ -1,7 +1,7 @@
 """OpenRouter client wrapper (disabled).
 
 Extracted from the monolithic ``src/core/mcp_integration.py`` as part of
-issue #494 — splitting the 7,778-line file by concern. This module owns the
+issue #508 — splitting the 7,778-line file by concern. This module owns the
 OpenRouter client surface so it can be reviewed independently of the
 connection/session and tool-discovery logic that remains in
 ``mcp_integration.py``.
