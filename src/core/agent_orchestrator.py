@@ -2,9 +2,6 @@
 
 기존 8,500라인의 거대한 AgentOrchestrator를 대체하는 얇은 래퍼입니다.
 실제 실행과 로직은 2026 기반 AgentHarness와 독립된 서브 에이전트들이 담당합니다.
-
-Delegation depth is tracked exclusively via ``context`` to keep nested and
-concurrent delegations independent (Issue #516).
 """
 
 import logging
@@ -12,8 +9,7 @@ import os
 from typing import Any, Dict, List, TypedDict
 
 # Removed global AgentHarness import for optimization
-from pathlib import Path
-from typing import Optional
+
 
 class AgentState(TypedDict, total=False):
     """Agent workflow state shared across orchestration steps."""
@@ -30,10 +26,6 @@ class AgentState(TypedDict, total=False):
 
 logger = logging.getLogger(__name__)
 _orchestrator: "AgentOrchestrator | None" = None
-_DELEGATION_ADAPTERS = {
-    "codebase_agent": "codebase_agent",
-    "document_organizer_agent": "document_organizer_agent",
-}
 
 
 class AgentOrchestrator:
@@ -179,56 +171,6 @@ class AgentOrchestrator:
             "error": harness_result.get("error"),
         }
 
-    MAX_DELEGATION_DEPTH = 3
-
-    async def delegate_to_agent(
-        self,
-        agent_name: str,
-        context: Dict[str, Any],
-        state: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Delegate a task to a named agent.
-
-        The delegation depth is read exclusively from ``context`` so that
-        nested delegations observe the incremented value even when the parent
-        restores its own state. This avoids races on shared ``state`` when
-        delegations are dispatched concurrently via ``asyncio.gather``.
-        """
-        depth = int(context.get("delegation_depth", 0))
-        if depth >= self.MAX_DELEGATION_DEPTH:
-            from src.core.exceptions import DelegationDepthExceeded
-
-            raise DelegationDepthExceeded(
-                f"Delegation depth exceeded for agent '{agent_name}' at depth {depth}"
-            )
-
-        child_context = {**context, "delegation_depth": depth + 1}
-
-        adapter = self._get_delegation_adapter(agent_name)
-        return await adapter.execute(child_context, state)
-
-    def _get_delegation_adapter(self, agent_name: str):
-        """Return the adapter for the named agent."""
-        if agent_name == "codebase_agent":
-            return _CodebaseAgentAdapter(self.harness)
-        if agent_name == "document_organizer_agent":
-            return _DocumentOrganizerAgentAdapter(self.harness)
-        raise ValueError(f"Unknown agent: {agent_name}")
-
-    async def _delegate_codebase_agent(self, context: Dict[str, Any]):
-        path = context.get("path")
-        if not path:
-            raise ValueError("'path' is required for codebase delegation")
-        path = Path(path)
-        return await self.delegate_to_agent("codebase_agent", context)
-
-    async def _delegate_document_organizer_agent(self, context: Dict[str, Any]):
-        path = context.get("path")
-        if not path:
-            raise ValueError("'path' is required for document organizer delegation")
-        path = Path(path)
-        return await self.delegate_to_agent("document_organizer_agent", context)
-
 
 def get_orchestrator(config=None) -> AgentOrchestrator:
     """이전 CLI 코드와의 호환성을 위한 lazy singleton accessor."""
@@ -248,31 +190,3 @@ def agent_workflow_result_to_public_dict(
         "results": result.get("results", ""),
         "success": result.get("success", False),
     }
-
-
-class _CodebaseAgentAdapter:
-    """Adapter for codebase_agent delegation."""
-
-    def __init__(self, harness):
-        self.harness = harness
-
-    async def execute(self, context, state):
-        return await self.harness.execute(
-            session_id=context.get("session_id", "delegation"),
-            request=context.get("request", ""),
-            identity="coder",
-        )
-
-
-class _DocumentOrganizerAgentAdapter:
-    """Adapter for document_organizer_agent delegation."""
-
-    def __init__(self, harness):
-        self.harness = harness
-
-    async def execute(self, context, state):
-        return await self.harness.execute(
-            session_id=context.get("session_id", "delegation"),
-            request=context.get("request", ""),
-            identity="researcher",
-        )

@@ -47,7 +47,7 @@ class ActionJournal:
     _instance: Optional["ActionJournal"] = None
     _lock: threading.Lock = threading.Lock()
 
-    def __new__(cls, journal_path: Optional[str] = None) -> "ActionJournal":
+    def __new__(cls, journal_path: Optional[str] = None, _force_new: bool = False) -> "ActionJournal":
         with cls._lock:
             if cls._instance is None:
                 instance = super().__new__(cls)
@@ -55,9 +55,11 @@ class ActionJournal:
                 cls._instance = instance
             return cls._instance
 
-    def __init__(self, journal_path: Optional[str] = None) -> None:
-        if self._initialized:
+    def __init__(self, journal_path: Optional[str] = None, _force_new: bool = False) -> None:
+        if self._initialized and not _force_new:
             return
+        if _force_new:
+            self._initialized = False
         self._initialized = True
         self._journal_path   = journal_path or os.path.join("data", "action_journal.jsonl")
         self._snapshots_path = self._journal_path.replace(".jsonl", "_snapshots.json")
