@@ -11,6 +11,7 @@ pre-action snapshot so a quarantine can be rolled back via
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -25,6 +26,28 @@ from src.core.guard.capability_manager import CapabilityManager
 logger = logging.getLogger(__name__)
 
 DEFAULT_QUARANTINE_DIR = os.path.join("data", "quarantine")
+QUARANTINE_BASE = Path(DEFAULT_QUARANTINE_DIR).expanduser().resolve()
+
+# Above this size, don't load the file into memory for the pre-quarantine
+# journal snapshot -- record metadata only. 100 MiB.
+MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024
+
+
+def _resolve_quarantine_root(quarantine_dir: str | None) -> Path:
+    """Resolve the quarantine destination directory, confined to QUARANTINE_BASE.
+
+    `quarantine_dir`, if given, is treated as a subdirectory name under
+    `QUARANTINE_BASE` -- never an arbitrary absolute path -- so a caller can't
+    redirect quarantined files into `/etc` or any other system location.
+    """
+    if not quarantine_dir:
+        return QUARANTINE_BASE
+    candidate = (QUARANTINE_BASE / quarantine_dir).expanduser().resolve()
+    if candidate != QUARANTINE_BASE and QUARANTINE_BASE not in candidate.parents:
+        raise ValueError(
+            f"quarantine_dir must resolve inside {QUARANTINE_BASE}, got {candidate}"
+        )
+    return candidate
 
 
 def quarantine_file(
@@ -41,8 +64,17 @@ def quarantine_file(
     without raising if the path doesn't exist or can't be moved, since
     "target already gone" is a normal outcome for a security tool.
     """
-    src = Path(file_path).expanduser().resolve()
+    raw = Path(file_path).expanduser()
     journal = ActionJournal()
+
+    if raw.is_symlink():
+        return {
+            "success": False,
+            "error": f"Refusing to quarantine a symlink: {file_path}",
+            "quarantined_path": None,
+        }
+
+    src = raw.resolve()
 
     if not src.exists():
         return {"success": False, "error": f"File not found: {file_path}", "quarantined_path": None}
@@ -50,20 +82,34 @@ def quarantine_file(
     if not src.is_file():
         return {"success": False, "error": f"Not a regular file: {file_path}", "quarantined_path": None}
 
-    quarantine_root = Path(quarantine_dir or DEFAULT_QUARANTINE_DIR).expanduser().resolve()
+    try:
+        quarantine_root = _resolve_quarantine_root(quarantine_dir)
+    except ValueError as e:
+        return {"success": False, "error": str(e), "quarantined_path": None}
     quarantine_root.mkdir(parents=True, exist_ok=True)
 
+    file_size = src.stat().st_size
     pre_state = {
         "original_path": str(src),
         "mode": src.stat().st_mode,
+        "size": file_size,
         "content_b64": None,
     }
-    try:
-        import base64
+    if file_size > MAX_SNAPSHOT_BYTES:
+        logger.warning(
+            "Skipping content snapshot for %s (%d bytes exceeds %d byte limit); "
+            "recording metadata only",
+            src,
+            file_size,
+            MAX_SNAPSHOT_BYTES,
+        )
+    else:
+        try:
+            import base64
 
-        pre_state["content_b64"] = base64.b64encode(src.read_bytes()).decode("ascii")
-    except OSError as e:
-        logger.warning("Could not snapshot %s before quarantine: %s", src, e)
+            pre_state["content_b64"] = base64.b64encode(src.read_bytes()).decode("ascii")
+        except OSError as e:
+            logger.warning("Could not snapshot %s before quarantine: %s", src, e)
 
     entry = journal.record(
         agent_id=agent_id,
@@ -94,18 +140,30 @@ def quarantine_file(
 
 
 def revoke_capability(agent_id: str, capability_name: str, reason: str = "") -> Dict[str, Any]:
-    """Revoke a previously granted capability from an agent, journaled for traceability."""
+    """Revoke a previously granted capability from an agent, journaled for traceability.
+
+    The journal entry is recorded *before* the capability is actually
+    mutated, so a journaling failure (disk full, permissions) aborts the
+    revocation instead of leaving state mutated with no audit trail.
+    """
     journal = ActionJournal()
     manager = CapabilityManager()
 
-    revoked = manager.revoke_agent(agent_id, capability_name)
-    journal.record(
+    entry = journal.record(
         agent_id=agent_id,
         action="revoke_capability",
         description=reason or f"Revoking capability '{capability_name}' from '{agent_id}'",
         risk_level="medium",
-        metadata={"capability_name": capability_name, "revoked": revoked},
+        metadata={"capability_name": capability_name},
     )
+
+    try:
+        revoked = manager.revoke_agent(agent_id, capability_name)
+    except Exception as e:
+        journal.update_outcome(entry.entry_id, outcome="failure", error=str(e))
+        raise
+
+    journal.update_outcome(entry.entry_id, outcome="success" if revoked else "failure")
     return {"success": revoked, "agent_id": agent_id, "capability_name": capability_name}
 
 
@@ -114,7 +172,9 @@ async def _quarantine_file_tool(
     reason: str = "",
     agent_id: str = "agent",
 ) -> Dict[str, Any]:
-    return quarantine_file(file_path=file_path, reason=reason, agent_id=agent_id)
+    return await asyncio.to_thread(
+        quarantine_file, file_path=file_path, reason=reason, agent_id=agent_id
+    )
 
 
 async def _revoke_capability_tool(
@@ -122,7 +182,9 @@ async def _revoke_capability_tool(
     capability_name: str,
     reason: str = "",
 ) -> Dict[str, Any]:
-    return revoke_capability(agent_id=agent_id, capability_name=capability_name, reason=reason)
+    return await asyncio.to_thread(
+        revoke_capability, agent_id=agent_id, capability_name=capability_name, reason=reason
+    )
 
 
 QUARANTINE_FILE_PARAMETERS = {

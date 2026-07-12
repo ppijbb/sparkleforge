@@ -141,6 +141,11 @@ SparkleForge builds upon the massive strides made by the open-source community. 
 - **LightMem**: For hierarchical compression and efficient context retrieval over long horizons.
 - **OpenManus**: For flexible multi-agent foundation architecture.
 
-## 🚀 Milestone: Federation & Scale (Anvil Phase Z)
+## 🚀 Anvil: The Agentic OS Layer
 
-We are currently entering Phase Z, focusing on multi-node federation, remote session management, and physical IoT device integration. See `docs/ANVIL_PLAN.md` for the roadmap.
+SparkleForge is built on top of **Anvil**, an OS-shaped execution layer for
+agents (observe / actuate / guard / surface planes, capability-based
+permissions, a workflow scheduler, and a self-healing Nightwelding daemon).
+Anvil has shipped through Phase Σ (structural integrity & autonomy). See
+[`docs/ANVIL_PLAN.md`](docs/ANVIL_PLAN.md) for the phase history and
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current architecture.
