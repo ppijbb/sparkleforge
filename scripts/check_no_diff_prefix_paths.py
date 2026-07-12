@@ -21,13 +21,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def tracked_files() -> list[str]:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=PROJECT_ROOT,
-        check=True,
-        stdout=subprocess.PIPE,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        print("::error::git ls-files timed out after 60s while scanning tracked files", file=sys.stderr)
+        raise
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
