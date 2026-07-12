@@ -97,13 +97,16 @@ def test_quarantine_leaves_benign_file_alone(tmp_path, journal):
     assert benign.stat().st_mode == original_mode
 
 
-def test_quarantine_dir_cannot_escape_quarantine_base(tmp_path, journal, quarantine_base):
+@pytest.mark.parametrize("quarantine_dir", ["../../../etc", "/etc", "."])
+def test_quarantine_dir_cannot_escape_quarantine_base(
+    tmp_path, journal, quarantine_base, quarantine_dir
+):
     risky = tmp_path / "risky.sh"
     risky.write_text("echo hi\n")
 
     result = quarantine_file(
         file_path=str(risky),
-        quarantine_dir="../../../etc",
+        quarantine_dir=quarantine_dir,
     )
 
     assert result["success"] is False
