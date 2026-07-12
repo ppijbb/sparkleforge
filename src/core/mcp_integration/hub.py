@@ -3606,6 +3606,11 @@ class UniversalMCPHub:
             # suffix 매칭으로 등록명이 정해진 경우, 반드시 그 이름으로 server/tool 해석 (2단계 이상 :: 대응)
             if resolved_registered_name and "::" in resolved_registered_name:
                 _server, _tool = resolved_registered_name.split("::", 1)
+                # Re-derive mcp_server/mcp_tool_name from the resolved registered
+                # name so trace metadata reflects the actually executed tool
+                # rather than the originally requested (possibly mismatched) name.
+                mcp_server = _server
+                mcp_tool_name = _tool
                 if self.registry.is_mcp_tool(resolved_registered_name):
                     mcp_info = self.registry.get_mcp_server_info(resolved_registered_name)
                     found_tool_name = resolved_registered_name
