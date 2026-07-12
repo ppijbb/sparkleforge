@@ -38,21 +38,21 @@ class ExecutionMixin:
             if not connected:
                 return None
         elif not await self._check_connection_health(server_name):
-                logger.warning(f"Connection to {server_name} is unhealthy, reconnecting...")
-                # Auto-reconnection
-                if server_name in self.mcp_server_configs:
-                    try:
-                        await self._disconnect_from_mcp_server(server_name)
-                    except Exception:
-                        pass
-                    server_config = self.mcp_server_configs[server_name]
-                    connected = await self._connect_to_mcp_server(server_name, server_config)
-                    if not connected:
-                        logger.error(f"Failed to reconnect to server {server_name}")
-                        return None
-                else:
-                    logger.error(f"Cannot reconnect to {server_name}: no config found")
+            logger.warning(f"Connection to {server_name} is unhealthy, reconnecting...")
+            # Auto-reconnection
+            if server_name in self.mcp_server_configs:
+                try:
+                    await self._disconnect_from_mcp_server(server_name)
+                except Exception:
+                    pass
+                server_config = self.mcp_server_configs[server_name]
+                connected = await self._connect_to_mcp_server(server_name, server_config)
+                if not connected:
+                    logger.error(f"Failed to reconnect to server {server_name}")
                     return None
+            else:
+                logger.error(f"Cannot reconnect to {server_name}: no config found")
+                return None
 
         return await self._execute_via_mcp_server_internal(server_name, tool_name, params)
     async def _execute_via_mcp_server_internal(

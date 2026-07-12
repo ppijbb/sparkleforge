@@ -134,11 +134,10 @@ async def _execute_code_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 confidence=0.0,
             )
 
-    if sandbox_type not in ("docker", "gvisor", "runsc", "container"):
-        return ToolResult(
-            success=False,
-            data=None,
-            error=(f"Unsupported sandbox '{sandbox_type}'. " "Use 'docker' or 'runsc'."),
-            execution_time=time.time() - start_time,
-            confidence=0.0,
-        )
+    return ToolResult(
+        success=False,
+        data=None,
+        error=(f"Unsupported sandbox '{sandbox_type}'. " "Use 'docker' or 'runsc'."),
+        execution_time=time.time() - start_time,
+        confidence=0.0,
+    )
