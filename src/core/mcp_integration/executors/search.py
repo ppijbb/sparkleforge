@@ -172,12 +172,8 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
         logger.warning(f"Embedded search failed: {e}, falling back to MCP servers")
         # 기존 로직으로 fallback
 
-    # 기존 로직 (MCP 서버 연결 시도) - src/utils 실패 시에만 실행
-    """MCP 서버를 통한 검색 도구 실행 (with caching and bot detection bypass)."""
     from src.core.result_cache import get_result_cache
 
-    # ToolResult는 이미 파일 상단에서 정의되어 있으므로 import 불필요
-    start_time = time.time()
     query = parameters.get("query", "")
     max_results = parameters.get("max_results", 10) or parameters.get("num_results", 10)
 
@@ -630,8 +626,6 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
                         continue
 
                     # 결과 파싱 - 실제 외부 서버 응답 형식 처리 및 에러 체크
-                    import json
-                    import re
 
                     # 에러 응답 체크 (failed, 401, 404, 502 등)
                     result_lower = str(result).lower() if result else ""
@@ -1055,8 +1049,6 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
                         )
 
                         if result:
-                            import json
-                            import re
 
                             # 에러 응답 체크
                             result_lower = str(result).lower() if result else ""
@@ -1185,8 +1177,6 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
                         )
 
                         if result:
-                            import json
-                            import re
 
                             # 에러 응답 체크
                             result_lower = str(result).lower() if result else ""

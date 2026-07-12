@@ -900,24 +900,6 @@ class ConnectionMixin:
                     del self.fastmcp_configs[server_name]
                 return False
 
-            # 도구 맵 생성 및 Registry에 동적 등록
-            self.mcp_tools_map[server_name] = {}
-            for tool in response.tools:
-                self.mcp_tools_map[server_name][tool.name] = tool
-                # ToolRegistry에 server_name::tool_name 형식으로 등록
-                self.registry.register_mcp_tool(server_name, tool.name, tool)
-                logger.debug(f"[MCP][register] {server_name}::{tool.name}")
-
-            # Registry tools를 self.tools에 동기화
-            self.tools.update(self.registry.tools)
-
-            tool_names = [t for t in self.mcp_tools_map.get(server_name, {}).keys()]
-            logger.info(f"[MCP][connect.ok] server={server_name} tools={tool_names}")
-            logger.info(
-                f"✅ Connected to MCP server {server_name} with {len(response.tools)} tools"
-            )
-            return True
-
         except asyncio.CancelledError:
             # 작업이 취소된 경우 (종료 신호 등) - 정상적인 동작
             logger.info(
