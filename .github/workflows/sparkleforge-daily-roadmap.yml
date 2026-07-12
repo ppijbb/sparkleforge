@@ -17,16 +17,16 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  actions: write
-  contents: read
-  issues: write
-  pull-requests: read
-
 jobs:
   create-roadmap-issue:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 35
+    permissions:
+      actions: write
+      contents: write
+      issues: write
+      pull-requests: write
     outputs:
       issue_number: ${{ steps.create_issue.outputs.issue_number }}
     steps:
@@ -277,6 +277,7 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
           TODAY: ${{ steps.prompt.outputs.today }}
+          STATUS: ${{ steps.research.outputs.status }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
             echo "::error::PAT repository secret is required so roadmap issues are authored by the PAT owner instead of github-actions[bot]."
