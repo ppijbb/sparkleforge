@@ -81,8 +81,6 @@ class SessionControl:
     DEFAULT_BUDGET_PER_SESSION = 1.0
     DEFAULT_TIMEOUT_SECONDS = 3600
 
-    _session_quotas: Dict[str, Dict[str, Any]] = {}
-
     def __init__(self):
         """초기화."""
         from src.core.checkpoint_manager import CheckpointManager
@@ -97,6 +95,7 @@ class SessionControl:
             {}
         )  # session_id -> {task_id -> TaskInfo}
         self.session_controls: Dict[str, asyncio.Event] = {}  # session_id -> control event
+        self._session_quotas: Dict[str, Dict[str, Any]] = {}  # session_id -> quota state
 
         logger.info("SessionControl initialized")
 
@@ -434,13 +433,21 @@ class SessionControl:
         """쿼터 초과 여부 확인 및 초과 시 자동 취소."""
         if session_id not in self._session_quotas:
             return True
-        
+
         q = self._session_quotas[session_id]
         if (time.time() - q["start_time"] > q["timeout"]) or \
            (q["cost_incurred"] >= q["budget"]) or \
            (q["tokens_used"] >= q["max_tokens"]):
-            asyncio.create_task(self.cancel_session(session_id))
             logger.warning(f"Session {session_id} exceeded quotas and was cancelled.")
+            try:
+                asyncio.get_running_loop().create_task(self.cancel_session(session_id))
+            except RuntimeError:
+                # check_quotas is called from sync code paths with no
+                # guaranteed running event loop; fall back to a direct
+                # status flip so callers still observe CANCELLED.
+                if session_id in self.active_sessions:
+                    self.active_sessions[session_id]["status"] = SessionStatus.CANCELLED
+                    self.active_sessions[session_id]["cancelled_at"] = datetime.now()
             return False
             
         return True
