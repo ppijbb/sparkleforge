@@ -13,6 +13,7 @@ from langgraph.graph import END, StateGraph
 
 from src.core.anvil.engine import AnvilWorkflowEngine
 from src.core.anvil.skill_repository import SkillRepository
+from src.core.guard.security_tools import register_security_tools
 from src.core.harness_state import HarnessState, create_initial_harness_state
 from src.core.langgraph_checkpointer import build_sqlite_checkpointer
 from src.core.llm_manager import TaskType, get_llm_orchestrator
@@ -51,6 +52,12 @@ class AgentHarness:
             logger.info("[Harness] Registered semantic_file_search tool")
         except Exception as e:
             logger.warning(f"[Harness] Failed to register semantic_file_search tool: {e}")
+
+        try:
+            register_security_tools()
+            logger.info("[Harness] Registered quarantine_file/revoke_capability security tools")
+        except Exception as e:
+            logger.warning(f"[Harness] Failed to register security tools: {e}")
 
     def _build_graph(self):
         """LangGraph 상태 머신 구축"""
