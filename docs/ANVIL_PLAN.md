@@ -51,15 +51,18 @@ Anvil은 "리눅스 같은 진짜 OS"가 아니라 **에이전트를 위한 OS �
 | Ψ | 크로스플랫폼 배포 패키징 | ✅ | |
 | Ω | 증명대 & 자가개선 (Ω-1 시나리오 평가 하네스, Ω-2 auto-fix 파이프라인, Ω-4 비용/지연 인지 라우팅, Ω-5 모놀리스 분할) | ✅ | `src/core/nightwelding/`, eval harness |
 | v | Agent Vivarium — 상시 운영 환경 | ✅ | |
-| Σ | 구조적 무결성 & 자율성 (Σ-1 모놀리스 실제 분할, Σ-2 런타임 서브에이전트 위임) | ✅ (진행 중 안정화) | `src/core/orchestrator/` 분할, `agent_orchestrator.py` 위임 깊이 가드 |
+| Σ | 구조적 무결성 & 자율성 (Σ-1 모놀리스 실제 분할, Σ-2 런타임 서브에이전트 위임, Σ-3 GuardPlane/TrustGate 하네스, Σ-4 auto-fix 검증 게이트) | ✅ | `src/core/orchestrator/` 분할, `agent_orchestrator.py` 위임 깊이 가드 — 마일스톤 #507 |
+| Ξ | 프로세스 모델 — 세션별 리소스 쿼터 (Ξ-1 쿼터 스키마, Ξ-2 초과 자동 처리, Ξ-3 CLI 노출) | 🔲 계획됨 | 마일스톤 #542 (#543, #544, #545) |
 
-**현재 위치**: Σ-2(런타임 서브에이전트 위임)까지 기능은 다 붙었고, 지금
-`fix/agent-orchestrator-delegation-cleanup` 브랜치에서 위임 깊이 가드가
-중첩 위임 시 상태/컨텍스트 불일치로 우회되던 버그와 죽은 코드 경로를
-정리하는 안정화 작업이 진행 중이다. 이 이후로는 `planning: anvil phase X`
-형식의 커밋이 끊기고, CLAUDE.md의 auto-fix 에이전트(Nightwelding)가 올리는
-리액티브 버그 픽스만 이어졌다 — **의도적인 다음 phase 설계가 비어 있는
-상태**였다는 것이 이 문서를 쓰게 된 계기다.
+**현재 위치**: Σ는 2026-07-12에 닫혔다(#507). 다만 Σ-1이 만든 모놀리스
+분할 자체에 circular import / missing return / signature mismatch 결함이
+남아 있었고(#539), 이걸 실제로 고치는 작업이 `fix/mcp-integration-tools-monolith-split`
+브랜치에서 진행 중이다 — Σ가 이름 그대로 안정된 상태가 되려면 이 브랜치가
+먼저 머지돼야 한다. Σ 이후로는 `planning: anvil phase X` 형식의 커밋이
+끊기고, CLAUDE.md의 auto-fix 에이전트(Nightwelding)가 올리는 리액티브
+버그 픽스만 이어졌다 — **의도적인 다음 phase 설계가 비어 있는 상태**였다는
+것이 이 문서를 쓰게 된 계기다. 그 다음 phase로 §4의 후보 중 "프로세스
+모델"을 Phase Ξ로 확정했다 (마일스톤 #542).
 
 ## 3. 알려진 결함 (이번에 확인됨)
 
@@ -70,16 +73,19 @@ Anvil은 "리눅스 같은 진짜 OS"가 아니라 **에이전트를 위한 OS �
 
 ## 4. 다음 phase 후보 (미결정 — 논의 대상)
 
-Σ 다음 단계로 검토 중인 방향. 아직 어느 것을 phase로 확정할지는 정하지
-않았고, 우선순위를 논의한 뒤 이 섹션을 갱신한다.
+Σ 다음 단계로 검토했던 방향들. "프로세스 모델"은 Phase Ξ로 확정되어 §2
+표로 이동했다(마일스톤 #542) — 조회·제어(`SessionControl`, `session.py`
+CLI)는 이미 있었고 세션별 리소스 쿼터만 비어 있어 그 부분만 스코프로
+잡았다. 나머지는 아직 phase로 확정하지 않았고, 우선순위를 논의한 뒤 이
+섹션을 갱신한다.
 
-- **프로세스 모델**: 실행 중인 세션/에이전트를 조회·종료할 수 있는
-  프로세스 테이블 + 세션별 리소스 쿼터. (`src/core/session/coordinator.py`
-  확장 지점)
 - **VFS 통합**: `storage/`, `output/`, `temp/`가 산발적으로 존재 —
   `semantic_fs.py`를 에이전트/스킬 공용 주소 공간으로 승격.
-- **syscall 경계 공식화**: Σ-2에서 고친 위임 버그처럼, 에이전트 간 호출을
-  `IntentGuardrail`을 반드시 통과하는 공식 API로 정리.
+- **syscall 경계 공식화**: Σ-2에서 고친 위임 버그(#516), quarantine 결함
+  (#519), credential delegation 결함(#312)이 공통적으로 가리키는 방향 —
+  에이전트 간 호출을 `IntentGuardrail`을 반드시 통과하는 공식 API로 정리.
+  이슈화할 때는 이미 closed된 과거 결함의 구체적 메커니즘을 다시 상세히
+  서술하지 말고, 재발 방지라는 목적과 설계 방향 위주로 작성할 것.
 - **스킬 마켓플레이스**: `SkillRepository`/`SkillDistiller`는 있지만 인스턴스
   간 스킬 공유/임포트-익스포트 개념은 없음.
 - **Surface 통합**: `nl_shell.py`, `task_dashboard.py`, CLI, 웹 UI가 하나의
