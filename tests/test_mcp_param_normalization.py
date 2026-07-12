@@ -49,10 +49,13 @@ def test_get_mcp_hub_loads_config_lazily():
     import src.core.mcp_integration as mcp_integration
     import src.core.researcher_config as researcher_config
 
+    # get_mcp_hub()'s `global _mcp_hub` binds to its own defining module
+    # (src.core.mcp_integration.tools), not the mcp_integration package
+    # __init__.py -- that's the actual singleton to reset here.
     previous_config = researcher_config.config
-    previous_hub = mcp_integration._mcp_hub
+    previous_hub = mcp_integration.tools._mcp_hub
     researcher_config.config = None
-    mcp_integration._mcp_hub = None
+    mcp_integration.tools._mcp_hub = None
 
     try:
         hub = mcp_integration.get_mcp_hub()
@@ -60,5 +63,5 @@ def test_get_mcp_hub_loads_config_lazily():
         assert hub is not None
         assert researcher_config.config is not None
     finally:
-        mcp_integration._mcp_hub = previous_hub
+        mcp_integration.tools._mcp_hub = previous_hub
         researcher_config.config = previous_config
