@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from src.core.mcp_integration import ToolCategory, execute_tool
 from src.core.orchestrator.base_node import BaseNode
+from src.core.orchestrator.delegation import delegate_to_agent
 from src.core.orchestrator.state import ResearchState
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,23 @@ class ExecutionNode(BaseNode):
             }
         )
         return state
+
+    async def delegate_to_agent(
+        self,
+        state: ResearchState,
+        role: str,
+        task: Dict[str, Any],
+        context: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Runtime delegation to an agent role outside the static graph DAG.
+
+        Exposed to `adaptive_supervisor`/`execute_research` so either node can
+        reach a role (e.g. `validation_agent`, `codebase_agent`) that has no
+        static edge, instead of requiring a new hardcoded node. See
+        `src.core.orchestrator.delegation` for the depth guard, journaling,
+        and per-role adapters (`DELEGATION_REGISTRY`).
+        """
+        return await delegate_to_agent(state, role, task, context, delegator_id="execution_node")
 
     async def execute_research(self, state: ResearchState) -> ResearchState:
         """Run planned research tasks through the Hermes-style autonomous tool loop."""

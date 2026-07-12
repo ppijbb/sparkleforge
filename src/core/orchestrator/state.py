@@ -86,6 +86,13 @@ class ResearchState(TypedDict):
     should_continue: bool
     error_message: str | None
 
+    # Runtime sub-agent delegation (Anvil Phase Σ-2, issue #495/#509).
+    # Mirrors the overseer_iterations/max_iterations guard pattern above:
+    # delegate_to_agent() increments delegation_depth for the call and
+    # refuses to delegate once it reaches max_delegation_depth.
+    delegation_depth: int
+    max_delegation_depth: int
+
     # Innovation Stats
     innovation_stats: Dict[str, Any]
 
