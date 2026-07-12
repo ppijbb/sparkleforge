@@ -110,7 +110,11 @@ class GuardPlane:
         )
 
         # 5. Execute in sandbox
-        result = self.sandbox_executor.execute(command, dry_run=dry_run)
+        result = await asyncio.to_thread(
+            self.sandbox_executor.execute,
+            command,
+            dry_run=dry_run,
+        )
 
         # 6. Update journal with outcome
         self.action_journal.update_outcome(
