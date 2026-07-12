@@ -284,11 +284,12 @@ class SessionControl:
         logger.info(f"Session resumed: {session_id}")
         return True
 
-    async def cancel_session(self, session_id: str) -> bool:
+    async def cancel_session(self, session_id: str, reason: str | None = None) -> bool:
         """세션 취소.
 
         Args:
             session_id: 세션 ID
+            reason: 취소 사유 (쿼터 초과 등, 선택)
 
         Returns:
             성공 여부
@@ -300,6 +301,8 @@ class SessionControl:
         # 상태 업데이트
         self.active_sessions[session_id]["status"] = SessionStatus.CANCELLED
         self.active_sessions[session_id]["cancelled_at"] = datetime.now()
+        if reason:
+            self.active_sessions[session_id]["cancel_reason"] = reason
 
         # 제어 이벤트 설정 (취소 신호)
         if session_id in self.session_controls:
@@ -325,9 +328,7 @@ class SessionControl:
         Returns:
             성공 여부
         """
-        if session_id in self.active_sessions:
-            self.active_sessions[session_id]["cancel_reason"] = reason
-        return await self.cancel_session(session_id)
+        return await self.cancel_session(session_id, reason=reason)
 
     async def delete_session(self, session_id: str, delete_storage: bool = True) -> bool:
         """세션 삭제.
@@ -404,11 +405,24 @@ class SessionControl:
     def register_active_session(
         self, session_id: str, user_query: str, metadata: Dict[str, Any] | None = None
     ):
-        """활성 세션 등록 및 쿼터 할당."""
-        # 동시 세션 캡 확인
+        """활성 세션 등록 및 쿼터 할당.
+
+        Args:
+            session_id: 세션 ID
+            user_query: 사용자 쿼리
+            metadata: 추가 메타데이터
+
+        Raises:
+            RuntimeError: 동시 세션 수 상한에 도달한 경우
+        """
+        # 동시 세션 캡 확인 (설정으로 오버라이드 가능, 기본값 DEFAULT_MAX_CONCURRENT_SESSIONS)
         active_sessions = [s for s in self.active_sessions.values() if s.get("status") == SessionStatus.ACTIVE]
-        if len(active_sessions) >= self.DEFAULT_MAX_CONCURRENT_SESSIONS:
-            raise RuntimeError(f"Concurrent session limit reached ({self.DEFAULT_MAX_CONCURRENT_SESSIONS})")
+        max_active_sessions = self._get_max_active_sessions()
+        if len(active_sessions) >= max_active_sessions:
+            raise RuntimeError(
+                f"Active session quota reached ({len(active_sessions)}/{max_active_sessions}); "
+                "cancel an existing session before creating a new one."
+            )
 
         self._session_quotas[session_id] = {
             "max_tokens": self.DEFAULT_MAX_TOKENS_PER_SESSION,
@@ -693,6 +707,25 @@ class SessionControl:
 
         event = self.session_controls[session_id]
         return event.is_set()
+
+    def _get_max_active_sessions(self) -> int:
+        """동시 활성 세션 상한을 조회한다 (설정으로 오버라이드 가능).
+
+        Returns:
+            상한 값. 설정에 없으면 DEFAULT_MAX_CONCURRENT_SESSIONS.
+        """
+        try:
+            from src.core.config import get_config
+
+            config = get_config()
+            value = getattr(config, "max_active_sessions", None)
+            if value is None and isinstance(config, dict):
+                value = config.get("max_active_sessions")
+            if value is None:
+                return self.DEFAULT_MAX_CONCURRENT_SESSIONS
+            return int(value)
+        except Exception:
+            return self.DEFAULT_MAX_CONCURRENT_SESSIONS
 
     async def wait_for_resume(self, session_id: str, timeout: float | None = None):
         """세션 재개 대기.
