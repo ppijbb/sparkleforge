@@ -159,25 +159,26 @@ jobs:
 
           numbers = []
           if milestone:
-              numbers = sorted(set(int(n) for n in re.findall(r"—\s*#(\d+)", milestone.get("body", ""))))
+              numbers = sorted(set(int(n) for n in re.findall(r"[—-]\s*#(\d+)", milestone.get("body", ""))))
 
           text = "\n".join(str(n) for n in numbers)
           Path("anvil-subissue-numbers.txt").write_text(text + "\n" if text else "", encoding="utf-8")
           PY
 
-          echo "[" > anvil-subissue-status.json
-          FIRST=true
+          : > anvil-subissue-status.json
           if [ -s anvil-subissue-numbers.txt ]; then
             while IFS= read -r NUM || [ -n "$NUM" ]; do
               [ -z "$NUM" ] && continue
               ISSUE_JSON=$(gh issue view "$NUM" --repo "${{ github.repository }}" --json number,title,state 2>/dev/null || echo "")
-              if [ -n "$ISSUE_JSON" ]; then
-                if [ "$FIRST" = true ]; then FIRST=false; else echo "," >> anvil-subissue-status.json; fi
-                echo "$ISSUE_JSON" >> anvil-subissue-status.json
+              if [ -n "$ISSUE_JSON" ] && printf '%s' "$ISSUE_JSON" | jq -e . >/dev/null 2>&1; then
+                printf '%s\n' "$ISSUE_JSON" >> anvil-subissue-status.json
               fi
             done < anvil-subissue-numbers.txt
           fi
-          echo "]" >> anvil-subissue-status.json
+          jq -s '.' anvil-subissue-status.json > anvil-subissue-status.json.tmp \
+            && mv anvil-subissue-status.json.tmp anvil-subissue-status.json \
+            || echo '[]' > anvil-subissue-status.json
+          jq empty anvil-subissue-status.json
 
           python - <<'PY' >> github-planning-context.md
           import json
