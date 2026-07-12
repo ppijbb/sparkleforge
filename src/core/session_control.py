@@ -292,6 +292,8 @@ class SessionControl:
         # 상태 업데이트
         self.active_sessions[session_id]["status"] = SessionStatus.CANCELLED
         self.active_sessions[session_id]["cancelled_at"] = datetime.now()
+        if reason:
+            self.active_sessions[session_id]["cancel_reason"] = reason
 
         # 제어 이벤트 설정 (취소 신호)
         if session_id in self.session_controls:
@@ -388,7 +390,17 @@ class SessionControl:
             session_id: 세션 ID
             user_query: 사용자 쿼리
             metadata: 추가 메타데이터
+
+        Raises:
+            RuntimeError: 동시 세션 수 상한에 도달한 경우
         """
+        max_active_sessions = self._get_max_active_sessions()
+        if max_active_sessions is not None and len(self.active_sessions) >= max_active_sessions:
+            raise RuntimeError(
+                f"Active session quota reached ({len(self.active_sessions)}/{max_active_sessions}); "
+                "cancel an existing session before creating a new one."
+            )
+
         self.active_sessions[session_id] = {
             "status": SessionStatus.ACTIVE,
             "created_at": datetime.now(),
@@ -636,6 +648,31 @@ class SessionControl:
 
         event = self.session_controls[session_id]
         return event.is_set()
+
+    def _get_max_active_sessions(self) -> int | None:
+        """동시 활성 세션 상한을 조회한다.
+
+        Returns:
+            상한 값 (None이면 제한 없음)
+        """
+        try:
+            from src.core.config import get_config
+
+            config = get_config()
+            value = getattr(config, "max_active_sessions", None)
+            if value is None and isinstance(config, dict):
+                value = config.get("max_active_sessions")
+            if value is None:
+                return None
+            return int(value)
+        except Exception:
+            return None
+
+    async def cancel_session_with_reason(
+        self, session_id: str, reason: str
+    ) -> bool:
+        """쿼터/예산/타임아웃 초과 등 명확한 사유로 세션을 취소한다."""
+        return await self.cancel_session(session_id, reason=reason)
 
     async def wait_for_resume(self, session_id: str, timeout: float | None = None):
         """세션 재개 대기.
