@@ -57,6 +57,29 @@ jobs:
       - name: Check Python syntax
         run: python scripts/check_syntax.py
 
+      - name: Check for stray git-diff a/b prefix paths
+        run: python scripts/check_no_diff_prefix_paths.py
+
+  import-smoke:
+    name: Import smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge
+        run: uv sync
+
+      - name: Import core entrypoints
+        run: uv run python scripts/check_import_smoke.py
+
   pytest:
     name: Pytest (fast subset)
     runs-on: ubuntu-latest
@@ -80,7 +103,8 @@ jobs:
           uv run pytest \
             tests/test_cli_entrypoints.py \
             tests/test_open_code_agent_config.py \
-            tests/test_cli_result_handling.py
+            tests/test_cli_result_handling.py \
+            tests/test_verification_gate_scripts.py
 
   workflow-lint:
     name: GitHub Actions syntax

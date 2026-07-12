@@ -379,15 +379,50 @@ jobs:
             esac
           done <<< "$CHANGED_FILES"
 
-          SUBSTANTIAL=true
+          SUBSTANTIAL=unknown
           if [ "$UNCHECKED" -gt 0 ] && { [ "$NON_TRIVIAL_FILE" -eq 0 ] || [ "$CHANGED_LINES" -le 3 ]; }; then
             SUBSTANTIAL=false
+          fi
+          if [ "$SUBSTANTIAL" = "unknown" ]; then
+            SUBSTANTIAL=true
+          fi
+
+          # Second, complementary signal (issue #511): the file-type/line-count
+          # check above misses stub diffs that touch real .py files with a
+          # handful of lines but implement none of the symbols the issue names
+          # (this is exactly how #509's first auto-fix attempt slipped through:
+          # two unused struct fields + a duplicate import, in real .py files,
+          # >3 lines changed). If the issue names concrete backticked symbols
+          # and the diff's added lines reference none of them, treat it as not
+          # substantial regardless of the file-type/line-count verdict above.
+          SCOPE_REASON=""
+          if [ "$UNCHECKED" -gt 0 ]; then
+            python3 scripts/check_issue_scope_overlap.py \
+              --issue-file issue-context.md \
+              --range "origin/$BASE_BRANCH...HEAD" > scope-overlap.log 2>&1
+            SCOPE_EXIT=$?
+            cat scope-overlap.log
+
+            # issue #521: exit 2 means the script ran successfully and
+            # confirmed the diff doesn't touch anything the issue names --
+            # exit 1 means the script itself crashed (bad args, git diff
+            # failure, unhandled exception) and must NOT be treated as a
+            # confirmed "not substantial" verdict, or a broken check would
+            # silently look identical to a passed one.
+            if [ "$SCOPE_EXIT" -eq 2 ]; then
+              SUBSTANTIAL=false
+              SCOPE_REASON=" and the diff never touches any of the symbols/paths the issue names"
+            elif [ "$SCOPE_EXIT" -ne 0 ]; then
+              echo "::error::check_issue_scope_overlap.py failed unexpectedly (exit $SCOPE_EXIT); treating as unverified rather than auto-closing"
+              SUBSTANTIAL=false
+              SCOPE_REASON=" and the scope-overlap check itself failed to run (exit $SCOPE_EXIT), so it could not be verified"
+            fi
           fi
 
           if [ "$SUBSTANTIAL" = "true" ]; then
             CLOSES_LINE="Closes #$ISSUE_NUMBER"
           else
-            CLOSES_LINE="Refs #$ISSUE_NUMBER (not auto-closed: diff only touches workflow/docs files and the issue still has $UNCHECKED unresolved checklist item(s) — needs a real follow-up implementation)"
+            CLOSES_LINE="Refs #$ISSUE_NUMBER (not auto-closed: diff only touches workflow/docs files and the issue still has $UNCHECKED unresolved checklist item(s)${SCOPE_REASON} — needs a real follow-up implementation)"
           fi
 
           EXISTING_PR=$(gh pr list \

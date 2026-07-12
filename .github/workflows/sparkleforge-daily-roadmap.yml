@@ -294,10 +294,6 @@ jobs:
             echo "Roadmap issue already exists for $TODAY: #$EXISTING; it will be updated."
           fi
 
-          if [ -n "$EXISTING" ]; then
-            echo "Roadmap issue already exists for $TODAY: #$EXISTING; it will be updated."
-          fi
-
           if [ -z "$EXISTING" ] && [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
             EXISTING_FIX=$(gh issue list \
               --repo "${{ github.repository }}" \
