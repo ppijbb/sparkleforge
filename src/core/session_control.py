@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import time
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,14 @@ class TaskInfo:
 
 class SessionControl:
     """세션 제어 및 백오피스 시스템."""
+
+    # 쿼터 기본값
+    DEFAULT_MAX_CONCURRENT_SESSIONS = 5
+    DEFAULT_MAX_TOKENS_PER_SESSION = 100000
+    DEFAULT_BUDGET_PER_SESSION = 1.0
+    DEFAULT_TIMEOUT_SECONDS = 3600
+
+    _session_quotas: Dict[str, Dict[str, Any]] = {}
 
     def __init__(self):
         """초기화."""
@@ -382,13 +391,21 @@ class SessionControl:
     def register_active_session(
         self, session_id: str, user_query: str, metadata: Dict[str, Any] | None = None
     ):
-        """활성 세션 등록.
+        """활성 세션 등록 및 쿼터 할당."""
+        # 동시 세션 캡 확인
+        active_sessions = [s for s in self.active_sessions.values() if s.get("status") == SessionStatus.ACTIVE]
+        if len(active_sessions) >= self.DEFAULT_MAX_CONCURRENT_SESSIONS:
+            raise RuntimeError(f"Concurrent session limit reached ({self.DEFAULT_MAX_CONCURRENT_SESSIONS})")
 
-        Args:
-            session_id: 세션 ID
-            user_query: 사용자 쿼리
-            metadata: 추가 메타데이터
-        """
+        self._session_quotas[session_id] = {
+            "max_tokens": self.DEFAULT_MAX_TOKENS_PER_SESSION,
+            "budget": self.DEFAULT_BUDGET_PER_SESSION,
+            "timeout": self.DEFAULT_TIMEOUT_SECONDS,
+            "start_time": time.time(),
+            "tokens_used": 0,
+            "cost_incurred": 0.0,
+        }
+
         self.active_sessions[session_id] = {
             "status": SessionStatus.ACTIVE,
             "created_at": datetime.now(),
@@ -413,6 +430,21 @@ class SessionControl:
 
         logger.info(f"Active session registered: {session_id}")
 
+    def check_quotas(self, session_id: str) -> bool:
+        """쿼터 초과 여부 확인 및 초과 시 자동 취소."""
+        if session_id not in self._session_quotas:
+            return True
+        
+        q = self._session_quotas[session_id]
+        if (time.time() - q["start_time"] > q["timeout"]) or \
+           (q["cost_incurred"] >= q["budget"]) or \
+           (q["tokens_used"] >= q["max_tokens"]):
+            asyncio.create_task(self.cancel_session(session_id))
+            logger.warning(f"Session {session_id} exceeded quotas and was cancelled.")
+            return False
+            
+        return True
+
     def update_session_progress(
         self,
         session_id: str,
@@ -427,6 +459,10 @@ class SessionControl:
             progress: 진행률 (0.0-100.0)
         """
         if session_id not in self.active_sessions:
+            return
+
+        # 쿼터 체크
+        if not self.check_quotas(session_id):
             return
 
         self.active_sessions[session_id]["last_activity"] = datetime.now()
@@ -696,6 +732,11 @@ class SessionControl:
         return {
             "active_sessions": active_count,
             "total_tasks": total_tasks,
+            "quotas": {
+                "max_concurrent": self.DEFAULT_MAX_CONCURRENT_SESSIONS,
+                "active_count": active_count,
+                "limit_reached": active_count >= self.DEFAULT_MAX_CONCURRENT_SESSIONS
+            },
             "status_distribution": status_counts,
             "sessions_by_status": status_counts,
         }
