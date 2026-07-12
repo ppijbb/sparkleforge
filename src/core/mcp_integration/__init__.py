@@ -6,8 +6,10 @@
 
 - ``parser.py``: pure parsing/formatting helpers for tool calls and results.
 - ``client.py``: ``OpenRouterClient`` (disabled; kept for import compat).
-- ``tools.py``: ``execute_tool``/``get_mcp_hub`` and the per-category
-  ``_execute_*_tool`` dispatchers.
+- ``tools.py``: ``execute_tool``/``get_mcp_hub`` and the CLI helpers.
+- ``executors/``: one module per ``ToolCategory``'s ``_execute_*_tool``
+  dispatcher (issue #507/#524 -- ``tools.py`` itself used to inline all
+  nine of these across 3,257 lines).
 - ``hub.py``: ``UniversalMCPHub`` -- MCP session/transport management and
   tool discovery.
 
@@ -16,13 +18,33 @@ split is re-exported here unchanged, so ``from src.core.mcp_integration
 import X`` keeps working for all existing call sites without modification.
 
 Import order matters: ``tools`` must load before ``hub``, since ``hub``
-imports several dispatchers from ``tools`` at module level, while ``tools``
-only reaches into ``hub`` lazily inside ``get_mcp_hub()``. See ``hub.py``'s
-and ``tools.py``'s module docstrings for why that direction avoids a
-circular import.
+imports several dispatchers from ``executors/`` at module level, while
+``tools`` only reaches into ``hub`` lazily inside ``get_mcp_hub()``. See
+``hub.py``'s and ``tools.py``'s module docstrings for why that direction
+avoids a circular import.
 """
 
 from src.core.mcp_integration.client import OpenRouterClient
+from src.core.mcp_integration.executors.academic import (
+    _execute_academic_tool,
+    _execute_academic_tool_sync,
+)
+from src.core.mcp_integration.executors.browser import (
+    _execute_browser_tool,
+    _playwright_dismiss_google_consent,
+)
+from src.core.mcp_integration.executors.code import _execute_code_tool, _execute_code_tool_sync
+from src.core.mcp_integration.executors.data import _execute_data_tool, _execute_data_tool_sync
+from src.core.mcp_integration.executors.document import _execute_document_tool
+from src.core.mcp_integration.executors.file import _execute_file_tool
+from src.core.mcp_integration.executors.git import _execute_git_tool
+from src.core.mcp_integration.executors.search import (
+    _execute_search_tool,
+    _execute_search_tool_sync,
+    _fallback_to_ddg_search,
+    _get_ddg_lock,
+)
+from src.core.mcp_integration.executors.shell import _execute_shell_tool
 from src.core.mcp_integration.hub import (
     FASTMCP_AVAILABLE,
     HTTP_CLIENT_AVAILABLE,
@@ -45,22 +67,6 @@ from src.core.mcp_integration.parser import (
     set_tool_trace_manager,
 )
 from src.core.mcp_integration.tools import (
-    _execute_academic_tool,
-    _execute_academic_tool_sync,
-    _execute_browser_tool,
-    _execute_code_tool,
-    _execute_code_tool_sync,
-    _execute_data_tool,
-    _execute_data_tool_sync,
-    _execute_document_tool,
-    _execute_file_tool,
-    _execute_git_tool,
-    _execute_search_tool,
-    _execute_search_tool_sync,
-    _execute_shell_tool,
-    _fallback_to_ddg_search,
-    _get_ddg_lock,
-    _playwright_dismiss_google_consent,
     check_mcp_servers,
     execute_tool,
     get_available_tools,
