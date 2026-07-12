@@ -2,7 +2,8 @@
 tests/test_mcp_integration_tools.py — regression tests for issue #524.
 
 `src/core/mcp_integration/tools.py` (post monolith split, Anvil Phase Sigma-1)
-had three concrete correctness bugs:
+had three concrete correctness bugs, since fixed and further split into
+`src/core/mcp_integration/executors/*` (issue #507):
 
 1. `_execute_data_tool` dropped the result of `_execute_file_tool` /
    `_execute_browser_tool` / `_execute_shell_tool` (missing `return`), so
@@ -17,7 +18,7 @@ had three concrete correctness bugs:
 """
 import pytest
 
-from src.core.mcp_integration import tools
+from src.core.mcp_integration.executors import data, search
 from src.core.tools.registry import ToolResult
 
 
@@ -28,9 +29,9 @@ async def test_execute_data_tool_filesystem_returns_dispatcher_result(monkeypatc
     async def fake_file_tool(tool_name, parameters):
         return sentinel
 
-    monkeypatch.setattr(tools, "_execute_file_tool", fake_file_tool)
+    monkeypatch.setattr(data, "_execute_file_tool", fake_file_tool)
 
-    result = await tools._execute_data_tool("filesystem", {})
+    result = await data._execute_data_tool("filesystem", {})
 
     assert result is sentinel
 
@@ -42,9 +43,9 @@ async def test_execute_data_tool_browser_returns_dispatcher_result(monkeypatch):
     async def fake_browser_tool(tool_name, parameters):
         return sentinel
 
-    monkeypatch.setattr(tools, "_execute_browser_tool", fake_browser_tool)
+    monkeypatch.setattr(data, "_execute_browser_tool", fake_browser_tool)
 
-    result = await tools._execute_data_tool("browser", {})
+    result = await data._execute_data_tool("browser", {})
 
     assert result is sentinel
 
@@ -56,9 +57,9 @@ async def test_execute_data_tool_shell_returns_dispatcher_result(monkeypatch):
     async def fake_shell_tool(tool_name, parameters):
         return sentinel
 
-    monkeypatch.setattr(tools, "_execute_shell_tool", fake_shell_tool)
+    monkeypatch.setattr(data, "_execute_shell_tool", fake_shell_tool)
 
-    result = await tools._execute_data_tool("shell", {})
+    result = await data._execute_data_tool("shell", {})
 
     assert result is sentinel
 
@@ -93,9 +94,9 @@ async def test_execute_search_tool_does_not_overwrite_tavily_parse_with_markdown
 
     tavily_text = "Title: Real Result\nURL: http://example.com\nContent: Real content\n"
     fake_hub = _FakeHub("tavily-mcp", "tavily-search", tavily_text)
-    monkeypatch.setattr(tools, "get_mcp_hub", lambda: fake_hub)
+    monkeypatch.setattr(search, "get_mcp_hub", lambda: fake_hub)
 
-    result = await tools._execute_search_tool("g-search", {"query": "test", "max_results": 2})
+    result = await search._execute_search_tool("g-search", {"query": "test", "max_results": 2})
 
     assert result.success is True
     assert result.data["results"][0]["title"] == "Real Result"

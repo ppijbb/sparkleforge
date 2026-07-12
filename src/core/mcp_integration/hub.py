@@ -5,12 +5,12 @@ Anvil Phase Sigma-1). This is the bulk of the original file: MCP session
 lifecycle (stdio/SSE/streamable-HTTP transports), server discovery, and
 LangChain tool wrapping.
 
-Several methods here bare-reference dispatchers defined in ``tools.py``
-(``_execute_search_tool_sync`` and friends) and helpers defined in
-``parser.py`` -- those are imported at module level below. ``tools.py``
-only needs ``UniversalMCPHub`` inside ``get_mcp_hub()``, deferred until
-first call, so importing ``tools`` here at module load time does not
-create a circular import.
+Several methods here bare-reference per-category dispatchers defined under
+``src/core/mcp_integration/executors/`` (``_execute_search_tool_sync`` and
+friends, issue #507/#524) and helpers defined in ``parser.py`` -- those are
+imported at module level below. ``tools.py`` only needs ``UniversalMCPHub``
+inside ``get_mcp_hub()``, deferred until first call, so importing it here
+at module load time does not create a circular import.
 """
 
 import asyncio
@@ -147,21 +147,21 @@ from src.core.mcp_integration.parser import (
     _parse_markdown_link_results,
     _structured_tool_description,
 )
-from src.core.mcp_integration.tools import (
+from src.core.mcp_integration.executors.academic import (
     _execute_academic_tool,
     _execute_academic_tool_sync,
-    _execute_browser_tool,
-    _execute_code_tool_sync,
-    _execute_data_tool,
-    _execute_data_tool_sync,
-    _execute_file_tool,
-    _execute_git_tool,
+)
+from src.core.mcp_integration.executors.browser import _execute_browser_tool
+from src.core.mcp_integration.executors.code import _execute_code_tool_sync
+from src.core.mcp_integration.executors.data import _execute_data_tool, _execute_data_tool_sync
+from src.core.mcp_integration.executors.file import _execute_file_tool
+from src.core.mcp_integration.executors.git import _execute_git_tool
+from src.core.mcp_integration.executors.search import (
     _execute_search_tool,
     _execute_search_tool_sync,
-    _execute_shell_tool,
-    execute_tool,
-    get_mcp_hub,
 )
+from src.core.mcp_integration.executors.shell import _execute_shell_tool
+from src.core.mcp_integration.tools import execute_tool, get_mcp_hub
 from src.core.tools.registry import ToolCategory, ToolInfo, ToolResult
 
 
