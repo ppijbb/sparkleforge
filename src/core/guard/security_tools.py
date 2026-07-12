@@ -43,7 +43,7 @@ def _resolve_quarantine_root(quarantine_dir: str | None) -> Path:
     if not quarantine_dir:
         return QUARANTINE_BASE
     candidate = (QUARANTINE_BASE / quarantine_dir).expanduser().resolve()
-    if candidate != QUARANTINE_BASE and QUARANTINE_BASE not in candidate.parents:
+    if QUARANTINE_BASE not in candidate.parents:
         raise ValueError(
             f"quarantine_dir must resolve inside {QUARANTINE_BASE}, got {candidate}"
         )
