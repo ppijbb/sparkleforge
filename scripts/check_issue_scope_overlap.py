@@ -100,12 +100,17 @@ def main() -> int:
     args = parser.parse_args()
 
     issue_text = args.issue_file.read_text(encoding="utf-8")
-    diff_text = subprocess.run(
-        ["git", "diff", args.range],
-        check=True,
-        stdout=subprocess.PIPE,
-        text=True,
-    ).stdout
+    try:
+        diff_text = subprocess.run(
+            ["git", "diff", args.range],
+            check=True,
+            stdout=subprocess.PIPE,
+            text=True,
+            timeout=60,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        print("::error::git diff timed out after 60s while computing scope overlap", file=sys.stderr)
+        return 1
 
     result = compute_scope_overlap(issue_text, diff_text)
 

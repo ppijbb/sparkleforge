@@ -396,7 +396,6 @@ jobs:
           # and the diff's added lines reference none of them, treat it as not
           # substantial regardless of the file-type/line-count verdict above.
           SCOPE_REASON=""
-          if [ "$UNCHECKED" -gt 0 ]; then
             python3 scripts/check_issue_scope_overlap.py \
               --issue-file issue-context.md \
               --range "origin/$BASE_BRANCH...HEAD" > scope-overlap.log 2>&1
@@ -417,7 +416,6 @@ jobs:
               SUBSTANTIAL=false
               SCOPE_REASON=" and the scope-overlap check itself failed to run (exit $SCOPE_EXIT), so it could not be verified"
             fi
-          fi
 
           if [ "$SUBSTANTIAL" = "true" ]; then
             CLOSES_LINE="Closes #$ISSUE_NUMBER"
