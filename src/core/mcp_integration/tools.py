@@ -567,9 +567,6 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
     except Exception as e:
         logger.warning(f"Embedded search failed: {e}, falling back to MCP servers")
         # 기존 로직으로 fallback
-    else:
-        # src/utils 성공적으로 실행됨
-        return
 
     # 기존 로직 (MCP 서버 연결 시도) - src/utils 실패 시에만 실행
     """MCP 서버를 통한 검색 도구 실행 (with caching and bot detection bypass)."""
@@ -1197,54 +1194,56 @@ async def _execute_search_tool(tool_name: str, parameters: Dict[str, Any]) -> To
                                 # 예: "1. [Title](url)\n   Description..."
                                 results = []
                                 lines = result.strip().split("\n")
-                            current_result = None
+                                current_result = None
 
-                            for line in lines:
-                                line = line.strip()
-                                if not line:
-                                    continue
+                                for line in lines:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
 
-                                # 마크다운 링크 패턴: [Title](url)
-                                link_match = re.match(r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line)
-                                if link_match:
-                                    # 이전 결과 저장
-                                    if current_result:
-                                        results.append(current_result)
+                                    # 마크다운 링크 패턴: [Title](url)
+                                    link_match = re.match(
+                                        r"^\d+\.\s*\[([^\]]+)\]\(([^\)]+)\)", line
+                                    )
+                                    if link_match:
+                                        # 이전 결과 저장
+                                        if current_result:
+                                            results.append(current_result)
 
-                                    title = link_match.group(1)
-                                    url = link_match.group(2)
-                                    current_result = {
-                                        "title": title,
-                                        "url": url,
-                                        "snippet": "",
-                                    }
-                                elif current_result and line:
-                                    # 설명 텍스트
-                                    if current_result["snippet"]:
-                                        current_result["snippet"] += " " + line
-                                    else:
-                                        current_result["snippet"] = line
-
-                            # 마지막 결과 추가
-                            if current_result:
-                                results.append(current_result)
-
-                            if results:
-                                result_data = {"results": results}
-                            else:
-                                # 파싱 실패 시 원본 텍스트를 snippet으로 사용
-                                logger.debug(
-                                    f"[MCP][_execute_search_tool] Could not parse markdown format, using raw text: {result[:100]}"
-                                )
-                                result_data = {
-                                    "results": [
-                                        {
-                                            "title": "Search Results",
-                                            "snippet": result[:500],
-                                            "url": "",
+                                        title = link_match.group(1)
+                                        url = link_match.group(2)
+                                        current_result = {
+                                            "title": title,
+                                            "url": url,
+                                            "snippet": "",
                                         }
-                                    ]
-                                }
+                                    elif current_result and line:
+                                        # 설명 텍스트
+                                        if current_result["snippet"]:
+                                            current_result["snippet"] += " " + line
+                                        else:
+                                            current_result["snippet"] = line
+
+                                # 마지막 결과 추가
+                                if current_result:
+                                    results.append(current_result)
+
+                                if results:
+                                    result_data = {"results": results}
+                                else:
+                                    # 파싱 실패 시 원본 텍스트를 snippet으로 사용
+                                    logger.debug(
+                                        f"[MCP][_execute_search_tool] Could not parse markdown format, using raw text: {result[:100]}"
+                                    )
+                                    result_data = {
+                                        "results": [
+                                            {
+                                                "title": "Search Results",
+                                                "snippet": result[:500],
+                                                "url": "",
+                                            }
+                                        ]
+                                    }
                     else:
                         result_data = result
 
@@ -1903,15 +1902,15 @@ async def _execute_data_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
 
         elif tool_name == "filesystem":
             # 파일시스템 접근 (실제 구현)
-            await _execute_file_tool(tool_name, parameters)
+            return await _execute_file_tool(tool_name, parameters)
 
         elif tool_name == "browser":
             # 브라우저 자동화 (실제 구현)
-            await _execute_browser_tool(tool_name, parameters)
+            return await _execute_browser_tool(tool_name, parameters)
 
         elif tool_name == "shell":
             # 쉘 명령 실행 (실제 구현)
-            await _execute_shell_tool(tool_name, parameters)
+            return await _execute_shell_tool(tool_name, parameters)
 
         else:
             raise ValueError(f"Unknown data tool: {tool_name}")
