@@ -94,6 +94,7 @@ class ExecutionNode(BaseNode):
     async def execute_research(self, state: ResearchState) -> ResearchState:
         """Run planned research tasks through the Hermes-style autonomous tool loop."""
         self._log_node_input("execute_research", state)
+        await self._enforce_session_quotas(state)
         logger.info("⚙️ Thinking: Executing research tasks with Hermes tool loop")
 
         tasks = state.get("planned_tasks", []) or [
@@ -159,6 +160,7 @@ class ExecutionNode(BaseNode):
     async def _execute_task_with_hermes(
         self, task: Dict[str, Any], state: ResearchState, max_iterations: int
     ) -> Dict[str, Any]:
+        await self._enforce_session_quotas(state)
         from src.core.agent_loop import AgentLoop
         from src.core.llm_manager import TaskType
         from src.core.prompt_builder import get_system_prompt
@@ -536,3 +538,41 @@ class ExecutionNode(BaseNode):
         if isinstance(data, (str, list, dict)) and len(data) == 0:
             return False
         return True
+
+    async def _enforce_session_quotas(self, state: ResearchState) -> None:
+        """세션 쿼터(예산/타임아웃) 초과 시 자동 취소 처리."""
+        session_id = state.get("session_id")
+        if not session_id:
+            return
+
+        try:
+            from src.core.session_control import get_session_control
+
+            control = get_session_control()
+            active_info = control.active_sessions.get(session_id)
+            if not active_info:
+                return
+
+            metadata = active_info.get("metadata", {}) or {}
+            budget_limit = metadata.get("budget_limit")
+            token_usage = metadata.get("token_usage") or state.get("token_usage")
+            cost_usage = metadata.get("cost_usage") or state.get("cost_usage")
+            started_at = active_info.get("created_at")
+            wall_clock_timeout = metadata.get("wall_clock_timeout")
+
+            reason = None
+            if budget_limit is not None and token_usage is not None and token_usage >= budget_limit:
+                reason = f"token budget exhausted ({token_usage}/{budget_limit})"
+            elif budget_limit is not None and cost_usage is not None and cost_usage >= budget_limit:
+                reason = f"cost budget exhausted ({cost_usage}/{budget_limit})"
+            elif wall_clock_timeout is not None and started_at is not None:
+                elapsed = (datetime.now() - started_at).total_seconds()
+                if elapsed >= wall_clock_timeout:
+                    reason = f"wall-clock timeout exceeded ({elapsed:.1f}s/{wall_clock_timeout}s)"
+
+            if reason:
+                logger.warning("Session %s auto-cancelling: %s", session_id, reason)
+                await control.cancel_session_with_reason(session_id, reason)
+                state["error_message"] = f"Session cancelled: {reason}"
+        except Exception as e:
+            logger.debug("Session quota enforcement skipped: %s", e)
