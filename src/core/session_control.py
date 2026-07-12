@@ -315,6 +315,20 @@ class SessionControl:
         logger.info(f"Session cancelled: {session_id}")
         return True
 
+    async def cancel_session_with_reason(self, session_id: str, reason: str) -> bool:
+        """사유를 기록하며 세션 취소.
+
+        Args:
+            session_id: 세션 ID
+            reason: 취소 사유 (쿼터 초과 등)
+
+        Returns:
+            성공 여부
+        """
+        if session_id in self.active_sessions:
+            self.active_sessions[session_id]["cancel_reason"] = reason
+        return await self.cancel_session(session_id)
+
     async def delete_session(self, session_id: str, delete_storage: bool = True) -> bool:
         """세션 삭제.
 
