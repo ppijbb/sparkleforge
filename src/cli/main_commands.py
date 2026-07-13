@@ -328,10 +328,15 @@ async def handle_work_command_from_query(args):
 
 
 async def handle_session_command(args):
-    """REPL 밖에서 세션을 조회하는 커맨드 처리 (session list / session show <id>)."""
+    """REPL 밖에서 세션을 조회/관리하는 커맨드 처리 (session list / show / stats / quota)."""
     from rich.console import Console
 
-    from src.cli.commands.session import session_list_command, session_show_command
+    from src.cli.commands.session import (
+        session_list_command,
+        session_quota_command,
+        session_show_command,
+        session_stats_command,
+    )
     from src.core.session_control import SessionControl
 
     class _SessionCliShim:
@@ -343,6 +348,17 @@ async def handle_session_command(args):
     sub = getattr(args, "session_command", None)
     if sub == "show":
         await session_show_command(shim, [args.session_id])
+    elif sub == "stats":
+        await session_stats_command(shim, [])
+    elif sub == "quota":
+        quota_args = [args.session_id]
+        if args.max_tokens is not None:
+            quota_args += ["--max-tokens", str(args.max_tokens)]
+        if args.budget is not None:
+            quota_args += ["--budget", str(args.budget)]
+        if args.timeout is not None:
+            quota_args += ["--timeout", str(args.timeout)]
+        await session_quota_command(shim, quota_args)
     else:
         await session_list_command(shim, [str(getattr(args, "limit", 20))])
     return 0
