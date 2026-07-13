@@ -886,7 +886,10 @@ async def handle_nightwelding_command(args):
                 logger.info("Nightwelding: queue is empty.")
                 return 0
             for item in items[:20]:
-                logger.info(f"#{item.issue_number}: {item.status.value} (updated {item.updated_at})")
+                status_str = f"#{item.issue_number}: {item.status.value}"
+                if item.status.value == "failed" and item.failure_reason:
+                    status_str += f" — {item.failure_reason.splitlines()[0]}"
+                logger.info(f"{status_str} (updated {item.updated_at})")
         except Exception as e:
             logger.error(f"❌ Failed to read Nightwelding status: {e}")
             return 1
@@ -894,8 +897,14 @@ async def handle_nightwelding_command(args):
     elif args.nightwelding_command == "list":
         try:
             queue = NightweldingQueue()
+            verbose = getattr(args, "verbose", False)
             for item in queue.list():
-                logger.info(f"#{item.issue_number}: {item.status.value} pr={item.pr_url or '-'}")
+                line = f"#{item.issue_number}: {item.status.value} pr={item.pr_url or '-'}"
+                if item.status.value == "failed" and item.failure_reason:
+                    line += f" | reason: {item.failure_reason.splitlines()[0]}"
+                if verbose and item.log:
+                    line += f"\n  log: {item.log}"
+                logger.info(line)
         except Exception as e:
             logger.error(f"❌ Failed to list Nightwelding queue: {e}")
             return 1
