@@ -17,9 +17,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-import google.generativeai as genai
-import requests
-
 # Enhanced browser automation
 from src.automation.browser_manager import BrowserManager
 
@@ -28,6 +25,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.core.researcher_config import get_llm_config, get_research_config
+from src.core.llm_manager import LLMManager
 from src.utils.logger import setup_logger
 
 logger = setup_logger("research_agent", log_level="INFO")
@@ -43,7 +41,7 @@ class ResearchAgent:
         self.research_config = get_research_config()
 
         # Initialize LLM
-        self.llm = self._initialize_llm()
+        self.llm_manager = LLMManager()
 
         # Active research tasks
         self.active_tasks: Dict[str, Dict[str, Any]] = {}
@@ -57,64 +55,9 @@ class ResearchAgent:
 
         logger.info("Research Agent initialized with LLM-based research capabilities")
 
-    def _initialize_llm(self):
-        """Initialize the LLM client."""
-        try:
-            api_key = os.getenv("GEMINI_API_KEY")
-            if not api_key:
-                logger.warning("Gemini API key not found. Research functionality will be limited.")
-                return None
-
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
-            logger.info(
-                "LLM initialized for ResearchAgent with model: gemini-3.1-flash-lite-preview"
-            )
-            return model
-        except Exception as e:
-            logger.error(f"Failed to initialize LLM: {e}")
-            raise
-
     async def _call_llm_with_retry(self, prompt: str, max_retries: int = 3) -> str:
         """Call LLM with retry logic and rate limiting."""
-        if not self.llm:
-            return "LLM not available"
-
-        for attempt in range(max_retries):
-            try:
-                # Add random delay to avoid rate limiting
-                if attempt > 0:
-                    delay = random.uniform(2, 5) * (attempt + 1)
-                    logger.info(
-                        f"Retrying LLM call after {delay:.2f}s delay (attempt {attempt + 1})"
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    # Small delay even on first attempt
-                    await asyncio.sleep(random.uniform(0.5, 1.5))
-
-                response = self.llm.generate_content(prompt)
-                return response.text.strip()
-
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "quota" in error_str.lower():
-                    if attempt < max_retries - 1:
-                        # Extract retry delay from error if available
-                        retry_delay = 30 + (attempt * 10)  # Progressive delay
-                        logger.warning(
-                            f"API quota exceeded, retrying in {retry_delay}s (attempt {attempt + 1})"
-                        )
-                        await asyncio.sleep(retry_delay)
-                        continue
-                    else:
-                        logger.error(f"LLM call failed after {max_retries} attempts: {e}")
-                        return f"LLM call failed: {e}"
-                else:
-                    logger.error(f"LLM call failed: {e}")
-                    return f"LLM call failed: {e}"
-
-        return "LLM call failed after all retries"
+        return await self.llm_manager.generate_text(prompt, max_retries=max_retries)
 
     def _load_research_tools(self) -> Dict[str, Any]:
         """Load available research tools.
@@ -474,21 +417,8 @@ class ResearchAgent:
             }}
             """
 
-            response = await asyncio.to_thread(self.llm.generate_content, prompt)
-            # Parse Gemini response properly
-            response_text = response.text.strip()
-            try:
-                return json.loads(response_text)
-            except json.JSONDecodeError:
-                # Try to find JSON in the response
-                import re
-
-                json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
-                if json_match:
-                    return json.loads(json_match.group())
-                else:
-                    raise ValueError("No valid JSON found in response")
-
+            response_text = await self._call_llm_with_retry(prompt)
+            return json.loads(response_text)
         except Exception as e:
             logger.error(f"LLM research planning failed: {e}")
             # Return basic research plan structure
@@ -602,38 +532,12 @@ class ResearchAgent:
     async def _perform_web_search(self, query: str) -> Dict[str, Any]:
         """Perform web search using MCP tools."""
         try:
-            # Use MCP tools for web search
-            from src.core.mcp_integration import execute_tool
-
-            # Try MCP search tools in priority order
-            mcp_tools = ["g-search", "tavily", "exa"]
-
-            for tool in mcp_tools:
-                try:
-                    result = await execute_tool(tool, {"query": query, "max_results": 10})
-
-                    if result.get("success", False):
-                        results = result.get("data", {}).get("results", [])
-                        if isinstance(results, list):
-                            logger.info(
-                                f"Search succeeded with MCP tool {tool}: {len(results)} results"
-                            )
-                            return {
-                                "success": True,
-                                "query": query,
-                                "results": results,
-                                "tool_used": tool,
-                            }
-                except Exception as e:
-                    logger.warning(f"MCP tool {tool} failed: {e}")
-                    continue
-
-            # If all MCP tools fail, raise error
-            logger.error("All MCP search tools failed")
-            raise RuntimeError(
-                f"All MCP search tools failed for query: {query}. No fallback available."
-            )
-
+            from src.core.mcp_integration.hub import MCPHub
+            hub = MCPHub()
+            result = await hub.execute_tool("web_search", {"query": query, "max_results": 10})
+            if result.get("success"):
+                return {"success": True, "results": result.get("data", {}).get("results", [])}
+            raise RuntimeError("MCP search failed")
         except Exception as e:
             logger.error(f"Web search failed: {e}")
             return {
@@ -735,13 +639,11 @@ class ResearchAgent:
             headers = {"Accept": "application/json", "X-Subscription-Token": brave_key}
             params = {"q": query, "count": 5}
 
-            # 블로킹 I/O는 스레드로 위임하고, 단일 계층 타임아웃으로 보호
-            response = await asyncio.wait_for(
-                asyncio.to_thread(requests.get, url, headers=headers, params=params, timeout=10),
-                timeout=10,
-            )
-            response.raise_for_status()
-            data = response.json()
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, params=params, timeout=10)
+                response.raise_for_status()
+                data = response.json()
 
             formatted_results = []
             for result in data.get("web", {}).get("results", [])[:5]:
@@ -778,12 +680,11 @@ class ResearchAgent:
             headers = {"X-API-KEY": serper_key, "Content-Type": "application/json"}
             payload = {"q": query, "num": 5, "gl": "kr", "hl": "ko"}
 
-            response = await asyncio.wait_for(
-                asyncio.to_thread(requests.post, url, headers=headers, json=payload, timeout=10),
-                timeout=10,
-            )
-            response.raise_for_status()
-            data = response.json()
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=payload, timeout=10)
+                response.raise_for_status()
+                data = response.json()
 
             formatted_results = []
             organic_results = data.get("organic", [])
@@ -959,20 +860,8 @@ class ResearchAgent:
             JSON 형태로 응답하세요.
             """
 
-            response = await asyncio.to_thread(self.llm.generate_content, prompt)
-            response_text = response.text.strip()
-            try:
-                analysis = json.loads(response_text)
-            except json.JSONDecodeError:
-                # Try to find JSON in the response
-                import re
-
-                json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
-                if json_match:
-                    analysis = json.loads(json_match.group())
-                else:
-                    analysis = {"analysis": response_text, "type": "text"}
-
+            response_text = await self._call_llm_with_retry(prompt)
+            analysis = json.loads(response_text)
             return {
                 "method": "data_analysis",
                 "query": query,
@@ -1008,20 +897,8 @@ class ResearchAgent:
             JSON 형태로 응답하세요.
             """
 
-            response = await asyncio.to_thread(self.llm.generate_content, prompt)
-            response_text = response.text.strip()
-            try:
-                analysis = json.loads(response_text)
-            except json.JSONDecodeError:
-                # Try to find JSON in the response
-                import re
-
-                json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
-                if json_match:
-                    analysis = json.loads(json_match.group())
-                else:
-                    analysis = {"analysis": response_text, "type": "text"}
-
+            response_text = await self._call_llm_with_retry(prompt)
+            analysis = json.loads(response_text)
             return {
                 "method": "content_analysis",
                 "query": query,
@@ -1067,21 +944,8 @@ class ResearchAgent:
             }}
             """
 
-            response = await asyncio.to_thread(self.llm.generate_content, prompt)
-            # Parse Gemini response properly
-            response_text = response.text.strip()
-            try:
-                return json.loads(response_text)
-            except json.JSONDecodeError:
-                # Try to find JSON in the response
-                import re
-
-                json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
-                if json_match:
-                    return json.loads(json_match.group())
-                else:
-                    raise ValueError("No valid JSON found in response")
-
+            response_text = await self._call_llm_with_retry(prompt)
+            return json.loads(response_text)
         except Exception as e:
             logger.error(f"LLM result analysis failed: {e}")
             return {
