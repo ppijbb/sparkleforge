@@ -370,7 +370,12 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
     strip = _detect_strip_level(diff_text)
     errors: list[str] = []
 
-    for p in sorted({strip, 1 - strip}):
+    # Try the strip level implied by the diff's own path headers first. A
+    # naive `sorted({strip, 1 - strip})` always tries -p0 before -p1, and for
+    # new-file hunks (--- /dev/null) `git apply -p0` has nothing to fail
+    # against -- it happily creates the file at the literal 'b/...' path
+    # instead of failing over to the correct strip level.
+    for p in (strip, 1 - strip):
         proc = run(
             [
                 "git",
@@ -391,7 +396,7 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
 
     patch_bin = run(["which", "patch"]).stdout.strip()
     if patch_bin:
-        for p in sorted({strip, 1 - strip}):
+        for p in (strip, 1 - strip):
             proc2 = run(
                 ["patch", f"--strip={p}", "--fuzz=3", "--batch", "--forward"],
                 input_text=diff_text,
@@ -434,7 +439,9 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
     strip = _detect_strip_level(diff_text)
 
     # -- Step 2: try whole patch at once (fast path) ----------------------------
-    for p in sorted({strip, 1 - strip}):
+    # Detected strip level first -- see the comment in _apply_single_patch for
+    # why trying -p0 before the detected level is unsafe for new-file hunks.
+    for p in (strip, 1 - strip):
         proc = run(
             [
                 "git",
