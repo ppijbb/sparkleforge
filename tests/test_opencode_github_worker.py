@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -113,6 +114,36 @@ diff --git a/scripts/setup.sh b/scripts/setup.sh
     assert success is False
     assert "Patch only applied partially" in error
     assert "scripts/setup.sh" in error
+
+
+def test_apply_patch_new_file_lands_at_correct_path_not_b_prefixed(tmp_path, monkeypatch) -> None:
+    # Regression test: for new-file hunks (--- /dev/null), `git apply -p0` has
+    # no existing blob to fail against, so it used to "succeed" by creating
+    # the file at the literal 'b/tests/...' path instead of falling through
+    # to the correct -p1 strip level implied by the diff's own headers.
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init", "--allow-empty"], cwd=tmp_path, check=True)
+
+    patch = tmp_path / "opencode.patch"
+    patch.write_text(
+        """diff --git a/tests/test_foo.py b/tests/test_foo.py
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/tests/test_foo.py
+@@ -0,0 +1,2 @@
++def test_foo():
++    assert True
+""",
+        encoding="utf-8",
+    )
+
+    success, error = _apply_patch(patch)
+
+    assert success is True, error
+    assert (tmp_path / "tests" / "test_foo.py").exists()
+    assert not (tmp_path / "b").exists()
 
 
 def test_apply_patch_rejects_embedded_diff_prefix_paths(tmp_path, monkeypatch) -> None:
