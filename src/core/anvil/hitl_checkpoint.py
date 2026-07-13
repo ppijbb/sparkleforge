@@ -17,6 +17,8 @@ from src.core.anvil.request_analyzer import RequestAnalyzer
 
 logger = logging.getLogger(__name__)
 
+from src.core.surface.notification_channel import NotificationChannel, Notification, NotificationLevel
+
 
 class CheckpointStage(Enum):
     """인터랙티브 피드백을 받는 주요 워크플로우 단계."""
@@ -169,6 +171,19 @@ class HITLCheckpointManager:
                 return result
 
             logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
+
+            try:
+                NotificationChannel().send(Notification(
+                    title="⏸️ HITL checkpoint waiting for human input",
+                    message=(
+                        f"Stage '{stage.value}' is suspended and awaiting "
+                        f"approval/intervention. Checkpoint ID: {checkpoint_id}"
+                    ),
+                    level=NotificationLevel.APPROVAL,
+                    action_id=checkpoint_id,
+                ))
+            except Exception as notify_ex:
+                logger.warning("Failed to send HITL notification: %s", notify_ex)
 
             if self.webhook_url:
                 try:
