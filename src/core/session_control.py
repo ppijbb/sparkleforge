@@ -10,9 +10,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import time
+import os
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SessionQuota:
+    """세션별 리소스 쿼터."""
+
+    max_concurrent_sessions: int = 5
+    max_tokens_per_session: int = 1000000
+    max_cost_per_session: float = 5.0
+    wall_clock_timeout_seconds: int = 3600
+    # 환경변수 오버라이드 가능하도록 필드 구성
+    created_at: float = field(default_factory=lambda: 0.0)
 
 
 class SessionStatus(Enum):
@@ -98,6 +112,7 @@ class SessionControl:
         self._session_quotas: Dict[str, Dict[str, Any]] = {}  # session_id -> quota state
 
         logger.info("SessionControl initialized")
+        self.default_quota = SessionQuota()
 
     async def search_sessions(
         self,
@@ -402,6 +417,14 @@ class SessionControl:
         logger.info(f"Session restored: {session_id}")
         return session_state.agent_state
 
+    def get_session_state(self, session_id: str) -> Dict[str, Any] | None:
+        """세션의 내부 상태(쿼터 포함)를 반환."""
+        if session_id in self.active_sessions:
+            state = self.active_sessions[session_id].copy()
+            state["quota"] = self._session_quotas.get(session_id, {})
+            return state
+        return None
+
     def register_active_session(
         self, session_id: str, user_query: str, metadata: Dict[str, Any] | None = None
     ):
@@ -425,9 +448,9 @@ class SessionControl:
             )
 
         self._session_quotas[session_id] = {
-            "max_tokens": self.DEFAULT_MAX_TOKENS_PER_SESSION,
-            "budget": self.DEFAULT_BUDGET_PER_SESSION,
-            "timeout": self.DEFAULT_TIMEOUT_SECONDS,
+            "max_tokens": int(os.getenv("SESSION_MAX_TOKENS", self.DEFAULT_MAX_TOKENS_PER_SESSION)),
+            "budget": float(os.getenv("SESSION_MAX_COST", self.DEFAULT_BUDGET_PER_SESSION)),
+            "timeout": int(os.getenv("SESSION_TIMEOUT", self.DEFAULT_TIMEOUT_SECONDS)),
             "start_time": time.time(),
             "tokens_used": 0,
             "cost_incurred": 0.0,

@@ -10,6 +10,16 @@ Adaptive Research Depth.
 import os
 from dataclasses import dataclass, field
 from enum import Enum
+
+def get_default_session_quota():
+    """환경변수 기반 기본 쿼터 반환."""
+    from src.core.session_control import SessionQuota
+    return SessionQuota(
+        max_concurrent_sessions=int(os.getenv("MAX_CONCURRENT_SESSIONS", 5)),
+        max_tokens_per_session=int(os.getenv("MAX_TOKENS_PER_SESSION", 1000000)),
+        max_cost_per_session=float(os.getenv("MAX_COST_PER_SESSION", 5.0)),
+        wall_clock_timeout_seconds=int(os.getenv("SESSION_TIMEOUT_SECONDS", 3600)),
+    )
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
