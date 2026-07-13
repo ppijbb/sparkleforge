@@ -11,11 +11,25 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts.validate_commit_messages import validate_subject
 from src.core.nightwelding import github_adapter
 
 
 class _FakeCompleted(SimpleNamespace):
     pass
+
+
+def test_repro_commit_subject_passes_commit_message_policy() -> None:
+    # Regression test: runner.py used to commit the reproduction test with
+    # `f"test: add reproduction test for #{issue_number} (nightwelding)"`,
+    # which embeds a bare '#<digits>' and trips the repo's own commit-msg
+    # hook ("issue or PR numbers are not allowed in commit subjects"),
+    # making every Nightwelding run fail right after writing a passing
+    # reproduction test. The subject must use the issue number without a
+    # leading '#'.
+    subject = "test: add reproduction test for issue 539 (nightwelding)"
+
+    assert validate_subject(subject, "reproduction commit") == []
 
 
 def test_list_candidate_issues_filters_by_label_and_open_pr(monkeypatch) -> None:
