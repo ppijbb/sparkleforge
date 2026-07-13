@@ -10,9 +10,9 @@ def test_session_quota_initialization():
     session_id = "test_session_123"
     
     # Register a session
-    controller.register_active_session(session_id)
+    controller.register_active_session(session_id, user_query="test query")
     
     # Check if quota exists in the session state
     session_data = controller.get_session_state(session_id)
     assert "quota" in session_data, "Session state must contain a 'quota' field"
-    assert session_data["quota"].get("token_limit") is not None, "Quota should have a token_limit"
+    assert session_data["quota"].get("max_tokens") is not None, "Quota should have a max_tokens"

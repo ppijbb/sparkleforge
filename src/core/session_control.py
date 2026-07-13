@@ -417,6 +417,14 @@ class SessionControl:
         logger.info(f"Session restored: {session_id}")
         return session_state.agent_state
 
+    def get_session_state(self, session_id: str) -> Dict[str, Any] | None:
+        """세션의 내부 상태(쿼터 포함)를 반환."""
+        if session_id in self.active_sessions:
+            state = self.active_sessions[session_id].copy()
+            state["quota"] = self._session_quotas.get(session_id, {})
+            return state
+        return None
+
     def register_active_session(
         self, session_id: str, user_query: str, metadata: Dict[str, Any] | None = None
     ):
