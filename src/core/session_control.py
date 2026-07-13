@@ -6,12 +6,11 @@
 
 import asyncio
 import logging
+import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import time
-import os
-from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -500,7 +499,67 @@ class SessionControl:
                     self.active_sessions[session_id]["status"] = SessionStatus.CANCELLED
                     self.active_sessions[session_id]["cancelled_at"] = datetime.now()
             return False
-            
+
+        return True
+
+    def get_quota_usage(self, session_id: str) -> Dict[str, Any] | None:
+        """세션의 쿼터 사용량(잔여 토큰/비용, 남은 시간)을 조회.
+
+        Args:
+            session_id: 세션 ID
+
+        Returns:
+            사용량 딕셔너리 (tokens/cost/time 각각 used, limit, remaining, pct_used) 또는
+            해당 세션에 쿼터가 없으면 None.
+        """
+        q = self._session_quotas.get(session_id)
+        if q is None:
+            return None
+
+        elapsed = time.time() - q["start_time"]
+
+        def _usage(used: float, limit: float) -> Dict[str, float]:
+            remaining = max(limit - used, 0.0)
+            pct_used = (used / limit * 100.0) if limit > 0 else 0.0
+            return {"used": used, "limit": limit, "remaining": remaining, "pct_used": pct_used}
+
+        return {
+            "tokens": _usage(q["tokens_used"], q["max_tokens"]),
+            "cost": _usage(q["cost_incurred"], q["budget"]),
+            "time": _usage(elapsed, q["timeout"]),
+        }
+
+    def update_session_quota(
+        self,
+        session_id: str,
+        *,
+        max_tokens: int | None = None,
+        budget: float | None = None,
+        timeout: int | None = None,
+    ) -> bool:
+        """활성 세션의 쿼터 설정을 변경.
+
+        Args:
+            session_id: 세션 ID
+            max_tokens: 새 토큰 상한 (None이면 변경 안 함)
+            budget: 새 비용 상한 (None이면 변경 안 함)
+            timeout: 새 타임아웃(초) (None이면 변경 안 함)
+
+        Returns:
+            변경 성공 여부 (세션에 추적 중인 쿼터가 없으면 False)
+        """
+        q = self._session_quotas.get(session_id)
+        if q is None:
+            return False
+
+        if max_tokens is not None:
+            q["max_tokens"] = max_tokens
+        if budget is not None:
+            q["budget"] = budget
+        if timeout is not None:
+            q["timeout"] = timeout
+
+        logger.info(f"Session {session_id} quota updated: {q}")
         return True
 
     def update_session_progress(

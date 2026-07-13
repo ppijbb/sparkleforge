@@ -304,6 +304,18 @@ EXAMPLES:
     )
     session_show_parser = session_subparsers.add_parser("show", help="Show session details")
     session_show_parser.add_argument("session_id", help="Session ID")
+    session_stats_parser = session_subparsers.add_parser(
+        "stats", help="Show session statistics and concurrent-session quota usage"
+    )
+    session_quota_parser = session_subparsers.add_parser(
+        "quota", help="Show or update a session's resource quota"
+    )
+    session_quota_parser.add_argument("session_id", help="Session ID")
+    session_quota_parser.add_argument("--max-tokens", type=int, default=None, help="New token limit")
+    session_quota_parser.add_argument("--budget", type=float, default=None, help="New cost budget")
+    session_quota_parser.add_argument(
+        "--timeout", type=int, default=None, help="New wall-clock timeout in seconds"
+    )
 
     # actions 커맨드
     actions_parser = subparsers.add_parser("actions", help="List pending actions")

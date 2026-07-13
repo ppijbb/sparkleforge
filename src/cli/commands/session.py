@@ -9,6 +9,22 @@ from rich.table import Table
 logger = logging.getLogger(__name__)
 
 
+def _format_quota_usage(usage: dict) -> str:
+    """쿼터 사용량 딕셔너리(get_quota_usage 반환값)를 사람이 읽을 수 있는 텍스트로 변환."""
+    tokens = usage["tokens"]
+    cost = usage["cost"]
+    time_usage = usage["time"]
+    return (
+        "[bold]Quota Usage:[/bold]\n"
+        f"  Tokens: {tokens['used']:.0f}/{tokens['limit']:.0f} "
+        f"({tokens['pct_used']:.1f}%, {tokens['remaining']:.0f} remaining)\n"
+        f"  Cost: ${cost['used']:.4f}/${cost['limit']:.4f} "
+        f"({cost['pct_used']:.1f}%, ${cost['remaining']:.4f} remaining)\n"
+        f"  Time: {time_usage['used']:.0f}s/{time_usage['limit']:.0f}s "
+        f"({time_usage['pct_used']:.1f}%, {time_usage['remaining']:.0f}s remaining)"
+    )
+
+
 async def session_list_command(cli, args: List[str]):
     """세션 목록 표시."""
     if not cli.session_control:
@@ -111,6 +127,10 @@ async def session_show_command(cli, args: List[str]):
 
         if session_info.current_task:
             info_text += f"[bold]Current Task:[/bold] {session_info.current_task}\n"
+
+        usage = cli.session_control.get_quota_usage(session_id)
+        if usage:
+            info_text += "\n" + _format_quota_usage(usage)
 
         cli.console.print(Panel(info_text.strip(), title="Session Details", border_style="cyan"))
 
@@ -268,6 +288,18 @@ async def session_stats_command(cli, args: List[str]):
 [bold]Waiting:[/bold] {status_counts.get(SessionStatus.WAITING, 0)}
 """
 
+        session_stats = cli.session_control.get_session_statistics()
+        quotas = session_stats.get("quotas", {})
+        if quotas:
+            max_concurrent = quotas.get("max_concurrent", 0)
+            active_count = quotas.get("active_count", 0)
+            pct = (active_count / max_concurrent * 100.0) if max_concurrent else 0.0
+            limit_reached = "[red]YES[/red]" if quotas.get("limit_reached") else "[green]no[/green]"
+            stats_text += (
+                f"\n[bold]Concurrent Session Quota:[/bold] {active_count}/{max_concurrent} "
+                f"({pct:.1f}%) — limit reached: {limit_reached}\n"
+            )
+
         cli.console.print(
             Panel(stats_text.strip(), title="Session Statistics", border_style="cyan")
         )
@@ -327,3 +359,64 @@ async def session_tasks_command(cli, args: List[str]):
     except Exception as e:
         logger.error(f"Failed to get session tasks: {e}", exc_info=True)
         cli.console.print(f"[red]❌ Failed to get session tasks: {e}[/red]")
+
+
+def _parse_quota_flags(args: List[str]) -> dict:
+    """`--max-tokens N --budget N --timeout N` 형태의 플래그를 파싱."""
+    flags = {"max_tokens": None, "budget": None, "timeout": None}
+    parsers = {
+        "--max-tokens": ("max_tokens", int),
+        "--budget": ("budget", float),
+        "--timeout": ("timeout", int),
+    }
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in parsers and i + 1 < len(args):
+            key, cast = parsers[arg]
+            flags[key] = cast(args[i + 1])
+            i += 2
+        else:
+            i += 1
+    return flags
+
+
+async def session_quota_command(cli, args: List[str]):
+    """세션 쿼터 사용량 표시 또는 변경.
+
+    Usage: session quota <session_id> [--max-tokens N] [--budget N] [--timeout SECONDS]
+    """
+    if not cli.session_control:
+        cli.console.print("[red]❌ Session control not available[/red]")
+        return
+
+    if not args:
+        cli.console.print(
+            "[red]Usage: session quota <session_id> [--max-tokens N] [--budget N] "
+            "[--timeout SECONDS][/red]"
+        )
+        return
+
+    session_id = args[0]
+    flags = _parse_quota_flags(args[1:])
+
+    try:
+        if any(v is not None for v in flags.values()):
+            updated = cli.session_control.update_session_quota(session_id, **flags)
+            if not updated:
+                cli.console.print(f"[red]❌ No tracked quota for session: {session_id}[/red]")
+                return
+            cli.console.print(f"[green]✅ Quota updated for session: {session_id}[/green]")
+
+        usage = cli.session_control.get_quota_usage(session_id)
+        if not usage:
+            cli.console.print(f"[red]❌ No tracked quota for session: {session_id}[/red]")
+            return
+
+        cli.console.print(
+            Panel(_format_quota_usage(usage), title=f"Quota — {session_id}", border_style="cyan")
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to handle session quota: {e}", exc_info=True)
+        cli.console.print(f"[red]❌ Failed to handle session quota: {e}[/red]")

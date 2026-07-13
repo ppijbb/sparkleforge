@@ -133,6 +133,7 @@ class REPLCLI:
             session_delete_command,
             session_list_command,
             session_pause_command,
+            session_quota_command,
             session_resume_command,
             session_search_command,
             session_show_command,
@@ -162,6 +163,7 @@ class REPLCLI:
                 "search": session_search_command,
                 "stats": session_stats_command,
                 "tasks": session_tasks_command,
+                "quota": session_quota_command,
             },
             "context": {
                 "show": context_show_command,
