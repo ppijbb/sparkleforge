@@ -1,4 +1,3 @@
-import os
 """Local Researcher Project Configuration (v2.0 - 9대 혁신)
 
 Centralized configuration management for advanced multi-agent research system.
