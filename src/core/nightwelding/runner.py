@@ -89,7 +89,7 @@ async def run_nightwelding_issue(
         if untracked:
             github_adapter._run(["git", "add", "--", *untracked], cwd=repo_root, check=False)
         github_adapter._run(
-            ["git", "commit", "-m", f"test: add reproduction test for #{issue_number} (nightwelding)"],
+            ["git", "commit", "-m", f"test: add reproduction test for issue {issue_number} (nightwelding)"],
             cwd=repo_root,
         )
 
