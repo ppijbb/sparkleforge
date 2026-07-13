@@ -18,9 +18,9 @@ concurrency:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   create-roadmap-issue:
@@ -34,6 +34,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 1
+          token: ${{ secrets.PAT }}
 
       - uses: actions/setup-python@v5
         with:
@@ -45,12 +46,24 @@ jobs:
         run: |
           uv sync
 
+      - name: Ensure daily-roadmap-reliability label exists
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh label create "daily-roadmap-reliability" \
+            --repo "${{ github.repository }}" \
+            --color "B60205" \
+            --description "Recurring daily-roadmap generation failures tracked as one issue instead of one per day" \
+            2>/dev/null || true
+
       - name: Prepare daily research prompt
         id: prompt
         run: |
           TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
           cat > daily-roadmap-prompt.md <<EOF
           You are SparkleForge running inside the SparkleForge repository on $TODAY.
+
+          SparkleForge is being built as "Anvil", an OS-shaped execution layer for agents, developed in named phases tracked in docs/ANVIL_PLAN.md (embedded below in the GitHub planning context, under "### Anvil roadmap document"). Before researching external trends, check "### Anvil roadmap status" in that context: if it lists a next open Anvil roadmap sub-issue, your proposal MUST implement that sub-issue's concrete checklist items — do not invent a new idea instead. Only research external trends and propose something new when no Anvil roadmap sub-issue is open, and in that case still frame the proposal as a candidate next Anvil phase consistent with docs/ANVIL_PLAN.md section 4 rather than an unrelated idea.
 
           Gather and analyze current public information, recent news, and latest engineering trends for AI agents, coding agents, MCP/tool ecosystems, long-running autonomous workflows, eval-driven development, agent memory, browser/computer use, model routing, and GitHub automation.
 
@@ -125,10 +138,95 @@ jobs:
 
           {
             echo
+            echo "### Anvil roadmap status"
+          } >> github-planning-context.md
+
+          gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --search "Milestone: in:title label:sparkleforge-roadmap sort:created-desc" \
+            --json number,title,body \
+            --jq '.[0] // empty' \
+            > anvil-milestone.json
+
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          raw = Path("anvil-milestone.json").read_text(encoding="utf-8").strip()
+          milestone = json.loads(raw) if raw else None
+
+          numbers = []
+          if milestone:
+              numbers = sorted(set(int(n) for n in re.findall(r"[—-]\s*#(\d+)", milestone.get("body", ""))))
+
+          text = "\n".join(str(n) for n in numbers)
+          Path("anvil-subissue-numbers.txt").write_text(text + "\n" if text else "", encoding="utf-8")
+          PY
+
+          : > anvil-subissue-status.json
+          if [ -s anvil-subissue-numbers.txt ]; then
+            while IFS= read -r NUM || [ -n "$NUM" ]; do
+              [ -z "$NUM" ] && continue
+              ISSUE_JSON=$(gh issue view "$NUM" --repo "${{ github.repository }}" --json number,title,state 2>/dev/null || echo "")
+              if [ -n "$ISSUE_JSON" ] && printf '%s' "$ISSUE_JSON" | jq -e . >/dev/null 2>&1; then
+                printf '%s\n' "$ISSUE_JSON" >> anvil-subissue-status.json
+              fi
+            done < anvil-subissue-numbers.txt
+          fi
+          jq -s '.' anvil-subissue-status.json > anvil-subissue-status.json.tmp \
+            && mv anvil-subissue-status.json.tmp anvil-subissue-status.json \
+            || echo '[]' > anvil-subissue-status.json
+          jq empty anvil-subissue-status.json
+
+          python - <<'PY' >> github-planning-context.md
+          import json
+          from pathlib import Path
+
+          raw = Path("anvil-milestone.json").read_text(encoding="utf-8").strip()
+          milestone = json.loads(raw) if raw else None
+
+          if not milestone:
+              print("- No open Anvil phase milestone found.")
+          else:
+              sub_status = json.loads(Path("anvil-subissue-status.json").read_text(encoding="utf-8") or "[]")
+              print(f"- Open milestone: #{milestone['number']} {milestone['title']}")
+              if sub_status:
+                  for item in sub_status:
+                      print(f"  - #{item['number']} [{item['state']}] {item['title']}")
+              else:
+                  print("- No sub-issues referenced in the milestone checklist yet.")
+
+              open_target = next((item for item in sub_status if item["state"] == "OPEN"), None)
+              if open_target:
+                  print(f"- Next open Anvil roadmap sub-issue: #{open_target['number']} {open_target['title']}")
+                  Path("anvil-roadmap-target.md").write_text(f"{open_target['number']}|{open_target['title']}", encoding="utf-8")
+              else:
+                  print("- All known Anvil roadmap sub-issues are closed (or none tracked).")
+                  Path("anvil-roadmap-target.md").write_text("", encoding="utf-8")
+          PY
+
+          if [ ! -f anvil-roadmap-target.md ]; then
+            : > anvil-roadmap-target.md
+          fi
+
+          {
+            echo
+            echo "### Anvil roadmap document (docs/ANVIL_PLAN.md)"
+            echo '```markdown'
+            cat docs/ANVIL_PLAN.md
+            echo '```'
+          } >> github-planning-context.md
+
+          {
+            echo
             echo "### Daily selection rule"
-            echo "- If a PR is open and blocked by a workflow or review failure, prefer a roadmap item that unblocks it."
+            echo "- If '### Anvil roadmap status' lists a next open Anvil roadmap sub-issue, that is the required target for today: implement its concrete checklist items, don't propose something else instead."
+            echo "- Only if no Anvil roadmap sub-issue is open: if a PR is open and blocked by a workflow or review failure, prefer a roadmap item that unblocks it."
+            echo "- Only if neither of the above applies: propose a new item, but justify it against docs/ANVIL_PLAN.md section 4 so it extends the existing phase structure instead of ignoring it."
             echo "- If repeated daily-roadmap failure issues are open, prefer a roadmap item that restores daily roadmap generation/update reliability."
-            echo "- Do not create a generic trend-only item when a concrete open issue or PR is more actionable."
+            echo "- Do not create a generic trend-only item when a concrete open issue, PR, or Anvil roadmap sub-issue is more actionable."
           } >> github-planning-context.md
 
           {
@@ -206,22 +304,34 @@ jobs:
                       rows.append(line)
               return rows
 
+          anvil_target_path = Path("anvil-roadmap-target.md")
+          anvil_target = anvil_target_path.read_text(encoding="utf-8").strip() if anvil_target_path.exists() else ""
+
           prs = collect("### Open pull requests", "### Open issues")
-          issues = collect("### Open issues", "### Daily selection rule")
-          if prs:
+          issues = collect("### Open issues", "### Anvil roadmap status")
+
+          if anvil_target:
+              number, _, title = anvil_target.partition("|")
+              target_kind = "anvil roadmap sub-issue"
+          elif prs:
               target_kind = "pull request"
-              target = prs[0]
+              match = re.match(r"- #(?P<number>\d+) (?P<title>.*?) \[", prs[0])
+              number = match.group("number") if match else ""
+              title = match.group("title") if match else "repository backlog"
           elif issues:
               target_kind = "issue"
-              target = issues[0]
+              match = re.match(r"- #(?P<number>\d+) (?P<title>.*?) \[", issues[0])
+              number = match.group("number") if match else ""
+              title = match.group("title") if match else "repository backlog"
           else:
               target_kind = "repository backlog"
-              target = "No open issue or pull request was returned by GitHub context collection."
+              number = ""
+              title = "repository backlog"
 
-          match = re.match(r"- #(?P<number>\d+) (?P<title>.*?) \[", target)
-          number = match.group("number") if match else ""
-          title = match.group("title") if match else "repository backlog"
-          if target_kind == "pull request" and number:
+          if target_kind == "anvil roadmap sub-issue" and number:
+              heading = f"Advance Anvil roadmap sub-issue {number}"
+              target_label = f"Anvil roadmap sub-issue #{number}: {title}"
+          elif target_kind == "pull request" and number:
               heading = f"Unblock pull request {number}"
               target_label = f"PR #{number}: {title}"
           elif target_kind == "issue" and number:
@@ -251,9 +361,13 @@ jobs:
           print("- Keep the scope bounded to the smallest code, workflow, or documentation change needed to unblock that item.")
           print()
           print("## Implementation notes")
-          print("- Start from the referenced PR/issue, inspect its checks, labels, and latest comments, then patch only the directly related files.")
+          if target_kind == "anvil roadmap sub-issue":
+              print(f"- This is an Anvil roadmap sub-issue (#{number}). Implement exactly the checklist items in that issue's body — do not re-scope it or substitute a different idea.")
+              print("- See docs/ANVIL_PLAN.md for the phase this sub-issue belongs to and its success criteria.")
+          else:
+              print("- Start from the referenced PR/issue, inspect its checks, labels, and latest comments, then patch only the directly related files.")
           print("- Preserve the daily roadmap workflow contract: collect GitHub context, produce required roadmap sections, and update the existing daily issue instead of creating duplicates.")
-          print("- If this item is already resolved by the time the automation runs, select the next open PR first, then the next open issue.")
+          print("- If this item is already resolved by the time the automation runs, select the next open Anvil roadmap sub-issue first, then the next open PR, then the next open issue.")
           print()
           print("## Acceptance criteria")
           print("- [ ] The selected PR/issue has a concrete code or workflow change attached.")
@@ -277,36 +391,36 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
           TODAY: ${{ steps.prompt.outputs.today }}
+          STATUS: ${{ steps.research.outputs.status }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
             echo "::error::PAT repository secret is required so roadmap issues are authored by the PAT owner instead of github-actions[bot]."
             exit 1
           fi
 
-          EXISTING=$(gh issue list \
-            --repo "${{ github.repository }}" \
-            --state open \
-            --search "sparkleforge-daily-roadmap:$TODAY in:body sort:created-desc" \
-            --json number \
-            --jq '[.[].number] | sort | .[0] // empty')
+          RELIABILITY_LABEL="daily-roadmap-reliability"
 
-          if [ -n "$EXISTING" ]; then
-            echo "Roadmap issue already exists for $TODAY: #$EXISTING; it will be updated."
-          fi
-
-          if [ -z "$EXISTING" ] && [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
-            EXISTING_FIX=$(gh issue list \
+          if [ "$STATUS" = "fallback" ]; then
+            # Genuine CLI research failures are tracked as one recurring issue
+            # (via label) instead of a fresh issue every day.
+            EXISTING=$(gh issue list \
               --repo "${{ github.repository }}" \
               --state open \
-              --search 'daily roadmap in:title' \
+              --label "$RELIABILITY_LABEL" \
               --json number \
               --jq '.[0].number // empty')
-            if [ -n "$EXISTING_FIX" ]; then
-              echo "Open daily roadmap issue already exists: #$EXISTING_FIX; it will be updated."
+            if [ -n "$EXISTING" ]; then
+              echo "Open daily-roadmap-reliability issue already exists: #$EXISTING; it will be updated."
             fi
-            if [ -n "$EXISTING_FIX" ]; then
-              echo "Open daily roadmap issue already exists: #$EXISTING_FIX; it will be updated."
-              EXISTING="$EXISTING_FIX"
+          else
+            EXISTING=$(gh issue list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --search "sparkleforge-daily-roadmap:$TODAY in:body sort:created-desc" \
+              --json number \
+              --jq '[.[].number] | sort | .[0] // empty')
+            if [ -n "$EXISTING" ]; then
+              echo "Roadmap issue already exists for $TODAY: #$EXISTING; it will be updated."
             fi
           fi
 
@@ -324,22 +438,60 @@ jobs:
             exit 1
           fi
           ISSUE_TYPE="feat"
-          if [ "${{ steps.research.outputs.status }}" = "fallback" ]; then
+          if [ "$STATUS" = "fallback" ]; then
             ISSUE_TYPE="fix"
           fi
           ISSUE_TITLE="$ISSUE_TYPE: $SUBJECT"
           python scripts/validate_commit_messages.py --message "$ISSUE_TITLE"
 
-          {
-            echo "<!-- sparkleforge-daily-roadmap:$TODAY -->"
-            echo
-            echo "This issue was generated by the daily SparkleForge roadmap workflow."
-            echo "It is intentionally scoped so the automated OpenCode workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback."
-            echo
-            cat sparkleforge-roadmap.md
-          } > issue-body.md
+          if [ "$STATUS" = "fallback" ] && [ -n "$EXISTING" ]; then
+            gh issue view "$EXISTING" --repo "${{ github.repository }}" --json body --jq '.body' > previous-issue-body.md || true
+          else
+            : > previous-issue-body.md
+          fi
+
+          python - <<'PY' > issue-body.md
+          import os
+          import re
+          from pathlib import Path
+
+          today = os.environ["TODAY"]
+          status = os.environ["STATUS"]
+          roadmap = Path("sparkleforge-roadmap.md").read_text(encoding="utf-8")
+
+          print(f"<!-- sparkleforge-daily-roadmap:{today} -->")
+          print()
+          print("This issue was generated by the daily SparkleForge roadmap workflow.")
+          print("It is intentionally scoped so the automated OpenCode workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback.")
+          print()
+
+          if status == "fallback":
+              previous = Path("previous-issue-body.md").read_text(encoding="utf-8") if Path("previous-issue-body.md").exists() else ""
+              occurrences = re.findall(r"^- (\d{4}-\d{2}-\d{2})$", previous, flags=re.MULTILINE)
+              if today not in occurrences:
+                  occurrences.append(today)
+              occurrences = occurrences[-10:]
+              print("## Occurrence log")
+              print("Recurring daily-roadmap generation failures are tracked in this single issue instead of one new issue per day.")
+              for day in occurrences:
+                  print(f"- {day}")
+              print()
+
+          print(roadmap)
+          PY
+
+          if [ "$STATUS" = "fallback" ]; then
+            EXTRA_LABEL_ARGS=(--label "$RELIABILITY_LABEL")
+          else
+            EXTRA_LABEL_ARGS=()
+          fi
 
           if [ -n "$EXISTING" ]; then
+            if [ "$STATUS" = "fallback" ]; then
+              gh issue edit "$EXISTING" \
+                --repo "${{ github.repository }}" \
+                --add-label "$RELIABILITY_LABEL" > /dev/null || true
+            fi
             gh issue edit "$EXISTING" \
               --repo "${{ github.repository }}" \
               --title "$ISSUE_TITLE" \
@@ -354,12 +506,106 @@ jobs:
           ISSUE_URL=$(gh issue create \
             --repo "${{ github.repository }}" \
             --title "$ISSUE_TITLE" \
-            --body-file issue-body.md)
+            --body-file issue-body.md \
+            "${EXTRA_LABEL_ARGS[@]}")
 
           ISSUE_NUMBER="${ISSUE_URL##*/}"
           echo "Created issue: $ISSUE_URL"
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
           echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Sync Anvil roadmap doc
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          if [ ! -s anvil-milestone.json ] || [ "$(cat anvil-milestone.json)" = "" ]; then
+            echo "No open Anvil milestone; nothing to sync."
+            exit 0
+          fi
+
+          SYNC_STATUS=$(python - <<'PY'
+          import json
+          from pathlib import Path
+
+          milestone = json.loads(Path("anvil-milestone.json").read_text(encoding="utf-8"))
+          number = milestone["number"]
+          sub_status = json.loads(Path("anvil-subissue-status.json").read_text(encoding="utf-8") or "[]")
+          total = len(sub_status)
+          closed = sum(1 for item in sub_status if item["state"] == "CLOSED")
+
+          if total == 0 or closed == 0:
+              print("nochange")
+              raise SystemExit(0)
+
+          new_status = "✅" if closed == total else f"🔲 진행 중 ({closed}/{total})"
+
+          plan_path = Path("docs/ANVIL_PLAN.md")
+          lines = plan_path.read_text(encoding="utf-8").splitlines()
+          marker = f"마일스톤 #{number}"
+          changed = False
+          for i, line in enumerate(lines):
+              if line.startswith("|") and marker in line:
+                  cells = line.split("|")
+                  if len(cells) >= 5 and cells[3].strip() != new_status:
+                      cells[3] = f" {new_status} "
+                      lines[i] = "|".join(cells)
+                      changed = True
+
+          if changed:
+              plan_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+              print("changed")
+          else:
+              print("nochange")
+          PY
+          )
+          echo "Anvil doc sync status: $SYNC_STATUS"
+
+          if [ "$SYNC_STATUS" != "changed" ]; then
+            exit 0
+          fi
+
+          MILESTONE_NUMBER=$(python -c "import json; print(json.load(open('anvil-milestone.json'))['number'])")
+          SYNC_BRANCH="docs/anvil-sync-$MILESTONE_NUMBER"
+
+          ACTOR_LOGIN=$(gh api user --jq '.login')
+          ACTOR_ID=$(gh api user --jq '.id')
+          if [[ ! "$ACTOR_LOGIN" =~ ^[a-zA-Z0-9-]+$ ]]; then
+            echo "::error::Invalid actor login from GitHub API: $ACTOR_LOGIN"
+            exit 1
+          fi
+          if [[ ! "$ACTOR_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Invalid actor id from GitHub API: $ACTOR_ID"
+            exit 1
+          fi
+          export GIT_AUTHOR_NAME="$ACTOR_LOGIN"
+          export GIT_AUTHOR_EMAIL="$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
+          export GIT_COMMITTER_NAME="$ACTOR_LOGIN"
+          export GIT_COMMITTER_EMAIL="$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
+
+          git checkout -B "$SYNC_BRANCH"
+          git add docs/ANVIL_PLAN.md
+          git commit -m "docs: sync anvil phase status for milestone #$MILESTONE_NUMBER"
+          git push --force-with-lease origin "$SYNC_BRANCH"
+
+          EXISTING_SYNC_PR=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "$SYNC_BRANCH" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -z "$EXISTING_SYNC_PR" ]; then
+            gh pr create \
+              --repo "${{ github.repository }}" \
+              --title "docs: sync Anvil phase status for milestone #$MILESTONE_NUMBER" \
+              --body "Automated sync from the daily roadmap workflow. Updates the phase table status in docs/ANVIL_PLAN.md to reflect milestone #$MILESTONE_NUMBER sub-issue completion. Human review required before merge." \
+              --base main \
+              --head "$SYNC_BRANCH"
+          else
+            echo "Sync PR already open: #$EXISTING_SYNC_PR"
+          fi
+
+          git checkout main
 
       - name: Dispatch OpenCode follow-up
         if: steps.create_issue.outputs.created == 'true'
