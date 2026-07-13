@@ -1467,6 +1467,33 @@ class ExecutionMixin:
                             "confidence": 0.0,
                             "source": "mcp",
                         }
+                else:
+                    # 이 도구는 MCP 전용으로 등록되어 있는데 해당 서버 세션이 아직
+                    # 연결되지 않은 상태. 로컬 도구 폴백으로 흘러가면 동명의 다른
+                    # 도구가 실행되거나 조용히 잘못된 결과를 반환할 수 있으므로,
+                    # 여기서 명시적으로 에러를 반환한다.
+                    execution_time = time.time() - start_time
+                    error_msg = f"MCP server '{server_name}' is not connected"
+                    logger.error(f"[MCP][exec.error] {error_msg} (tool={tool_name})")
+
+                    tool_exec_result = ToolExecutionResult(
+                        tool_name=tool_name,
+                        success=False,
+                        execution_time=execution_time,
+                        result_summary=f"MCP 서버 연결 안 됨: {server_name}",
+                        confidence=0.0,
+                        error_message=error_msg,
+                    )
+                    await output_manager.output_tool_execution(tool_exec_result)
+
+                    return {
+                        "success": False,
+                        "data": None,
+                        "error": _actionable_error_message(tool_name, error_msg),
+                        "execution_time": execution_time,
+                        "confidence": 0.0,
+                        "source": "mcp",
+                    }
 
             # MCP 도구가 아닌 경우 로컬 도구 확인
             tool_info = self.registry.get_tool_info(tool_name)
