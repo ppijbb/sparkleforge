@@ -163,10 +163,12 @@ class BootstrapGraph:
         from src.core.observe.observation_plane import ObservationPlane
 
         op = ObservationPlane()
+        op.start_iot_telemetry()
         metrics = await op.system.get_all_metrics()
         return {
             "observation_plane": op,
             "metrics_available": "error" not in metrics.get("cpu", {}),
+            "iot_telemetry_running": op.iot_telemetry._is_running,
         }
 
     async def _stage_actuation_plane(self) -> dict[str, Any]:

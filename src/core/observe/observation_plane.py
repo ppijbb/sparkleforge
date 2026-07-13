@@ -1,8 +1,9 @@
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from src.core.observe.event_bus import EventBus
+from src.core.observe.iot_telemetry_loop import IOTTelemetryLoop
 from src.core.observe.package_inventory import PackageInventory
 from src.core.observe.snapshot_api import SnapshotAPI
 from src.core.observe.system_collector import SystemCollector
@@ -27,6 +28,7 @@ class ObservationPlane:
 
         logger.info("Initializing Observation Plane...")
         self.events = EventBus()
+        self.iot_telemetry = IOTTelemetryLoop(self.events)
         self.system = SystemCollector()
         self.snapshot = SnapshotAPI()
         self.packages = PackageInventory()
@@ -64,3 +66,15 @@ class ObservationPlane:
         if custom_data:
             state["custom_data"] = custom_data
         await self.events.publish(event_type, state)
+
+    def register_iot_sensor(self, sensor) -> None:
+        """Register an IoT sensor device with the telemetry loop."""
+        self.iot_telemetry.register_sensor(sensor)
+
+    def start_iot_telemetry(self) -> None:
+        """Start the IoT telemetry background polling loop."""
+        self.iot_telemetry.start()
+
+    async def stop_iot_telemetry(self) -> None:
+        """Stop the IoT telemetry background polling loop."""
+        await self.iot_telemetry.stop()
