@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.validate_commit_messages import validate_subject
+from scripts.validate_commit_messages import normalize_title, validate_subject
 from src.core.nightwelding import github_adapter
 
 
@@ -30,6 +30,20 @@ def test_repro_commit_subject_passes_commit_message_policy() -> None:
     subject = "test: add reproduction test for issue 539 (nightwelding)"
 
     assert validate_subject(subject, "reproduction commit") == []
+
+
+def test_normalize_title_lowercases_natural_language_capitalization() -> None:
+    # Regression test: GitHub issue titles routinely capitalize env var names,
+    # exception classes, and acronyms (e.g. "TODAY", "KeyError"), but the
+    # commit-message policy requires an all-lowercase summary. normalize_title
+    # used to preserve the issue title's casing verbatim and then reject it,
+    # so nightwelding could never derive a commit title for issues like #550.
+    title = "fix: missing TODAY and STATUS env vars cause KeyError in roadmap issue workflow"
+
+    normalized = normalize_title(title)
+
+    assert normalized == "fix: missing today and status env vars cause keyerror in roadmap issue workflow"
+    assert validate_subject(normalized, "normalized title") == []
 
 
 def test_list_candidate_issues_filters_by_label_and_open_pr(monkeypatch) -> None:

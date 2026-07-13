@@ -90,6 +90,10 @@ def normalize_title(title: str) -> str:
     subject = re.sub(r"^\s*20[0-9]{2}-[0-9]{2}-[0-9]{2}\s*-\s*", "", subject)
     subject = re.sub(r"\s*\(#\d+\)\s*$", "", subject)
     subject = re.sub(r"\s+", " ", subject).strip()
+    # Issue/PR titles use natural-language capitalization (env var names, error
+    # classes, acronyms), but the commit-message policy requires an all-lowercase
+    # summary. Lowercase it here rather than rejecting otherwise-valid titles.
+    subject = subject.lower()
     normalized = f"{commit_type}: {subject}" if subject else ""
     errors = validate_subject(normalized, "normalized title")
     if errors:
