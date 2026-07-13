@@ -206,24 +206,6 @@ class SkillDistiller:
     def distill_and_register(
         self,
         trace: WorkflowTrace,
-
-    def distill_and_export(
-        self,
-        trace: WorkflowTrace,
-        marketplace: Any,
-        *,
-        repository: SkillRepository | None = None,
-        dependencies: Iterable[str] | None = None,
-    ) -> Any:
-        """Distill a trace and export the resulting draft as a shareable bundle.
-
-        The draft is validated and (when a repository is provided) registered
-        locally, then immediately published to the supplied skill marketplace
-        so other SparkleForge instances can import it.
-        """
-        draft = self.distill(trace)
-        if not self.validate_draft(draft):
-            raise ValueError(f"Generated skill
         repository: SkillRepository,
         *,
         skill_tree: Any | None = None,
@@ -246,6 +228,35 @@ class SkillDistiller:
         if performance_tracker is not None:
             performance_tracker.record(skill.name, success=True, latency_ms=0.0, quality_score=1.0)
         return skill
+
+    def distill_and_export(
+        self,
+        trace: WorkflowTrace,
+        marketplace: Any,
+        *,
+        repository: SkillRepository | None = None,
+        dependencies: Iterable[str] | None = None,
+    ) -> Any:
+        """Distill a trace and export the resulting draft as a shareable bundle.
+
+        The draft is validated and (when a repository is provided) registered
+        locally, then immediately published to the supplied skill marketplace
+        so other SparkleForge instances can import it.
+        """
+        draft = self.distill(trace)
+        if not self.validate_draft(draft):
+            raise ValueError(f"Generated skill draft failed validation: {draft.name}")
+
+        if repository is not None:
+            metadata = dict(draft.metadata)
+            metadata["quality_gate"] = "validated_replay"
+            repository.save_skill(
+                draft.name,
+                draft.code,
+                description=draft.description,
+                metadata=metadata,
+            )
+        return marketplace.export_draft(draft, dependencies=dependencies)
 
     def match_distilled_skills(
         self,
