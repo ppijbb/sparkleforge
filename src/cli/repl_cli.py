@@ -454,6 +454,13 @@ Generate the greeting:"""
                 # 연구 요청으로 처리 (명령어가 없으면)
                 # 중복 출력 방지: research_command에서 이미 출력하므로 여기서는 호출만
                 await self.command_handlers["research"](self, [text])
+            else:
+                routed = await self._try_route_command(text)
+                if routed:
+                    return
+                # 연구 요청으로 처리 (명령어가 없으면)
+                # 중복 출력 방지: research_command에서 이미 출력하므로 여기서는 호출만
+                await self.command_handlers["research"](self, [text])
 
         except EOFError:
             # exit 명령어에서 발생한 EOFError는 다시 raise하여 run()에서 처리

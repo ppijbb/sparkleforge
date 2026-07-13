@@ -27,6 +27,11 @@ class ShellIntent:
 # Simple keyword-to-command mapping for offline NL resolution
 _NL_PATTERNS: List[tuple[str, str, str]] = [
     # (pattern, resolved_command, intent_type)
+    # Surface integration (#570): route session/dashboard NL queries through
+    # the same CLI dispatch path instead of a separate implementation.
+    (r"session\s+list",            "session list",     "cli"),
+    (r"session\s+stats?",          "session stats",    "cli"),
+    (r"show\s+tasks?",             "session tasks",    "cli"),
     (r"list\s+files?",           "ls -la",           "command"),
     (r"show\s+disk\s+usage",     "df -h",             "command"),
     (r"show\s+memory",           "free -h",           "command"),
@@ -68,6 +73,14 @@ class NLShell:
         """Parse natural language text into a ShellIntent."""
         text_lower = text.lower().strip()
 
+        # CLI passthrough (starts with /): route through REPL dispatch
+        if text_lower.startswith("/"):
+            cmd = text[1:].strip()
+            return ShellIntent(
+                raw=text, intent_type="cli", command=cmd,
+                confidence=1.0, explanation="CLI passthrough via REPL dispatch",
+            )
+
         # Direct shell command passthrough (starts with $ or !)
         if text_lower.startswith(("$", "!")):
             cmd = text[1:].strip()
@@ -94,6 +107,8 @@ class NLShell:
 
     async def execute_intent(self, intent: ShellIntent) -> Dict[str, Any]:
         """Execute a resolved intent, optionally via sandbox executor."""
+        if intent.intent_type == "cli":
+            return await self._dispatch_cli(intent)
         if not intent.command:
             return {
                 "ok": False,
@@ -130,6 +145,33 @@ class NLShell:
             except subprocess.TimeoutExpired:
                 output = {"ok": False, "error": "Command timed out", "command": intent.command}
 
+        self._history.append({"input": intent.raw, "resolved": intent.command, **output})
+        return output
+
+    async def _dispatch_cli(self, intent: ShellIntent) -> Dict[str, Any]:
+        """Route a CLI intent through the REPL command_handlers dispatch path.
+
+        This keeps NL-resolved session/dashboard commands on the same backend
+        functions as the structured CLI (Surface integration, #570).
+        """
+        try:
+            from src.cli.repl_cli import REPLCLI
+
+            cli = REPLCLI()
+            await cli.handle_command(intent.command or "")
+            output = {
+                "ok": True,
+                "command": intent.command,
+                "explanation": intent.explanation,
+            }
+        except Exception as e:
+            logger.error("NLShell CLI dispatch failed: %s", e, exc_info=True)
+            output = {
+                "ok": False,
+                "error": str(e),
+                "command": intent.command,
+                "explanation": intent.explanation,
+            }
         self._history.append({"input": intent.raw, "resolved": intent.command, **output})
         return output
 

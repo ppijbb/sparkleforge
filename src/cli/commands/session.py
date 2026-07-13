@@ -322,6 +322,8 @@ async def session_tasks_command(cli, args: List[str]):
     session_id = args[0]
 
     try:
+        from src.core.surface.task_dashboard import TaskDashboard
+
         tasks = await cli.session_control.get_session_tasks(session_id)
 
         if not tasks:

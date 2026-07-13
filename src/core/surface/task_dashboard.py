@@ -187,6 +187,30 @@ class TaskDashboard:
         counts["total"] = len(tasks)
         return counts
 
+    def snapshot(self) -> Dict[str, Any]:
+        """Return a serializable snapshot of all tasks for surface consumers.
+
+        CLI (`session stats`/`session tasks`) and web UI render the same data
+        via this single source of truth (Surface integration, #570).
+        """
+        with self._lock_data:
+            tasks = [t.to_dict() for t in self._tasks.values()]
+        return {"tasks": tasks, "summary": self.summary()}
+
+    def to_session_view(self, session_id: str) -> Dict[str, Any]:
+        """Return tasks + summary scoped to a session id.
+
+        Mirrors `SessionControl.get_session_tasks` so the web UI and CLI show
+        identical status/progress/quota figures for a given session.
+        """
+        with self._lock_data:
+            tasks = [
+                t.to_dict()
+                for t in self._tasks.values()
+                if t.metadata.get("session_id") == session_id
+            ]
+        return {"tasks": tasks, "summary": self.summary()}
+
     def reset(self) -> None:
         with self._lock_data:
             self._tasks.clear()

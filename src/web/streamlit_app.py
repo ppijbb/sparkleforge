@@ -1,3 +1,5 @@
+"""SparkleForge Streamlit web dashboard."""
+"""SparkleForge Streamlit web dashboard."""
 #!/usr/bin/env python3
 """Streamlit Web Interface for SparkleForge - 인터랙티브 채팅 UI
 
