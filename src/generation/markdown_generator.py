@@ -127,11 +127,39 @@ class MarkdownGenerator:
         # Sources
         sources = data.get("sources", [])
         if sources:
-            lines.append("## Sources")
-            for i, source in enumerate(sources[:10], 1):  # Limit to 10 sources
-                title = source.get("title", "Untitled")
-                url = source.get("url", "#")
-                lines.append(f"{i}. [{title}]({url})")
+            citation_manager = data.get("citation_manager")
+            if citation_manager is not None:
+                references = citation_manager.generate_references_section()
+                if references and references.strip() != "No references available.":
+                    lines.append(references.rstrip())
+                    credibility = citation_manager.validate_citation_completeness()
+                    avg_credibility = 0.0
+                    if citation_manager.sources:
+                        avg_credibility = round(
+                            sum(
+                                s.credibility_score
+                                for s in citation_manager.sources.values()
+                            )
+                            / len(citation_manager.sources),
+                            2,
+                        )
+                    lines.append(
+                        f"- **Average Credibility Score**: {avg_credibility} "
+                        f"(validation: {credibility.get('validation_score', 0.0)})"
+                    )
+                    lines.append("")
+                else:
+                    lines.append("## Sources")
+                    lines.append("No structured references available.")
+                    lines.append("")
+            else:
+                lines.append("## Sources")
+                for i, source in enumerate(sources[:10], 1):  # Limit to 10 sources
+                    title = source.get("title", "Untitled")
+                    url = source.get("url", "#")
+                    lines.append(f"{i}. [{title}]({url})")
+                lines.append("")
+
             lines.append("")
 
         # Content Stats
