@@ -206,6 +206,24 @@ class SkillDistiller:
     def distill_and_register(
         self,
         trace: WorkflowTrace,
+
+    def distill_and_export(
+        self,
+        trace: WorkflowTrace,
+        marketplace: Any,
+        *,
+        repository: SkillRepository | None = None,
+        dependencies: Iterable[str] | None = None,
+    ) -> Any:
+        """Distill a trace and export the resulting draft as a shareable bundle.
+
+        The draft is validated and (when a repository is provided) registered
+        locally, then immediately published to the supplied skill marketplace
+        so other SparkleForge instances can import it.
+        """
+        draft = self.distill(trace)
+        if not self.validate_draft(draft):
+            raise ValueError(f"Generated skill
         repository: SkillRepository,
         *,
         skill_tree: Any | None = None,
