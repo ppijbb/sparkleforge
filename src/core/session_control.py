@@ -10,9 +10,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import time
+import os
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SessionQuota:
+    """세션별 리소스 쿼터."""
+
+    max_concurrent_sessions: int = 5
+    max_tokens_per_session: int = 1000000
+    max_cost_per_session: float = 5.0
+    wall_clock_timeout_seconds: int = 3600
+    # 환경변수 오버라이드 가능하도록 필드 구성
+    created_at: float = field(default_factory=lambda: 0.0)
 
 
 class SessionStatus(Enum):
@@ -98,6 +112,7 @@ class SessionControl:
         self._session_quotas: Dict[str, Dict[str, Any]] = {}  # session_id -> quota state
 
         logger.info("SessionControl initialized")
+        self.default_quota = SessionQuota()
 
     async def search_sessions(
         self,
@@ -105,6 +120,7 @@ class SessionControl:
         status: SessionStatus | None = None,
         tags: List[str] | None = None,
         created_after: datetime | None = None,
+            "quota": self.default_quota,
         created_before: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -117,6 +133,7 @@ class SessionControl:
             tags: 태그 필터
             created_after: 생성일 이후
             created_before: 생성일 이전
+            "quota": self.default_quota,
             limit: 최대 결과 수
             offset: 오프셋
 
