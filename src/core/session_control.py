@@ -120,7 +120,6 @@ class SessionControl:
         status: SessionStatus | None = None,
         tags: List[str] | None = None,
         created_after: datetime | None = None,
-            "quota": self.default_quota,
         created_before: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -133,7 +132,6 @@ class SessionControl:
             tags: 태그 필터
             created_after: 생성일 이후
             created_before: 생성일 이전
-            "quota": self.default_quota,
             limit: 최대 결과 수
             offset: 오프셋
 
@@ -442,9 +440,9 @@ class SessionControl:
             )
 
         self._session_quotas[session_id] = {
-            "max_tokens": self.DEFAULT_MAX_TOKENS_PER_SESSION,
-            "budget": self.DEFAULT_BUDGET_PER_SESSION,
-            "timeout": self.DEFAULT_TIMEOUT_SECONDS,
+            "max_tokens": int(os.getenv("SESSION_MAX_TOKENS", self.DEFAULT_MAX_TOKENS_PER_SESSION)),
+            "budget": float(os.getenv("SESSION_MAX_COST", self.DEFAULT_BUDGET_PER_SESSION)),
+            "timeout": int(os.getenv("SESSION_TIMEOUT", self.DEFAULT_TIMEOUT_SECONDS)),
             "start_time": time.time(),
             "tokens_used": 0,
             "cost_incurred": 0.0,
