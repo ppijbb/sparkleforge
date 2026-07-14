@@ -111,15 +111,16 @@ from src.cli.main_commands import (
     handle_tools_command,
     handle_web_command,
     handle_work_command,
+    handle_report_command,
 )
 
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
 
-# Remove existing handlers to avoid duplicate logs on reloads (e.g., under some app servers or noteboks)
-if logger.hasHandlers():
-    logger.handlers.clear()
+# Remove existing handlers to avoid duplicate logs on reloads
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
 
 # File handler
 file_handler = logging.FileHandler(log_file, encoding="utf-8")
@@ -127,7 +128,7 @@ file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
-logger.addHandler(file_handler)
+root_logger.addHandler(file_handler)
 
 # Console handler
 console_handler = logging.StreamHandler()
@@ -136,7 +137,9 @@ console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
 console_handler.addFilter(HTTPErrorFilter())  # HTTP 에러 필터 추가
-logger.addHandler(console_handler)
+root_logger.addHandler(console_handler)
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # MCP / Runner / HTTP 관련 로거 억제 (과도한 로그 출력 방지)
@@ -483,6 +486,18 @@ EXAMPLES:
     # nightwelding list
     nightwelding_list_parser = nightwelding_subparsers.add_parser("list", help="List Nightwelding queue history")
 
+    # report parser
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Daily agent metric evaluation and critique"
+    )
+    report_subparsers = report_parser.add_subparsers(
+        dest="report_command",
+        help="Report command options"
+    )
+    report_subparsers.add_parser("generate", help="Generate the daily metric evaluation report")
+    report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
+
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
         "--request",
@@ -676,6 +691,8 @@ EXAMPLES:
         cli_rc = await handle_cli_command(args)
     elif cmd == "nightwelding":
         cli_rc = await handle_nightwelding_command(args)
+    elif cmd == "report":
+        cli_rc = await handle_report_command(args)
     elif cmd == "interactive":
         cli_rc = await handle_interactive_command(args)
     elif cmd == "repl":
@@ -694,7 +711,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny"}
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)
@@ -736,6 +753,8 @@ EXAMPLES:
         # Set logging level
         if args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
+        else:
+            logging.getLogger().setLevel(logging.INFO)
 
     # Create logs directory
     logs_dir = project_root / "logs"

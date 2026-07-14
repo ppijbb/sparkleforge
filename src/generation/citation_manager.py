@@ -60,6 +60,7 @@ class Source:
     place: str | None
     source_type: str  # 'journal', 'book', 'website', 'report', etc.
     credibility_score: float = 0.0
+    raw_url: str | None = None
     metadata: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -123,6 +124,73 @@ class CitationManager:
         logger.info(
             f"CitationManager initialized with {default_style.value} style (research_id: {self.research_id})"
         )
+
+    def add_source(
+        self,
+        title: str,
+        url: str | None = None,
+        authors: List[str] | None = None,
+        source_type: str = "website",
+        publication_date: datetime | None = None,
+        doi: str | None = None,
+        journal: str | None = None,
+        credibility_score: float | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> Source:
+        """출처를 등록하고 중복 제거된 Source를 반환합니다.
+
+        같은 URL(또는 제목)을 가진 출처는 기존 Source로 병합됩니다.
+        credibility_score가 명시되지 않으면 URL/DOI 메타데이터를 기반으로
+        최소 신뢰도 점수를 자동 산정합니다.
+        """
+        dedup_key = (url or "").strip().lower() or (title or "").strip().lower()
+        for existing in self.sources.values():
+            existing_key = (existing.url or "").strip().lower() or (
+                existing.title or ""
+            ).strip().lower()
+            if existing_key and existing_key == dedup_key:
+                if credibility_score is not None:
+                    existing.credibility_score = credibility_score
+                if metadata:
+                    existing.metadata.update(metadata)
+                return existing
+
+        source_id = f"src_{len(self.sources) + 1}"
+        if credibility_score is None:
+            credibility_score = self._score_credibility(url, doi, source_type)
+
+        source = Source(
+            id=source_id,
+            title=title or "Untitled",
+            authors=authors or [],
+            publication_date=publication_date,
+            url=url,
+            doi=doi,
+            journal=journal,
+            source_type=source_type,
+            credibility_score=credibility_score,
+            metadata=metadata or {},
+        )
+        self.sources[source_id] = source
+        logger.info(f"Source added: {source_id} ({source_type})")
+        return source
+
+    def _score_credibility(
+        self, url: str | None, doi: str | None, source_type: str
+    ) -> float:
+        """URL/DOI/출처 유형을 기반으로 최소 신뢰도 점수를 산정합니다."""
+        score = 0.3
+        if doi:
+            score += 0.4
+        if url:
+            lowered = url.lower()
+            if any(d in lowered for d in (".gov", ".edu", "arxiv.org", "doi.org")):
+                score += 0.2
+            elif lowered.startswith("https://"):
+                score += 0.1
+        if source_type in ("journal", "book", "report"):
+            score += 0.1
+        return min(1.0, round(score, 2))
 
     def add_citation(
         self,
