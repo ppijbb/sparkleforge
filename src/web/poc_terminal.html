@@ -438,10 +438,12 @@
         connectAndSubscribe(url, key);
     });
 
-    // Process incoming lines, intercepting [ACTUATION] and [SCREENSHOT]
+    // Process incoming lines, intercepting [ACTUATION], [SCREENSHOT], and [PREVIEW]
     function processIncomingLine(line) {
-        if (line.startsWith('[SCREENSHOT]')) {
-            const imageUrl = line.replace('[SCREENSHOT]', '').trim();
+        if (line.startsWith('[SCREENSHOT]') || line.startsWith('[PREVIEW]')) {
+            const imageUrl = line.startsWith('[SCREENSHOT]')
+                ? line.replace('[SCREENSHOT]', '').trim()
+                : line.replace('[PREVIEW]', '').trim();
             updateLivePreview(imageUrl);
             term.writeln(`\x1b[1;34m[Preview]\x1b[0m Live preview updated: \x1b[4m${imageUrl}\x1b[0m`);
         } else if (line.startsWith('[ACTUATION]')) {
