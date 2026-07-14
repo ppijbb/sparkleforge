@@ -902,8 +902,9 @@ async def handle_nightwelding_command(args):
                 line = f"#{item.issue_number}: {item.status.value} pr={item.pr_url or '-'}"
                 if item.status.value == "failed" and item.failure_reason:
                     line += f" | reason: {item.failure_reason.splitlines()[0]}"
-                if verbose and item.log:
-                    line += f"\n  log: {item.log}"
+                log_val = getattr(item, "log", None)
+                if verbose and log_val:
+                    line += f"\n  log: {log_val}"
                 logger.info(line)
         except Exception as e:
             logger.error(f"❌ Failed to list Nightwelding queue: {e}")
