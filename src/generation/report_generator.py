@@ -8,6 +8,7 @@ multiple formats, templates, and automated content synthesis.
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+import json
 
 import markdown
 import pdfkit
@@ -29,6 +30,12 @@ from src.utils.config_manager import ConfigManager
 from src.utils.logger import setup_logger
 
 logger = setup_logger("report_generator", log_level="INFO")
+
+
+MAX_HISTORY_ENTRIES = 200
+HISTORY_FILE_NAME = "history.json"
+
+
 
 
 class ReportGenerator:
