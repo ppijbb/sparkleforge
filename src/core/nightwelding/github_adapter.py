@@ -175,7 +175,38 @@ def find_open_pr(repo: str, branch: str, base_branch: str) -> str | None:
     return items[0]["url"] if items else None
 
 
-def open_draft_pr(repo: str, base_branch: str, branch: str, title: str, body: str) -> str:
+def fetch_issue_metadata(repo: str, issue_number: int) -> Dict[str, Any]:
+    """Fetch labels, milestone, and projectItems for an issue."""
+    try:
+        proc = _run([
+            "gh", "issue", "view", str(issue_number),
+            "--repo", repo,
+            "--json", "labels,milestone,projectItems"
+        ])
+        return json.loads(proc.stdout or "{}")
+    except Exception:
+        try:
+            # Fallback if projectItems triggers permission/scope errors
+            proc = _run([
+                "gh", "issue", "view", str(issue_number),
+                "--repo", repo,
+                "--json", "labels,milestone"
+            ])
+            return json.loads(proc.stdout or "{}")
+        except Exception as ex:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to fetch issue metadata: {ex}")
+            return {}
+
+
+def open_draft_pr(
+    repo: str,
+    base_branch: str,
+    branch: str,
+    title: str,
+    body: str,
+    issue_number: Optional[int] = None
+) -> str:
     """Open a Draft PR. `body` MUST already contain the literal substring
     'OpenCode-generated' — callers are responsible for that (see module
     docstring for why).
@@ -187,7 +218,35 @@ def open_draft_pr(repo: str, base_branch: str, branch: str, title: str, body: st
     if existing:
         return existing
 
-    proc = _run(
-        ["gh", "pr", "create", "--repo", repo, "--draft", "--base", base_branch, "--head", branch, "--title", title, "--body", body]
-    )
+    cmd = [
+        "gh", "pr", "create",
+        "--repo", repo,
+        "--draft",
+        "--base", base_branch,
+        "--head", branch,
+        "--title", title,
+        "--body", body
+    ]
+
+    if issue_number:
+        meta = fetch_issue_metadata(repo, issue_number)
+        
+        # 1. Add Labels
+        labels = [label["name"] for label in meta.get("labels", []) if label.get("name")]
+        if labels:
+            cmd.extend(["--label", ",".join(labels)])
+            
+        # 2. Add Milestone
+        milestone = meta.get("milestone")
+        if milestone and isinstance(milestone, dict) and milestone.get("title"):
+            cmd.extend(["--milestone", milestone["title"]])
+            
+        # 3. Add Projects
+        project_items = meta.get("projectItems", [])
+        for item in project_items:
+            project = item.get("project")
+            if project and isinstance(project, dict) and project.get("title"):
+                cmd.extend(["--project", project["title"]])
+
+    proc = _run(cmd)
     return proc.stdout.strip()
