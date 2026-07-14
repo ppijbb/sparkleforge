@@ -147,3 +147,64 @@ class HybridStorage:
         by_user = [m for m in self._memory if m.user_id == user_id]
         by_user.sort(key=lambda m: m.timestamp.timestamp(), reverse=True)
         return by_user[:limit]
+
+    async def save_research_result(self, state: Dict[str, Any]) -> bool:
+        """Save research results from the LangGraph state to hybrid storage and Supabase."""
+        try:
+            research_id = state.get("objective_id", "")
+            topic = state.get("user_request", "")
+            
+            # Extract final synthesis content
+            final_synthesis = state.get("final_synthesis", {})
+            content = final_synthesis.get("content", "")
+            
+            # Gather execution results, metadata, etc.
+            results = {
+                "execution_results": state.get("execution_results", []),
+                "evaluation_results": state.get("evaluation_results", {}),
+                "validation_score": state.get("validation_score", 0.0),
+            }
+            
+            metadata = {
+                "confidence_scores": state.get("confidence_scores", {}),
+                "verification_results": state.get("verification_results", {}),
+                "execution_metadata": state.get("execution_metadata", {}),
+            }
+            
+            # Save locally to HybridStorage
+            local_success = await self.store_research(
+                research_id=research_id,
+                user_id="local_user",
+                topic=topic,
+                content=content,
+                results=results,
+                metadata=metadata,
+                summary=content[:500] if content else "",
+            )
+            
+            # Also publish to Supabase if configured
+            try:
+                from src.utils.supabase_exporter import publish_report
+                sources = []
+                for res in state.get("execution_results", []):
+                    if isinstance(res, dict) and "url" in res:
+                        sources.append({
+                            "title": res.get("title", res.get("url")),
+                            "url": res.get("url"),
+                            "reliability": res.get("reliability", 1.0)
+                        })
+                
+                await publish_report(
+                    topic=topic,
+                    full_report=content,
+                    confidence_score=state.get("validation_score", 0.8),
+                    source_count=len(sources),
+                    sources=sources,
+                )
+            except Exception as se:
+                logger.debug(f"Failed to publish to Supabase inside hybrid storage: {se}")
+                
+            return local_success
+        except Exception as e:
+            logger.error(f"save_research_result failed: {e}")
+            return False

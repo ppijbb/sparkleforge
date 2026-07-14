@@ -224,8 +224,20 @@ class PlaywrightController:
         """
         page = await self._ensure_initialized()
 
+        print(f"[ACTUATION] NAVIGATING: {url}")
         await page.goto(url, wait_until=wait_until, timeout=timeout)
         state = await self.get_page_state()
+
+        # Auto-screenshot on navigate
+        try:
+            import os
+            scr_dir = "./temp/screenshots"
+            os.makedirs(scr_dir, exist_ok=True)
+            scr_path = f"{scr_dir}/nav_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            await page.screenshot(path=scr_path)
+            print(f"[SCREENSHOT] {os.path.abspath(scr_path)}")
+        except Exception as scr_err:
+            logger.debug(f"Auto-screenshot failed during navigation: {scr_err}")
 
         self._action_history.append(
             ActionResult(
@@ -285,11 +297,47 @@ class PlaywrightController:
         timeout = spec.get("timeout", 10000)
 
         if action_type == BrowserAction.CLICK.value:
+            print(f"[ACTUATION] CLICKING: Element selector '{selector}'")
+            try:
+                el = await page.wait_for_selector(selector, timeout=timeout)
+                if el:
+                    await el.scroll_into_view_if_needed()
+            except Exception:
+                pass
             await page.click(selector, timeout=timeout)
+            
+            # Auto-screenshot after click
+            try:
+                import os
+                scr_dir = "./temp/screenshots"
+                os.makedirs(scr_dir, exist_ok=True)
+                scr_path = f"{scr_dir}/click_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                await page.screenshot(path=scr_path)
+                print(f"[SCREENSHOT] {os.path.abspath(scr_path)}")
+            except Exception:
+                pass
             return ActionResult(success=True, action="click", data={"selector": selector})
 
         elif action_type == BrowserAction.TYPE.value:
+            print(f"[ACTUATION] TYPING: '{value}' into Element '{selector}'")
+            try:
+                el = await page.wait_for_selector(selector, timeout=timeout)
+                if el:
+                    await el.scroll_into_view_if_needed()
+            except Exception:
+                pass
             await page.fill(selector, value, timeout=timeout)
+            
+            # Auto-screenshot after typing
+            try:
+                import os
+                scr_dir = "./temp/screenshots"
+                os.makedirs(scr_dir, exist_ok=True)
+                scr_path = f"{scr_dir}/type_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                await page.screenshot(path=scr_path)
+                print(f"[SCREENSHOT] {os.path.abspath(scr_path)}")
+            except Exception:
+                pass
             return ActionResult(
                 success=True, action="type", data={"selector": selector, "value": value}
             )
@@ -298,13 +346,26 @@ class PlaywrightController:
             direction = spec.get("direction", "down")
             amount = spec.get("amount", 500)
             delta_y = amount if direction == "down" else -amount
+            print(f"[ACTUATION] SCROLLING: {direction} by {amount}px")
             await page.mouse.wheel(0, delta_y)
+            
+            # Auto-screenshot after scroll
+            try:
+                import os
+                scr_dir = "./temp/screenshots"
+                os.makedirs(scr_dir, exist_ok=True)
+                scr_path = f"{scr_dir}/scroll_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                await page.screenshot(path=scr_path)
+                print(f"[SCREENSHOT] {os.path.abspath(scr_path)}")
+            except Exception:
+                pass
             return ActionResult(
                 success=True, action="scroll", data={"direction": direction, "amount": amount}
             )
 
         elif action_type == BrowserAction.WAIT.value:
             wait_for = spec.get("wait_for", "networkidle")
+            print(f"[ACTUATION] WAITING: {wait_for}")
             if wait_for.startswith("selector:"):
                 await page.wait_for_selector(wait_for[9:], timeout=timeout)
             else:
@@ -316,26 +377,33 @@ class PlaywrightController:
                 "filename", f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
             )
             full_page = spec.get("full_page", True)
+            print(f"[ACTUATION] SCREENSHOT: Saving to '{filename}'")
             await page.screenshot(path=filename, full_page=full_page)
+            import os
+            print(f"[SCREENSHOT] {os.path.abspath(filename)}")
             return ActionResult(success=True, action="screenshot", data={"filename": filename})
 
         elif action_type == BrowserAction.EXECUTE_JS.value:
             script = spec.get("script", "")
+            print(f"[ACTUATION] EXECUTING JS: '{script[:40]}...'")
             js_result = await page.evaluate(script)
             return ActionResult(success=True, action="execute_js", data={"result": js_result})
 
         elif action_type == BrowserAction.SELECT.value:
+            print(f"[ACTUATION] SELECTING: Option '{value}' on Element '{selector}'")
             await page.select_option(selector, value, timeout=timeout)
             return ActionResult(
                 success=True, action="select", data={"selector": selector, "value": value}
             )
 
         elif action_type == BrowserAction.HOVER.value:
+            print(f"[ACTUATION] HOVERING: Element '{selector}'")
             await page.hover(selector, timeout=timeout)
             return ActionResult(success=True, action="hover", data={"selector": selector})
 
         elif action_type == BrowserAction.NAVIGATE.value:
             url = spec.get("url", "")
+            print(f"[ACTUATION] NAVIGATING: {url}")
             await page.goto(url, wait_until=spec.get("wait_until", "networkidle"), timeout=timeout)
             return ActionResult(success=True, action="navigate", data={"url": url})
 
