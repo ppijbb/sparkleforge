@@ -7,14 +7,14 @@ authors = [
 ]
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.11,<4.0"
+requires-python = ">=3.11,<4.0"  # noqa: kept broad; pandas 3.x requires Python >=3.10
 dependencies = [
-    "langchain>=0.3.15",
-    "langgraph>=0.2.45",
-    "langchain-community>=0.3.15",
-    "langchain-core>=0.3.15",
+    "langchain>=1.3.13",
+    "langgraph>=1.2.9",
+    "langchain-community>=0.4.2",
+    "langchain-core>=1.4.9",
     "langchain-google-genai>=2.1.5",
-    "langchain-mcp-adapters>=0.1.6",
+    "langchain-mcp-adapters>=0.3.0",
     "cdp-use>=1.4.5",
     "websockets>=14.0,<16.0",
     "google-generativeai>=0.8.0",
@@ -29,23 +29,23 @@ dependencies = [
     "duckduckgo-search>=6.3.0",
     "tavily-python>=0.5.0",
     "browser-use>=0.1.40",
-    "playwright>=1.51.0",
+    "playwright>=1.61.0",
     "exa-py>=1.8.8",
     "azure-search-documents>=11.5.2",
     "supabase>=2.15.3",
     "arxiv>=2.1.3",
     "scholarly>=1.7.11",
-    "pandas>=2.2.3",
+    "pandas>=3.0.3",
     "numpy>=1.26.4",
-    "pydantic>=2.10.4",
-    "redis>=5.0.0",
-    "sqlalchemy>=2.0.0",
+    "pydantic>=2.13.4",
+    "redis>=8.0.1",
+    "sqlalchemy>=2.0.51",
     "aiosqlite>=0.20.0",
     "alembic>=1.12.0",
     "click>=8.1.0",
     "rich>=13.7.0",
     "typer>=0.9.0",
-    "streamlit>=1.39.0",
+    "streamlit>=1.59.2",
     "plotly>=5.17.0",
     "jinja2>=3.1.0",
     "markdown>=3.5.0",
@@ -56,7 +56,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "markdownify>=0.11.6",
     "mcp>=1.9.4",
-    "fastmcp>=0.1.0",
+    "fastmcp>=3.4.4",
     "reportlab>=4.0.0",
     "weasyprint>=60.0",
     "PyPDF2>=3.0.1",
@@ -75,12 +75,18 @@ dependencies = [
     "composio-langgraph>=0.11.0",
     "docling>=2.85.0",
     # Virtual Computer / Computer Use
-    "anthropic>=0.40.0",
+    "anthropic>=0.116.0",
     "pyautogui>=0.9.54",
     "mss>=9.0.1",
     "xvfbwrapper>=0.2.9",
     "Pillow>=10.0.0",
     "langgraph-checkpoint-sqlite>=3.1.0",
+    "langgraph-prebuilt>=1.1.0",
+    "langgraph-sdk>=0.4.2",
+    "langsmith>=0.10.2",
+    "starlette>=1.3.1",
+    "uvicorn>=0.51.0",
+    "openai>=2.45.0",
 ]
 
 [project.optional-dependencies]
@@ -182,6 +188,7 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = '-m "not slow"'
+testpaths = ["tests"]
 markers = [
     "slow: exercises real network/LLM calls and can hang without API credentials; excluded by default, run with -m slow",
 ]
