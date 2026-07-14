@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Streamlit Web Interface for SparkleForge - 인터랙티브 채팅 UI
+"""SparkleForge Streamlit web dashboard.
+
+Streamlit Web Interface for SparkleForge - 인터랙티브 채팅 UI
 
 좌우 분할 레이아웃:
 - 왼쪽: 채팅 인터페이스 (사용자 ↔ Agent)

@@ -144,6 +144,12 @@ class CapabilityManager:
                 return False
             return capability_name in self._agent_grants.get(agent_id, set())
 
+    def grant_default(self, agent_id: str, capability_names: List[str]) -> None:
+        """Grant a batch of built-in capabilities to an agent (convenience helper)."""
+        for name in capability_names:
+            if name in BUILTIN_CAPABILITIES:
+                self.grant_agent(agent_id, name)
+
     def tool_has(self, tool_name: str, capability_name: str) -> bool:
         """Check whether a tool has a specific capability."""
         with self._lock_data:
