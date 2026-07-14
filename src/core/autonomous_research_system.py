@@ -139,13 +139,9 @@ class AutonomousResearchSystem:
             # Validate ChromaDB availability (optional)
             try:
                 import chromadb  # type: ignore
-
-                logger.info("✅ ChromaDB module available")
             except ImportError:
-                logger.warning(
-                    "⚠️ ChromaDB not installed - vector search will be disabled"
-                )
-                logger.info("   Install with: pip install chromadb")
+                # Log only once per process if needed, or suppress entirely for CLI
+                pass
 
         except ValueError as e:
             logger.error(f"❌ Configuration loading failed: {e}")

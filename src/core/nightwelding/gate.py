@@ -22,6 +22,12 @@ from src.core.cli_agents.open_code_agent import OpenCodeAgent
 REPRO_TEST_PATTERN = re.compile(r"^tests/test_[^/]+\.py$")
 
 # Runtime scratch files this module (or patch_ops) writes to the working tree,
+
+# Issue #579: cheap pre-qualification before spending a full reproduce cycle.
+# Issue titles starting with these prefixes are design/planning work, not
+# reproducible bugs, so nightwelding should skip them and route to a human.
+NON_REPRODUCIBLE_TITLE_PREFIXES = ("planning:", "design:", "rfc:", "spike:")
+
 # excluded when scanning `git status` for what the LLM's diff actually touched.
 _IGNORED_RUNTIME_FILES = {"opencode.patch"}
 
@@ -97,6 +103,50 @@ def _touched_test_files(repo_root: Path) -> tuple[bool, List[str]]:
         if not REPRO_TEST_PATTERN.match(path):
             all_ok = False
     return all_ok, touched
+
+
+def is_reproducible_bug_eligible(issue_context: str) -> tuple[bool, str]:
+    """Cheap pre-qualification check (issue #579).
+
+    Returns (eligible, reason). When not eligible, the caller should skip the
+    expensive reproduction-test step and fail fast with `reason`.
+
+    This is intentionally a conservative, low-cost classifier: it catches the
+    obvious cases (planning/design titles, explicit non-bug labels) that would
+    otherwise waste a full LLM + pytest cycle before being rejected.
+    """
+    # The issue_context is the issue markdown; the first non-empty line is the
+    # "# <title>" header written by github_adapter.fetch_issue_context.
+    title = ""
+    for line in issue_context.splitlines():
+        stripped = line.strip()
+        if stripped:
+            # Strip a leading "# " heading marker if present.
+            if stripped.startswith("# "):
+                stripped = stripped[2:].strip()
+            title = stripped
+            break
+
+    if title:
+        lowered = title.lower()
+        for prefix in NON_REPRODUCIBLE_TITLE_PREFIXES:
+            if lowered.startswith(prefix):
+                return (
+                    False,
+                    f"Issue title {title!r} looks like design/planning work, not a reproducible bug. Skipping the reproduction step and routing to a human.",
+                )
+
+    # Heuristic: issues whose body explicitly frames them as design/planning
+    # proposals rather than failing-test bugs. Keep this narrow to avoid false
+    # positives on ordinary bug reports that mention "design" in passing.
+    lowered_body = issue_context.lower()
+    if "this is a design" in lowered_body or "this is a planning" in lowered_body:
+        return (
+            False,
+            "Issue is framed as design/planning work, not a failing-test bug. Skipping the reproduction step and routing to a human.",
+        )
+
+    return True, ""
 
 
 async def write_reproduction_test(

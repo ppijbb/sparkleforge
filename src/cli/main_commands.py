@@ -1068,3 +1068,21 @@ async def handle_cli_command(args):
     return 0
 
 
+async def handle_report_command(args):
+    """보고서 및 에이전트 평가 명령어 처리."""
+    from src.cli.commands.report import report_command
+    from rich.console import Console
+
+    class CliShim:
+        def __init__(self):
+            self.console = Console()
+
+    cli = CliShim()
+    report_args = []
+    if getattr(args, "report_command", None):
+        report_args.append(args.report_command)
+    await report_command(cli, report_args)
+    return 0
+
+
+

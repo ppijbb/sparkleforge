@@ -75,6 +75,27 @@ class SkillRepository:
         """등록된 모든 스킬 이름 반환."""
         return list(self.skills.keys())
 
+    def search_skills(self, query: str) -> List[Dict[str, Any]]:
+        """이름/설명 기준으로 스킬 검색."""
+        import re
+
+        terms = {term for term in re.findall(r"[a-z0-9_]{3,}", query.lower())}
+        results: List[Dict[str, Any]] = []
+        for name in self.skills:
+            skill = self.skills[name]
+            haystack = " ".join(
+                [skill.name, skill.description, json.dumps(skill.metadata, ensure_ascii=False)]
+            )
+            skill_terms = {term for term in re.findall(r"[a-z0-9_]{3,}", haystack.lower())}
+            if not terms:
+                score = 0.0
+            else:
+                overlap = terms & skill_terms
+                score = len(overlap) / max(len(terms), 1)
+            results.append({"name": skill.name, "description": skill.description, "score": score})
+        results.sort(key=lambda item: item["score"], reverse=True)
+        return results
+
     def delete_skill(self, name: str) -> bool:
         """스킬 삭제 (메모리 + 디스크)."""
         if name not in self.skills:

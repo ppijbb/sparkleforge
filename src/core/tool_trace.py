@@ -235,6 +235,49 @@ class ToolTraceManager:
         """모든 ToolTrace 반환."""
         return self.traces.copy()
 
+    def to_sources(self):
+        """ToolTrace 목록을 CitationManager Source 목록으로 변환합니다.
+
+        raw_answer/summary에서 URL과 제목을 추출해 구조화된 출처로 만듭니다.
+        """
+        from src.generation.citation_manager import Source
+        from urllib.parse import urlparse
+        import re
+
+        sources = []
+        for trace in self.traces:
+            text = f"{trace.query}\n{trace.summary}\n{trace.raw_answer}"
+            url_match = re.search(r"https?://[^\s)\"']+", text)
+            url = url_match.group(0) if url_match else None
+            title = trace.summary.strip().splitlines()[0][:200] if trace.summary else (
+                trace.query.strip()[:200] or trace.citation_id
+            )
+            source_type = "website"
+            if url:
+                host = (urlparse(url).hostname or "").lower()
+                if "arxiv.org" in host:
+                    source_type = "journal"
+            sources.append(
+                Source(
+                    id=trace.citation_id,
+                    title=title,
+                    authors=[],
+                    publication_date=None,
+                    url=url,
+                    doi=None,
+                    journal=None,
+                    volume=None,
+                    issue=None,
+                    pages=None,
+                    publisher=None,
+                    place=None,
+                    source_type=source_type,
+                    credibility_score=0.0,
+                    metadata={"tool_type": trace.tool_type},
+                )
+            )
+        return sources
+
     def get_traces_by_type(self, tool_type: str) -> List[ToolTrace]:
         """도구 타입으로 ToolTrace 목록 조회.
 
