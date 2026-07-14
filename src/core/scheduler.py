@@ -20,7 +20,6 @@ try:
     CRONITER_AVAILABLE = True
 except ImportError:
     CRONITER_AVAILABLE = False
-    logging.warning("croniter not available. Install with: pip install croniter")
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +293,9 @@ class Scheduler:
         if not CRONITER_AVAILABLE:
             # 간단한 구현 (매일 정시 실행 가정)
             # 실제로는 croniter를 사용하는 것이 좋습니다
+            if not hasattr(self, "_warned_croniter"):
+                logger.warning("croniter not available. Install with: pip install croniter")
+                self._warned_croniter = True
             return base_time + timedelta(days=1)
 
         try:
