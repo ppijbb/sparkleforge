@@ -164,11 +164,15 @@ class BootstrapGraph:
 
         op = ObservationPlane()
         op.start_iot_telemetry()
-        metrics = await op.system.get_all_metrics()
+        try:
+            metrics = await op.system.get_all_metrics()
+        except Exception:
+            await op.stop_iot_telemetry()
+            raise
         return {
             "observation_plane": op,
             "metrics_available": "error" not in metrics.get("cpu", {}),
-            "iot_telemetry_running": op.iot_telemetry._is_running,
+            "iot_telemetry_running": op.iot_telemetry.is_running,
         }
 
     async def _stage_actuation_plane(self) -> dict[str, Any]:
@@ -265,6 +269,11 @@ class BootstrapGraph:
                 )
                 stage_results.append(result)
                 if stage.critical:
+                    if "observation_plane" in values:
+                        try:
+                            await values["observation_plane"]["observation_plane"].stop_iot_telemetry()
+                        except Exception:
+                            pass
                     return BootstrapResult(ok=False, stages=stage_results, values=values)
                 continue
 

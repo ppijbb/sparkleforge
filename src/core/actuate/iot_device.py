@@ -505,14 +505,12 @@ class SensorDevice(PhysicalDevice):
     backend simulates slight variations around a baseline climate.
     """
 
-    def __init__(self, device_id: str, backend: str = BACKEND_AUTO, pin: int = 4, telemetry_loop=None):
+    def __init__(self, device_id: str, backend: str = BACKEND_AUTO, pin: int = 4):
         super().__init__(device_id, backend)
         self.pin = pin
         self.temp_base = 22.0
         self.humi_base = 45.0
         self._dht = None
-        if telemetry_loop is not None:
-            telemetry_loop.register_sensor(self)
 
     def _hw_connect(self) -> None:
         import adafruit_dht

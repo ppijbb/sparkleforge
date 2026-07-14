@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from src.core.observe.event_bus import EventBus
 from src.core.observe.iot_telemetry_loop import IOTTelemetryLoop
