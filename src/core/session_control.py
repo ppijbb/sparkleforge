@@ -27,20 +27,26 @@ class SessionQuota:
 
     @classmethod
     def from_env(cls) -> "SessionQuota":
-        """환경변수 오버라이드를 적용한 기본 쿼터를 생성한다."""
+        """환경변수 오버라이드를 적용한 기본 쿼터를 생성한다. 이전 버전 호환성을 위해 대체 환경변수도 지원한다."""
+        max_tokens = os.getenv("SESSION_MAX_TOKENS")
+        if max_tokens is None:
+            max_tokens = os.getenv("COST_BUDGET_SESSION_TOKEN_LIMIT")
+            
+        max_cost = os.getenv("SESSION_MAX_COST")
+        if max_cost is None:
+            max_cost = os.getenv("COST_BUDGET_SESSION_COST_LIMIT")
+            
+        timeout = os.getenv("SESSION_TIMEOUT")
+        if timeout is None:
+            timeout = os.getenv("SESSION_TIMEOUT_SECONDS")
+
         return cls(
             max_concurrent_sessions=int(
                 os.getenv("MAX_CONCURRENT_SESSIONS", cls.max_concurrent_sessions)
             ),
-            max_tokens_per_session=int(
-                os.getenv("SESSION_MAX_TOKENS", cls.max_tokens_per_session)
-            ),
-            max_cost_per_session=float(
-                os.getenv("SESSION_MAX_COST", cls.max_cost_per_session)
-            ),
-            wall_clock_timeout_seconds=int(
-                os.getenv("SESSION_TIMEOUT", cls.wall_clock_timeout_seconds)
-            ),
+            max_tokens_per_session=int(max_tokens) if max_tokens is not None else cls.max_tokens_per_session,
+            max_cost_per_session=float(max_cost) if max_cost is not None else cls.max_cost_per_session,
+            wall_clock_timeout_seconds=int(timeout) if timeout is not None else cls.wall_clock_timeout_seconds,
         )
 
 
