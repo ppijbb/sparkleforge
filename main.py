@@ -114,12 +114,12 @@ from src.cli.main_commands import (
 )
 
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
 
-# Remove existing handlers to avoid duplicate logs on reloads (e.g., under some app servers or noteboks)
-if logger.hasHandlers():
-    logger.handlers.clear()
+# Remove existing handlers to avoid duplicate logs on reloads
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
 
 # File handler
 file_handler = logging.FileHandler(log_file, encoding="utf-8")
@@ -127,7 +127,7 @@ file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
-logger.addHandler(file_handler)
+root_logger.addHandler(file_handler)
 
 # Console handler
 console_handler = logging.StreamHandler()
@@ -136,7 +136,9 @@ console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
 console_handler.addFilter(HTTPErrorFilter())  # HTTP 에러 필터 추가
-logger.addHandler(console_handler)
+root_logger.addHandler(console_handler)
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # MCP / Runner / HTTP 관련 로거 억제 (과도한 로그 출력 방지)
@@ -736,6 +738,8 @@ EXAMPLES:
         # Set logging level
         if args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
+        else:
+            logging.getLogger().setLevel(logging.INFO)
 
     # Create logs directory
     logs_dir = project_root / "logs"
