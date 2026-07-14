@@ -31,33 +31,34 @@ logger = logging.getLogger(__name__)
 class REPLCLI:
     """SparkleForge REPL CLI."""
 
-    def __init__(self):
+    def __init__(self, suppress_logging: bool = True):
         """초기화."""
         import logging
         import warnings
 
-        # REPL 모드에서는 모든 로그를 완전히 억제 (ERROR만 표시)
-        logging.getLogger().setLevel(logging.ERROR)
+        if suppress_logging:
+            # REPL 모드에서는 모든 로그를 완전히 억제 (ERROR만 표시)
+            logging.getLogger().setLevel(logging.ERROR)
 
-        # 모든 주요 모듈의 로거를 ERROR로 설정
-        for logger_name in [
-            "__main__",
-            "src",
-            "src.core",
-            "src.core.agent_orchestrator",
-            "src.core.mcp_integration",
-            "src.core.shared_memory",
-            "src.core.skills_manager",
-            "src.core.prompt_refiner_wrapper",
-            "root",
-            "streamlit",
-            "streamlit.runtime",
-            "local_researcher",
-        ]:
-            logging.getLogger(logger_name).setLevel(logging.ERROR)
+            # 모든 주요 모듈의 로거를 ERROR로 설정
+            for logger_name in [
+                "__main__",
+                "src",
+                "src.core",
+                "src.core.agent_orchestrator",
+                "src.core.mcp_integration",
+                "src.core.shared_memory",
+                "src.core.skills_manager",
+                "src.core.prompt_refiner_wrapper",
+                "root",
+                "streamlit",
+                "streamlit.runtime",
+                "local_researcher",
+            ]:
+                logging.getLogger(logger_name).setLevel(logging.ERROR)
 
-        # warnings도 완전히 억제
-        warnings.filterwarnings("ignore")
+            # warnings도 완전히 억제
+            warnings.filterwarnings("ignore")
 
         self.console = Console()
 
