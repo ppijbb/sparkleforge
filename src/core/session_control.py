@@ -512,6 +512,29 @@ class SessionControl:
            (q["tokens_used"] >= q["max_tokens"]):
             logger.warning(f"Session {session_id} exceeded quotas and was cancelled.")
             try:
+                from src.core.surface.notification_channel import (
+                    NotificationChannel,
+                    Notification,
+                    NotificationLevel,
+                )
+
+                notification = Notification(
+                    title="🛑 Session cancelled (quota exceeded)",
+                    message=(
+                        f"Session '{session_id}' was automatically cancelled after "
+                        "exceeding its token/cost/time quota."
+                    ),
+                    level=NotificationLevel.WARNING,
+                    action_id=session_id,
+                )
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.run_in_executor(None, NotificationChannel().send, notification)
+                except RuntimeError:
+                    NotificationChannel().send(notification)
+            except Exception as notify_ex:
+                logger.warning("Failed to send quota cancellation notification: %s", notify_ex)
+            try:
                 asyncio.get_running_loop().create_task(self.cancel_session(session_id))
             except RuntimeError:
                 # check_quotas is called from sync code paths with no
