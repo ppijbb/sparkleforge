@@ -496,7 +496,7 @@ class SessionControl:
                     NotificationLevel,
                 )
 
-                NotificationChannel().send(Notification(
+                notification = Notification(
                     title="🛑 Session cancelled (quota exceeded)",
                     message=(
                         f"Session '{session_id}' was automatically cancelled after "
@@ -504,7 +504,12 @@ class SessionControl:
                     ),
                     level=NotificationLevel.WARNING,
                     action_id=session_id,
-                ))
+                )
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.run_in_executor(None, NotificationChannel().send, notification)
+                except RuntimeError:
+                    NotificationChannel().send(notification)
             except Exception as notify_ex:
                 logger.warning("Failed to send quota cancellation notification: %s", notify_ex)
             try:

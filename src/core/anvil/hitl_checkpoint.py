@@ -14,10 +14,9 @@ import aiohttp
 
 from src.core.anvil.dynamic_checklist_generator import Checklist, ChecklistItem
 from src.core.anvil.request_analyzer import RequestAnalyzer
+from src.core.surface.notification_channel import NotificationChannel, Notification, NotificationLevel
 
 logger = logging.getLogger(__name__)
-
-from src.core.surface.notification_channel import NotificationChannel, Notification, NotificationLevel
 
 
 class CheckpointStage(Enum):
@@ -173,15 +172,18 @@ class HITLCheckpointManager:
             logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
 
             try:
-                NotificationChannel().send(Notification(
-                    title="⏸️ HITL checkpoint waiting for human input",
-                    message=(
-                        f"Stage '{stage.value}' is suspended and awaiting "
-                        f"approval/intervention. Checkpoint ID: {checkpoint_id}"
-                    ),
-                    level=NotificationLevel.APPROVAL,
-                    action_id=checkpoint_id,
-                ))
+                await asyncio.to_thread(
+                    NotificationChannel().send,
+                    Notification(
+                        title="⏸️ HITL checkpoint waiting for human input",
+                        message=(
+                            f"Stage '{stage.value}' is suspended and awaiting "
+                            f"approval/intervention. Checkpoint ID: {checkpoint_id}"
+                        ),
+                        level=NotificationLevel.APPROVAL,
+                        action_id=checkpoint_id,
+                    )
+                )
             except Exception as notify_ex:
                 logger.warning("Failed to send HITL notification: %s", notify_ex)
 
