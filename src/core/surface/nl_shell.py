@@ -157,7 +157,7 @@ class NLShell:
         try:
             from src.cli.repl_cli import REPLCLI
 
-            cli = REPLCLI()
+            cli = REPLCLI(suppress_logging=False)
             await cli.handle_command(intent.command or "")
             output = {
                 "ok": True,

@@ -194,8 +194,15 @@ class TaskDashboard:
         via this single source of truth (Surface integration, #570).
         """
         with self._lock_data:
-            tasks = [t.to_dict() for t in self._tasks.values()]
-        return {"tasks": tasks, "summary": self.summary()}
+            tasks_objs = list(self._tasks.values())
+            tasks = [t.to_dict() for t in tasks_objs]
+            
+            counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
+            for t in tasks_objs:
+                counts[t.status.value] += 1
+            counts["total"] = len(tasks_objs)
+            
+        return {"tasks": tasks, "summary": counts}
 
     def to_session_view(self, session_id: str) -> Dict[str, Any]:
         """Return tasks + summary scoped to a session id.
@@ -204,12 +211,19 @@ class TaskDashboard:
         identical status/progress/quota figures for a given session.
         """
         with self._lock_data:
-            tasks = [
-                t.to_dict()
+            tasks_objs = [
+                t
                 for t in self._tasks.values()
                 if t.metadata.get("session_id") == session_id
             ]
-        return {"tasks": tasks, "summary": self.summary()}
+            tasks = [t.to_dict() for t in tasks_objs]
+            
+            counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
+            for t in tasks_objs:
+                counts[t.status.value] += 1
+            counts["total"] = len(tasks_objs)
+            
+        return {"tasks": tasks, "summary": counts}
 
     def reset(self) -> None:
         with self._lock_data:
