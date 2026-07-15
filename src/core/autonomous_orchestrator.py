@@ -101,12 +101,26 @@ class AutonomousOrchestrator:
         objective_id = objective_id or f"research_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         config = {"configurable": {"thread_id": objective_id}}
 
+        # Setup Supabase Real-time Logging Handler
+        supabase_handler = None
+        root_logger = logging.getLogger()
         try:
+            from src.utils.supabase_realtime_logger import SupabaseRealtimeHandler
+            supabase_handler = SupabaseRealtimeHandler(objective_id)
+            supabase_handler.setLevel(logging.INFO)
+            root_logger.addHandler(supabase_handler)
+            logger.debug(f"Registered SupabaseRealtimeHandler for session '{objective_id}'")
+        except Exception as handler_err:
+            logger.debug(f"Failed to register SupabaseRealtimeHandler: {handler_err}")
+
+        try:
+            from src.utils.supabase_realtime_logger import redirect_stdout_to_supabase
             if resuming:
                 checkpoint = await self.graph.aget_state(config)
                 if checkpoint and checkpoint.values:
                     logger.info(f"↩️  Resuming orchestrator run '{objective_id}' from checkpoint")
-                    final_state = await self.graph.ainvoke(None, config)
+                    with redirect_stdout_to_supabase(objective_id):
+                        final_state = await self.graph.ainvoke(None, config)
                     return final_state
                 logger.warning(
                     f"No checkpoint found for objective_id='{objective_id}', starting fresh"
@@ -125,11 +139,21 @@ class AutonomousOrchestrator:
                 "innovation_stats": {},
                 "messages": [],
             }
-            final_state = await self.graph.ainvoke(initial_state, config)
+            with redirect_stdout_to_supabase(objective_id):
+                final_state = await self.graph.ainvoke(initial_state, config)
             return final_state
         except Exception as e:
             logger.error(f"❌ Orchestrator execution failed: {e}")
             return {"error": str(e), "success": False}
+        finally:
+            if supabase_handler:
+                try:
+                    root_logger.removeHandler(supabase_handler)
+                    from src.utils.supabase_realtime_logger import stop_supabase_logger_worker
+                    stop_supabase_logger_worker()
+                    logger.debug(f"Unregistered SupabaseRealtimeHandler for session '{objective_id}'")
+                except Exception as cleanup_err:
+                    logger.debug(f"Failed to clean up Supabase logging: {cleanup_err}")
 
     async def run_research(
         self,

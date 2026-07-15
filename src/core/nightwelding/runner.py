@@ -131,7 +131,7 @@ async def run_nightwelding_issue(
             "Green (after fix):\n```text\n" + implement_result.green_output[-2000:] + "\n```\n\n"
             f"Closes #{issue_number}"
         )
-        pr_url = github_adapter.open_draft_pr(repo, base_branch, branch, commit_title_impl, body)
+        pr_url = github_adapter.open_draft_pr(repo, base_branch, branch, commit_title_impl, body, issue_number)
         item.pr_url = pr_url
         item.status = NightweldingStatus.DRAFT_OPENED
         queue.upsert(item)

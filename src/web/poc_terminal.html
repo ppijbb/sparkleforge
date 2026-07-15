@@ -1,23 +1,542 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>SparkleForge PoC Terminal</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SparkleForge: Web Terminal & Live Preview POC</title>
+    
+    <!-- Xterm.js CSS and JS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    
+    <!-- Supabase JS client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        :root {
+            --bg-color: #0c0f12;
+            --card-bg: #14191f;
+            --border-color: #212936;
+            --text-color: #e2e8f0;
+            --primary-color: #ff9f1c; /* Neon Amber / Orange */
+            --primary-hover: #ffbf69;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 24px;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h1 span {
+            color: var(--primary-color);
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #64748b;
+        }
+
+        .dot.connected {
+            background-color: #10b981; /* Green */
+        }
+
+        .dot.connecting {
+            background-color: #f59e0b; /* Yellow */
+        }
+
+        .config-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .form-group {
+            flex: 1;
+            min-width: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 12px;
+            color: #94a3b8;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        input {
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 10px;
+            color: white;
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 20px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.secondary {
+            background-color: #334155;
+            color: white;
+        }
+
+        button.secondary:hover {
+            background-color: #475569;
+        }
+
+        /* Two column layout */
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            width: 100%;
+            height: 500px;
+        }
+
+        @media (max-width: 800px) {
+            .workspace {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+        }
+
+        .workspace-panel {
+            display: flex;
+            flex-direction: column;
+            background-color: #000;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .panel-header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 15px;
+            font-size: 13px;
+            font-weight: bold;
+            color: #94a3b8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-body {
+            flex: 1;
+            padding: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #terminal {
+            height: 100%;
+            width: 100%;
+        }
+
+        .preview-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            width: 100%;
+            color: #64748b;
+        }
+
+        #livePreviewImg {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border: 1px solid var(--border-color);
+            background-color: #1e293b;
+        }
+
+        .placeholder-text {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            text-align: center;
+        }
+
+        #currentActionText {
+            color: var(--primary-color);
+            font-family: monospace;
+            font-size: 13px;
+        }
+    </style>
 </head>
 <body>
-  <div id="terminal"></div>
-  <script>
+
+<div class="container">
+    <header>
+        <h1>⚒️ SparkleForge <span>Terminal & Live Preview</span></h1>
+        <div class="status-indicator">
+            <div id="statusDot" class="dot"></div>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </header>
+
+    <!-- Credentials and setup form -->
+    <div class="config-card">
+        <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+                <label for="supabaseUrl">Supabase Project URL</label>
+                <input type="text" id="supabaseUrl" placeholder="https://xxxx.supabase.co" />
+            </div>
+            <div class="form-group" style="flex: 3;">
+                <label for="supabaseKey">Supabase Anon/Service Key</label>
+                <input type="password" id="supabaseKey" placeholder="your-supabase-api-key" />
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sessionId">Session ID (Thread ID)</label>
+                <input type="text" id="sessionId" value="research_live_test" />
+            </div>
+            <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+                <div class="btn-group">
+                    <button id="btnConnect">Subscribe & Stream</button>
+                    <button id="btnSimulate" class="secondary">Simulate Actions + Images</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workspace split pane -->
+    <div class="workspace">
+        <!-- Left: Terminal -->
+        <div class="workspace-panel">
+            <div class="panel-header">
+                <span>💻 Live Command Output</span>
+                <span id="currentActionText">Idle</span>
+            </div>
+            <div class="panel-body">
+                <div id="terminal"></div>
+            </div>
+        </div>
+
+        <!-- Right: Screen Preview -->
+        <div class="workspace-panel">
+            <div class="panel-header">
+                <span>📺 Browser Live Preview</span>
+            </div>
+            <div class="panel-body" style="padding: 10px;">
+                <div class="preview-container">
+                    <img id="livePreviewImg" style="display: none;" alt="Browser Screen" />
+                    <div id="previewPlaceholder" class="placeholder-text">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="2" y="3" width="20" height="14" rx="2" />
+                            <line x1="8" y1="21" x2="16" y2="21" />
+                            <line x1="12" y1="17" x2="12" y2="21" />
+                        </svg>
+                        <span>No browser actions executed yet.<br><small style="color: #475569;">Screenshots will appear here live when the agent controls the browser.</small></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // ⚙️ PRODUCTION CONFIGURATION (고정 키 설정)
+    // ==========================================
     // Supabase configuration is injected at build time. The replacement tokens
     // below are substituted by the frontend build pipeline (see scripts/build_web.py)
     // from environment variables SUPABASE_URL and SUPABASE_ANON_KEY. Never commit
     // literal keys to this repository; rotation must not require a code change.
-    const SUPABASE_URL = "__SUPABASE_URL__";
-    const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__";
-
-    if (!SUPABASE_URL || SUPABASE_URL === "__SUPABASE_URL__" ||
-        !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === "__SUPABASE_ANON_KEY__") {
-      console.error("Supabase credentials are not configured. Run the build step to inject __SUPABASE_URL__ and __SUPABASE_ANON_KEY__ from environment variables.");
+    let injectedUrl = "__SUPABASE_URL__";
+    let injectedKey = "__SUPABASE_ANON_KEY__";
+    
+    if (injectedUrl === "__SUPABASE_URL__" || !injectedUrl) {
+        injectedUrl = "";
     }
-  </script>
+    if (injectedKey === "__SUPABASE_ANON_KEY__" || !injectedKey) {
+        injectedKey = "";
+    }
+
+    const CONFIG = {
+        supabaseUrl: injectedUrl,
+        supabaseKey: injectedKey
+    };
+
+    // Initialize Xterm.js
+    const term = new Terminal({
+        cursorBlink: true,
+        fontFamily: 'Courier New, Courier, monospace',
+        fontSize: 13,
+        theme: {
+            background: '#000000',
+            foreground: '#e2e8f0',
+            cursor: '#ff9f1c',
+            blue: '#3b82f6',
+            green: '#10b981',
+            yellow: '#f59e0b',
+            red: '#ef4444'
+        }
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal'));
+    fitAddon.fit();
+
+    term.writeln('\x1b[1;33m⚒️ Welcome to SparkleForge Web Terminal!\x1b[0m');
+    
+    // Auto-configuration detect
+    const configCard = document.getElementById('supabaseUrl').closest('.config-card');
+    
+    if (CONFIG.supabaseUrl && CONFIG.supabaseKey) {
+        // 고정 키가 설정된 경우 입력 UI 숨기기
+        configCard.style.display = 'none';
+        term.writeln('Production Config detected. Auto-subscribing to live stream...');
+        
+        // 페이지 로드 후 즉시 연결 실행
+        window.addEventListener('load', () => {
+            connectAndSubscribe(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+        });
+    } else {
+        term.writeln('Configure your Supabase credentials above and click "Subscribe & Stream".');
+        term.writeln('Live console outputs, [ACTUATION] tags, and [SCREENSHOT] updates will show up here.');
+        
+        // Save and load credentials from localStorage (로컬 테스트 편의용)
+        document.getElementById('supabaseUrl').value = localStorage.getItem('sf_poc_url') || '';
+        document.getElementById('supabaseKey').value = localStorage.getItem('sf_poc_key') || '';
+    }
+
+    let supabaseClient = null;
+    let channel = null;
+
+    // Connect & Subscribe to Supabase channel
+    function connectAndSubscribe(url, key) {
+        const sessionId = document.getElementById('sessionId').value.trim();
+
+        if (!url || !key || !sessionId) {
+            alert('Please fill out all fields (URL, Key, Session ID).');
+            return;
+        }
+
+        // Save keys only if using dynamic input
+        if (!CONFIG.supabaseUrl) {
+            localStorage.setItem('sf_poc_url', url);
+            localStorage.setItem('sf_poc_key', key);
+        }
+
+        updateStatus('connecting', 'Connecting...');
+        term.writeln(`\r\n\x1b[34m[System]\x1b[0m Initializing Supabase client for session \x1b[36m${sessionId}\x1b[0m...`);
+
+        try {
+            if (channel) {
+                channel.unsubscribe();
+            }
+
+            supabaseClient = supabase.createClient(url, key);
+            channel = supabaseClient.channel(`agent_broadcast:${sessionId}`);
+
+            channel.on('broadcast', { event: 'terminal_line' }, (payload) => {
+                const text = payload.payload.text || payload.payload.message;
+                processIncomingLine(text);
+            });
+
+            // General agent logs
+            channel.on('broadcast', { event: 'agent_log' }, (payload) => {
+                const event = payload.payload;
+                const timeStr = event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : '';
+                term.writeln(`\x1b[32m[${timeStr}] [${event.agent_name.toUpperCase()}]\x1b[0m ${event.message}`);
+            });
+
+            channel.subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    updateStatus('connected', 'Connected');
+                    term.writeln(`\x1b[1;32m[Success]\x1b[0m Subscribed to channel \x1b[33magent_broadcast:${sessionId}\x1b[0m. Listening for events...`);
+                } else {
+                    updateStatus('disconnected', status);
+                    term.writeln(`\x1b[31m[Warning]\x1b[0m Channel state changed: ${status}`);
+                }
+            });
+
+        } catch (err) {
+            updateStatus('disconnected', 'Error');
+            term.writeln(`\x1b[1;31m[Error]\x1b[0m Connection failed: ${err.message}`);
+        }
+    }
+
+    document.getElementById('btnConnect').addEventListener('click', () => {
+        const url = document.getElementById('supabaseUrl').value.trim();
+        const key = document.getElementById('supabaseKey').value.trim();
+        connectAndSubscribe(url, key);
+    });
+
+    // Process incoming lines, intercepting [ACTUATION], [SCREENSHOT], and [PREVIEW]
+    function processIncomingLine(line) {
+        if (line.startsWith('[SCREENSHOT]') || line.startsWith('[PREVIEW]')) {
+            const imageUrl = line.startsWith('[SCREENSHOT]')
+                ? line.replace('[SCREENSHOT]', '').trim()
+                : line.replace('[PREVIEW]', '').trim();
+            updateLivePreview(imageUrl);
+            term.writeln(`\x1b[1;34m[Preview]\x1b[0m Live preview updated: \x1b[4m${imageUrl}\x1b[0m`);
+        } else if (line.startsWith('[ACTUATION]')) {
+            const actionText = line.replace('[ACTUATION]', '').trim();
+            document.getElementById('currentActionText').innerText = `⚡ ${actionText}`;
+            term.writeln(`\x1b[1;33m${line}\x1b[0m`);
+        } else {
+            term.writeln(line);
+        }
+    }
+
+    function updateLivePreview(url) {
+        const placeholder = document.getElementById('previewPlaceholder');
+        const img = document.getElementById('livePreviewImg');
+        
+        placeholder.style.display = 'none';
+        img.src = url;
+        img.style.display = 'block';
+    }
+
+    // Simulate sending broadcast lines and mock screenshot images to prove it works
+    document.getElementById('btnSimulate').addEventListener('click', async () => {
+        if (!channel) {
+            alert('Please connect and subscribe first.');
+            return;
+        }
+
+        const mockSteps = [
+            {
+                type: 'action',
+                text: `[ACTUATION] NAVIGATING: https://github.com`
+            },
+            {
+                type: 'screenshot',
+                url: 'https://images.unsplash.com/photo-1618401471353-b98aedd07871?auto=format&fit=crop&w=600&q=80' 
+            },
+            {
+                type: 'action',
+                text: `[ACTUATION] CLICKING: Element 'a.btn-signin' (Sign In)`
+            },
+            {
+                type: 'screenshot',
+                url: 'https://images.unsplash.com/photo-1607799279861-4dd421887fb3?auto=format&fit=crop&w=600&q=80'
+            },
+            {
+                type: 'action',
+                text: `[ACTUATION] TYPING: 'developer@sparkleforge.ai' into input#login_field`
+            },
+            {
+                type: 'screenshot',
+                url: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&w=600&q=80'
+            }
+        ];
+
+        for (const step of mockSteps) {
+            if (step.type === 'action') {
+                await channel.send_broadcast('terminal_line', {
+                    text: step.text,
+                    timestamp: Date.now()
+                });
+            } else if (step.type === 'screenshot') {
+                await channel.send_broadcast('terminal_line', {
+                    text: `[SCREENSHOT] ${step.url}`,
+                    timestamp: Date.now()
+                });
+            }
+            await new Promise(resolve => setTimeout(resolve, 800));
+        }
+    });
+
+    function updateStatus(state, text) {
+        const dot = document.getElementById('statusDot');
+        const txt = document.getElementById('statusText');
+        
+        dot.className = 'dot ' + state;
+        txt.textContent = text;
+    }
+
+    window.addEventListener('resize', () => {
+        fitAddon.fit();
+    });
+</script>
 </body>
 </html>

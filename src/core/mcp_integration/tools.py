@@ -123,6 +123,9 @@ async def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, 
         logger.info("[MCP][execute_tool] MCP Hub not initialized, initializing...")
         await mcp_hub.initialize_mcp()
 
+    # Print Actuation event to stdout
+    print(f"[ACTUATION] MCP TOOL CALL: {tool_name} (args: {parameters})")
+
     # SSE tool visualization: emit tool_use before execution
     try:
         from src.core.streaming_manager import get_streaming_manager

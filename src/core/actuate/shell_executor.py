@@ -48,6 +48,9 @@ class SecureShellExecutor:
                 "status": "blocked"
             }
 
+        # Print Actuation event to stdout
+        print(f"[ACTUATION] SHELL EXECUTING: {command}")
+
         if dry_run:
             logger.info(f"SecureShellExecutor [Dry-Run]: {command}")
             return {
