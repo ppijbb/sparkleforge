@@ -8,7 +8,11 @@ logger = logging.getLogger(__name__)
 try:
     import pyautogui
     PYAUTOGUI_AVAILABLE = True
-except ImportError:
+except Exception:
+    # pyautogui may raise KeyError('DISPLAY') or X11-related exceptions in
+    # headless environments (e.g. GitHub Actions) where no X server is
+    # available. Fall back gracefully instead of crashing the bootstrap.
+    pyautogui = None
     PYAUTOGUI_AVAILABLE = False
 
 
