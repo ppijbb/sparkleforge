@@ -66,3 +66,6 @@ async def test_generate_daily_report(
     assert "종합 Strict Score" in content
     assert "70.0 / 100" in content
     assert "Mocked critique" in content
+    # Trend gap section should always be present, even without signals.
+    assert "트렌드 갭" in content
+    assert (reports_dir / "trend_gap_history.json").exists()
