@@ -127,6 +127,33 @@ def create_branch(repo_root: Path, branch: str, base_branch: str) -> None:
     _run(["git", "checkout", "-B", branch, f"origin/{base_branch}"], cwd=repo_root)
 
 
+def create_worktree(repo_root: Path, branch: str, base_branch: str) -> Path:
+    """Check out `branch` into its own git worktree instead of `repo_root`.
+
+    Nightwelding runs (and sweeps) can overlap with an interactive session or
+    another run sharing `repo_root`; checking the branch out in place would
+    stomp on whatever that other session has checked out. A worktree gives
+    each run its own working directory while sharing one `.git` object store,
+    so `git worktree remove` after the run is the only cleanup needed.
+    """
+    _run(["git", "fetch", "origin", base_branch, "--depth=1"], cwd=repo_root)
+    worktree_root = Path.home() / ".sparkleforge" / "nightwelding-worktrees"
+    worktree_root.mkdir(parents=True, exist_ok=True)
+    worktree_dir = worktree_root / branch.replace("/", "-")
+    _run(["git", "worktree", "add", "-B", branch, str(worktree_dir), f"origin/{base_branch}"], cwd=repo_root)
+    return worktree_dir
+
+
+def remove_worktree(repo_root: Path, worktree_dir: Path) -> None:
+    """Best-effort cleanup for a worktree created by `create_worktree`.
+
+    Never raises: cleanup failures shouldn't mask the run's real outcome, and
+    a leftover worktree directory is harmless (next run for the same issue
+    picks a new timestamped branch/path).
+    """
+    _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=repo_root, check=False)
+
+
 def push_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
     proc = subprocess.run(
         ["git", "log", "--oneline", f"origin/{base_branch}..HEAD"],
