@@ -380,8 +380,10 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         "You are a careful coding agent working against a real repository. "
         "On each turn, output EITHER a file request using "
         '<parameter name="file_path">path/to/file.py</parameter> '
-        "OR a git-apply compatible unified diff — never both, and no other "
-        "prose, markdown narration, or tool calls. "
+        "OR a git-apply compatible unified diff, "
+        'OR a JSON object with {"action": "decompose", "sub_issues": [{"title": "...", "body": "..."}]} '
+        "if the issue is too large for a single patch. "
+        "Never output both a diff and a decomposition, and no other prose, markdown narration, or tool calls. "
         "The diff context lines must match the file exactly."
     )
     max_llm_attempts = 3
@@ -405,6 +407,24 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
 
         response = result.get("response", "")
         diff = extract_diff(response)
+        
+        # Check for decomposition request
+        import json
+        try:
+            raw_json = _strip_fenced_response(response)
+            if raw_json.startswith("{"):
+                data = json.loads(raw_json)
+                if data.get("action") == "decompose" and "sub_issues" in data:
+                    from src.core.nightwelding.github_adapter import create_subissues
+                    # Extract issue number from context file name or path
+                    issue_num = re.search(r"#(\d+)", issue_context)
+                    if issue_num:
+                        await create_subissues(issue_num.group(1), data["sub_issues"])
+                        print(f"Successfully decomposed issue #{issue_num.group(1)}")
+                        return 0
+        except Exception as e:
+            print(f"Decomposition parsing failed: {e}", file=sys.stderr)
+
         if diff:
             break
 

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 class ExecutionMode(Enum):
     AUTONOMOUS = "autonomous"  # 사람 개입 없이 자율 실행
     HITL_COLLABORATIVE = "hitl_collaborative"  # 단계별 사용자 협업 실행
+    PLAN_FIRST = "plan_first"  # 계획 승인 전까지 쓰기 액션 차단
 
 
 @dataclass
@@ -45,6 +46,7 @@ class ModeController:
         initial_mode: ExecutionMode = ExecutionMode.AUTONOMOUS,
         failure_threshold: int = 3,
         recovery_threshold: int = 3,
+        plan_first: bool = False,
     ):
         self.mode = initial_mode
         self.failure_threshold = max(1, failure_threshold)
@@ -52,6 +54,13 @@ class ModeController:
         self.transitions: List[ModeTransition] = []
         self._consecutive_failures = 0
         self._consecutive_successes = 0
+        if plan_first and initial_mode != ExecutionMode.PLAN_FIRST:
+            self._switch(
+                ExecutionMode.PLAN_FIRST,
+                "세션 시작 시 --plan 선언으로 계획 우선 모드 진입",
+            )
+        self.plan_approved = False
+        self.plan_revisions = 0
 
     # --- 신호 수신 ---
 
@@ -100,6 +109,43 @@ class ModeController:
             )
         return self.mode
 
+    # --- 계획 우선 모드 (Plan Mode) ---
+
+    def is_plan_first(self) -> bool:
+        return self.mode == ExecutionMode.PLAN_FIRST
+
+    def is_write_blocked(self) -> bool:
+        """PLAN_FIRST 모드에서 계획이 승인되기 전까지 쓰기 액션 차단 여부."""
+        return self.is_plan_first() and not self.plan_approved
+
+    def submit_plan(self, approved: bool, feedback: str = "") -> ExecutionMode:
+        """계획 초안에 대한 사람 승인/수정 요청 결과 반영.
+
+        approved=True 이면 AUTONOMOUS 또는 HITL_COLLABORATIVE 로 전환해 실행 시작.
+        approved=False 이면 PLAN_FIRST 를 유지하며 계획을 다시 만들어 재승인받는다.
+        """
+        if self.mode != ExecutionMode.PLAN_FIRST:
+            return self.mode
+
+        if approved:
+            self.plan_approved = True
+            target = (
+                ExecutionMode.HITL_COLLABORATIVE
+                if feedback.strip()
+                else ExecutionMode.AUTONOMOUS
+            )
+            self._switch(
+                target,
+                "계획 승인으로 실행 모드 전환" + (f": {feedback}" if feedback.strip() else ""),
+            )
+        else:
+            self.plan_revisions += 1
+            self._switch(
+                ExecutionMode.PLAN_FIRST,
+                f"계획 반려/수정 요청 ({self.plan_revisions}회) - 계획 재작성 후 재승인",
+            )
+        return self.mode
+
     def on_unresolved_capability(self, capability: str) -> ExecutionMode:
         """방법 탐색 체인이 끝내 실패한 신호 (MethodResolver UNRESOLVED)."""
         if self.mode == ExecutionMode.AUTONOMOUS:
@@ -113,6 +159,9 @@ class ModeController:
 
     def is_autonomous(self) -> bool:
         return self.mode == ExecutionMode.AUTONOMOUS
+
+    def is_plan_first(self) -> bool:
+        return self.mode == ExecutionMode.PLAN_FIRST
 
     def summary(self) -> Dict[str, object]:
         return {
