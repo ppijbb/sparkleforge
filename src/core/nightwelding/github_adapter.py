@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import shutil
 import sys
 import time
 import secrets
@@ -154,11 +155,15 @@ def remove_worktree(worktree_dir: Path) -> None:
     run gets a unique worktree directory; this only removes the specific
     worktree passed in.
     """
-    _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=Path.cwd(), check=False)
+    proc = _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=Path.cwd(), check=False)
+    if proc.returncode != 0:
+        print(f"Warning: git worktree remove failed for {worktree_dir}: {proc.stderr.strip()}")
+
     try:
-        worktree_dir.rmdir()
-    except OSError:
-        pass
+        shutil.rmtree(worktree_dir)
+        _run(["git", "worktree", "prune"], cwd=Path.cwd(), check=False)
+    except OSError as e:
+        print(f"Error: Failed to clean up worktree directory {worktree_dir}: {e}")
 
 
 def push_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
