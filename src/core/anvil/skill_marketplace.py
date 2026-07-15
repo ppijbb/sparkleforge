@@ -484,19 +484,32 @@ class SkillMarketplace:
         share_backend: Any,
         *,
         verifier: SkillSecurityVerifier | None = None,
+        trust_gate: Any | None = None,
     ) -> None:
         self.repository = repository
         self.share_backend = share_backend
         self.verifier = verifier or SkillSecurityVerifier()
+        self.trust_gate = trust_gate
 
     def export_skill(self, name: str, *, dependencies: Iterable[str] | None = None) -> Path:
         skill = self.repository.get_skill(name)
         if skill is None:
             raise ValueError(f"Skill '{name}' not found in repository")
+        if self.trust_gate is not None and not self.trust_gate.is_trusted(skill):
+            raise ValueError(
+                f"Skill '{name}' is not trusted by the Skill Gym gate and cannot be exported"
+            )
         manifest = SkillManifest.from_skill(skill, dependencies=dependencies)
         return self.share_backend.publish(manifest)
 
     def export_draft(self, draft: Any, *, dependencies: Iterable[str] | None = None) -> Path:
+        if self.trust_gate is not None:
+            report = self.trust_gate.evaluate_draft(draft)
+            if not report.passed:
+                raise ValueError(
+                    f"Skill draft '{draft.name}' failed the Skill Gym gate "
+                    f"(average_score={report.average_score}) and cannot be exported"
+                )
         manifest = SkillManifest.from_draft(draft, dependencies=dependencies)
         return self.share_backend.publish(manifest)
 
@@ -526,6 +539,13 @@ class SkillMarketplace:
         verified, reasons = self.verifier.verify(manifest)
         if not verified:
             return False, None, reasons
+
+        if self.trust_gate is not None:
+            existing = self.repository.get_skill(manifest.name)
+            if existing is not None and not self.trust_gate.is_trusted(existing):
+                return False, None, [
+                    f"skill '{manifest.name}' is not trusted by the Skill Gym gate"
+                ]
 
         if not overwrite and self.repository.get_skill(manifest.name) is not None:
             return False, None, [f"skill '{manifest.name}' already exists; use overwrite=True"]
