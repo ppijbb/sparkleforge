@@ -1,4 +1,5 @@
 """Thin `gh`/`git` subprocess adapter for Nightwelding.
+import json
 
 Consistent with the rest of this project: no GitHub API client is built here,
 just subprocess calls to the `gh` CLI and `git`, exactly like the existing
@@ -224,3 +225,28 @@ def open_draft_pr(repo: str, base_branch: str, branch: str, title: str, body: st
         ["gh", "pr", "create", "--repo", repo, "--draft", "--base", base_branch, "--head", branch, "--title", title, "--body", body]
     )
     return proc.stdout.strip()
+
+async def create_subissues(parent_issue_number: str, sub_issues: list[dict]) -> None:
+    """Create sub-issues and link them to the parent."""
+    created_numbers = []
+    for sub in sub_issues[:6]: # Limit to 6
+        title = sub["title"]
+        body = sub["body"]
+        # Check for existing sub-issue to avoid duplicates
+        existing = subprocess.run(
+            ["gh", "issue", "list", "--search", f"{title} in:title", "--json", "number"],
+            capture_output=True, text=True
+        ).stdout
+        if existing and json.loads(existing):
+            continue
+            
+        cmd = ["gh", "issue", "create", "--title", title, "--body", body]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        url = proc.stdout.strip()
+        num = url.split("/")[-1]
+        created_numbers.append(num)
+
+    if created_numbers:
+        comment = "Decomposed into sub-issues: " + ", ".join([f"#{n}" for n in created_numbers])
+        subprocess.run(["gh", "issue", "comment", parent_issue_number, "--body", comment], check=True)
+        subprocess.run(["gh", "issue", "edit", parent_issue_number, "--add-label", "roadmap-decomposed"], check=True)
