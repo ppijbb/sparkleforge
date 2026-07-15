@@ -147,14 +147,17 @@ def create_worktree(repo_root: Path, branch: str, base_branch: str) -> Path:
     return worktree_dir
 
 
-def remove_worktree(worktree_dir: Path) -> None:
+def remove_worktree(repo_root: Path | str, worktree_dir: Path | None = None) -> None:
     """Remove a git worktree created by `create_worktree`.
 
     The path is derived from the branch name plus a random suffix, so each
     run gets a unique worktree directory; this only removes the specific
     worktree passed in.
     """
-    _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=Path.cwd(), check=False)
+    if worktree_dir is None:
+        worktree_dir = Path(repo_root)
+        repo_root = Path.cwd()
+    _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=repo_root, check=False)
     try:
         worktree_dir.rmdir()
     except OSError:
