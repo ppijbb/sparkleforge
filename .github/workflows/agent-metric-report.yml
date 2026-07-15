@@ -45,9 +45,9 @@ jobs:
         run: |
           REPORT_FILE=$(find results/agent_reports/ -name "report_*.md" | sort | tail -n 1)
           if [ -f "$REPORT_FILE" ]; then
-            cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY
+            cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "No report file found" >> $GITHUB_STEP_SUMMARY
+            echo "No report file found" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Commit and Push Report changes
