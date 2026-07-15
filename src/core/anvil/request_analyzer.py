@@ -2,6 +2,8 @@
 
 import logging
 import re
+import hashlib
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List
 
@@ -22,6 +24,8 @@ _DOMAIN_SIGNALS: Dict[str, List[str]] = {
 class RequestAnalysis:
     """요청 분석 결과."""
 
+    request_id: str = ""
+    agent_identity: str = ""
     raw_request: str
     domain: str
     secondary_domains: List[str] = field(default_factory=list)
@@ -32,6 +36,13 @@ class RequestAnalysis:
 
 class RequestAnalyzer:
     """오픈엔디드 요청을 분석해 핵심 문제 도메인과 요구사항을 정의한다."""
+
+    _MANDATE_PREFIX = "sparkleforge-anvil-mandate"
+
+    def issue_mandate(self, request: str, agent_identity: str = "anvil-request-analyzer") -> str:
+        """Issue a verifiable delegated mandate token for the given request."""
+        digest = hashlib.sha256(f"{self._MANDATE_PREFIX}:{agent_identity}:{request}".encode("utf-8")).hexdigest()
+        return f"{self._MANDATE_PREFIX}:{agent_identity}:{digest[:16]}"
 
     def analyze(self, request: str) -> RequestAnalysis:
         """요청 텍스트를 분석해 도메인·요구사항·제약을 추출."""
