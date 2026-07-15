@@ -148,17 +148,19 @@ def create_worktree(repo_root: Path, branch: str, base_branch: str) -> Path:
     return worktree_dir
 
 
-def remove_worktree(worktree_dir: Path) -> None:
+def remove_worktree(repo_root: Path | str, worktree_dir: Path | None = None) -> None:
     """Remove a git worktree created by `create_worktree`.
 
     The path is derived from the branch name plus a random suffix, so each
     run gets a unique worktree directory; this only removes the specific
     worktree passed in.
     """
-    proc = _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=Path.cwd(), check=False)
+    if worktree_dir is None:
+        worktree_dir = Path(repo_root)
+        repo_root = Path.cwd()
+    proc = _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=repo_root, check=False)
     if proc.returncode != 0:
         print(f"Warning: git worktree remove failed for {worktree_dir}: {proc.stderr.strip()}")
-
     try:
         shutil.rmtree(worktree_dir)
         _run(["git", "worktree", "prune"], cwd=Path.cwd(), check=False)

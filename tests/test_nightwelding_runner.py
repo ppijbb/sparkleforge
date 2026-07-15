@@ -7,6 +7,7 @@ network access or a real LLM.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -93,6 +94,45 @@ def test_open_draft_pr_requires_opencode_generated_marker(monkeypatch) -> None:
             title="fix: something",
             body="This PR body is missing the required marker.",
         )
+
+
+def test_create_worktree_checks_out_branch_outside_repo_root(monkeypatch, tmp_path) -> None:
+    # Regression test for #574: nightwelding used to `git checkout -B` directly
+    # in the invoking working tree, so a failed/overlapping run left it dirty
+    # and two concurrent runs would stomp on each other's checkout. It must
+    # instead create an isolated `git worktree` whose path lives outside
+    # `repo_root` (under ~/.sparkleforge/nightwelding-worktrees), so the
+    # caller's own working tree is never touched.
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    calls = []
+
+    def fake_run(cmd, cwd=None, check=True):
+        calls.append((cmd, cwd))
+        return _FakeCompleted(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(github_adapter, "_run", fake_run)
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    worktree_dir = github_adapter.create_worktree(repo_root, "nightwelding/1-123", "main")
+
+    assert repo_root not in worktree_dir.parents
+    assert worktree_dir == tmp_path / ".sparkleforge" / "nightwelding-worktrees" / "nightwelding-1-123"
+    worktree_add_calls = [cmd for cmd, _ in calls if cmd[:3] == ["git", "worktree", "add"]]
+    assert worktree_add_calls == [
+        ["git", "worktree", "add", "-B", "nightwelding/1-123", str(worktree_dir), "origin/main"]
+    ]
+    # git worktree add/fetch must run against repo_root, never the new worktree.
+    assert all(cwd == repo_root for _, cwd in calls)
+
+
+def test_remove_worktree_never_raises_on_failure(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        github_adapter, "_run", lambda cmd, cwd=None, check=True: _FakeCompleted(returncode=1, stdout="", stderr="boom")
+    )
+
+    # Should not raise even though the underlying command "fails" (check=False).
+    github_adapter.remove_worktree(tmp_path, tmp_path / "some-worktree")
 
 
 def test_open_draft_pr_returns_existing_pr_without_creating_a_new_one(monkeypatch) -> None:

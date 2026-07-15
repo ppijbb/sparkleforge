@@ -52,17 +52,19 @@ async def run_nightwelding_issue(
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     queue: NightweldingQueue | None = None,
 ) -> NightweldingItem:
-    repo_root = repo_root or Path.cwd()
+    main_repo_root = repo_root or Path.cwd()
+    repo_root = main_repo_root
     repo = repo or _repo_slug()
     queue = queue or NightweldingQueue()
 
     item = NightweldingItem(issue_number=issue_number, status=NightweldingStatus.WRITING_TEST)
     queue.upsert(item)
 
+    worktree_dir: Path | None = None
     try:
         issue = github_adapter.fetch_issue_context(repo, issue_number)
 
-        commit_title_impl = github_adapter.normalize_commit_title(issue.title, repo_root)
+        commit_title_impl = github_adapter.normalize_commit_title(issue.title, main_repo_root)
         if not commit_title_impl:
             return _fail(queue, item, repo, issue_number, f"Could not derive a valid commit title from issue title: {issue.title!r}")
 
@@ -72,7 +74,8 @@ async def run_nightwelding_issue(
 
         base_branch = os.getenv("NIGHTWELDING_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or github_adapter.default_base_branch(repo)
         branch = f"nightwelding/{issue_number}-{int(time.time())}-{os.urandom(2).hex()}"
-        github_adapter.create_branch(repo_root, branch, base_branch)
+        worktree_dir = github_adapter.create_worktree(main_repo_root, branch, base_branch)
+        repo_root = worktree_dir
         item.branch = branch
         queue.upsert(item)
 
@@ -144,6 +147,9 @@ async def run_nightwelding_issue(
     except Exception as exc:  # noqa: BLE001 - surfaced via the failure report below
         logger.exception("Nightwelding run failed for issue #%s", issue_number)
         return _fail(queue, item, repo, issue_number, str(exc))
+    finally:
+        if worktree_dir is not None:
+            github_adapter.remove_worktree(main_repo_root, worktree_dir)
 
 
 def _fail(
