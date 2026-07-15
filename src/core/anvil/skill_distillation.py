@@ -242,6 +242,11 @@ class SkillDistiller:
         The draft is validated and (when a repository is provided) registered
         locally, then immediately published to the supplied skill marketplace
         so other SparkleForge instances can import it.
+
+        When the marketplace has a ``trust_gate`` (Anvil Phase Θ Skill Gym
+        gate), the draft is exercised against generated practice scenarios
+        before export. A skill that fails the Skill Gym gate is not exported
+        and its failure hints are returned to the caller instead of raising.
         """
         draft = self.distill(trace)
         if not self.validate_draft(draft):
@@ -256,6 +261,29 @@ class SkillDistiller:
                 description=draft.description,
                 metadata=metadata,
             )
+        return self._export_distilled_draft(draft, marketplace, dependencies=dependencies)
+
+    @staticmethod
+    def _export_distilled_draft(
+        draft: SkillDraft,
+        marketplace: Any,
+        *,
+        dependencies: Iterable[str] | None = None,
+    ) -> Any:
+        """Export a distilled draft through the Skill Gym gate when present."""
+        trust_gate = getattr(marketplace, "trust_gate", None)
+        if trust_gate is None:
+            return marketplace.export_draft(draft, dependencies=dependencies)
+
+        gym_report = getattr(trust_gate, "evaluate_draft", lambda _draft: None)(draft)
+        if gym_report is not None and not getattr(gym_report, "passed", False):
+            return {
+                "exported": False,
+                "skill_name": draft.name,
+                "reason": "skill_gym_gate_failed",
+                "gym_report": gym_report.to_dict() if hasattr(gym_report, "to_dict") else gym_report,
+                "failure_hints": list(getattr(gym_report, "failure_hints", []) or []),
+            }
         return marketplace.export_draft(draft, dependencies=dependencies)
 
     def match_distilled_skills(
