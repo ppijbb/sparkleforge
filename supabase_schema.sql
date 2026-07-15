@@ -1,5 +1,11 @@
--- SQL Schema for SparkleForge "Public Anvil" web portal.
+-- SQL Schema for SparkleForge Web Terminal & Live Browser Preview integration.
 -- Copy-paste this script into the Supabase SQL editor to create the necessary tables and set up Row Level Security (RLS).
+--
+-- Security notes:
+--   Row Level Security (RLS) is enabled on every table. Write operations
+--   (INSERT/UPDATE) are restricted to authenticated principals only so that
+--   unauthenticated clients cannot inject or mutate rows through the public
+--   REST API. Anonymous reads are permitted for the public dashboard surface.
 
 -- 1. Create a table for completed research reports (Gallery)
 CREATE TABLE IF NOT EXISTS public.reports (
@@ -15,57 +21,69 @@ CREATE TABLE IF NOT EXISTS public.reports (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Enable RLS for reports (public read, authenticated insert)
-ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow public read access to reports" 
-    ON public.reports FOR SELECT USING (true);
-
-CREATE POLICY "Allow authenticated service insertion to reports" 
-    ON public.reports FOR INSERT WITH CHECK (true);
-
-
 -- 2. Create a table for research queue jobs (Request)
 CREATE TABLE IF NOT EXISTS public.forge_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-    topic TEXT NOT NULL,                     -- Topic requested for research
-    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
-    priority INTEGER DEFAULT 0,              -- Priority queue order
-    worker_id TEXT,                          -- ID of the VM/worker instance executing it
-    error_message TEXT,                      -- Detailed error message if failed
+    topic TEXT,                              -- Topic requested for research (legacy)
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed
+    priority INTEGER DEFAULT 0,
+    worker_id TEXT,
+    error_message TEXT,
+    payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Enable RLS for forge_jobs (users can see and insert their own jobs)
-ALTER TABLE public.forge_jobs ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow public select for jobs" 
-    ON public.forge_jobs FOR SELECT USING (true);
-
-CREATE POLICY "Allow public insert for jobs" 
-    ON public.forge_jobs FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Allow service update for jobs" 
-    ON public.forge_jobs FOR UPDATE USING (true);
-
-
 -- 3. Create a table for persistent agent logs (Live Broadcast backup)
 CREATE TABLE IF NOT EXISTS public.agent_logs (
-    id BIGSERIAL PRIMARY KEY,
-    session_id TEXT NOT NULL,                 -- maps to objective_id
-    agent_name TEXT NOT NULL,                 -- planner, executor, verifier, generator, terminal
-    level TEXT NOT NULL,                      -- info, warning, error
-    message TEXT NOT NULL,                    -- text line
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    job_id UUID REFERENCES public.forge_jobs(id) ON DELETE CASCADE,
+    session_id TEXT,                         -- maps to objective_id
+    agent_name TEXT,                         -- planner, executor, verifier, generator, terminal
+    level TEXT NOT NULL DEFAULT 'info',
+    message TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    timestamp TIMESTAMP WITH TIME ZONE
 );
 
--- Enable RLS for agent_logs (public read, service insert)
+-- Enable RLS on all tables
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.forge_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_logs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read for logs" 
-    ON public.agent_logs FOR SELECT USING (true);
+-- reports policies: public read, authenticated-only writes.
+DROP POLICY IF EXISTS "Allow public read access to reports" ON public.reports;
+CREATE POLICY "Allow public read access to reports" 
+    ON public.reports FOR SELECT USING (true);
 
-CREATE POLICY "Allow authenticated insert for logs" 
-    ON public.agent_logs FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow authenticated insert to reports" ON public.reports;
+CREATE POLICY "Allow authenticated insert to reports" 
+    ON public.reports FOR INSERT TO authenticated WITH CHECK (true);
+
+-- forge_jobs policies: public read, authenticated-only writes.
+DROP POLICY IF EXISTS "Public can read forge jobs" ON public.forge_jobs;
+CREATE POLICY "Public can read forge jobs"
+    ON public.forge_jobs FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert forge jobs" ON public.forge_jobs;
+CREATE POLICY "Authenticated users can insert forge jobs"
+    ON public.forge_jobs FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated users can update forge jobs" ON public.forge_jobs;
+CREATE POLICY "Authenticated users can update forge jobs"
+    ON public.forge_jobs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+-- agent_logs policies: public read, authenticated-only writes.
+DROP POLICY IF EXISTS "Public can read agent logs" ON public.agent_logs;
+CREATE POLICY "Public can read agent logs"
+    ON public.agent_logs FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert agent logs" ON public.agent_logs;
+CREATE POLICY "Authenticated users can insert agent logs"
+    ON public.agent_logs FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated users can update agent logs" ON public.agent_logs;
+CREATE POLICY "Authenticated users can update agent logs"
+    ON public.agent_logs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);

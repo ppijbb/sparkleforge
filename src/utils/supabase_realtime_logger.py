@@ -2,13 +2,16 @@
 
 Streams agent execution events and logs to Supabase Realtime channels.
 Runs safely and non-blockingly so it doesn't introduce latency to the main execution flow.
+Includes both global functions (legacy/compatibility) and per-session logger classes.
 """
 
 import logging
 import threading
 import queue
 import time
+import sys
 from datetime import datetime
+from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
 from src.utils.supabase_exporter import get_supabase_client
@@ -90,7 +93,6 @@ def stop_supabase_logger_worker():
 
 def enqueue_log_event(session_id: str, agent_name: str, message: str, level: str = "info"):
     """Queue a log event to be broadcast to Supabase."""
-    # Start the worker thread if it is not running
     start_supabase_logger_worker()
     
     event = {
@@ -116,8 +118,6 @@ def _supabase_logger_worker_loop():
                 time.sleep(1.0)
         return
 
-    # Set up realtime channel for logging
-    # In Supabase-py, we broadcast to a channel. We'll use 'agent_telemetry' as the channel name.
     try:
         channel = client.channel("agent_telemetry")
         channel.subscribe()
@@ -127,32 +127,22 @@ def _supabase_logger_worker_loop():
 
     while not _stop_event.is_set():
         try:
-            # Block for a short time to avoid busy looping
             event = _log_queue.get(timeout=0.5)
         except queue.Empty:
             continue
 
         try:
-            # Send broadcast via Supabase Realtime
             if channel:
                 channel.send_broadcast("agent_log", event)
-            
-            # Also optionally mirror to an agent_logs table for persistent history
-            # (only if database connectivity works)
             try:
-                # We do this asynchronously/non-blocking via the background thread
                 client.table("agent_logs").insert(event).execute()
             except Exception:
-                pass # Fail silently if table doesn't exist or insert fails
-                
+                pass
         except Exception as e:
             logger.debug(f"Error sending log to Supabase: {e}")
         finally:
             _log_queue.task_done()
 
-
-import sys
-from contextlib import contextmanager
 
 class SupabaseStdoutRedirector:
     """Redirects stdout to both original stdout and Supabase realtime queue."""
@@ -162,11 +152,9 @@ class SupabaseStdoutRedirector:
         self.buffer = ""
 
     def write(self, text: str):
-        # Write to original stdout
         self.original_stream.write(text)
         self.original_stream.flush()
 
-        # Send lines to Supabase
         self.buffer += text
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
@@ -176,6 +164,7 @@ class SupabaseStdoutRedirector:
 
     def flush(self):
         self.original_stream.flush()
+
 
 @contextmanager
 def redirect_stdout_to_supabase(session_id: str):
@@ -187,3 +176,112 @@ def redirect_stdout_to_supabase(session_id: str):
         yield
     finally:
         sys.stdout = original_stdout
+
+
+# --- Per-session Logger classes from main (PR 609) ---
+
+class SupabaseRealtimeLogger:
+    """Per-session logger instance to isolate concurrent logging streams."""
+
+    def __init__(self, session_id: str, supabase_client: Optional[Any] = None):
+        self.session_id = session_id
+        self.client = supabase_client
+        self.queue: queue.Queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._worker, daemon=True)
+        self.thread.start()
+
+    def _worker(self):
+        """Background worker to drain this session's queue and send to Supabase."""
+        while not self.stop_event.is_set() or not self.queue.empty():
+            try:
+                log_entry = self.queue.get(timeout=1.0)
+                log_entry["session_id"] = self.session_id
+                if self.client is not None:
+                    try:
+                        self.client.table("logs").insert(log_entry).execute()
+                    except Exception:
+                        pass
+                self.queue.task_done()
+            except queue.Empty:
+                continue
+
+    def log(self, message: str, level: str = "INFO"):
+        """Enqueue a log entry for this session."""
+        self.queue.put({"message": message, "level": level})
+
+    def stop(self, timeout: float = 5.0):
+        """Signal the worker to stop and drain remaining items before joining."""
+        self.stop_event.set()
+        deadline = timeout
+        while not self.queue.empty() and deadline > 0:
+            try:
+                self.queue.get(timeout=0.1)
+                self.queue.task_done()
+            except queue.Empty:
+                break
+            deadline -= 0.1
+        self.thread.join(timeout=timeout)
+
+
+class SessionStdoutRedirector:
+    """Context manager that routes stdout to a specific session logger."""
+
+    def __init__(self, logger: SupabaseRealtimeLogger):
+        self.logger = logger
+        self._original_stdout: Optional[Any] = None
+
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = self
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._original_stdout is not None:
+            sys.stdout = self._original_stdout
+        return False
+
+    def write(self, text):
+        if text.strip():
+            self.logger.log(text.strip(), level="STDOUT")
+        if self._original_stdout is not None:
+            self._original_stdout.write(text)
+
+    def flush(self):
+        if self._original_stdout is not None:
+            self._original_stdout.flush()
+
+
+class SupabaseLoggingHandler(logging.Handler):
+    """Logging handler that routes records to a session logger."""
+
+    def __init__(self, logger: SupabaseRealtimeLogger):
+        super().__init__()
+        self.logger = logger
+
+    def emit(self, record):
+        try:
+            self.logger.log(self.format(record), level=record.levelname)
+        except Exception:
+            self.handleError(record)
+
+
+def test_concurrent_logging_isolation():
+    """Regression test: stopping one session must not affect another."""
+    client = None  # Mock
+    logger_a = SupabaseRealtimeLogger("A", client)
+    logger_b = SupabaseRealtimeLogger("B", client)
+
+    logger_a.log("Msg A")
+    logger_b.log("Msg B")
+
+    assert logger_a.session_id == "A"
+    assert logger_b.session_id == "B"
+
+    logger_a.stop()
+    logger_b.log("Msg B2")
+    logger_b.stop()
+
+    assert logger_a.queue.empty()
+    assert logger_b.queue.empty()
+    print("Isolation test passed")

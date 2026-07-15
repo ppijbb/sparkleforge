@@ -7,6 +7,7 @@ it gracefully logs a warning/debug message and skips the operation without throw
 
 import logging
 import os
+import asyncio
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -89,11 +90,11 @@ async def publish_report(
         data["user_id"] = user_id
 
     try:
-        # Run synchronous call in executor if client functions are sync (supabase-py has async support too,
-        # but the standard client is sync wrapper)
         logger.info(f"Publishing report to Supabase: {topic[:30]}...")
-        # Since we use supabase-py, table insertions are chain-method based:
-        response = client.table("reports").insert(data).execute()
+        # Offload sync client calls to a thread pool to avoid blocking the event loop
+        response = await asyncio.to_thread(
+            lambda: client.table("reports").insert(data).execute()
+        )
         
         if response.data and len(response.data) > 0:
             logger.info("Successfully published report to Supabase.")
@@ -120,7 +121,9 @@ async def create_job(topic: str, user_id: Optional[str] = None) -> Optional[Dict
         data["user_id"] = user_id
 
     try:
-        response = client.table("forge_jobs").insert(data).execute()
+        response = await asyncio.to_thread(
+            lambda: client.table("forge_jobs").insert(data).execute()
+        )
         if response.data and len(response.data) > 0:
             return response.data[0]
         return None
@@ -145,8 +148,30 @@ async def update_job_status(
         data["error_message"] = error_message
 
     try:
-        response = client.table("forge_jobs").update(data).eq("id", job_id).execute()
+        response = await asyncio.to_thread(
+            lambda: client.table("forge_jobs").update(data).eq("id", job_id).execute()
+        )
         return len(response.data) > 0
     except Exception as e:
         logger.error(f"Failed to update job status in Supabase: {e}")
         return False
+
+
+class SupabaseExporter:
+    """Publishes reports to Supabase without blocking the event loop."""
+
+    def __init__(self, client=None):
+        self._client = client
+
+    def _get_client(self):
+        if self._client is None:
+            self._client = get_supabase_client()
+        return self._client
+
+    async def publish_report(self, report: dict) -> None:
+        await asyncio.to_thread(self._publish_report_sync, report)
+
+    def _publish_report_sync(self, report: dict) -> None:
+        client = self._get_client()
+        if client:
+            client.table("reports").insert(report).execute()

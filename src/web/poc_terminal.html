@@ -324,11 +324,23 @@
     // ==========================================
     // ⚙️ PRODUCTION CONFIGURATION (고정 키 설정)
     // ==========================================
-    // 실제 웹 서버에 배포할 때는 아래에 Supabase URL과 Anon Key를 하드코딩해 둡니다.
-    // 값이 채워지면 화면 상단의 API Key 입력 카드 UI가 자동으로 숨겨지고 자동 연결됩니다.
+    // Supabase configuration is injected at build time. The replacement tokens
+    // below are substituted by the frontend build pipeline (see scripts/build_web.py)
+    // from environment variables SUPABASE_URL and SUPABASE_ANON_KEY. Never commit
+    // literal keys to this repository; rotation must not require a code change.
+    let injectedUrl = "__SUPABASE_URL__";
+    let injectedKey = "__SUPABASE_ANON_KEY__";
+    
+    if (injectedUrl === "__SUPABASE_URL__" || !injectedUrl) {
+        injectedUrl = "";
+    }
+    if (injectedKey === "__SUPABASE_ANON_KEY__" || !injectedKey) {
+        injectedKey = "";
+    }
+
     const CONFIG = {
-        supabaseUrl: "", // 예: "https://your-project.supabase.co"
-        supabaseKey: ""  // 예: "your-anon-key-here"
+        supabaseUrl: injectedUrl,
+        supabaseKey: injectedKey
     };
 
     // Initialize Xterm.js
@@ -478,7 +490,6 @@
             },
             {
                 type: 'screenshot',
-                // Using standard open-source placeholder/demo screenshots
                 url: 'https://images.unsplash.com/photo-1618401471353-b98aedd07871?auto=format&fit=crop&w=600&q=80' 
             },
             {
