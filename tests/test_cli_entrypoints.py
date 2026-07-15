@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 import sys
 from io import StringIO
@@ -104,3 +105,23 @@ def test_module_entrypoint_delegates_to_real_repository_cli() -> None:
     assert "_inject_stdin_query_for_run()" in entrypoint
     assert "repository_main_entry()" in entrypoint
     assert "Generated roadmap based on:" not in entrypoint
+
+
+def test_report_generator_history_prunes_to_cap(tmp_path, monkeypatch) -> None:
+    from src.generation import report_generator
+
+    monkeypatch.setattr(report_generator, "MAX_HISTORY_ENTRIES", 5)
+
+    history_path = tmp_path / "history.json"
+    history_path.write_text("[]", encoding="utf-8")
+
+    for i in range(10):
+        history = json.loads(history_path.read_text(encoding="utf-8"))
+        history.append({"index": i})
+        history = history[-report_generator.MAX_HISTORY_ENTRIES:]
+        history_path.write_text(json.dumps(history), encoding="utf-8")
+
+    final_history = json.loads(history_path.read_text(encoding="utf-8"))
+    assert len(final_history) == report_generator.MAX_HISTORY_ENTRIES
+    assert final_history[0]["index"] == 5
+    assert final_history[-1]["index"] == 9

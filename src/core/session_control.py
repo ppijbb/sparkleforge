@@ -21,11 +21,33 @@ class SessionQuota:
     """세션별 리소스 쿼터."""
 
     max_concurrent_sessions: int = 5
-    max_tokens_per_session: int = 1000000
-    max_cost_per_session: float = 5.0
+    max_tokens_per_session: int = 100000
+    max_cost_per_session: float = 1.0
     wall_clock_timeout_seconds: int = 3600
-    # 환경변수 오버라이드 가능하도록 필드 구성
-    created_at: float = field(default_factory=lambda: 0.0)
+
+    @classmethod
+    def from_env(cls) -> "SessionQuota":
+        """환경변수 오버라이드를 적용한 기본 쿼터를 생성한다. 이전 버전 호환성을 위해 대체 환경변수도 지원한다."""
+        max_tokens = os.getenv("SESSION_MAX_TOKENS")
+        if max_tokens is None:
+            max_tokens = os.getenv("COST_BUDGET_SESSION_TOKEN_LIMIT")
+            
+        max_cost = os.getenv("SESSION_MAX_COST")
+        if max_cost is None:
+            max_cost = os.getenv("COST_BUDGET_SESSION_COST_LIMIT")
+            
+        timeout = os.getenv("SESSION_TIMEOUT")
+        if timeout is None:
+            timeout = os.getenv("SESSION_TIMEOUT_SECONDS")
+
+        return cls(
+            max_concurrent_sessions=int(
+                os.getenv("MAX_CONCURRENT_SESSIONS", cls.max_concurrent_sessions)
+            ),
+            max_tokens_per_session=int(max_tokens) if max_tokens is not None else cls.max_tokens_per_session,
+            max_cost_per_session=float(max_cost) if max_cost is not None else cls.max_cost_per_session,
+            wall_clock_timeout_seconds=int(timeout) if timeout is not None else cls.wall_clock_timeout_seconds,
+        )
 
 
 class SessionStatus(Enum):
@@ -111,7 +133,7 @@ class SessionControl:
         self._session_quotas: Dict[str, Dict[str, Any]] = {}  # session_id -> quota state
 
         logger.info("SessionControl initialized")
-        self.default_quota = SessionQuota()
+        self.default_quota = SessionQuota.from_env()
 
     async def search_sessions(
         self,
@@ -447,9 +469,9 @@ class SessionControl:
             )
 
         self._session_quotas[session_id] = {
-            "max_tokens": int(os.getenv("SESSION_MAX_TOKENS", self.DEFAULT_MAX_TOKENS_PER_SESSION)),
-            "budget": float(os.getenv("SESSION_MAX_COST", self.DEFAULT_BUDGET_PER_SESSION)),
-            "timeout": int(os.getenv("SESSION_TIMEOUT", self.DEFAULT_TIMEOUT_SECONDS)),
+            "max_tokens": self.default_quota.max_tokens_per_session,
+            "budget": self.default_quota.max_cost_per_session,
+            "timeout": self.default_quota.wall_clock_timeout_seconds,
             "start_time": time.time(),
             "tokens_used": 0,
             "cost_incurred": 0.0,
@@ -489,6 +511,29 @@ class SessionControl:
            (q["cost_incurred"] >= q["budget"]) or \
            (q["tokens_used"] >= q["max_tokens"]):
             logger.warning(f"Session {session_id} exceeded quotas and was cancelled.")
+            try:
+                from src.core.surface.notification_channel import (
+                    NotificationChannel,
+                    Notification,
+                    NotificationLevel,
+                )
+
+                notification = Notification(
+                    title="🛑 Session cancelled (quota exceeded)",
+                    message=(
+                        f"Session '{session_id}' was automatically cancelled after "
+                        "exceeding its token/cost/time quota."
+                    ),
+                    level=NotificationLevel.WARNING,
+                    action_id=session_id,
+                )
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.run_in_executor(None, NotificationChannel().send, notification)
+                except RuntimeError:
+                    NotificationChannel().send(notification)
+            except Exception as notify_ex:
+                logger.warning("Failed to send quota cancellation notification: %s", notify_ex)
             try:
                 asyncio.get_running_loop().create_task(self.cancel_session(session_id))
             except RuntimeError:

@@ -18,6 +18,11 @@ class IOTTelemetryLoop:
         self._task: Optional[asyncio.Task] = None
         self._is_running = False
 
+    @property
+    def is_running(self) -> bool:
+        """Check if the telemetry loop is active."""
+        return self._is_running
+
     def register_sensor(self, sensor: SensorDevice) -> None:
         """Register a sensor device to poll."""
         if sensor not in self.sensors:
