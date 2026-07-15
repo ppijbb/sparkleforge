@@ -1,8 +1,9 @@
 """Skill marketplace — cross-instance skill sharing (Anvil Phase Λ).
 
 Provides export/import of Anvil skills as portable manifest bundles, a local
-directory (or git repo) backed sharing registry, and security verification of
-imported skills before they are loaded into a SkillRepository.
+directory (or git repo) backed sharing registry, a remote Supabase registry
+backend, and security verification of imported skills before they are loaded
+into a SkillRepository.
 """
 
 from __future__ import annotations
@@ -101,6 +102,17 @@ class SkillManifest:
         return self._compute_sha(self.code) == self.code_sha256
 
 
+SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def validate_skill_name(name: str) -> tuple[bool, str]:
+    if not isinstance(name, str) or not name:
+        return False, "skill name must be a non-empty string"
+    if not SKILL_NAME_PATTERN.match(name):
+        return False, "skill name must match ^[a-z0-9][a-z0-9_-]{0,63}$"
+    return True, ""
+
+
 class SkillSecurityVerifier:
     """Static verification of imported skill code before loading.
 
@@ -179,6 +191,9 @@ class LocalSkillShareBackend:
         self.share_dir.mkdir(parents=True, exist_ok=True)
 
     def publish(self, manifest: SkillManifest) -> Path:
+        ok, reason = validate_skill_name(manifest.name)
+        if not ok:
+            raise ValueError(reason)
         bundle_dir = self.share_dir / manifest.name
         bundle_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = bundle_dir / MANIFEST_FILENAME
@@ -202,6 +217,9 @@ class LocalSkillShareBackend:
         return names
 
     def read_manifest(self, name: str) -> SkillManifest | None:
+        ok, reason = validate_skill_name(name)
+        if not ok:
+            return None
         bundle_dir = self.share_dir / name
         manifest_path = bundle_dir / MANIFEST_FILENAME
         if not manifest_path.exists():
@@ -279,13 +297,191 @@ class LocalSkillShareBackend:
             return False
 
 
+class RemoteSkillRegistryBackend:
+    """Supabase (Postgres + Storage) backed skill sharing registry.
+
+    Implements the same ``publish``/``list_shared``/``read_manifest``/``search``
+    interface as :class:`LocalSkillShareBackend` so :class:`SkillMarketplace`
+    can swap backends without changes. Credentials (Supabase URL, anon/service
+    key) are loaded via :class:`CredentialVault` — never hardcoded.
+    """
+
+    METADATA_TABLE = "skill_registry_metadata"
+    STORAGE_BUCKET = "skill-registry-bundles"
+
+    def __init__(
+        self,
+        *,
+        supabase_url: str | None = None,
+        credential_vault: Any | None = None,
+        http_client: Any | None = None,
+    ) -> None:
+        self.credential_vault = credential_vault
+        self.supabase_url = supabase_url or self._load_credential("supabase_url")
+        self.supabase_key = self._load_credential("supabase_anon_key") or self._load_credential(
+            "supabase_service_key"
+        )
+        self.http_client = http_client
+
+    def _load_credential(self, key: str) -> str | None:
+        if self.credential_vault is not None:
+            try:
+                return self.credential_vault.retrieve(key)
+            except Exception:
+                return None
+        return None
+
+    def _get_http_client(self):
+        if self.http_client is not None:
+            return self.http_client
+        try:
+            import requests  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "RemoteSkillRegistryBackend requires the 'requests' package for HTTP access"
+            ) from exc
+        return requests
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.supabase_key:
+            headers["apikey"] = self.supabase_key
+            headers["Authorization"] = f"Bearer {self.supabase_key}"
+        return headers
+
+    def _rest_url(self, path: str) -> str:
+        if not self.supabase_url:
+            raise RuntimeError("Supabase URL not configured in CredentialVault")
+        base = self.supabase_url.rstrip("/")
+        return f"{base}/rest/v1/{path.lstrip('/')}"
+
+    def publish(self, manifest: SkillManifest) -> Path:
+        ok, reason = validate_skill_name(manifest.name)
+        if not ok:
+            raise ValueError(reason)
+        if not self.supabase_url or not self.supabase_key:
+            raise RuntimeError("Supabase credentials not configured in CredentialVault")
+        client = self._get_http_client()
+        payload = manifest.to_dict()
+        payload["code"] = manifest.code
+        row = {
+            "name": manifest.name,
+            "description": manifest.description,
+            "tags": list(manifest.metadata.get("tags", []) or []),
+            "author": manifest.metadata.get("author", "") or "",
+            "version": manifest.metadata.get("version", "1") or "1",
+            "code_sha256": payload["code_sha256"],
+            "risk_level": manifest.metadata.get("risk_level", "unknown") or "unknown",
+            "download_count": 0,
+            "metadata": json.dumps(manifest.metadata, ensure_ascii=False),
+            "dependencies": json.dumps(list(manifest.dependencies), ensure_ascii=False),
+        }
+        client.post(
+            self._rest_url(self.METADATA_TABLE),
+            json=row,
+            headers=self._headers(),
+            timeout=30,
+        )
+        bundle_path = Path(tempfile.mkdtemp()) / f"{manifest.name}.json"
+        bundle_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return bundle_path
+
+    def list_shared(self) -> list[str]:
+        if not self.supabase_url or not self.supabase_key:
+            return []
+        client = self._get_http_client()
+        select_headers = dict(self._headers())
+        select_headers["Accept"] = "application/json"
+        select_headers["Range"] = "0-999"
+        response = client.get(
+            self._rest_url(self.METADATA_TABLE),
+            params={"select": "name"},
+            headers=select_headers,
+            timeout=30,
+        )
+        if response.status_code >= 400:
+            return []
+        data = response.json()
+        return [item["name"] for item in data if isinstance(item, dict) and "name" in item]
+
+    def read_manifest(self, name: str) -> SkillManifest | None:
+        ok, _reason = validate_skill_name(name)
+        if not ok:
+            return None
+        if not self.supabase_url or not self.supabase_key:
+            return None
+        client = self._get_http_client()
+        select_headers = dict(self._headers())
+        select_headers["Accept"] = "application/vnd.pgrst.object+json"
+        response = client.get(
+            self._rest_url(self.METADATA_TABLE),
+            params={"name": f"eq.{name}", "select": "*"},
+            headers=select_headers,
+            timeout=30,
+        )
+        if response.status_code >= 400 or not response.text:
+            return None
+        row = response.json()
+        metadata = row.get("metadata") or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+        dependencies = row.get("dependencies") or []
+        if isinstance(dependencies, str):
+            try:
+                dependencies = json.loads(dependencies)
+            except json.JSONDecodeError:
+                dependencies = []
+        return SkillManifest.from_dict(
+            {
+                "name": row.get("name", name),
+                "description": row.get("description", "") or "",
+                "code": row.get("code", "") or "",
+                "metadata": metadata,
+                "dependencies": dependencies,
+                "manifest_version": MANIFEST_VERSION,
+                "code_sha256": row.get("code_sha256", "") or "",
+            }
+        )
+
+    def search(self, query: str) -> list[dict[str, Any]]:
+        terms = _terms(query)
+        results: list[dict[str, Any]] = []
+        for name in self.list_shared():
+            manifest = self.read_manifest(name)
+            if manifest is None:
+                continue
+            haystack = " ".join(
+                [manifest.name, manifest.description, json.dumps(manifest.metadata, ensure_ascii=False)]
+            )
+            skill_terms = _terms(haystack)
+            if not terms:
+                score = 0.0
+            else:
+                overlap = terms & skill_terms
+                score = len(overlap) / max(len(terms), 1)
+            results.append(
+                {
+                    "name": manifest.name,
+                    "description": manifest.description,
+                    "score": score,
+                }
+            )
+        results.sort(key=lambda item: item["score"], reverse=True)
+        return results
+
+
 class SkillMarketplace:
     """Coordinates export/import/search of skills across instances."""
 
     def __init__(
         self,
         repository: SkillRepository,
-        share_backend: LocalSkillShareBackend,
+        share_backend: Any,
         *,
         verifier: SkillSecurityVerifier | None = None,
         trust_gate: Any | None = None,
@@ -331,6 +527,9 @@ class SkillMarketplace:
         return self._import_manifest(manifest, overwrite=overwrite)
 
     def import_shared(self, name: str, *, overwrite: bool = False) -> tuple[bool, Skill | None, list[str]]:
+        ok, reason = validate_skill_name(name)
+        if not ok:
+            return False, None, [reason]
         manifest = self.share_backend.read_manifest(name)
         if manifest is None:
             return False, None, [f"shared skill '{name}' not found"]
