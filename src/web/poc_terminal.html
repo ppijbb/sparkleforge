@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SparkleForge PoC Terminal</title>
+</head>
+<body>
+  <div id="terminal"></div>
+  <script>
+    // Supabase configuration is injected at build time. The replacement tokens
+    // below are substituted by the frontend build pipeline (see scripts/build_web.py)
+    // from environment variables SUPABASE_URL and SUPABASE_ANON_KEY. Never commit
+    // literal keys to this repository; rotation must not require a code change.
+    const SUPABASE_URL = "__SUPABASE_URL__";
+    const SUPABASE_ANON_KEY = "__SUPABASE_ANON_KEY__";
+
+    if (!SUPABASE_URL || SUPABASE_URL === "__SUPABASE_URL__" ||
+        !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY === "__SUPABASE_ANON_KEY__") {
+      console.error("Supabase credentials are not configured. Run the build step to inject __SUPABASE_URL__ and __SUPABASE_ANON_KEY__ from environment variables.");
+    }
+  </script>
+</body>
+</html>
