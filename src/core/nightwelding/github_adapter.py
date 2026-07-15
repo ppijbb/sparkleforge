@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -126,6 +128,40 @@ def list_candidate_issues(
 def create_branch(repo_root: Path, branch: str, base_branch: str) -> None:
     _run(["git", "fetch", "origin", base_branch, "--depth=1"], cwd=repo_root)
     _run(["git", "checkout", "-B", branch, f"origin/{base_branch}"], cwd=repo_root)
+
+
+def create_worktree(repo_root: Path, branch: str, base_branch: str) -> Path:
+    """Create a git worktree for `branch` and return its path.
+
+    The worktree directory is derived from the branch name (with slashes
+    replaced by dashes) plus a short random suffix, so concurrent runs for
+    the same issue within the same second do not collide on the same path.
+    """
+    slug = branch.replace("/", "-")
+    suffix = secrets.token_hex(2)
+    worktree_dir = repo_root / ".worktrees" / f"{slug}-{suffix}"
+    worktree_dir.parent.mkdir(parents=True, exist_ok=True)
+    _run(["git", "fetch", "origin", base_branch, "--depth=1"], cwd=repo_root)
+    _run(["git", "worktree", "add", "--no-checkout", str(worktree_dir), f"origin/{base_branch}"], cwd=repo_root)
+    _run(["git", "checkout", "-B", branch], cwd=worktree_dir)
+    return worktree_dir
+
+
+def remove_worktree(repo_root: Path | str, worktree_dir: Path | None = None) -> None:
+    """Remove a git worktree created by `create_worktree`.
+
+    The path is derived from the branch name plus a random suffix, so each
+    run gets a unique worktree directory; this only removes the specific
+    worktree passed in.
+    """
+    if worktree_dir is None:
+        worktree_dir = Path(repo_root)
+        repo_root = Path.cwd()
+    _run(["git", "worktree", "remove", "--force", str(worktree_dir)], cwd=repo_root, check=False)
+    try:
+        worktree_dir.rmdir()
+    except OSError:
+        pass
 
 
 def push_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
