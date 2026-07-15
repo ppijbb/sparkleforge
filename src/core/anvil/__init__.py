@@ -31,6 +31,12 @@ from .skill_distillation import (
     WorkflowStep,
     WorkflowTrace,
 )
+from .skill_gym import (
+    GymReport,
+    GymScenario,
+    SkillGym,
+    SkillGymGate,
+)
 from .skill_repository import Skill, SkillRepository
 
 __all__ = [
@@ -66,4 +72,8 @@ __all__ = [
     "SkillDraft",
     "DistilledSkillMatch",
     "SkillDistiller",
+    "GymScenario",
+    "GymReport",
+    "SkillGym",
+    "SkillGymGate",
 ]
