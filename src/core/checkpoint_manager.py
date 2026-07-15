@@ -176,6 +176,39 @@ class CheckpointManager:
 
         return checkpoints
 
+    async def get_file_diff(
+        self, checkpoint_id: str, file_path: str
+    ) -> Dict[str, Any] | None:
+        """Return before/after content for a file in a checkpoint (Anvil Phase Κ).
+
+        Args:
+            checkpoint_id: 체크포인트 ID
+            file_path: 파일 경로
+
+        Returns:
+            {"before": str | None, "after": str | None} 또는 None
+        """
+        checkpoint = await self.load_checkpoint(checkpoint_id)
+        if not checkpoint:
+            return None
+
+        snapshot_hash = checkpoint.file_snapshots.get(file_path)
+        before_content: str | None = None
+        if snapshot_hash:
+            snapshot_path = self.snapshots_dir / f"{checkpoint_id}_{snapshot_hash}.snapshot"
+            if snapshot_path.exists():
+                before_content = snapshot_path.read_text(encoding="utf-8")
+
+        after_content: str | None = None
+        target_path = Path(file_path)
+        if target_path.exists():
+            try:
+                after_content = target_path.read_text(encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Failed to read current file {file_path}: {e}")
+
+        return {"before": before_content, "after": after_content}
+
     async def delete_checkpoint(self, checkpoint_id: str) -> bool:
         """체크포인트 삭제.
 

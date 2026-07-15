@@ -72,8 +72,8 @@ async def run_nightwelding_issue(
         if not eligible:
             return _fail(queue, item, repo, issue_number, eligibility_reason)
 
-        base_branch = os.getenv("NIGHTWELDING_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or github_adapter.default_base_branch(repo)
-        branch = f"nightwelding/{issue_number}-{int(time.time())}"
+        base_branch = os.getenv("NIGHTWELDING_BASE_BRANCH") or os.getenv("NIGHTSHIFT_BASE_BRANCH") or github_adapter.default_base_branch(repo)
+        branch = f"nightwelding/{issue_number}-{int(time.time())}-{os.urandom(2).hex()}"
         worktree_dir = github_adapter.create_worktree(main_repo_root, branch, base_branch)
         repo_root = worktree_dir
         item.branch = branch
