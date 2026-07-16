@@ -1,0 +1,8 @@
+{
+  "safety_settings": {
+    "_comment": "ChatGoogleGenerativeAI does not support safety_settings directly. Safety settings are handled at the genai.GenerativeModel level, not in the LangChain wrapper. SAFETY_SETTINGS_BLOCK_NONE is set to None to avoid validation errors.",
+    "block_none": null,
+    "handled_at": "genai.GenerativeModel",
+    "langchain_wrapper_supports_safety_settings": false
+  }
+}

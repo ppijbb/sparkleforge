@@ -44,9 +44,6 @@ from src.core.researcher_config import (
 
 logger = logging.getLogger(__name__)
 
-# Safety settings to block nothing (allow all content)
-# This is required for the research agent to function without being blocked by safety filters
-# for harmless queries or research topics.
 # Note: ChatGoogleGenerativeAI does not support safety_settings parameter directly.
 # Safety settings are handled at the genai.GenerativeModel level, not in LangChain wrapper.
 # Setting to None to avoid validation errors.
@@ -860,8 +857,6 @@ class MultiModelOrchestrator:
                     self.model_clients[model_name] = genai.GenerativeModel(model_config.model_id)
 
                     # LangChain 클라이언트 (선택적)
-                    # Note: ChatGoogleGenerativeAI does not support safety_settings parameter
-                    # Safety settings are handled at the genai.GenerativeModel level
                     if ChatGoogleGenerativeAI is not None:
                         self.model_clients[f"{model_name}_langchain"] = ChatGoogleGenerativeAI(
                             model=model_config.model_id,
