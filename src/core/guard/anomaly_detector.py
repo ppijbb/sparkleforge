@@ -65,6 +65,8 @@ class AnomalyDetector:
             "rm -rf", "format", "mkfs", "dd if=",
             "chmod 777", "sudo su", "> /dev/sd",
         ]
+        self.failure_threshold: int = 5
+        self._failure_counts: Dict[str, int] = defaultdict(int)
 
     def register_alert_callback(self, cb: Callable[[AnomalyEvent], None]) -> None:
         """Register a callback invoked on every anomaly detection."""
@@ -126,6 +128,19 @@ class AnomalyDetector:
                     )
                     detected.append(evt)
                     break
+
+            # 3. Failure spike check
+            if "error" in action.lower() or "failed" in action.lower():
+                self._failure_counts[agent_id] += 1
+                if self._failure_counts[agent_id] >= self.failure_threshold:
+                    detected.append(AnomalyEvent(
+                        event_id=str(uuid.uuid4()),
+                        agent_id=agent_id,
+                        action=action,
+                        reason=f"Failure spike detected: {self._failure_counts[agent_id]} errors",
+                        severity="medium",
+                        metadata=metadata,
+                    ))
 
         for evt in detected:
             self._fire_alert(evt)
