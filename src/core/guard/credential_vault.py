@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hashlib
 import json
 import logging
 import os
 import threading
 from typing import Dict, Optional
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,7 @@ except ImportError:
     _KEYRING_AVAILABLE = False
     logger.info("keyring not available — using encrypted file fallback")
 
-_SERVICE_NAME = "sparkleforge-anvil"
+_SECRET_SEED = os.environ.get("SPARKLEFORGE_SECRET_SEED", "default-insecure-seed")
 
 
 class CredentialVault:
@@ -52,18 +54,19 @@ class CredentialVault:
         self._cache: Dict[str, str] = {}
         self._lock_data = threading.RLock()
 
-    def _obfuscate(self, value: str) -> str:
-        """Simple XOR obfuscation for fallback storage (not cryptographic)."""
-        key = hashlib.sha256(_SERVICE_NAME.encode()).digest()
-        raw = value.encode("utf-8")
-        obfuscated = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-        return base64.b64encode(obfuscated).decode()
+    def _encrypt(self, value: str) -> str:
+        """AES-GCM encryption for fallback storage."""
+        key = hashlib.sha256(_SECRET_SEED.encode()).digest()
+        aesgcm = AESGCM(key)
+        nonce = os.urandom(12)
+        ciphertext = aesgcm.encrypt(nonce, value.encode("utf-8"), None)
+        return base64.b64encode(nonce + ciphertext).decode()
 
-    def _deobfuscate(self, value: str) -> str:
-        key = hashlib.sha256(_SERVICE_NAME.encode()).digest()
-        raw = base64.b64decode(value.encode())
-        original = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-        return original.decode("utf-8")
+    def _decrypt(self, value: str) -> str:
+        key = hashlib.sha256(_SECRET_SEED.encode()).digest()
+        aesgcm = AESGCM(key)
+        data = base64.b64decode(value.encode())
+        return aesgcm.decrypt(data[:12], data[12:], None).decode("utf-8")
 
     def _load_fallback(self) -> Dict[str, str]:
         if not os.path.exists(self._fallback_path):
@@ -102,7 +105,7 @@ class CredentialVault:
 
             # Fallback: obfuscated JSON file
             store = self._load_fallback()
-            store[key] = self._obfuscate(value)
+            store[key] = self._encrypt(value)
             self._save_fallback(store)
             self._cache[key] = value
             logger.info("Stored credential '%s' in fallback store", key)
@@ -127,7 +130,7 @@ class CredentialVault:
             store = self._load_fallback()
             if key in store:
                 try:
-                    val = self._deobfuscate(store[key])
+                    val = self._decrypt(store[key])
                     self._cache[key] = val
                     return val
                 except Exception as e:
