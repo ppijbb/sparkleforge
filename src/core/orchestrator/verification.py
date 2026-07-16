@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from src.core.anvil.hitl_checkpoint import (
     CheckpointDecision,
@@ -131,7 +131,7 @@ Return ONLY a JSON object:
         return state
 
     async def _run_human_plan_checkpoint(
-        self, state: ResearchState, planned_tasks: List[Dict[str, Any]]
+        self, state: ResearchState, planned_tasks: list[Dict[str, Any]]
     ) -> None:
         """Real HITL checkpoint after an LLM-approved plan (Anvil M4 wiring).
 
@@ -156,6 +156,7 @@ Return ONLY a JSON object:
             )
         elif checkpoint_result.decision == CheckpointDecision.REVISE:
             state["plan_approved"] = False
+            state["should_continue"] = True
             state["plan_feedback"] = checkpoint_result.feedback or "Human requested revision"
 
     async def overseer_initial_review(self, state: ResearchState) -> ResearchState:

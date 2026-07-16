@@ -70,6 +70,11 @@ def create_orchestrator_graph(
         },
     )
 
+    # Routes on should_continue/plan_approved, not on state["current_step"] —
+    # the "aborted"/"approved"/"planning_agent" strings below are this edge's
+    # own labels, set by a human ABORT at the HITL plan checkpoint (see
+    # verification.py:_run_human_plan_checkpoint), independent of whatever
+    # descriptive value verify_plan wrote to current_step.
     workflow.add_conditional_edges(
         "verify_plan",
         lambda state: (

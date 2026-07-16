@@ -6,6 +6,7 @@ unused. Only engaged when a human can actually respond (a real TTY on
 stdin); autopilot/headless runs never touch this module.
 """
 
+import asyncio
 import sys
 from typing import Any, Dict, Tuple
 
@@ -30,7 +31,7 @@ def is_interactive() -> bool:
         return False
 
 
-def plan_feedback_provider(
+async def plan_feedback_provider(
     stage: CheckpointStage, context: Dict[str, Any]
 ) -> Tuple[CheckpointDecision, str]:
     """Console-based feedback provider for the AFTER_PLANNING checkpoint.
@@ -39,6 +40,10 @@ def plan_feedback_provider(
     abort) rather than a bare APPROVE-REVISE-ABORT prompt, then maps the
     choice down to the (decision, feedback) contract HITLCheckpointManager
     expects.
+
+    ``Prompt.ask`` blocks on stdin, so it runs in a worker thread — this
+    function is awaited from HITLCheckpointManager.checkpoint(), and blocking
+    the event loop there would stall every other concurrent async task.
     """
     console = Console()
     console.print(f"\n[bold cyan]HITL checkpoint: {stage.value}[/bold cyan]")
@@ -48,17 +53,18 @@ def plan_feedback_provider(
         console.print(f"  - {name}")
     console.print(_MENU)
 
-    choice = Prompt.ask("Choice", choices=["1", "2", "3", "4"], default="1")
+    choice = await asyncio.to_thread(
+        Prompt.ask, "Choice", choices=["1", "2", "3", "4"], default="1"
+    )
 
     if choice == "1":
         return CheckpointDecision.APPROVE, ""
     if choice == "4":
         return CheckpointDecision.ABORT, "Aborted by human reviewer at plan checkpoint"
 
-    detail = Prompt.ask(
-        "Describe the requirement to add"
-        if choice == "2"
-        else "Describe which task is wrong and why"
+    detail = await asyncio.to_thread(
+        Prompt.ask,
+        "Describe the requirement to add" if choice == "2" else "Describe which task is wrong and why",
     )
     prefix = "Add requirement" if choice == "2" else "Fix/remove task"
     return CheckpointDecision.REVISE, f"{prefix}: {detail}"
