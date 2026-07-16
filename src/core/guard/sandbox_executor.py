@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class SandboxExecutor:
         self.allowed_paths = allowed_paths or []
         self.network_access = network_access
 
-    def _build_firejail_cmd(self, cmd: str) -> List[str]:
+    def _build_firejail_cmd(self, cmd: Union[str, Sequence[str]]) -> List[str]:
         """Wrap command with firejail restrictions."""
         parts = ["firejail", "--quiet", "--private"]
         if not self.network_access:
@@ -63,10 +63,11 @@ class SandboxExecutor:
         if self.allowed_paths:
             for path in self.allowed_paths:
                 parts.extend(["--whitelist=" + path])
-        parts.extend(["--", "bash", "-c", cmd])
+        parts.append("--")
+        parts.extend(self._shell_argv(cmd))
         return parts
 
-    def _build_docker_cmd(self, cmd: str) -> List[str]:
+    def _build_docker_cmd(self, cmd: Union[str, Sequence[str]]) -> List[str]:
         """Wrap command with docker restrictions."""
         parts = [
             "docker", "run", "--rm",
@@ -75,18 +76,37 @@ class SandboxExecutor:
             "--cpus", "0.5",
             "--read-only",
             "python:3.12-slim",
-            "bash", "-c", cmd,
+            "bash", "-lc",
         ]
+        parts.append(self._shell_command(cmd))
         return parts
 
-    def execute(self, command: str, dry_run: bool = False) -> SandboxResult:
+    @staticmethod
+    def _shell_command(command: Union[str, Sequence[str]]) -> str:
+        """Normalize a command into a single shell string for bash -c."""
+        if isinstance(command, str):
+            return command
+        return " ".join(shlex.quote(str(arg)) for arg in command)
+
+    @staticmethod
+    def _shell_argv(command: Union[str, Sequence[str]]) -> List[str]:
+        """Normalize a command into an argv list (no shell interpolation)."""
+        if isinstance(command, str):
+            return ["bash", "-c", command]
+        return [str(arg) for arg in command]
+
+    def execute(
+        self,
+        command: Union[str, Sequence[str]],
+        dry_run: bool = False,
+    ) -> SandboxResult:
         """
         Execute command in a sandbox. If dry_run=True, return a simulated result.
         """
         if dry_run:
-            logger.info("[DRY-RUN] Would execute: %s", command)
+            logger.info("[DRY-RUN] Would execute: %s", self._shell_command(command))
             return SandboxResult(
-                command=command, returncode=0,
+                command=self._shell_command(command), returncode=0,
                 stdout="[dry-run]", stderr="",
                 duration_ms=0.0, sandbox_type="dry-run",
             )
@@ -101,10 +121,11 @@ class SandboxExecutor:
         else:
             # Fallback: restricted subprocess
             sandbox_type = "subprocess"
-            exec_cmd = ["bash", "-c", command]
+            exec_cmd = self._shell_argv(command)
             logger.warning(
                 "No sandboxing available (firejail/docker missing). "
-                "Running restricted subprocess for: %s", command
+                "Running restricted subprocess for: %s",
+                self._shell_command(command),
             )
 
         start = time.monotonic()
@@ -125,7 +146,7 @@ class SandboxExecutor:
             stdout     = ""
             stderr     = f"Command timed out after {self.timeout}s"
             returncode = -1
-            logger.warning("Sandbox execution timed out: %s", command)
+            logger.warning("Sandbox execution timed out: %s", self._shell_command(command))
         except Exception as e:
             stdout     = ""
             stderr     = str(e)
@@ -134,8 +155,9 @@ class SandboxExecutor:
 
         duration_ms = (time.monotonic() - start) * 1000
 
+        command_str = self._shell_command(command)
         res = SandboxResult(
-            command=command,
+            command=command_str,
             returncode=returncode,
             stdout=stdout,
             stderr=stderr,
@@ -145,11 +167,15 @@ class SandboxExecutor:
         )
         logger.info(
             "Sandbox[%s] exit=%d dur=%.1fms cmd=%s",
-            sandbox_type, returncode, duration_ms, command[:60],
+            sandbox_type, returncode, duration_ms, command_str[:60],
         )
         return res
 
-    async def execute_async(self, command: str, dry_run: bool = False) -> SandboxResult:
+    async def execute_async(
+        self,
+        command: Union[str, Sequence[str]],
+        dry_run: bool = False,
+    ) -> SandboxResult:
         """Async wrapper for non-blocking sandbox execution."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.execute, command, dry_run)
