@@ -396,6 +396,7 @@ __all__ = [
     "log_function_call",
     "log_performance",
     "log_error_with_context",
+    "log_async_task_lifecycle",
     "initialize_logging",
     "SensitiveDataMasker",
     "JSONFormatter",
