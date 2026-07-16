@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import requests
 
+from src.utils import jittered_backoff
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
     try:
@@ -1416,7 +1417,7 @@ class MultiModelOrchestrator:
                     or "quota exceeded" in error_str
                     or "resource_exhausted" in error_str
                 ) and attempt < max_retries - 1:
-                    wait_time = 5 * (2**attempt)  # 지수 백오프: 5초, 10초, 20초
+                    wait_time = jittered_backoff(attempt, base_delay=5.0)
                     logger.warning(
                         f"Gemini API rate limit (attempt {attempt + 1}/{max_retries}), retrying in {wait_time:.1f}s..."
                     )
@@ -1627,7 +1628,7 @@ class MultiModelOrchestrator:
 
                 # 재시도 가능한 에러인지 확인 (429는 이미 처리했으므로 제외)
                 if response.status_code in retryable_status_codes and attempt < max_retries - 1:
-                    wait_time = 2**attempt  # 지수 백오프: 1초, 2초, 4초
+                    wait_time = jittered_backoff(attempt)
                     logger.warning(
                         f"OpenRouter API error (attempt {attempt + 1}/{max_retries}): {error_msg}, retrying in {wait_time:.1f}s..."
                     )
@@ -1686,7 +1687,7 @@ class MultiModelOrchestrator:
             except requests.exceptions.RequestException as e:
                 # 네트워크 에러도 재시도
                 if attempt < max_retries - 1:
-                    wait_time = 2**attempt
+                    wait_time = jittered_backoff(attempt)
                     logger.warning(
                         f"OpenRouter API request failed (attempt {attempt + 1}/{max_retries}): {e}, retrying in {wait_time}s..."
                     )

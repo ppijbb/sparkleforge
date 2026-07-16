@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
+from src.utils import jittered_backoff
 from src.core.llm_manager import ModelResult, MultiModelOrchestrator, TaskType
 from src.core.mcp_integration import UniversalMCPHub, get_mcp_hub
 
@@ -133,7 +134,7 @@ Autonomous problem-solving contract:
 
                 if category == ErrorCategory.RETRYABLE and retry_count < max_retries:
                     retry_count += 1
-                    wait_time = 2**retry_count
+                    wait_time = jittered_backoff(retry_count)
                     logger.info(f"Retrying in {wait_time}s... ({retry_count}/{max_retries})")
                     await asyncio.sleep(wait_time)
                     budget.current_iteration -= 1  # Don't count retry as iteration
