@@ -1469,10 +1469,6 @@ def load_config_from_env() -> ResearcherSystemConfig:
     return config
 
 
-# Note: AgentToolConfig is already defined above (line 278)
-# This duplicate definition has been removed to avoid conflicts
-
-
 def get_required_list_env(key: str) -> List[str]:
     """환경 변수에서 콤마로 구분된 리스트를 가져옵니다."""
     value = os.getenv(key)
