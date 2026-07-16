@@ -11,7 +11,32 @@ import json
 import pytest
 
 from src.core.anvil.hitl_checkpoint import CheckpointDecision
+from src.core.orchestrator.graph import route_after_verify_plan
 from src.core.orchestrator.verification import VerificationNode
+
+
+def test_route_after_verify_plan_approved():
+    assert route_after_verify_plan({"plan_approved": True}) == "approved"
+
+
+def test_route_after_verify_plan_needs_revision():
+    assert route_after_verify_plan({"plan_approved": False}) == "planning_agent"
+
+
+def test_route_after_verify_plan_aborted_ends_the_graph():
+    assert (
+        route_after_verify_plan({"plan_approved": False, "should_continue": False})
+        == "aborted"
+    )
+
+
+def test_route_after_verify_plan_should_continue_wins_over_plan_approved():
+    # should_continue False must route to "aborted" even if plan_approved
+    # is somehow still True — abort must never be silently overridden.
+    assert (
+        route_after_verify_plan({"plan_approved": True, "should_continue": False})
+        == "aborted"
+    )
 
 
 async def _approved_llm_result(**kwargs):

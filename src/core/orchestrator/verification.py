@@ -76,19 +76,22 @@ Return ONLY a JSON object:
                 verification = self._parse_verification_result(result.content)
 
                 if verification is not None:
+                    human_aborted = False
                     if verification.get("approved", False):
                         state["plan_approved"] = True
                         state["plan_feedback"] = verification.get("feedback", "Plan approved")
 
                         if not state.get("autopilot_mode", False) and is_interactive():
-                            await self._run_human_plan_checkpoint(state, planned_tasks)
+                            human_aborted = await self._run_human_plan_checkpoint(
+                                state, planned_tasks
+                            )
                     else:
                         state["plan_approved"] = False
                         state["plan_feedback"] = verification.get("feedback", "Plan needs revision")
 
                     if state["plan_approved"]:
                         state["current_step"] = "overseer_initial_review"
-                    elif not state.get("should_continue", True):
+                    elif human_aborted:
                         state["current_step"] = "aborted_by_user"
                     else:
                         state["current_step"] = "planning_agent"
@@ -132,12 +135,18 @@ Return ONLY a JSON object:
 
     async def _run_human_plan_checkpoint(
         self, state: ResearchState, planned_tasks: list[Dict[str, Any]]
-    ) -> None:
+    ) -> bool:
         """Real HITL checkpoint after an LLM-approved plan (Anvil M4 wiring).
 
         Mutates state in place: REVISE sends the plan back to planning_agent
         with the human's feedback attached; ABORT halts the graph via
         should_continue (see graph.py's verify_plan routing).
+
+        Returns True only when the human chose ABORT, so the caller can set
+        current_step precisely instead of inferring an abort from
+        should_continue — should_continue is also flipped to False by
+        unrelated upstream failures (analysis.py, planning.py), so it must
+        never be used on its own as a stand-in for "a human aborted here".
         """
         checkpoint_result = await self._get_hitl_manager().checkpoint(
             CheckpointStage.AFTER_PLANNING,
@@ -154,10 +163,12 @@ Return ONLY a JSON object:
             state["error_message"] = (
                 checkpoint_result.feedback or "Aborted by human at plan checkpoint"
             )
-        elif checkpoint_result.decision == CheckpointDecision.REVISE:
+            return True
+        if checkpoint_result.decision == CheckpointDecision.REVISE:
             state["plan_approved"] = False
             state["should_continue"] = True
             state["plan_feedback"] = checkpoint_result.feedback or "Human requested revision"
+        return False
 
     async def overseer_initial_review(self, state: ResearchState) -> ResearchState:
         """Overseer의 초기 검토 - Planning 후 요구사항 정의"""
