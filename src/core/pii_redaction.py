@@ -6,7 +6,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +43,15 @@ class PIIRedactor:
     백서 요구사항: 세션 데이터 저장 전 PII 자동 감지 및 제거
     """
 
-    def __init__(self, use_llm_detection: bool = False):
+    def __init__(self, use_llm_detection: bool = False, llm_client: Optional[Any] = None):
         """초기화.
 
         Args:
             use_llm_detection: LLM 기반 PII 감지 사용 여부 (더 정확하지만 느림)
+            llm_client: LLM 기반 PII 감지에 사용할 클라이언트 (선택적)
         """
         self.use_llm_detection = use_llm_detection
+        self.llm_client = llm_client
         self.patterns = PII_PATTERNS
         logger.info(f"PIIRedactor initialized (LLM detection: {use_llm_detection})")
 
@@ -179,10 +181,91 @@ class PIIRedactor:
 
     def _detect_pii_with_llm(self, text: str) -> List[PIIMatch]:
         """LLM을 사용한 PII 감지 (더 정확하지만 느림)."""
-        # TODO: LLM 기반 PII 감지 구현
-        # Issue: High priority - LLM 기반 PII 감지 기능 구현 필요
-        # 현재는 패턴 기반만 사용
-        # 향후 구현 시 LLM을 사용하여 더 정확한 PII 감지 가능
+        if not text or self.llm_client is None:
+            logger.debug("LLM PII detection skipped (no text or no llm_client)")
+            return []
+
+        prompt = (
+            "Identify personally identifiable information (PII) in the text below. "
+            "Return ONLY a JSON array of objects with keys: "
+            "pii_type, value, start_pos, end_pos, confidence. "
+            "start_pos and end_pos are character offsets into the original text. "
+            "confidence is a float between 0.0 and 1.0. "
+            "If no PII is present, return [].\n\nText:\n" + text
+        )
+
+        try:
+            response = self.llm_client.generate(prompt)
+        except Exception as exc:  # noqa: BLE001 - LLM 클라이언트 오류는 폴백
+            logger.warning(f"LLM PII detection failed: {exc}")
+            return []
+
+        return self._parse_llm_response(response, text)
+
+    def _parse_llm_response(self, response: Any, text: str) -> List[PIIMatch]:
+        """LLM 응답을 PIIMatch 목록으로 파싱."""
+        import json
+
+        raw = ""
+        if isinstance(response, str):
+            raw = response
+        elif isinstance(response, dict):
+            raw = response.get("text") or response.get("content") or response.get("response") or ""
+        else:
+            raw = getattr(response, "text", "") or getattr(response, "content", "") or ""
+
+        if not raw:
+            logger.debug("LLM PII detection returned empty response")
+            return []
+
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start == -1 or end == -1 or end <= start:
+            logger.debug("LLM PII response did not contain a JSON array")
+            return []
+
+        try:
+            parsed = json.loads(raw[start : end + 1])
+        except json.JSONDecodeError as exc:
+            logger.warning(f"LLM PII response JSON parse failed: {exc}")
+            return []
+
+        matches: List[PIIMatch] = []
+        if not isinstance(parsed, list):
+            logger.debug("LLM PII response JSON was not a list")
+            return []
+
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            try:
+                value = str(item.get("value", ""))
+                if not value:
+                    continue
+                start_pos = int(item.get("start_pos", -1))
+                end_pos = int(item.get("end_pos", -1))
+                if start_pos < 0 or end_pos <= start_pos:
+                    # 위치 정보가 없으면 텍스트에서 직접 탐색
+                    found = text.find(value)
+                    if found == -1:
+                        continue
+                    start_pos = found
+                    end_pos = found + len(value)
+                confidence = float(item.get("confidence", 0.5))
+                confidence = max(0.0, min(1.0, confidence))
+                matches.append(
+                    PIIMatch(
+                        pii_type=str(item.get("pii_type", "unknown")),
+                        value=value,
+                        start_pos=start_pos,
+                        end_pos=end_pos,
+                        confidence=confidence,
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                logger.warning(f"Skipping malformed LLM PII item {item!r}: {exc}")
+                continue
+
         return []
 
 
