@@ -13,6 +13,9 @@ from langgraph.graph import END, StateGraph
 
 from src.core.anvil.engine import AnvilWorkflowEngine
 from src.core.anvil.skill_repository import SkillRepository
+from src.core.anvil.intent_guardrail import IntentGuardrail
+from src.core.anvil.method_resolver import MethodResolver
+from src.core.anvil.mode_controller import ExecutionMode, ModeController
 from src.core.guard.security_tools import register_security_tools
 from src.core.harness_state import HarnessState, create_initial_harness_state
 from src.core.langgraph_checkpointer import build_sqlite_checkpointer
@@ -33,6 +36,9 @@ class AgentHarness:
     def __init__(self):
         self.router = TaskRouter()
         self.memory = build_sqlite_checkpointer(DEFAULT_CHECKPOINT_DB_PATH)
+        self.mode_controller = ModeController()
+        self.method_resolver = MethodResolver(skill_repository=None)
+        self.intent_guardrail: IntentGuardrail | None = None
         self._register_tools()
         self.skill_repository = SkillRepository()
         self.anvil_engine = AnvilWorkflowEngine(skill_repository=self.skill_repository)
@@ -116,6 +122,8 @@ class AgentHarness:
     async def _node_classify(self, state: HarnessState) -> Dict[str, Any]:
         """[Node] 입력 분류 및 파이프라인 판단"""
         query = state["workflow"]["user_query"]
+        if self.intent_guardrail is None:
+            self.intent_guardrail = self._build_intent_guardrail(query)
         logger.info(f"[Harness] Classify Node: Analyzing query '{query[:50]}...'")
 
         # TaskRouter를 통해 경로 결정 (LLM 기반 — await 필요)
@@ -273,6 +281,8 @@ class AgentHarness:
         """[Node] 병렬 에이전트로 태스크 처리 (Anvil 엔진 + 레거시 Fallback)"""
         logger.info("[Harness] Executor Node")
         state["workflow"]["phase"] = "execute"
+        self._apply_mode_to_state(state)
+        await self._guard_intent(state)
 
         from src.core.mcp_integration import get_mcp_hub
         from src.core.parallel_agent_executor import ParallelAgentExecutor
@@ -290,6 +300,7 @@ class AgentHarness:
         # --- Anvil Engine 경로: 핸들러가 등록된 태스크가 있으면 Anvil로 실행 ---
         anvil_tasks = []
         legacy_tasks = []
+        unresolved_capabilities: list[str] = []
         for task_data in tasks:
             handler_name = task_data.get("handler") or task_data.get("description", "")
             if handler_name and handler_name in self.anvil_engine.handler_registry:
@@ -300,6 +311,15 @@ class AgentHarness:
         # Anvil 엔진으로 실행 가능한 태스크 처리
         if anvil_tasks:
             from src.core.anvil.engine import AnvilTask
+            self.method_resolver.handler_registry = dict(self.anvil_engine.handler_registry)
+            for td in anvil_tasks:
+                capability = td.get("handler") or td.get("description", "")
+                resolved = await self.method_resolver.resolve(capability, context=state["context"])
+                if not resolved.resolved:
+                    unresolved_capabilities.append(capability)
+                    self.mode_controller.on_unresolved_capability(capability)
+                elif resolved.handler is not None and capability not in self.anvil_engine.handler_registry:
+                    self.anvil_engine.register_handler(capability, resolved.handler)
 
             self.anvil_engine.reset()
             for td in anvil_tasks:
@@ -327,6 +347,7 @@ class AgentHarness:
         # --- 레거시 경로: 기존 ParallelAgentExecutor로 나머지 태스크 처리 ---
         if legacy_tasks:
             # 에이전트 동적 할당 (TaskRouter 활용)
+            self._record_execution_signal(anvil_tasks + legacy_tasks)
             agent_assignments = {}
             for task in legacy_tasks:
                 agent_id = task.get("task_id")
@@ -357,6 +378,9 @@ class AgentHarness:
         # 태스크 목록 재합성
         all_tasks = anvil_tasks + legacy_tasks
         state["workflow"]["tasks"] = all_tasks
+        if unresolved_capabilities:
+            state["workflow"]["unresolved_capabilities"] = unresolved_capabilities
+        state["workflow"]["execution_mode"] = self.mode_controller.mode.value
         state["workflow"][
             "final_output"
         ] = f"Executed {len(all_tasks)} tasks ({len(anvil_tasks)} via Anvil, {len(legacy_tasks)} via Legacy)."
@@ -448,6 +472,56 @@ class AgentHarness:
             return "synthesize"
 
         return "execute_parallel"
+
+    # --- Anvil core wiring helpers ---
+
+    def _build_intent_guardrail(self, query: str) -> IntentGuardrail:
+        """IntentGuardrail 생성 (RequestAnalysis 최소 구성)."""
+        from src.core.anvil.request_analyzer import RequestAnalysis
+
+        analysis = RequestAnalysis(
+            raw_request=query,
+            requirements=[],
+            constraints=[],
+        )
+        return IntentGuardrail(analysis)
+
+    def _apply_mode_to_state(self, state: HarnessState) -> None:
+        """ModeController 상태를 워크플로우 state에 반영."""
+        if self.mode_controller.is_write_blocked():
+            state["workflow"]["write_blocked"] = True
+        state["workflow"]["execution_mode"] = self.mode_controller.mode.value
+
+    async def _guard_intent(self, state: HarnessState) -> None:
+        """IntentGuardrail로 현재 작업 요약의 의도 정렬을 진단."""
+        if self.intent_guardrail is None:
+            return
+        step_index = len(state["workflow"].get("tasks", []))
+        if not self.intent_guardrail.should_check(step_index):
+            return
+        summary = state["workflow"].get("final_output") or state["workflow"].get("user_query", "")
+        try:
+            assessment = self.intent_guardrail.evaluate(summary)
+        except Exception as e:
+            logger.warning(f"[Harness/IntentGuardrail] evaluation failed: {e}")
+            return
+        if self.intent_guardrail.needs_human_review():
+            self.mode_controller.on_intent_review_needed()
+        state["workflow"]["intent_assessment"] = {
+            "aligned": assessment.aligned,
+            "drift_score": assessment.drift_score,
+            "violated_constraints": assessment.violated_constraints,
+            "reasons": assessment.reasons,
+        }
+
+    def _record_execution_signal(self, tasks: list[Dict[str, Any]]) -> None:
+        """태스크 결과를 바탕으로 ModeController에 성공/실패 신호 전달."""
+        for task in tasks:
+            status = task.get("status")
+            if status == "completed":
+                self.mode_controller.record_success()
+            elif status in ("failed", "skipped"):
+                self.mode_controller.record_failure()
 
     async def execute(
         self,
