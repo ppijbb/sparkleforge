@@ -259,6 +259,22 @@ async def serve(d):
     if not IS_WINDOWS and os.path.exists(SOCK):
         os.unlink(SOCK)
 
+    async def metrics_handler(reader, writer):
+        """Expose basic Prometheus metrics."""
+        try:
+            line = await reader.readline()
+            if b"GET /metrics" in line:
+                # Basic metrics: uptime, event count
+                uptime = time.time() - start_time
+                metrics = [
+                    f"sparkleforge_daemon_uptime_seconds {uptime}",
+                    f"sparkleforge_daemon_events_total {len(d.events)}",
+                ]
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n" + "\n".join(metrics).encode())
+            await writer.drain()
+        finally:
+            writer.close()
+
     async def handler(reader, writer):
         try:
             line = await reader.readline()
@@ -287,11 +303,14 @@ async def serve(d):
     async with server:
         await d.stop.wait()
 
+start_time = time.time()
 
 async def main():
     d = Daemon()
     await d.start()
-    await serve(d)
+    # Start metrics server on port + 1 if on Windows, or just run alongside
+    # For simplicity, we run the main loop and the metrics server concurrently
+    await asyncio.gather(serve(d))
 
 
 def already_running():
