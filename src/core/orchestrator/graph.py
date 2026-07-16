@@ -72,8 +72,16 @@ def create_orchestrator_graph(
 
     workflow.add_conditional_edges(
         "verify_plan",
-        lambda state: ("approved" if state.get("plan_approved", False) else "planning_agent"),
-        {"approved": "overseer_initial_review", "planning_agent": "planning_agent"},
+        lambda state: (
+            "aborted"
+            if not state.get("should_continue", True)
+            else ("approved" if state.get("plan_approved", False) else "planning_agent")
+        ),
+        {
+            "approved": "overseer_initial_review",
+            "planning_agent": "planning_agent",
+            "aborted": END,
+        },
     )
 
     workflow.add_edge("overseer_initial_review", "adaptive_supervisor")
