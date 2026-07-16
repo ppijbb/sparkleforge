@@ -336,6 +336,11 @@ show_usage() {
 # Main function
 main() {
     echo "=========================================="
+    if [ "$(uname -s)" != "Darwin" ] && [ "$(uname -s)" != "Linux" ]; then
+        echo "❌ Unsupported OS: $(uname -s). Only macOS and Linux are supported."
+        exit 1
+    fi
+
     echo "    Local Researcher Setup Script"
     echo "=========================================="
     echo ""
