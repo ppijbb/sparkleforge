@@ -184,6 +184,10 @@ create_directories() {
     mkdir -p configs
     mkdir -p tests
     
+    # Ensure proper permissions if running as root (e.g., in Docker)
+    if [ "$(id -u)" -eq 0 ]; then
+        chown -R "$(id -u):$(id -g)" outputs logs data configs tests
+    fi
     print_success "Directories created successfully"
 }
 
