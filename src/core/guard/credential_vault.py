@@ -19,7 +19,12 @@ _SERVICE_NAME = "sparkleforge-anvil"
 # Try OS keyring first
 try:
     import keyring
-    _KEYRING_AVAILABLE = True
+    # Check if DBus is available on Linux to avoid crashes
+    if os.name == "posix" and "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
+        _KEYRING_AVAILABLE = False
+        logger.info("keyring available but no DBUS_SESSION_BUS_ADDRESS — using encrypted file fallback")
+    else:
+        _KEYRING_AVAILABLE = True
 except ImportError:
     _KEYRING_AVAILABLE = False
     logger.info("keyring not available — using encrypted file fallback")
