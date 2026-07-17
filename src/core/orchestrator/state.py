@@ -3,6 +3,16 @@ from typing import Annotated, Any, Dict, List, TypedDict
 from langchain_core.messages import BaseMessage
 
 
+def override_reducer(a: Any, b: Any) -> Any:
+    """새로운 값으로 덮어쓰는 리듀서"""
+    return b
+
+
+def add_messages(left: list, right: list) -> list:
+    """메시지 리스트 병합 (LangGraph의 표준 동작 모사)"""
+    return left + right
+
+
 class ResearchState(TypedDict):
     """LangGraph 연구 워크플로우 상태 정의 (8대 혁신 통합)."""
 

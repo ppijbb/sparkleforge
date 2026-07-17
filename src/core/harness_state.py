@@ -8,17 +8,7 @@
 from typing import Annotated, Any, Dict, List, Set
 
 from typing_extensions import TypedDict
-
-
-def override_reducer(a: Any, b: Any) -> Any:
-    """새로운 값으로 덮어쓰는 리듀서"""
-    return b
-
-
-def add_messages(left: list, right: list) -> list:
-    """메시지 리스트 병합 (LangGraph의 표준 동작 모사)"""
-    return left + right
-
+from src.core.orchestrator.state import add_messages, override_reducer
 
 class TaskState(TypedDict):
     """개별 단위 Task 상태"""

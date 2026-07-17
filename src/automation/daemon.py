@@ -27,6 +27,16 @@ def _load_env():
 
 _load_env()
 
+
+def _port_for(name: str) -> int:
+    """Stable deterministic port derived from a daemon name."""
+    import hashlib
+
+    h = hashlib.sha256(name.encode("utf-8")).digest()
+    port = 49152 + (int.from_bytes(h[:2], "big") % 16384)
+    return port
+
+
 NAME = os.environ.get("BU_NAME", "default")
 IS_WINDOWS = os.name == "nt" or sys.platform.startswith("win")
 _TMP = os.path.join(os.environ.get("LOCALAPPDATA", "") if IS_WINDOWS else "/tmp", "sparkleforge")
@@ -41,6 +51,8 @@ if IS_WINDOWS:
 else:
     HOST = None
     PORT = None
+METRICS_HOST = "127.0.0.1"
+METRICS_PORT = int(os.environ.get("BU_METRICS_PORT", "0")) or (_port_for(NAME) + 10000)
 BUF = 500
 PROFILES = [
     Path.home() / "Library/Application Support/Google/Chrome",
@@ -69,15 +81,6 @@ INTERNAL = ("chrome://", "chrome-untrusted://", "devtools://", "chrome-extension
 BU_API = "https://api.browser-use.com/api/v3"
 REMOTE_ID = os.environ.get("BU_BROWSER_ID")
 API_KEY = os.environ.get("BROWSER_USE_API_KEY")
-
-
-def _port_for(name: str) -> int:
-    """Stable deterministic port for a daemon name on Windows."""
-    import hashlib
-
-    h = hashlib.sha256(name.encode("utf-8")).digest()
-    port = 49152 + (int.from_bytes(h[:2], "big") % 16384)
-    return port
 
 
 def log(msg):
@@ -255,6 +258,29 @@ class Daemon:
             return {"error": msg}
 
 
+async def serve_metrics(d):
+    """Expose basic Prometheus metrics over local-only TCP for scraping."""
+
+    async def metrics_handler(reader, writer):
+        try:
+            line = await reader.readline()
+            if b"GET /metrics" in line:
+                uptime = time.time() - start_time
+                metrics = [
+                    f"sparkleforge_daemon_uptime_seconds {uptime}",
+                    f"sparkleforge_daemon_events_total {len(d.events)}",
+                ]
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n" + "\n".join(metrics).encode())
+            await writer.drain()
+        finally:
+            writer.close()
+
+    server = await asyncio.start_server(metrics_handler, METRICS_HOST, METRICS_PORT)
+    log(f"metrics listening on {METRICS_HOST}:{METRICS_PORT}")
+    async with server:
+        await d.stop.wait()
+
+
 async def serve(d):
     if not IS_WINDOWS and os.path.exists(SOCK):
         os.unlink(SOCK)
@@ -287,11 +313,12 @@ async def serve(d):
     async with server:
         await d.stop.wait()
 
+start_time = time.time()
 
 async def main():
     d = Daemon()
     await d.start()
-    await serve(d)
+    await asyncio.gather(serve(d), serve_metrics(d))
 
 
 def already_running():
