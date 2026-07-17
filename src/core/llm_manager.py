@@ -614,8 +614,8 @@ class MultiModelOrchestrator:
         # Google 모델 ID를 OpenRouter 형식으로 변환
         google_to_openrouter = {
             "gemini-3.1-flash-lite-preview": "google/gemini-2.0-flash-lite-preview:free",
-            "gemini-2.5-flash": "google/gemini-2.0-flash-lite-preview:free",
-            "gemini-2.5-pro": "google/gemini-2.0-flash-lite-preview:free",
+            "gemini-2.5-flash": "google/gemini-2.5-flash-preview:free",
+            "gemini-2.5-pro": "google/gemini-2.5-pro-preview:free",
             "gemini-flash-lite": "google/gemini-2.0-flash-lite-preview:free",
             "gemini-flash": "google/gemini-2.0-flash-lite-preview:free",
             "gemini-pro": "google/gemini-2.0-flash-lite-preview:free",
@@ -632,8 +632,9 @@ class MultiModelOrchestrator:
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         fallback_models = [
-            "google/gemini-2.0-flash-lite-preview:free",
-            "meta-llama/llama-3.2-3b-instruct:free",
+            "google/gemini-2.5-flash-preview:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "qwen/qwen-2.5-72b-instruct:free",
         ]
 
         logger.warning(
@@ -645,6 +646,9 @@ class MultiModelOrchestrator:
     def _get_valid_groq_model_id(self, model_id: str) -> str:
         """Groq에 실제 존재하는 모델 ID 반환."""
         # Groq에 실제 존재하는 모델 목록
+        # Groq API expects bare model names without provider prefixes (e.g.,
+        # "gpt-oss-20b" rather than "openai/gpt-oss-20b"). Prefixed IDs cause
+        # HTTP 404/422 rejections on every Groq-routed request.
         valid_groq_models = [
             "llama-3.1-8b-instant",
             "llama-3.1-70b-versatile",
@@ -667,6 +671,13 @@ class MultiModelOrchestrator:
                 groq_id = parts[1].split(":")[0]  # 태그 제거
                 if groq_id in valid_groq_models:
                     return groq_id
+
+        # Provider-prefixed IDs (e.g., "openai/gpt-oss-20b") are invalid for the
+        # Groq API. Strip the prefix and validate the bare model name.
+        if "/" in model_id:
+            bare_id = model_id.split("/", 1)[1].split(":")[0]
+            if bare_id in valid_groq_models:
+                return bare_id
 
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
@@ -1343,7 +1354,7 @@ class MultiModelOrchestrator:
             ttl="3600s",
         )
         cache = client.caches.create(model=model_id, config=config)
-        response = await asyncio.get_event_loop().run_in_executor(
+        response = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: client.models.generate_content(
                 model=model_id,
@@ -1396,7 +1407,7 @@ class MultiModelOrchestrator:
         for attempt in range(max_retries):
             try:
                 # 실행
-                response = await asyncio.get_event_loop().run_in_executor(
+                response = await asyncio.get_running_loop().run_in_executor(
                     None,
                     lambda: client.generate_content(
                         full_prompt,
@@ -1580,7 +1591,7 @@ class MultiModelOrchestrator:
 
         for attempt in range(max_retries):
             try:
-                response = await asyncio.get_event_loop().run_in_executor(
+                response = await asyncio.get_running_loop().run_in_executor(
                     None,
                     lambda: requests.post(
                         "https://openrouter.ai/api/v1/chat/completions",
@@ -2207,7 +2218,7 @@ class MultiModelOrchestrator:
 
         try:
             # Groq API 호출
-            response = await asyncio.get_event_loop().run_in_executor(
+            response = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: client.chat.completions.create(
                     model=model_id,  # 실제 Groq 모델 ID 사용
@@ -2262,7 +2273,7 @@ class MultiModelOrchestrator:
                     logger.info(f"Attempting to use replacement model: {replacement_model}")
                     try:
                         # 대체 모델로 재시도
-                        replacement_response = await asyncio.get_event_loop().run_in_executor(
+                        replacement_response = await asyncio.get_running_loop().run_in_executor(
                             None,
                             lambda rm=replacement_model: (
                                 client.chat.completions.create(
@@ -2335,7 +2346,7 @@ class MultiModelOrchestrator:
 
         try:
             # OpenAI API 호출
-            response = await asyncio.get_event_loop().run_in_executor(
+            response = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: client.chat.completions.create(
                     model=model_config.model_id,
@@ -2395,7 +2406,7 @@ class MultiModelOrchestrator:
             response = None
             for attempt in range(max_retries):
                 try:
-                    response = await asyncio.get_event_loop().run_in_executor(
+                    response = await asyncio.get_running_loop().run_in_executor(
                         None,
                         lambda: client.chat.completions.create(
                             model=model_config.model_id,
