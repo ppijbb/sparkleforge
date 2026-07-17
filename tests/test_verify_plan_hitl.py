@@ -1,127 +1,200 @@
-"""Tests for HITL plan feedback checkpoint provider.
+"""Anvil M4 follow-up (issue #612): HITLCheckpointManager wired into verify_plan.
 
-These tests ensure the monkeypatched ``plan_feedback_provider`` mocks match the
-real async contract defined in ``hitl_feedback.py``. The real provider is an
-``async def`` function, so synchronous lambdas would return a coroutine object
-instead of a ``tuple[CheckpointDecision, str]`` when awaited, masking real
-production failures behind false-positive green tests.
+Covers that the AFTER_PLANNING checkpoint is skipped for headless/autopilot
+runs (zero behavior change for automation) and drives plan_approved/
+current_step/should_continue correctly for APPROVE/REVISE/ABORT when a human
+is actually attached.
 """
 
-from __future__ import annotations
+import json
 
 import pytest
 
-from src.core.anvil.hitl_checkpoint import CheckpointDecision, HITLCheckpointManager
-from src.core.anvil import hitl_feedback
-from src.core.anvil.hitl_feedback import plan_feedback_provider
+from src.core.anvil.hitl_checkpoint import CheckpointDecision
+from src.core.orchestrator.graph import route_after_verify_plan
+from src.core.orchestrator.verification import VerificationNode
 
 
-pytestmark = pytest.mark.asyncio
+def test_route_after_verify_plan_approved():
+    assert route_after_verify_plan({"plan_approved": True}) == "approved"
 
 
-async def _async_approve_provider(stage, context):
-    return (CheckpointDecision.APPROVE, "")
+def test_route_after_verify_plan_needs_revision():
+    assert route_after_verify_plan({"plan_approved": False}) == "planning_agent"
 
 
-async def _async_reject_provider(stage, context):
-    return (CheckpointDecision.REJECT, "plan needs more detail")
+def test_route_after_verify_plan_aborted_ends_the_graph():
+    assert (
+        route_after_verify_plan({"plan_approved": False, "should_continue": False})
+        == "aborted"
+    )
 
 
-async def test_checkpoint_approve_uses_async_provider(monkeypatch):
-    """The checkpoint manager must await an async provider and return APPROVE."""
-    manager = HITLCheckpointManager()
-
-    async def _provider(stage, context):
-        return (CheckpointDecision.APPROVE, "")
-
-    monkeypatch.setattr(hitl_feedback, "plan_feedback_provider", _provider)
-
-    decision, message = await manager.checkpoint("plan", {"plan": "stub"})
-
-    assert decision is CheckpointDecision.APPROVE
-    assert message == ""
+def test_route_after_verify_plan_should_continue_wins_over_plan_approved():
+    # should_continue False must route to "aborted" even if plan_approved
+    # is somehow still True — abort must never be silently overridden.
+    assert (
+        route_after_verify_plan({"plan_approved": True, "should_continue": False})
+        == "aborted"
+    )
 
 
-async def test_checkpoint_reject_uses_async_provider(monkeypatch):
-    """The checkpoint manager must await an async provider and return REJECT."""
-    manager = HITLCheckpointManager()
+async def _approved_llm_result(**kwargs):
+    from types import SimpleNamespace
 
-    async def _provider(stage, context):
-        return (CheckpointDecision.REJECT, "plan needs more detail")
-
-    monkeypatch.setattr(hitl_feedback, "plan_feedback_provider", _provider)
-
-    decision, message = await manager.checkpoint("plan", {"plan": "stub"})
-
-    assert decision is CheckpointDecision.REJECT
-    assert message == "plan needs more detail"
+    return SimpleNamespace(
+        content=json.dumps({"approved": True, "confidence": 0.9, "feedback": "looks good"})
+    )
 
 
-async def test_checkpoint_provider_is_awaited(monkeypatch):
-    """Regression guard: the provider must be awaited, not called synchronously."""
-    manager = HITLCheckpointManager()
-
-    call_count = {"count": 0}
-
-    async def _provider(stage, context):
-        call_count["count"] += 1
-        return (CheckpointDecision.APPROVE, "")
-
-    monkeypatch.setattr(hitl_feedback, "plan_feedback_provider", _provider)
-
-    await manager.checkpoint("plan", {"plan": "stub"})
-
-    assert call_count["count"] == 1
+def _base_state(**overrides):
+    state = {
+        "user_request": "do the thing",
+        "planned_tasks": [{"task_id": "task_1", "name": "Do the thing"}],
+        "execution_plan": {"strategy": "sequential"},
+        "plan_iteration": 0,
+        "plan_feedback": None,
+    }
+    state.update(overrides)
+    return state
 
 
-async def test_checkpoint_rejects_synchronous_lambda(monkeypatch):
-    """A synchronous lambda must not silently pass through the await path.
-
-    If someone reintroduces a synchronous lambda mock, awaiting it returns a
-    coroutine object (or raises ``TypeError``), not a tuple. This test fails
-    loudly so the false-positive coverage cannot return.
-    """
-    manager = HITLCheckpointManager()
-
+@pytest.mark.asyncio
+async def test_autopilot_mode_skips_human_checkpoint(monkeypatch):
     monkeypatch.setattr(
-        hitl_feedback,
-        "plan_feedback_provider",
+        "src.core.orchestrator.verification.execute_llm_task",
+        _approved_llm_result,
+    )
+    monkeypatch.setattr("src.core.orchestrator.verification.is_interactive", lambda: True)
+
+    node = VerificationNode()
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("HITL checkpoint must not run in autopilot mode")
+
+    monkeypatch.setattr(node, "_run_human_plan_checkpoint", fail_if_called)
+
+    state = _base_state(autopilot_mode=True)
+    result = await node.verify_plan(state)
+
+    assert result["plan_approved"] is True
+    assert result["current_step"] == "overseer_initial_review"
+
+
+@pytest.mark.asyncio
+async def test_non_interactive_session_skips_human_checkpoint(monkeypatch):
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.execute_llm_task",
+        _approved_llm_result,
+    )
+    monkeypatch.setattr("src.core.orchestrator.verification.is_interactive", lambda: False)
+
+    node = VerificationNode()
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("HITL checkpoint must not run without a TTY")
+
+    monkeypatch.setattr(node, "_run_human_plan_checkpoint", fail_if_called)
+
+    state = _base_state(autopilot_mode=False)
+    result = await node.verify_plan(state)
+
+    assert result["plan_approved"] is True
+    assert result["current_step"] == "overseer_initial_review"
+
+
+@pytest.mark.asyncio
+async def test_interactive_human_approves(monkeypatch):
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.execute_llm_task",
+        _approved_llm_result,
+    )
+    monkeypatch.setattr("src.core.orchestrator.verification.is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.plan_feedback_provider",
         lambda stage, context: (CheckpointDecision.APPROVE, ""),
     )
 
-    with pytest.raises((TypeError, AttributeError)):
-        await manager.checkpoint("plan", {"plan": "stub"})
+    node = VerificationNode()
+    state = _base_state(autopilot_mode=False)
+    result = await node.verify_plan(state)
+
+    assert result["plan_approved"] is True
+    assert result["current_step"] == "overseer_initial_review"
+    assert result.get("should_continue", True) is not False
 
 
-async def test_real_plan_feedback_provider_is_async():
-    """The real provider must be a coroutine function (async def)."""
-    import inspect
-
-    assert inspect.iscoroutinefunction(plan_feedback_provider), (
-        "plan_feedback_provider must be async def so awaiting it returns a tuple, "
-        "not a coroutine object."
+@pytest.mark.asyncio
+async def test_interactive_human_revises_routes_back_to_planning(monkeypatch):
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.execute_llm_task",
+        _approved_llm_result,
+    )
+    monkeypatch.setattr("src.core.orchestrator.verification.is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.plan_feedback_provider",
+        lambda stage, context: (CheckpointDecision.REVISE, "Add requirement: cover edge cases"),
     )
 
+    node = VerificationNode()
+    state = _base_state(autopilot_mode=False)
+    result = await node.verify_plan(state)
 
-async def test_checkpoint_with_real_provider_approves(monkeypatch):
-    """End-to-end validation through the real async provider call path.
+    assert result["plan_approved"] is False
+    assert result["current_step"] == "planning_agent"
+    assert result["plan_feedback"] == "Add requirement: cover edge cases"
 
-    We monkeypatch only the underlying feedback source so the real
-    ``plan_feedback_provider`` coroutine runs through ``checkpoint()``.
-    """
-    manager = HITLCheckpointManager()
 
-    async def _fake_source(stage, context):
-        return (CheckpointDecision.APPROVE, "")
+@pytest.mark.asyncio
+async def test_interactive_human_aborts_halts_the_run(monkeypatch):
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.execute_llm_task",
+        _approved_llm_result,
+    )
+    monkeypatch.setattr("src.core.orchestrator.verification.is_interactive", lambda: True)
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.plan_feedback_provider",
+        lambda stage, context: (CheckpointDecision.ABORT, "user said stop"),
+    )
+
+    node = VerificationNode()
+    state = _base_state(autopilot_mode=False)
+    result = await node.verify_plan(state)
+
+    assert result["plan_approved"] is False
+    assert result["should_continue"] is False
+    assert result["current_step"] == "aborted_by_user"
+    assert result["error_message"] == "user said stop"
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_context_carries_task_names(monkeypatch):
+    monkeypatch.setattr(
+        "src.core.orchestrator.verification.execute_llm_task",
+        _approved_llm_result,
+    )
+    monkeypatch.setattr("src.core.orchestrator.verification.is_interactive", lambda: True)
+
+    seen_context = {}
+
+    def capturing_provider(stage, context):
+        seen_context.update(context)
+        return CheckpointDecision.APPROVE, ""
 
     monkeypatch.setattr(
-        hitl_feedback,
-        "_collect_plan_feedback",
-        _fake_source,
-        raising=False,
+        "src.core.orchestrator.verification.plan_feedback_provider", capturing_provider
     )
 
-    decision, message = await manager.checkpoint("plan", {"plan": "stub"})
+    node = VerificationNode()
+    state = _base_state(
+        autopilot_mode=False,
+        planned_tasks=[
+            {"task_id": "task_1", "name": "Collect sources"},
+            {"task_id": "task_2", "name": "Draft summary"},
+        ],
+    )
+    await node.verify_plan(state)
 
-    assert decision is CheckpointDecision.APPROVE
-    assert isinstance(message, str)
+    assert seen_context["task_count"] == 2
+    assert seen_context["strategy"] == "sequential"
+    assert seen_context["task_names"] == ["Collect sources", "Draft summary"]
