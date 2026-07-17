@@ -266,7 +266,7 @@ class PIIRedactor:
                 logger.warning(f"Skipping malformed LLM PII item {item!r}: {exc}")
                 continue
 
-        return []
+        return matches
 
 
 # 전역 인스턴스
