@@ -38,6 +38,14 @@ class AgentLoop:
     This class implements the 'Tool Calling Until Completion' pattern from Hermes.
     """
 
+    # Class-level defaults so instances built via AgentLoop.__new__() (as some
+    # lightweight unit tests do, to skip the heavy real __init__) still have
+    # these attributes — accessed as "may be None" throughout, same as
+    # intent_guardrail already was before this class existed.
+    mode_controller = None
+    method_resolver = None
+    intent_guardrail = None
+
     AUTONOMOUS_PROBLEM_SOLVING_CONTRACT = """
 Autonomous problem-solving contract:
 - Operate as a self-directed execution agent, not a conversational assistant.
@@ -286,7 +294,8 @@ Autonomous problem-solving contract:
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
                 try:
                     tool_exec_result = await self.mcp_hub.execute_tool(tool_name, arguments)
-                    self.mode_controller.record_success()
+                    if self.mode_controller:
+                        self.mode_controller.record_success()
                     await self._record_resolved_capability(tool_name)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
@@ -298,7 +307,8 @@ Autonomous problem-solving contract:
                             "message": str(e),
                         }
                     )
-                    self.mode_controller.record_failure()
+                    if self.mode_controller:
+                        self.mode_controller.record_failure()
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
 
@@ -555,13 +565,14 @@ Autonomous problem-solving contract:
 
     def _apply_mode_to_messages(self, history: List[Dict[str, Any]]) -> None:
         """ModeController의 쓰기 차단 상태를 루프 컨텍스트에 반영."""
-        if self.mode_controller.is_write_blocked():
-            for msg in history:
-                if isinstance(msg, dict) and msg.get("role") == "system":
-                    msg["content"] = (msg.get("content", "") or "") + (
-                        "\n\n[ModeController] PLAN_FIRST 모드 - 계획 승인 전까지 쓰기 액션 차단됨."
-                    )
-                    break
+        if self.mode_controller is None or not self.mode_controller.is_write_blocked():
+            return
+        for msg in history:
+            if isinstance(msg, dict) and msg.get("role") == "system":
+                msg["content"] = (msg.get("content", "") or "") + (
+                    "\n\n[ModeController] PLAN_FIRST 모드 - 계획 승인 전까지 쓰기 액션 차단됨."
+                )
+                break
 
     async def _guard_intent(self, history: List[Dict[str, Any]]) -> None:
         """IntentGuardrail로 최근 작업 요약의 의도 정렬을 주기적 진단."""
@@ -580,11 +591,13 @@ Autonomous problem-solving contract:
         except Exception as e:
             logger.warning("[AgentLoop] IntentGuardrail evaluation failed: %s", e)
             return
-        if self.intent_guardrail.needs_human_review():
+        if self.intent_guardrail.needs_human_review() and self.mode_controller:
             self.mode_controller.on_intent_review_needed()
 
     async def _record_resolved_capability(self, capability: str) -> None:
         """MethodResolver를 통해 도구 capability 해결 시도를 기록."""
+        if self.method_resolver is None:
+            return
         resolved = await self.method_resolver.resolve(capability)
-        if not resolved.resolved:
+        if not resolved.resolved and self.mode_controller:
             self.mode_controller.on_unresolved_capability(capability)
