@@ -377,7 +377,7 @@ class MultiModelOrchestrator:
         self.models["gemini-flash-lite"] = ModelConfig(
             name="gemini-flash-lite",
             provider="google",
-            model_id="gemini-3.1-flash-lite-preview",
+            model_id="gemini-2.0-flash-lite",
             temperature=0.1,
             max_tokens=2000,
             cost_per_token=0.0001,
@@ -794,8 +794,8 @@ class MultiModelOrchestrator:
         # 같은 모델을 연달아 호출해 429를 자초하므로 단일 항목만 유지한다.
         nvidia_models = [
             {
-                "name": "z-ai/glm-5.2",
-                "model_id": "z-ai/glm-5.2",
+                "name": "z-ai/glm-4-9b-chat",
+                "model_id": "z-ai/glm-4-9b-chat",
                 "speed_rating": 8.5,
                 "quality_rating": 9.0,
                 "capabilities": [
