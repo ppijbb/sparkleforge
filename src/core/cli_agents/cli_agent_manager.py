@@ -101,10 +101,10 @@ class CLIAgentManager:
                     from src.core.researcher_config import get_llm_config
 
                     config["model_path"] = get_llm_config().open_code_model_path or os.getenv(
-                        "OPEN_CODE_MODEL_PATH", "kimi-k2.5"
+                        "OPEN_CODE_MODEL_PATH"
                     )
                 except Exception:
-                    config["model_path"] = os.getenv("OPEN_CODE_MODEL_PATH", "kimi-k2.5")
+                    config["model_path"] = os.getenv("OPEN_CODE_MODEL_PATH")
 
             # 인스턴스 생성
             agent = agent_class(**config)
