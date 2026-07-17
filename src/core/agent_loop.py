@@ -287,7 +287,7 @@ Autonomous problem-solving contract:
                 try:
                     tool_exec_result = await self.mcp_hub.execute_tool(tool_name, arguments)
                     self.mode_controller.record_success()
-                    self._record_resolved_capability(tool_name)
+                    await self._record_resolved_capability(tool_name)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
                     tool_exec_result = {"success": False, "error": str(e)}
@@ -581,15 +581,8 @@ Autonomous problem-solving contract:
         if self.intent_guardrail.needs_human_review():
             self.mode_controller.on_intent_review_needed()
 
-    def _record_resolved_capability(self, capability: str) -> None:
+    async def _record_resolved_capability(self, capability: str) -> None:
         """MethodResolver를 통해 도구 capability 해결 시도를 기록."""
-        try:
-            import asyncio as _asyncio
-
-            resolved = _asyncio.get_event_loop().run_until_complete(
-                self.method_resolver.resolve(capability)
-            )
-        except RuntimeError:
-            return
+        resolved = await self.method_resolver.resolve(capability)
         if not resolved.resolved:
             self.mode_controller.on_unresolved_capability(capability)

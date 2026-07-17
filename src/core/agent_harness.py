@@ -476,14 +476,10 @@ class AgentHarness:
     # --- Anvil core wiring helpers ---
 
     def _build_intent_guardrail(self, query: str) -> IntentGuardrail:
-        """IntentGuardrail 생성 (RequestAnalysis 최소 구성)."""
-        from src.core.anvil.request_analyzer import RequestAnalysis
+        """IntentGuardrail 생성 (요청을 실제로 분석해 RequestAnalysis 구성)."""
+        from src.core.anvil.request_analyzer import RequestAnalyzer
 
-        analysis = RequestAnalysis(
-            raw_request=query,
-            requirements=[],
-            constraints=[],
-        )
+        analysis = RequestAnalyzer().analyze(query)
         return IntentGuardrail(analysis)
 
     def _apply_mode_to_state(self, state: HarnessState) -> None:
