@@ -370,57 +370,12 @@ class MultiModelOrchestrator:
             logger.warning("OPENAI_API_KEY not found - GPT models will be unavailable")
         if not os.getenv("NVIDIA_API_KEY"):
             logger.warning("NVIDIA_API_KEY not found - NVIDIA NIM models will be unavailable")
+        if not os.getenv("CEREBRAS_API_KEY"):
+            logger.warning("CEREBRAS_API_KEY not found - Cerebras models will be unavailable")
 
     def _initialize_models(self):
         """모델 초기화."""
-        # Gemini 2.5 Flash Lite (빠른 계획, 압축)
-        self.models["gemini-flash-lite"] = ModelConfig(
-            name="gemini-flash-lite",
-            provider="google",
-            model_id="gemini-3.1-flash-lite-preview",
-            temperature=0.1,
-            max_tokens=2000,
-            cost_per_token=0.0001,
-            speed_rating=9.0,
-            quality_rating=7.0,
-            capabilities=[TaskType.PLANNING, TaskType.COMPRESSION, TaskType.RESEARCH],
-        )
-
-        # Gemini 2.5 Pro (복잡한 추론, 분석)
-        self.models["gemini-pro"] = ModelConfig(
-            name="gemini-pro",
-            provider="google",
-            model_id="gemini-2.5-pro",
-            temperature=0.2,
-            max_tokens=4000,
-            cost_per_token=0.0005,
-            speed_rating=6.0,
-            quality_rating=9.0,
-            capabilities=[
-                TaskType.DEEP_REASONING,
-                TaskType.ANALYSIS,
-                TaskType.SYNTHESIS,
-            ],
-        )
-
-        # Gemini 2.5 Flash (균형잡힌 성능)
-        self.models["gemini-flash"] = ModelConfig(
-            name="gemini-flash",
-            provider="google",
-            model_id="gemini-2.5-flash",
-            temperature=0.1,
-            max_tokens=2000,
-            cost_per_token=0.0002,
-            speed_rating=8.0,
-            quality_rating=8.0,
-            capabilities=[
-                TaskType.GENERATION,
-                TaskType.VERIFICATION,
-                TaskType.RESEARCH,
-            ],
-        )
-
-        # 모델 로딩: 우선순위에 따라 로드
+        # 모델 로딩: 우선순위에 따라 로드 (다른 provider와 동일하게 API 키 존재 시에만 등록)
         # 1. OpenRouter 모델 (최우선)
         if os.getenv("OPENROUTER_API_KEY"):
             try:
@@ -441,8 +396,15 @@ class MultiModelOrchestrator:
         else:
             logger.info("Groq disabled - GROQ_API_KEY not found")
 
-        # 3. Gemini 모델 (이미 위에서 로드됨)
-        logger.info("✅ Gemini models loaded")
+        # 3. Gemini 모델
+        if os.getenv("GOOGLE_API_KEY"):
+            try:
+                self._load_google_models()
+                logger.info("✅ Gemini models loaded")
+            except Exception as e:
+                logger.warning(f"Gemini models not loaded: {e}")
+        else:
+            logger.info("Gemini disabled - GOOGLE_API_KEY not found")
 
         # 4. GPT 모델
         if os.getenv("OPENAI_API_KEY"):
@@ -463,6 +425,65 @@ class MultiModelOrchestrator:
                 logger.warning(f"NVIDIA NIM models not loaded: {e}")
         else:
             logger.info("NVIDIA NIM disabled - NVIDIA_API_KEY not found")
+
+        # 6. Cerebras 모델
+        if os.getenv("CEREBRAS_API_KEY"):
+            try:
+                self._load_cerebras_models()
+                logger.info("✅ Cerebras models loaded")
+            except Exception as e:
+                logger.warning(f"Cerebras models not loaded: {e}")
+        else:
+            logger.info("Cerebras disabled - CEREBRAS_API_KEY not found")
+
+    def _load_google_models(self):
+        """Gemini 모델 로딩 (GOOGLE_API_KEY가 있을 때만 호출됨)."""
+        # Gemini Flash Lite (빠른 계획, 압축)
+        self.models["gemini-flash-lite"] = ModelConfig(
+            name="gemini-flash-lite",
+            provider="google",
+            model_id="gemini-3.1-flash-lite-preview",
+            temperature=0.1,
+            max_tokens=2000,
+            cost_per_token=0.0001,
+            speed_rating=9.0,
+            quality_rating=7.0,
+            capabilities=[TaskType.PLANNING, TaskType.COMPRESSION, TaskType.RESEARCH],
+        )
+
+        # Gemini Pro (복잡한 추론, 분석)
+        self.models["gemini-pro"] = ModelConfig(
+            name="gemini-pro",
+            provider="google",
+            model_id="gemini-2.5-pro",
+            temperature=0.2,
+            max_tokens=4000,
+            cost_per_token=0.0005,
+            speed_rating=6.0,
+            quality_rating=9.0,
+            capabilities=[
+                TaskType.DEEP_REASONING,
+                TaskType.ANALYSIS,
+                TaskType.SYNTHESIS,
+            ],
+        )
+
+        # Gemini Flash (균형잡힌 성능)
+        self.models["gemini-flash"] = ModelConfig(
+            name="gemini-flash",
+            provider="google",
+            model_id="gemini-2.5-flash",
+            temperature=0.1,
+            max_tokens=2000,
+            cost_per_token=0.0002,
+            speed_rating=8.0,
+            quality_rating=8.0,
+            capabilities=[
+                TaskType.GENERATION,
+                TaskType.VERIFICATION,
+                TaskType.RESEARCH,
+            ],
+        )
 
     def _load_openrouter_models(self):
         """OpenRouter API에서 무료 모델들을 동적으로 로드 (선택적)."""
@@ -612,13 +633,15 @@ class MultiModelOrchestrator:
             return model_id
 
         # Google 모델 ID를 OpenRouter 형식으로 변환
+        # 주의: OpenRouter는 더 이상 Gemini 무료 티어를 제공하지 않으므로
+        # (gemini-2.0-flash-lite-preview:free는 삭제됨) 유료 hy3:free로 대체.
         google_to_openrouter = {
-            "gemini-3.1-flash-lite-preview": "google/gemini-2.0-flash-lite-preview:free",
-            "gemini-2.5-flash": "google/gemini-2.0-flash-lite-preview:free",
-            "gemini-2.5-pro": "google/gemini-2.0-flash-lite-preview:free",
-            "gemini-flash-lite": "google/gemini-2.0-flash-lite-preview:free",
-            "gemini-flash": "google/gemini-2.0-flash-lite-preview:free",
-            "gemini-pro": "google/gemini-2.0-flash-lite-preview:free",
+            "gemini-3.1-flash-lite-preview": "tencent/hy3:free",
+            "gemini-2.5-flash": "tencent/hy3:free",
+            "gemini-2.5-pro": "tencent/hy3:free",
+            "gemini-flash-lite": "tencent/hy3:free",
+            "gemini-flash": "tencent/hy3:free",
+            "gemini-pro": "tencent/hy3:free",
         }
 
         if model_id in google_to_openrouter:
@@ -626,13 +649,13 @@ class MultiModelOrchestrator:
 
         # 모델 이름에서 추론
         if "gemini" in model_name.lower() or "gemini" in model_id.lower():
-            # 기본적으로 무료 Gemini 모델 사용
-            return "google/gemini-2.0-flash-lite-preview:free"
+            # Gemini 무료 티어가 없으므로 가장 강력한 무료 모델로 대체
+            return "tencent/hy3:free"
 
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         fallback_models = [
-            "google/gemini-2.0-flash-lite-preview:free",
+            "tencent/hy3:free",
             "meta-llama/llama-3.2-3b-instruct:free",
         ]
 
@@ -644,16 +667,14 @@ class MultiModelOrchestrator:
 
     def _get_valid_groq_model_id(self, model_id: str) -> str:
         """Groq에 실제 존재하는 모델 ID 반환."""
-        # Groq에 실제 존재하는 모델 목록
+        # Groq 프로덕션 모델 목록 (2026-07 기준).
+        # mixtral-8x7b-32768은 2025-03-20 단종, llama-3.2-*-preview 계열은
+        # preview 슬롯이라 프로덕션에 부적합/단종. llama-3.1-8b-instant와
+        # llama-3.3-70b-versatile도 2026-06-17 단종 공지가 나가 gpt-oss로 대체.
         valid_groq_models = [
-            "llama-3.1-8b-instant",
-            "llama-3.1-70b-versatile",
-            "mixtral-8x7b-32768",
-            "llama-3.3-70b-versatile",
-            "llama-3.2-90b-vision-preview",
-            "llama-3.2-11b-vision-preview",
-            "llama-3.2-3b-text-preview",
-            "llama-3.2-1b-text-preview",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "groq/compound",
         ]
 
         # 이미 유효한 Groq 모델 ID인 경우
@@ -665,28 +686,27 @@ class MultiModelOrchestrator:
             parts = model_id.split("/")
             if len(parts) == 2:
                 groq_id = parts[1].split(":")[0]  # 태그 제거
-                if groq_id in valid_groq_models:
-                    return groq_id
+                for valid in valid_groq_models:
+                    if valid.split("/")[-1] == groq_id:
+                        return valid
 
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         logger.warning(
             f"Model ID {model_id} not a valid Groq model. "
-            f"Using minimal fallback for agent service stability: llama-3.1-8b-instant"
+            f"Using minimal fallback for agent service stability: openai/gpt-oss-20b"
         )
-        return "llama-3.1-8b-instant"
+        return "openai/gpt-oss-20b"
 
     def _load_groq_models(self):
         """Groq 모델 로딩."""
-        # 주요 Groq 모델들
-        # 참고: llama-3.1-70b-versatile과 llama-3.2-70b-versatile은 존재하지 않음
-        # 실제 사용 가능한 모델: llama-3.1-70b-versatile (decommissioned), llama-3.1-8b-instant, mixtral-8x7b-32768
-        # llama-3.1-70b-versatile 대체: mixtral-8x7b-32768 사용 (더 안정적)
-        # 실제 Groq에 존재하는 모델만 사용
+        # Groq 프로덕션 모델만 사용 (2026-07 기준, console.groq.com/docs/models).
+        # 이전에 쓰던 llama-3.1-8b-instant/llama-3.3-70b-versatile은 단종 공지가
+        # 나갔고 mixtral-8x7b-32768은 이미 오래전에 단종되어 gpt-oss로 교체.
         groq_models = [
             {
-                "name": "llama-3.1-8b-instant",
-                "model_id": "llama-3.1-8b-instant",  # 실제 존재하는 모델
+                "name": "openai/gpt-oss-20b",
+                "model_id": "openai/gpt-oss-20b",
                 "speed_rating": 9.5,
                 "quality_rating": 8.0,
                 "capabilities": [
@@ -696,27 +716,29 @@ class MultiModelOrchestrator:
                 ],
             },
             {
-                "name": "mixtral-8x7b-32768",
-                "model_id": "mixtral-8x7b-32768",  # 실제 존재하는 모델
-                "speed_rating": 9.0,
-                "quality_rating": 8.5,
-                "capabilities": [
-                    TaskType.GENERATION,
-                    TaskType.RESEARCH,
-                    TaskType.ANALYSIS,
-                    TaskType.PLANNING,
-                ],
-            },
-            {
-                "name": "llama-3.3-70b-versatile",
-                "model_id": "llama-3.3-70b-versatile",  # 실제 존재하는 모델
+                "name": "openai/gpt-oss-120b",
+                "model_id": "openai/gpt-oss-120b",
                 "speed_rating": 8.5,
                 "quality_rating": 9.0,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.RESEARCH,
                     TaskType.ANALYSIS,
+                    TaskType.PLANNING,
                     TaskType.DEEP_REASONING,
+                ],
+            },
+            {
+                # Groq의 자체 에이전틱 모델. 웹서치/코드실행 등 내장 툴을 모델이
+                # 스스로 호출하므로 다른 groq 모델이 모두 실패했을 때만 쓰는
+                # 최후 fallback으로 등록 (gpt-oss 뒤에 위치).
+                "name": "groq/compound",
+                "model_id": "groq/compound",
+                "speed_rating": 7.0,
+                "quality_rating": 8.0,
+                "capabilities": [
+                    TaskType.GENERATION,
+                    TaskType.RESEARCH,
                 ],
             },
         ]
@@ -826,6 +848,46 @@ class MultiModelOrchestrator:
             )
             logger.info(f"Loaded NVIDIA NIM model: {model_data['name']} ({model_data['model_id']})")
 
+    def _load_cerebras_models(self):
+        """Cerebras 모델 로딩 (api.cerebras.ai 직접 API, OpenAI 호환).
+
+        gemma-4-31b는 2026-07 기준 Cerebras 공개 엔드포인트에서 preview 등급이다
+        (zai-glm-4.7과 동급, gpt-oss-120b만 production 등급). Cerebras 자체 문서가
+        "preview 모델은 평가 목적으로만 사용하고 프로덕션에 쓰지 말 것"이라 명시하니,
+        rate limit이 낮거나(무료 티어 5 req/min) 예고 없이 내려갈 수 있음을 감안할 것.
+        멀티모달(텍스트+이미지) 지원이 필요해 프로덕션 모델 대신 선택된 상태.
+        inference-docs.cerebras.ai/models/overview, /models/gemma-4-31b 참고.
+        """
+        cerebras_models = [
+            {
+                "name": "cerebras/gemma-4-31b",
+                "model_id": "gemma-4-31b",
+                "speed_rating": 8.5,  # ~1850 tok/s (gpt-oss-120b의 ~3000 tok/s보다 낮음)
+                "quality_rating": 8.0,
+                "capabilities": [
+                    TaskType.GENERATION,
+                    TaskType.RESEARCH,
+                    TaskType.ANALYSIS,
+                    TaskType.PLANNING,
+                    TaskType.DEEP_REASONING,
+                ],
+            },
+        ]
+
+        for model_data in cerebras_models:
+            self.models[model_data["name"]] = ModelConfig(
+                name=model_data["name"],
+                provider="cerebras",
+                model_id=model_data["model_id"],
+                temperature=0.2,
+                max_tokens=4000,
+                cost_per_token=0.0,
+                speed_rating=model_data["speed_rating"],
+                quality_rating=model_data["quality_rating"],
+                capabilities=model_data["capabilities"],
+            )
+            logger.info(f"Loaded Cerebras model: {model_data['name']} ({model_data['model_id']})")
+
     def refresh_openrouter_models(self):
         """OpenRouter 모델 목록을 새로고침."""
         logger.info("Refreshing OpenRouter models...")
@@ -932,6 +994,26 @@ class MultiModelOrchestrator:
                     except Exception as e:
                         logger.warning(f"Failed to initialize NVIDIA NIM client for {model_name}: {e}")
 
+                elif model_config.provider == "cerebras":
+                    # Cerebras 클라이언트 초기화 (OpenAI 호환 API, base_url만 다름)
+                    try:
+                        from openai import OpenAI
+
+                        cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+                        if not cerebras_api_key:
+                            raise ValueError(f"CEREBRAS_API_KEY not found for {model_name}")
+                        self.model_clients[model_name] = OpenAI(
+                            api_key=cerebras_api_key,
+                            base_url="https://api.cerebras.ai/v1",
+                        )
+                        logger.info(f"Cerebras model {model_name} configured")
+                    except ImportError:
+                        logger.warning(
+                            "openai library not installed. Install with: pip install openai"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize Cerebras client for {model_name}: {e}")
+
             logger.info("Model clients initialized successfully")
 
         except Exception as e:
@@ -950,9 +1032,10 @@ class MultiModelOrchestrator:
             order.append("nvidia")
         if os.getenv("OPENROUTER_API_KEY"):
             order.append("openrouter")
-            order.append("cerebras")  # OpenRouter 경유
         if os.getenv("GROQ_API_KEY"):
             order.append("groq")
+        if os.getenv("CEREBRAS_API_KEY"):
+            order.append("cerebras")
         if os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"):
             order.append("google")
         if os.getenv("OPENAI_API_KEY"):
@@ -984,14 +1067,11 @@ class MultiModelOrchestrator:
         """Rate limit되지 않은 사용 가능한 Provider 목록 반환."""
         available = []
         for provider in self.provider_rotation_order:
-            # Cerebras는 OpenRouter를 통해 접근하므로 openrouter로 처리
-            check_provider = "openrouter" if provider == "cerebras" else provider
-
             # Rate limit 확인
-            if not self._is_provider_rate_limited(check_provider):
+            if not self._is_provider_rate_limited(provider):
                 # Provider에 사용 가능한 모델이 있는지 확인
                 has_models = any(
-                    config.provider == check_provider for config in self.models.values()
+                    config.provider == provider for config in self.models.values()
                 )
                 if has_models:
                     available.append(provider)
@@ -1060,19 +1140,10 @@ class MultiModelOrchestrator:
         # 사용 횟수 증가
         self.provider_usage_count[selected_provider] = provider_usage[selected_provider] + 1
 
-        # Cerebras는 OpenRouter를 통해 접근
-        check_provider = "openrouter" if selected_provider == "cerebras" else selected_provider
-
         # 해당 Provider의 모델 선택
         provider_models = [
-            name for name in suitable_models if self.models[name].provider == check_provider
+            name for name in suitable_models if self.models[name].provider == selected_provider
         ]
-
-        # Cerebras인 경우 cerebras 모델 필터링
-        if selected_provider == "cerebras":
-            provider_models = [
-                name for name in provider_models if "cerebras" in self.models[name].model_id.lower()
-            ]
 
         if provider_models:
             selected_model = provider_models[0]
@@ -1209,6 +1280,26 @@ class MultiModelOrchestrator:
                         prompt,
                         system_message,
                         skip_providers=["openrouter", "groq"],
+                        **kwargs,
+                    )
+            elif not use_cascade_for_provider and model_provider == "cerebras":
+                logger.info(f"Executing with Cerebras model: {model_name_clean}")
+                try:
+                    result = await self._execute_cerebras_model(
+                        model_name_clean, prompt, system_message, **kwargs
+                    )
+                except Exception as error:
+                    error_str = str(error).lower()
+                    if "rate limit" in error_str or "429" in error_str or "quota" in error_str:
+                        self._mark_provider_rate_limited("cerebras")
+                    logger.warning(
+                        f"Cerebras model {model_name_clean} failed: {error}, trying fallback..."
+                    )
+                    result, actual_model_used = await self._try_fallback_models(
+                        task_type,
+                        prompt,
+                        system_message,
+                        skip_providers=["openrouter", "groq", "cerebras"],
                         **kwargs,
                     )
             elif not use_cascade_for_provider and model_provider == "google":
@@ -1643,10 +1734,12 @@ class MultiModelOrchestrator:
                         logger.warning(
                             f"Model {model_id} not found in OpenRouter, trying fallback models..."
                         )
+                        # gemini-2.0-flash-lite-preview:free, mistral-7b-instruct:free는
+                        # OpenRouter 카탈로그에서 삭제되어 살아있는 무료 모델로 교체.
                         fallback_models = [
-                            "google/gemini-2.0-flash-lite-preview:free",
+                            "tencent/hy3:free",
+                            "qwen/qwen3-coder:free",
                             "meta-llama/llama-3.2-3b-instruct:free",
-                            "mistralai/mistral-7b-instruct:free",
                         ]
 
                         for fallback_model in fallback_models:
@@ -1733,21 +1826,11 @@ class MultiModelOrchestrator:
         Returns:
             해당 provider의 모델 이름 리스트 (비용 오름차순 정렬)
         """
-        if provider == "cerebras":
-            # Cerebras는 OpenRouter를 통해 접근
-            models = [
-                name
-                for name, config in self.models.items()
-                if config.provider == "openrouter"
-                and "cerebras" in config.model_id.lower()
-                and task_type in config.capabilities
-            ]
-        else:
-            models = [
-                name
-                for name, config in self.models.items()
-                if config.provider == provider and task_type in config.capabilities
-            ]
+        models = [
+            name
+            for name, config in self.models.items()
+            if config.provider == provider and task_type in config.capabilities
+        ]
 
         # 비용 기준 정렬 (저비용 우선)
         models.sort(key=lambda name: self.models[name].cost_per_token)
@@ -1933,6 +2016,8 @@ class MultiModelOrchestrator:
             return await self._execute_openai_model(model_name, prompt, system_message, **kwargs)
         elif model_provider == "nvidia":
             return await self._execute_nvidia_model(model_name, prompt, system_message, **kwargs)
+        elif model_provider == "cerebras":
+            return await self._execute_cerebras_model(model_name, prompt, system_message, **kwargs)
         else:
             raise ValueError(f"Unknown provider: {model_provider}")
 
@@ -2037,7 +2122,7 @@ class MultiModelOrchestrator:
         skip_providers: List[str] = None,
         **kwargs,
     ) -> Tuple[Dict[str, Any], str]:
-        """우선순위에 따라 폴백 모델 시도: OpenRouter -> Groq -> Cerebras (OpenRouter) -> Gemini -> GPT -> Claude."""
+        """우선순위에 따라 폴백 모델 시도: OpenRouter -> Groq -> Cerebras -> Gemini -> GPT -> Claude."""
         if skip_providers is None:
             skip_providers = []
 
@@ -2047,26 +2132,15 @@ class MultiModelOrchestrator:
         for provider in fallback_order:
             if provider in skip_providers:
                 continue
-            check = "openrouter" if provider == "cerebras" else provider
-            if self._is_provider_rate_limited(check):
+            if self._is_provider_rate_limited(provider):
                 continue
 
             # 해당 provider의 사용 가능한 모델 찾기
-            if provider == "cerebras":
-                # Cerebras는 OpenRouter를 통해 접근 (cerebras/llama-3.1-70b-instruct 등)
-                available_models = [
-                    name
-                    for name, config in self.models.items()
-                    if config.provider == "openrouter"
-                    and "cerebras" in config.model_id.lower()
-                    and task_type in config.capabilities
-                ]
-            else:
-                available_models = [
-                    name
-                    for name, config in self.models.items()
-                    if config.provider == provider and task_type in config.capabilities
-                ]
+            available_models = [
+                name
+                for name, config in self.models.items()
+                if config.provider == provider and task_type in config.capabilities
+            ]
 
             if not available_models:
                 continue
@@ -2076,13 +2150,16 @@ class MultiModelOrchestrator:
             logger.info(f"Trying fallback model: {fallback_model} (provider: {provider})")
 
             try:
-                if provider == "openrouter" or provider == "cerebras":
-                    # Cerebras도 OpenRouter를 통해 접근
+                if provider == "openrouter":
                     result = await self._execute_openrouter_model(
                         fallback_model, prompt, system_message, **kwargs
                     )
                 elif provider == "groq":
                     result = await self._execute_groq_model(
+                        fallback_model, prompt, system_message, **kwargs
+                    )
+                elif provider == "cerebras":
+                    result = await self._execute_cerebras_model(
                         fallback_model, prompt, system_message, **kwargs
                     )
                 elif provider == "google":
@@ -2254,8 +2331,8 @@ class MultiModelOrchestrator:
 
                 # 실제 존재하는 Groq 모델로 대체 시도
                 replacement_models = [
-                    "llama-3.1-8b-instant",  # 실제 존재하는 모델
-                    "mixtral-8x7b-32768",  # 실제 존재하는 모델
+                    "openai/gpt-oss-20b",
+                    "openai/gpt-oss-120b",
                 ]
 
                 for replacement_model in replacement_models:
@@ -2312,6 +2389,61 @@ class MultiModelOrchestrator:
 
             logger.error(f"Groq API error: {e}")
             raise RuntimeError(f"Groq model {model_name} failed: {e}")
+
+    async def _execute_cerebras_model(
+        self, model_name: str, prompt: str, system_message: str = None, **kwargs
+    ) -> Dict[str, Any]:
+        """Cerebras 모델 실행 (OpenAI 호환 API, base_url만 다름)."""
+        if model_name not in self.model_clients:
+            raise ValueError(f"Cerebras client not initialized for {model_name}")
+
+        client = self.model_clients[model_name]
+        model_config = self.models[model_name]
+
+        # 메시지 구성
+        history = kwargs.pop("history_messages", [])
+        messages = []
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+        if history:
+            messages.extend(history)
+        if not history or (history and history[-1].get("content") != prompt):
+            messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: client.chat.completions.create(
+                    model=model_config.model_id,
+                    messages=messages,
+                    temperature=model_config.temperature,
+                    max_tokens=model_config.max_tokens,
+                    **kwargs,
+                ),
+            )
+
+            content = response.choices[0].message.content
+            tool_calls = getattr(response.choices[0].message, "tool_calls", [])
+
+            return {
+                "content": content,
+                "confidence": 0.8,
+                "quality_score": 0.8,
+                "metadata": {
+                    "model": model_name,
+                    "provider": "cerebras",
+                    "model_id": model_config.model_id,
+                    "tokens_used": (
+                        response.usage.total_tokens
+                        if hasattr(response, "usage")
+                        else len(str(content).split())
+                    ),
+                    "tool_calls": tool_calls,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Cerebras API error: {e}")
+            raise RuntimeError(f"Cerebras model {model_name} failed: {e}")
 
     async def _execute_openai_model(
         self, model_name: str, prompt: str, system_message: str = None, **kwargs

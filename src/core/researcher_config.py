@@ -893,7 +893,9 @@ def get_cli_agents_config() -> Dict[str, Any]:
             "api_key": os.getenv("CLAUDE_CODE_API_KEY") or config.llm.claude_code_api_key,
         },
         "open_code": {
-            "enabled": bool(os.getenv("OPEN_CODE_MODEL_PATH") or config.llm.open_code_model_path),
+            # open_code는 기본 provider이므로 model_path override 여부와 무관하게 항상 활성화.
+            # model_path가 None이면 OpenCodeAgent.DEFAULT_MODEL로 위임된다.
+            "enabled": True,
             "model_path": os.getenv("OPEN_CODE_MODEL_PATH") or config.llm.open_code_model_path,
         },
         "gemini_cli": {
@@ -1143,7 +1145,8 @@ def load_config_from_env() -> ResearcherSystemConfig:
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or "",
             budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
             enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
-            open_code_model_path=get_optional_env("OPEN_CODE_MODEL_PATH", "kimi-k2.5"),
+            # None이면 open_code_agent.DEFAULT_MODEL이 단일 소스로 적용됨
+            open_code_model_path=get_optional_env("OPEN_CODE_MODEL_PATH"),
         )
     else:
         _primary_model = get_required_env("LLM_MODEL")

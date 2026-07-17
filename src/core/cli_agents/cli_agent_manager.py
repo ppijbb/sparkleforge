@@ -95,16 +95,17 @@ class CLIAgentManager:
             # 설정과 kwargs 병합
             config = self.agent_configs.get(name, {}).copy()
             config.update(kwargs)
-            # open_code: model_path 미설정 시 config/env 기본값 (Kimi K 2.5)
+            # open_code: model_path 미설정 시 None으로 두어 OpenCodeAgent의
+            # DEFAULT_MODEL(단일 소스)로 위임한다.
             if name == "open_code" and not config.get("model_path"):
                 try:
                     from src.core.researcher_config import get_llm_config
 
                     config["model_path"] = get_llm_config().open_code_model_path or os.getenv(
-                        "OPEN_CODE_MODEL_PATH", "kimi-k2.5"
+                        "OPEN_CODE_MODEL_PATH"
                     )
                 except Exception:
-                    config["model_path"] = os.getenv("OPEN_CODE_MODEL_PATH", "kimi-k2.5")
+                    config["model_path"] = os.getenv("OPEN_CODE_MODEL_PATH")
 
             # 인스턴스 생성
             agent = agent_class(**config)
