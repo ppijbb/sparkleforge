@@ -31,8 +31,11 @@ def main():
     # 3. Package Binary (using PyInstaller as standard)
     print(f"Packaging binary for {args.platform}...")
     # Assuming entry point is src/cli/entry.py
+    # pyinstaller is not a project dependency, so it's run via uvx (an
+    # ephemeral tool env) rather than `uv run`, which would fail with
+    # "command not found" since it only resolves the project's own lock.
     cmd = [
-        "uv", "run", "pyinstaller",
+        "uvx", "pyinstaller",
         "--onefile",
         "--name", f"sparkleforge-{args.platform}",
         "src/cli/entry.py"
@@ -44,5 +47,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# chmod +x scripts/package_release.py
