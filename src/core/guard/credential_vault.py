@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import hashlib
 import json
 import logging
 import os
@@ -15,6 +14,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 logger = logging.getLogger(__name__)
 
+_SERVICE_NAME = "sparkleforge-anvil"
+
 # Try OS keyring first
 try:
     import keyring
@@ -23,7 +24,31 @@ except ImportError:
     _KEYRING_AVAILABLE = False
     logger.info("keyring not available — using encrypted file fallback")
 
-_SECRET_SEED = os.environ.get("SPARKLEFORGE_SECRET_SEED", "default-insecure-seed")
+
+def _resolve_secret_seed(fallback_path: str) -> bytes:
+    """Resolve the key material for the fallback file's AES-GCM encryption.
+
+    Prefers SPARKLEFORGE_SECRET_SEED if set. Otherwise generates a random,
+    per-installation key once and persists it next to the fallback store —
+    never a fixed, source-visible default, since that would make the
+    "encryption" purely cosmetic.
+    """
+    env_seed = os.environ.get("SPARKLEFORGE_SECRET_SEED")
+    if env_seed:
+        return env_seed.encode("utf-8")
+
+    key_dir = os.path.dirname(fallback_path) or "."
+    key_path = os.path.join(key_dir, ".vault_key")
+    if os.path.exists(key_path):
+        with open(key_path, "rb") as f:
+            return f.read()
+
+    os.makedirs(key_dir, exist_ok=True)
+    key = os.urandom(32)
+    with open(key_path, "wb") as f:
+        f.write(key)
+    os.chmod(key_path, 0o600)
+    return key
 
 
 class CredentialVault:
@@ -51,19 +76,20 @@ class CredentialVault:
             return
         self._initialized = True
         self._fallback_path = fallback_path or os.path.join("data", ".credential_store")
+        self._secret_seed = _resolve_secret_seed(self._fallback_path)
         self._cache: Dict[str, str] = {}
         self._lock_data = threading.RLock()
 
     def _encrypt(self, value: str) -> str:
         """AES-GCM encryption for fallback storage."""
-        key = hashlib.sha256(_SECRET_SEED.encode()).digest()
+        key = hashlib.sha256(self._secret_seed).digest()
         aesgcm = AESGCM(key)
         nonce = os.urandom(12)
         ciphertext = aesgcm.encrypt(nonce, value.encode("utf-8"), None)
         return base64.b64encode(nonce + ciphertext).decode()
 
     def _decrypt(self, value: str) -> str:
-        key = hashlib.sha256(_SECRET_SEED.encode()).digest()
+        key = hashlib.sha256(self._secret_seed).digest()
         aesgcm = AESGCM(key)
         data = base64.b64decode(value.encode())
         return aesgcm.decrypt(data[:12], data[12:], None).decode("utf-8")
