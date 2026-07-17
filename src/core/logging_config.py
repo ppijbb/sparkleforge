@@ -372,6 +372,25 @@ def log_error_with_context(
     )
 
 
+def log_async_task_lifecycle(
+    logger: logging.Logger,
+    task_name: str,
+    status: str,
+    duration: float | None = None,
+    **metadata,
+):
+    """Log an async task's lifecycle transition in structured JSON form."""
+    extra = {
+        "task_name": task_name,
+        "status": status,
+        "event_type": "async_task_lifecycle",
+        **SensitiveDataMasker.mask_dict_values(metadata),
+    }
+    if duration is not None:
+        extra["duration_seconds"] = duration
+    logger.info(f"Async task {task_name}: {status}", extra=extra)
+
+
 # Initialize default logging
 def initialize_logging():
     """Initialize default logging configuration."""
