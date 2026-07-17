@@ -567,6 +567,8 @@ Autonomous problem-solving contract:
         """IntentGuardrail로 최근 작업 요약의 의도 정렬을 주기적 진단."""
         if self.intent_guardrail is None:
             return
+        if self.mode_controller is None:
+            return
         step_index = len([m for m in history if m.get("role") == "tool"])
         if not self.intent_guardrail.should_check(step_index):
             return
