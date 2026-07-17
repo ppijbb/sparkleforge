@@ -10,6 +10,7 @@ Mirrors scripts/run.sh so Windows users can run without WSL/Git Bash:
 import os
 import subprocess
 import sys
+import shutil
 import venv
 from pathlib import Path
 
@@ -32,6 +33,16 @@ def _warn(msg):
 def _error(msg):
     print(f"[ERROR] {msg}")
 
+
+def check_docker():
+    _info("Checking Docker daemon availability...")
+    if shutil.which("docker") is None:
+        _warn("Docker not found in PATH.")
+        return False
+    if subprocess.run(["docker", "info"], capture_output=True).returncode != 0:
+        _error("Docker daemon is not running.")
+        return False
+    return True
 
 def _python_bin():
     if VENV.exists():
@@ -169,6 +180,9 @@ def main():
 
     if not check_python_version():
         sys.exit(1)
+
+    if not check_docker():
+        _warn("Proceeding without Docker, but some features may fail.")
 
     setup_venv()
     install_dependencies()
