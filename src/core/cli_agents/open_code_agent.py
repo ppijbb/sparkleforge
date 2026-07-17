@@ -32,14 +32,19 @@ GOOGLE_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 DEFAULT_CONTEXT_WINDOW = 128_000
 GOOGLE_GEMINI_CONTEXT_WINDOW = 1_000_000
 MODEL_CONTEXT_WINDOWS = {
-    "moonshotai/kimi": 256_000,
-    "tencent/hy3": 256_000,
-    "z-ai/": 128_000,
-    "glm-": 128_000,
-    "minimax/": 200_000,
-    "qwen/": 256_000,
-    "deepseek/": 128_000,
-    "google/gemini-3.1-flash-lite": 1_000_000,
+    "moonshotai/kimi-k3": 1_048_576,
+    "moonshotai/kimi": 262_144,
+    "minimax/minimax-m3": 1_048_576,
+    "minimax/": 204_800,
+    "tencent/hy3": 262_144,
+    "tencent/hunyuan": 131_072,
+    "qwen/qwen3.7": 1_000_000,
+    "qwen/": 128_000,
+    "deepseek/deepseek-v4": 1_048_576,
+    "deepseek/": 163_840,
+    "z-ai/glm-5.2": 1_048_576,
+    "z-ai/": 131_072,
+    "glm-": 131_072,
 }
 
 
