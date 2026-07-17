@@ -2462,6 +2462,14 @@ class MultiModelOrchestrator:
         client = self.model_clients[model_name]
         model_config = self.models[model_name]
 
+        # Filter kwargs to only valid OpenAI-compatible API parameters to avoid
+        # orchestrator-internal keys (task_type, skip_providers, model, etc.) leaking
+        # into client.chat.completions.create() and triggering TypeError.
+        _OPENAI_API_KWARGS = {
+            "messages", "model", "temperature", "max_tokens", "top_p", "stream",
+            "tools", "tool_choice", "stop", "frequency_penalty", "presence_penalty",
+        }
+        api_kwargs = {k: v for k, v in kwargs.items() if k in _OPENAI_API_KWARGS}
         # 메시지 구성
         history = kwargs.pop("history_messages", [])
         messages = []
@@ -2476,18 +2484,32 @@ class MultiModelOrchestrator:
             # OpenAI API 호출
             response = await asyncio.get_running_loop().run_in_executor(
                 None,
-                lambda: client.chat.completions.create(
+                lambda: client.chat.completions.create(  # noqa: E501
                     model=model_config.model_id,
                     messages=messages,
                     temperature=model_config.temperature,
                     max_tokens=model_config.max_tokens,
-                    **kwargs,
+                    **api_kwargs,
                 ),
             )
 
             content = response.choices[0].message.content
             tool_calls = getattr(response.choices[0].message, "tool_calls", [])
 
+            # tool_calls are Pydantic model instances (ChatCompletionMessageToolCall),
+            # not JSON-serializable dicts. Convert before storing in metadata to avoid
+            # TypeError when metadata is serialized to JSON (logging/telemetry/API).
+            serialized_tool_calls = []
+            if tool_calls:
+                for tc in tool_calls:
+                    serialized_tool_calls.append({
+                        "id": getattr(tc, "id", None),
+                        "type": getattr(tc, "type", "function"),
+                        "function": {
+                            "name": getattr(getattr(tc, "function", None), "name", None),
+                            "arguments": getattr(getattr(tc, "function", None), "arguments", "{}"),
+                        },
+                    })
             return {
                 "content": content,
                 "confidence": 0.8,
@@ -2501,7 +2523,7 @@ class MultiModelOrchestrator:
                         if hasattr(response, "usage")
                         else len(str(content).split())
                     ),
-                    "tool_calls": tool_calls,
+                    "tool_calls": serialized_tool_calls,
                 },
             }
         except Exception as e:
