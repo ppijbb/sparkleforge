@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_CHECKPOINT_DB_PATH = "data/orchestrator_checkpoints.db"
 
 
+def route_after_verify_plan(state: ResearchState) -> str:
+    """Edge label for verify_plan — "aborted"/"approved"/"planning_agent" are
+    this edge's own routing labels, independent of the descriptive value
+    verify_plan wrote to state["current_step"] (see
+    verification.py:_run_human_plan_checkpoint for why should_continue,
+    not current_step, is the abort signal).
+    """
+    if not state.get("should_continue", True):
+        return "aborted"
+    if state.get("plan_approved", False):
+        return "approved"
+    return "planning_agent"
+
+
 def create_orchestrator_graph(
     creativity_agent,
     context_manager,
@@ -72,8 +86,12 @@ def create_orchestrator_graph(
 
     workflow.add_conditional_edges(
         "verify_plan",
-        lambda state: ("approved" if state.get("plan_approved", False) else "planning_agent"),
-        {"approved": "overseer_initial_review", "planning_agent": "planning_agent"},
+        route_after_verify_plan,
+        {
+            "approved": "overseer_initial_review",
+            "planning_agent": "planning_agent",
+            "aborted": END,
+        },
     )
 
     workflow.add_edge("overseer_initial_review", "adaptive_supervisor")
