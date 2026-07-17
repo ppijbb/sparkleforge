@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import json
 import uuid
 from dataclasses import asdict, dataclass, field
 from enum import Enum
@@ -198,6 +199,14 @@ class TaskDashboard:
             tasks = [t.to_dict() for t in tasks_objs]
             
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
+            
+            # Structured trace visualization for complex multi-agent runs
+            for t in tasks_objs:
+                if "trace" in t.metadata:
+                    try:
+                        t.metadata["trace_json"] = json.dumps(t.metadata["trace"], indent=2)
+                    except Exception: pass
+
             for t in tasks_objs:
                 counts[t.status.value] += 1
             counts["total"] = len(tasks_objs)

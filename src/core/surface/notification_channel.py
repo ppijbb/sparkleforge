@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+import os
 from enum import Enum
 from typing import Callable, List, Optional
 
@@ -22,6 +23,12 @@ try:
     _PYSTRAY_AVAILABLE = True
 except ImportError:
     _PYSTRAY_AVAILABLE = False
+
+try:
+    import aiohttp
+    _WEBHOOK_URL = os.getenv("SPARKLEFORGE_ALERT_WEBHOOK")
+except ImportError:
+    _WEBHOOK_URL = None
 
 
 class NotificationLevel(str, Enum):
@@ -75,6 +82,19 @@ class NotificationChannel:
         """Send a notification through available backends."""
         with self._lock_data:
             self._history.append(notification)
+
+        # Try webhook for critical alerts
+        if _WEBHOOK_URL and notification.level == NotificationLevel.CRITICAL:
+            try:
+                import requests
+                requests.post(_WEBHOOK_URL, json={
+                    "title": notification.title,
+                    "message": notification.message,
+                    "level": notification.level.value
+                }, timeout=5)
+                logger.debug("Notification sent via webhook: %s", notification.title)
+            except Exception as e:
+                logger.warning("Webhook notification failed: %s", e)
 
         # Try plyer (cross-platform desktop notifications)
         if _PLYER_AVAILABLE:

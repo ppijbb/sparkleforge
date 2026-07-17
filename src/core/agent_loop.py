@@ -62,7 +62,13 @@ Autonomous problem-solving contract:
         # Phase 6: Persistent Memory
         from src.core.memory.persistent import PersistentMemory
 
+        from src.core.anvil.method_resolver import MethodResolver
+        from src.core.anvil.mode_controller import ExecutionMode, ModeController
+
         self.memory = PersistentMemory()
+        self.mode_controller = ModeController()
+        self.method_resolver = MethodResolver()
+        self.intent_guardrail = None
 
     async def run_conversation(
         self,
@@ -105,6 +111,8 @@ Autonomous problem-solving contract:
         while budget.remaining > 0:
             budget.consume()
             logger.info(f"[AgentLoop] Iteration {budget.current_iteration}/{max_iterations}")
+            self._apply_mode_to_messages(history)
+            await self._guard_intent(history)
 
             # Phase 3: Compress context if needed
             history = await self.compressor.compress_if_needed(history)
@@ -278,6 +286,8 @@ Autonomous problem-solving contract:
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
                 try:
                     tool_exec_result = await self.mcp_hub.execute_tool(tool_name, arguments)
+                    self.mode_controller.record_success()
+                    await self._record_resolved_capability(tool_name)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
                     tool_exec_result = {"success": False, "error": str(e)}
@@ -288,6 +298,7 @@ Autonomous problem-solving contract:
                             "message": str(e),
                         }
                     )
+                    self.mode_controller.record_failure()
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
 
@@ -539,3 +550,39 @@ Autonomous problem-solving contract:
     def _openai_tool_name(self, name: str) -> str:
         alias = re.sub(r"[^a-zA-Z0-9_-]", "_", name)[:64].strip("_")
         return alias or "tool"
+
+    # --- Anvil core wiring helpers ---
+
+    def _apply_mode_to_messages(self, history: List[Dict[str, Any]]) -> None:
+        """ModeController의 쓰기 차단 상태를 루프 컨텍스트에 반영."""
+        if self.mode_controller.is_write_blocked():
+            for msg in history:
+                if isinstance(msg, dict) and msg.get("role") == "system":
+                    msg["content"] = (msg.get("content", "") or "") + (
+                        "\n\n[ModeController] PLAN_FIRST 모드 - 계획 승인 전까지 쓰기 액션 차단됨."
+                    )
+                    break
+
+    async def _guard_intent(self, history: List[Dict[str, Any]]) -> None:
+        """IntentGuardrail로 최근 작업 요약의 의도 정렬을 주기적 진단."""
+        if self.intent_guardrail is None:
+            return
+        step_index = len([m for m in history if m.get("role") == "tool"])
+        if not self.intent_guardrail.should_check(step_index):
+            return
+        summary = " ".join(
+            str(m.get("content", "")) for m in history[-3:] if isinstance(m, dict)
+        )
+        try:
+            assessment = self.intent_guardrail.evaluate(summary)
+        except Exception as e:
+            logger.warning("[AgentLoop] IntentGuardrail evaluation failed: %s", e)
+            return
+        if self.intent_guardrail.needs_human_review():
+            self.mode_controller.on_intent_review_needed()
+
+    async def _record_resolved_capability(self, capability: str) -> None:
+        """MethodResolver를 통해 도구 capability 해결 시도를 기록."""
+        resolved = await self.method_resolver.resolve(capability)
+        if not resolved.resolved:
+            self.mode_controller.on_unresolved_capability(capability)

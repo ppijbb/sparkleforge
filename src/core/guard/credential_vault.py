@@ -10,18 +10,50 @@ import logging
 import os
 import threading
 from typing import Dict, Optional
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 logger = logging.getLogger(__name__)
+
+_SERVICE_NAME = "sparkleforge-anvil"
 
 # Try OS keyring first
 try:
     import keyring
-    _KEYRING_AVAILABLE = True
+    # Check if DBus is available on Linux to avoid crashes
+    if os.name == "posix" and "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
+        _KEYRING_AVAILABLE = False
+        logger.info("keyring available but no DBUS_SESSION_BUS_ADDRESS — using encrypted file fallback")
+    else:
+        _KEYRING_AVAILABLE = True
 except ImportError:
     _KEYRING_AVAILABLE = False
     logger.info("keyring not available — using encrypted file fallback")
 
-_SERVICE_NAME = "sparkleforge-anvil"
+
+def _resolve_secret_seed(fallback_path: str) -> bytes:
+    """Resolve the key material for the fallback file's AES-GCM encryption.
+
+    Prefers SPARKLEFORGE_SECRET_SEED if set. Otherwise generates a random,
+    per-installation key once and persists it next to the fallback store —
+    never a fixed, source-visible default, since that would make the
+    "encryption" purely cosmetic.
+    """
+    env_seed = os.environ.get("SPARKLEFORGE_SECRET_SEED")
+    if env_seed:
+        return env_seed.encode("utf-8")
+
+    key_dir = os.path.dirname(fallback_path) or "."
+    key_path = os.path.join(key_dir, ".vault_key")
+    if os.path.exists(key_path):
+        with open(key_path, "rb") as f:
+            return f.read()
+
+    os.makedirs(key_dir, exist_ok=True)
+    key = os.urandom(32)
+    with open(key_path, "wb") as f:
+        f.write(key)
+    os.chmod(key_path, 0o600)
+    return key
 
 
 class CredentialVault:
@@ -49,21 +81,23 @@ class CredentialVault:
             return
         self._initialized = True
         self._fallback_path = fallback_path or os.path.join("data", ".credential_store")
+        self._secret_seed = _resolve_secret_seed(self._fallback_path)
         self._cache: Dict[str, str] = {}
         self._lock_data = threading.RLock()
 
-    def _obfuscate(self, value: str) -> str:
-        """Simple XOR obfuscation for fallback storage (not cryptographic)."""
-        key = hashlib.sha256(_SERVICE_NAME.encode()).digest()
-        raw = value.encode("utf-8")
-        obfuscated = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-        return base64.b64encode(obfuscated).decode()
+    def _encrypt(self, value: str) -> str:
+        """AES-GCM encryption for fallback storage."""
+        key = hashlib.sha256(self._secret_seed).digest()
+        aesgcm = AESGCM(key)
+        nonce = os.urandom(12)
+        ciphertext = aesgcm.encrypt(nonce, value.encode("utf-8"), None)
+        return base64.b64encode(nonce + ciphertext).decode()
 
-    def _deobfuscate(self, value: str) -> str:
-        key = hashlib.sha256(_SERVICE_NAME.encode()).digest()
-        raw = base64.b64decode(value.encode())
-        original = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-        return original.decode("utf-8")
+    def _decrypt(self, value: str) -> str:
+        key = hashlib.sha256(self._secret_seed).digest()
+        aesgcm = AESGCM(key)
+        data = base64.b64decode(value.encode())
+        return aesgcm.decrypt(data[:12], data[12:], None).decode("utf-8")
 
     def _load_fallback(self) -> Dict[str, str]:
         if not os.path.exists(self._fallback_path):
@@ -102,7 +136,7 @@ class CredentialVault:
 
             # Fallback: obfuscated JSON file
             store = self._load_fallback()
-            store[key] = self._obfuscate(value)
+            store[key] = self._encrypt(value)
             self._save_fallback(store)
             self._cache[key] = value
             logger.info("Stored credential '%s' in fallback store", key)
@@ -127,7 +161,7 @@ class CredentialVault:
             store = self._load_fallback()
             if key in store:
                 try:
-                    val = self._deobfuscate(store[key])
+                    val = self._decrypt(store[key])
                     self._cache[key] = val
                     return val
                 except Exception as e:

@@ -73,6 +73,12 @@ class MethodResolver:
         self.handler_registry = handler_registry or {}
         self.skill_repository = skill_repository
         self.tool_builder = tool_builder
+        self.strategy_chain = [
+            (ResolutionStrategy.REGISTERED_HANDLER, self._from_registry),
+            (ResolutionStrategy.SKILL_REPOSITORY, self._from_skills),
+            (ResolutionStrategy.TOOL_BUILDER, self._from_builder),
+            (ResolutionStrategy.ALTERNATIVE_PROCESS, self._from_alternatives),
+        ]
         self.alternatives: Dict[str, Callable] = {}
 
     def register_alternative(self, capability: str, handler: Callable) -> None:
@@ -87,12 +93,7 @@ class MethodResolver:
         context = context or {}
         attempts: List[ResolutionAttempt] = []
 
-        for strategy, finder in (
-            (ResolutionStrategy.REGISTERED_HANDLER, self._from_registry),
-            (ResolutionStrategy.SKILL_REPOSITORY, self._from_skills),
-            (ResolutionStrategy.TOOL_BUILDER, self._from_builder),
-            (ResolutionStrategy.ALTERNATIVE_PROCESS, self._from_alternatives),
-        ):
+        for strategy, finder in self.strategy_chain:
             try:
                 handler = await finder(capability, context)
             except Exception as e:
