@@ -18,22 +18,28 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GOOGLE_GENAI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "moonshotai/kimi-k2.5"
+DEFAULT_MODEL = "moonshotai/kimi-k3"
 OPENROUTER_FALLBACKS = [
-    "google/gemini-3.1-flash-lite-preview",
-    "moonshotai/kimi-k2",
-    "qwen/qwen3-32b",
-    "deepseek/deepseek-r1-0528",
+    "tencent/hy3",
+    "z-ai/glm-5.2",
+    "moonshotai/kimi-k2.5",
+    "minimax/minimax-m3",
+    "qwen/qwen3.7-plus",
+    "deepseek/deepseek-v4-flash",
+    "google/gemini-3.1-flash-lite",
 ]
 GOOGLE_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 DEFAULT_CONTEXT_WINDOW = 128_000
 GOOGLE_GEMINI_CONTEXT_WINDOW = 1_000_000
 MODEL_CONTEXT_WINDOWS = {
-    "moonshotai/kimi": 128_000,
-    "qwen/": 128_000,
-    "deepseek/": 128_000,
+    "moonshotai/kimi": 256_000,
+    "tencent/hy3": 256_000,
     "z-ai/": 128_000,
     "glm-": 128_000,
+    "minimax/": 200_000,
+    "qwen/": 256_000,
+    "deepseek/": 128_000,
+    "google/gemini-3.1-flash-lite": 1_000_000,
 }
 
 
