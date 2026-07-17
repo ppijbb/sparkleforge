@@ -39,7 +39,7 @@ def test_open_code_agent_context_window_uses_model_defaults(monkeypatch):
     kimi = OpenCodeAgent(model_path="moonshotai/kimi-k2.5")
 
     assert gemini.context_window() == 1_000_000
-    assert kimi.context_window() == 128_000
+    assert kimi.context_window() == 262_144
 
 
 def test_open_code_agent_context_window_honors_env_override(monkeypatch):
