@@ -37,7 +37,7 @@ Anvil은 "리눅스 같은 진짜 OS"가 아니라 **에이전트를 위한 OS �
 | M1 | FastMCP 지연 로딩 | ✅ | `src/core/mcp_integration/` 단계적 분리 |
 | M2 | Anvil 워크플로우 코어 | ✅ | `src/core/anvil/engine.py`, `skill_repository.py` |
 | M3 | 요청 분석 & 동적 체크리스트 | ✅ | `request_analyzer.py`, `dynamic_checklist_generator.py` |
-| M4 | HITL 의도 검증 가드레일 | ✅ | `intent_guardrail.py`, `hitl_checkpoint.py` |
+| M4 | HITL 의도 검증 가드레일 | ✅ | `intent_guardrail.py`, `hitl_checkpoint.py` — `verify_plan`(`src/core/orchestrator/verification.py`)의 AFTER_PLANNING 체크포인트에서 실배선(대화형 세션에서만 동작, `autopilot_mode`/비-TTY에서는 기존과 동일하게 자동 승인) |
 | M5 | 범용 문제 해결 / 동적 방법 탐색 | ✅ | `method_resolver.py`, `mode_controller.py` |
 | A | 하드닝 | ✅ | 안정성 기반 작업 |
 | B | Observe | ✅ | `src/core/observe/` (event bus, 텔레메트리) |
