@@ -469,9 +469,20 @@ async def handle_health_command(args):
     try:
         health_monitor = HealthMonitor()
 
+        # 능동 검증: Docker 응답성, 샌드박스 실제 실행, OpenRouter API 연결성
+        active_checks = await health_monitor.run_active_subsystem_checks()
+        for name, check in active_checks.items():
+            if check["ok"] is True:
+                logger.info(f"✅ {name}: ok")
+            elif check["ok"] is None:
+                logger.info(f"⏭️  {name}: {check['detail']}")
+            else:
+                logger.warning(f"⚠️  {name}: {check['detail']}")
+
         if args.detailed:
             # 상세 헬스체크
             health_report = await health_monitor.run_comprehensive_health_check()
+            health_report["active_checks"] = active_checks
             health_monitor.print_detailed_health_report(health_report)
         else:
             # 간단한 헬스체크
@@ -481,6 +492,11 @@ async def handle_health_command(args):
             else:
                 logger.error("❌ System has issues")
                 return 1
+
+        # 샌드박스가 기본적인 명령조차 실행하지 못하면 백엔드가 실질적으로 고장난 것
+        if active_checks["sandbox_write"]["ok"] is False:
+            logger.error("❌ Sandbox cannot execute commands")
+            return 1
 
     except Exception as e:
         logger.error(f"❌ Health check failed: {e}")
