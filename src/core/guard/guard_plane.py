@@ -142,6 +142,8 @@ class GuardPlane:
         is_write: bool = True,
     ) -> Dict[str, Any]:
         """
+        EXPERIMENTAL: IoT Device Guard pipeline.
+
         IoT Device Guard pipeline:
         1. Determine capability based on action type (read or write)
         2. Check capability grant (iot_read or iot_control)
