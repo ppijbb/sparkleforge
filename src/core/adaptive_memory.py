@@ -20,6 +20,7 @@ from src.core.memory_types import (
     EpisodicMemory,
     ProceduralMemory,
     SemanticMemory,
+    create_memory_from_dict,
 )
 
 logger = logging.getLogger(__name__)
@@ -176,10 +177,12 @@ class AdaptiveMemory:
                     if hasattr(memory.memory_type, "value")
                     else str(memory.memory_type)
                 ),
+                "user_id": memory.user_id,
                 "metadata": memory.metadata if hasattr(memory, "metadata") else {},
             }
             importance = memory.importance if hasattr(memory, "importance") else 0.7
             tags = set(memory.tags) if hasattr(memory, "tags") else set()
+            tags.add(f"user:{memory.user_id}")
 
             return self.store(key, value, importance, tags, None, tx)
         except Exception as e:
@@ -219,10 +222,12 @@ class AdaptiveMemory:
                 if hasattr(memory.memory_type, "value")
                 else str(memory.memory_type)
             ),
+            "user_id": memory.user_id,
             "metadata": memory.metadata if hasattr(memory, "metadata") else {},
         }
         importance = memory.importance if hasattr(memory, "importance") else 0.7
         tags = set(memory.tags) if hasattr(memory, "tags") else set()
+        tags.add(f"user:{memory.user_id}")
 
         # 현재는 인메모리 저장이지만, 트랜잭션 로깅
         result = self.store(key, value, importance, tags, None, tx)
@@ -257,6 +262,44 @@ class AdaptiveMemory:
                     break
         out.sort(key=lambda x: -x["importance"])
         return out
+
+    def get_memories_for_user(self, user_id: str, limit: int = 50) -> List[BaseMemory]:
+        """사용자에 속한 기존 메모리를 BaseMemory 객체로 재구성해서 반환.
+
+        Args:
+            user_id: 사용자 ID
+            limit: 최대 반환 개수
+
+        Returns:
+            중요도 내림차순으로 정렬된 BaseMemory 목록
+        """
+        user_tag = f"user:{user_id}"
+        out: List[BaseMemory] = []
+        for key, item in list(self.long_term_memory.items()) + list(self.short_term_memory.items()):
+            if user_tag not in item.tags:
+                continue
+            value = item.value if isinstance(item.value, dict) else {}
+            try:
+                memory = create_memory_from_dict(
+                    {
+                        "memory_id": key,
+                        "memory_type": value.get("memory_type", "semantic"),
+                        "content": value.get("content", ""),
+                        "user_id": value.get("user_id", user_id),
+                        "created_at": item.created_at.isoformat(),
+                        "last_accessed": item.last_accessed.isoformat(),
+                        "access_count": item.access_count,
+                        "importance": item.importance,
+                        "metadata": value.get("metadata", {}),
+                    }
+                )
+            except Exception as e:
+                logger.debug(f"Failed to reconstruct memory {key} for user {user_id}: {e}")
+                continue
+            out.append(memory)
+
+        out.sort(key=lambda m: -m.importance)
+        return out[:limit]
 
     def retrieve(self, key: str, memory_type: str | None = None) -> Any | None:
         """메모리 항목 조회.

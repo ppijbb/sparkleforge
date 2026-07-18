@@ -204,10 +204,7 @@ class RealtimeMemoryProcessor:
             # AdaptiveMemory에서 사용자별 메모리 조회
             # 현재는 인메모리이므로 간단히 처리
             # 나중에 데이터베이스 저장소로 마이그레이션 시 트랜잭션 사용
-            # TODO: 실제 메모리 저장소에서 로드
-            # Issue: High priority - 실제 메모리 저장소에서 사용자별 메모리 로드 구현 필요
-            # 현재는 빈 리스트 반환 (임시 구현)
-            return []
+            return self.adaptive_memory.get_memories_for_user(user_id)
         except Exception as e:
             logger.debug(f"Failed to load existing memories: {e}")
             return []
