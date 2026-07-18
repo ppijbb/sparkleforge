@@ -25,8 +25,10 @@ services:
       - ./data:/app/data
       - ./outputs:/app/outputs
     depends_on:
-      - redis
-      - db
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -44,7 +46,13 @@ services:
     environment:
       - BACKEND_URL=http://backend:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   # Redis Cache
@@ -93,6 +101,8 @@ services:
     restart: unless-stopped
     profiles:
       - sandbox
+    networks:
+      - sandbox_network
 
 volumes:
   redis_data:
@@ -101,3 +111,8 @@ volumes:
 networks:
   default:
     name: sparkleforge_network
+  # Isolated network for the sandbox service only: sandbox code execution may
+  # need internet egress, but must not be able to reach backend/db/redis over
+  # the internal Docker network, so it is deliberately kept off `default`.
+  sandbox_network:
+    name: sparkleforge_sandbox_network

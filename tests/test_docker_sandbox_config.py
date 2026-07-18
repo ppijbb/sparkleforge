@@ -5,10 +5,16 @@ the environment, but memory_limit/cpu_limit/tmpfs_size/pids_limit silently
 fell back to hardcoded SandboxConfig defaults regardless of environment
 configuration. These tests verify the env vars are now honored, and that
 omitting them still falls back to the same defaults as before.
+
+Issue #700: sandbox containers had no way to use custom DNS servers, so code
+execution on networks with private/internal DNS (no public resolvers) could
+not resolve hostnames even with network access enabled. Covers the new
+SPARKLEFORGE_SANDBOX_DNS_SERVERS env var and its plumbing into the Docker
+`dns` container option.
 """
 
 import src.core.sandbox.docker_sandbox as docker_sandbox
-from src.core.sandbox.docker_sandbox import SandboxConfig
+from src.core.sandbox.docker_sandbox import DockerSandbox, SandboxConfig
 
 
 class _FakeDockerSandbox:
@@ -50,6 +56,7 @@ def test_get_sandbox_falls_back_to_defaults_without_env_vars(monkeypatch):
         "SPARKLEFORGE_SANDBOX_CPU_LIMIT",
         "SPARKLEFORGE_SANDBOX_TMPFS_SIZE",
         "SPARKLEFORGE_SANDBOX_PIDS_LIMIT",
+        "SPARKLEFORGE_SANDBOX_DNS_SERVERS",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -59,3 +66,42 @@ def test_get_sandbox_falls_back_to_defaults_without_env_vars(monkeypatch):
     assert config.cpu_limit == SandboxConfig.cpu_limit
     assert config.tmpfs_size == SandboxConfig.tmpfs_size
     assert config.pids_limit == SandboxConfig.pids_limit
+    assert config.dns_servers is None
+
+
+def test_get_sandbox_honors_dns_servers_env_var(monkeypatch):
+    config = _get_sandbox_config(
+        monkeypatch, {"SPARKLEFORGE_SANDBOX_DNS_SERVERS": "10.0.0.2, 10.0.0.3"}
+    )
+
+    assert config.dns_servers == ("10.0.0.2", "10.0.0.3")
+
+
+def test_get_sandbox_dns_servers_default_to_none_without_env_var(monkeypatch):
+    monkeypatch.delenv("SPARKLEFORGE_SANDBOX_DNS_SERVERS", raising=False)
+
+    config = _get_sandbox_config(monkeypatch, {})
+
+    assert config.dns_servers is None
+
+
+def _sandbox_with_config(config: SandboxConfig) -> DockerSandbox:
+    sandbox = object.__new__(DockerSandbox)
+    sandbox.config = config
+    return sandbox
+
+
+def test_container_kwargs_includes_dns_when_configured():
+    sandbox = _sandbox_with_config(SandboxConfig(dns_servers=("8.8.8.8", "1.1.1.1")))
+
+    kwargs = sandbox._container_kwargs("python:3.11-slim", ["python", "-c", "1"], None)
+
+    assert kwargs["dns"] == ["8.8.8.8", "1.1.1.1"]
+
+
+def test_container_kwargs_omits_dns_when_not_configured():
+    sandbox = _sandbox_with_config(SandboxConfig(dns_servers=None))
+
+    kwargs = sandbox._container_kwargs("python:3.11-slim", ["python", "-c", "1"], None)
+
+    assert "dns" not in kwargs
