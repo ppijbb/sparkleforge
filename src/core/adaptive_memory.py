@@ -10,6 +10,7 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import itertools
 from typing import Any, Dict, List, Set
 
 from src.core.db.database_driver import Transaction
@@ -275,10 +276,20 @@ class AdaptiveMemory:
         """
         user_tag = f"user:{user_id}"
         out: List[BaseMemory] = []
-        for key, item in list(self.long_term_memory.items()) + list(self.short_term_memory.items()):
+        for key, item in itertools.chain(
+            self.long_term_memory.items(), self.short_term_memory.items()
+        ):
             if user_tag not in item.tags:
                 continue
-            value = item.value if isinstance(item.value, dict) else {}
+            if isinstance(item.value, dict):
+                value = item.value
+            elif isinstance(item.value, str):
+                try:
+                    value = json.loads(item.value)
+                except (json.JSONDecodeError, TypeError):
+                    value = {}
+            else:
+                value = {}
             try:
                 memory = create_memory_from_dict(
                     {
@@ -291,6 +302,7 @@ class AdaptiveMemory:
                         "access_count": item.access_count,
                         "importance": item.importance,
                         "metadata": value.get("metadata", {}),
+                        "tags": item.tags,
                     }
                 )
             except Exception as e:
