@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
-from src.core.monitoring.report_generator import generate_daily_report, get_recent_changes
+from src.core.monitoring.report_generator import aggregate_release_metrics, generate_daily_report, get_recent_changes
 from src.core.nightwelding.models import NightweldingItem, NightweldingStatus, MakerMark
 
 
@@ -69,3 +69,40 @@ async def test_generate_daily_report(
     # Trend gap section should always be present, even without signals.
     assert "트렌드 갭" in content
     assert (reports_dir / "trend_gap_history.json").exists()
+
+
+def test_aggregate_release_metrics_weighted_strict_score():
+    """average_strict_score must be weighted by total_attempts, not a plain mean.
+
+    Regression test for issue #773: with unequal total_attempts the weighted
+    average must diverge from the unweighted average, proving the formula is
+    not degenerate with equal weights.
+    """
+    entries = [
+        {"date": "2026-07-16", "strict_score": 4.0, "total_attempts": 100, "success_rate": 10.0},
+        {"date": "2026-07-17", "strict_score": 6.0, "total_attempts": 1, "success_rate": 90.0},
+    ]
+    result = aggregate_release_metrics(entries)
+
+    # Weighted: (4.0 * 100 + 6.0 * 1) / 101 = 406 / 101 = 4.0198...
+    # Unweighted (buggy): (4.0 + 6.0) / 2 = 5.0
+    assert result["average_strict_score"] != 5.0
+    assert result["average_strict_score"] == pytest.approx((4.0 * 100 + 6.0 * 1) / 101)
+
+    # Weighted success rate: (10.0 * 100 + 90.0 * 1) / 101 = 1090 / 101 = 10.792...
+    assert result["weighted_success_rate"] == pytest.approx((10.0 * 100 + 90.0 * 1) / 101)
+
+    assert result["total_attempts"] == 101
+    assert result["entry_count"] == 2
+
+
+def test_aggregate_release_metrics_zero_attempts():
+    """Days with zero total_attempts should not skew the weighted averages."""
+    entries = [
+        {"date": "2026-07-16", "strict_score": 4.0, "total_attempts": 0, "success_rate": 10.0},
+        {"date": "2026-07-17", "strict_score": 6.0, "total_attempts": 0, "success_rate": 90.0},
+    ]
+    result = aggregate_release_metrics(entries)
+    assert result["average_strict_score"] == 0.0
+    assert result["weighted_success_rate"] == 0.0
+    assert result["total_attempts"] == 0
