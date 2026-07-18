@@ -28,6 +28,7 @@ from src.core.autonomous_research_system import (
     project_root,
 )
 from src.monitoring.system_monitor import HealthMonitor
+from src.core.observe.system_collector import check_disk_space_safety
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,15 @@ def _persist_run_session(session_id: str, query: str, output_text: str | None) -
         )
     except Exception:
         logger.debug("Session persistence skipped for %s", session_id, exc_info=True)
+
+
+def _check_disk_space_or_exit() -> int | None:
+    """Run the disk-space safety pre-flight; return 1 to exit on failure, else None."""
+    disk_ok, disk_message = check_disk_space_safety()
+    if not disk_ok:
+        logger.error(disk_message)
+        return 1
+    return None
 
 
 async def handle_run_command(args, config):
@@ -177,11 +187,8 @@ async def handle_run_command(args, config):
         logger.error(session_error)
         return 1
 
-    from src.core.observe.system_collector import check_disk_space_safety
-
-    disk_ok, disk_message = check_disk_space_safety()
-    if not disk_ok:
-        logger.error(disk_message)
+    disk_exit = _check_disk_space_or_exit()
+    if disk_exit is not None:
         return 1
 
     _apply_runtime_overrides()
@@ -316,11 +323,8 @@ async def handle_run_command(args, config):
 
 async def _execute_coworker_goal(goal: str) -> int:
     """Coworker(tool-use) 모드로 목표를 실행하는 공통 경로."""
-    from src.core.observe.system_collector import check_disk_space_safety
-
-    disk_ok, disk_message = check_disk_space_safety()
-    if not disk_ok:
-        logger.error(disk_message)
+    disk_exit = _check_disk_space_or_exit()
+    if disk_exit is not None:
         return 1
 
     logger.info(f"🤝 Starting coworker session for: {goal}")

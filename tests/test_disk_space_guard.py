@@ -46,7 +46,7 @@ def test_check_disk_space_safety_fails_open_without_psutil():
 def test_handle_run_command_rejects_before_orchestrator_init(monkeypatch):
     monkeypatch.setattr(
         "src.core.observe.system_collector.check_disk_space_safety",
-        lambda: (False, "no space"),
+        lambda *args, **kwargs: (False, "no space"),
     )
 
     def _boom():
@@ -72,7 +72,7 @@ def test_handle_run_command_rejects_before_orchestrator_init(monkeypatch):
 def test_execute_coworker_goal_rejects_before_orchestrator_init(monkeypatch):
     monkeypatch.setattr(
         "src.core.observe.system_collector.check_disk_space_safety",
-        lambda: (False, "no space"),
+        lambda *args, **kwargs: (False, "no space"),
     )
 
     result = asyncio.run(main_commands._execute_coworker_goal("do something"))
