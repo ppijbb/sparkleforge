@@ -10,8 +10,10 @@ Usage:
     python tests/benchmark/run_scenarios.py                      # run all 5, print + save report
     python tests/benchmark/run_scenarios.py --scenario system_cleanup
     python tests/benchmark/run_scenarios.py --list
-    python tests/benchmark/run_scenarios.py --update-baseline    # bump docs/benchmark_baseline.json
-    python tests/benchmark/run_scenarios.py --compare-to docs/benchmark_baseline.json  # CI regression gate
+    python tests/benchmark/run_scenarios.py --update-baseline    # bump tests/benchmark/baselines/scenario_baseline.json
+    python tests/benchmark/run_scenarios.py --compare-to tests/benchmark/baselines/scenario_baseline.json  # regression gate vs a fixed baseline
+    python tests/benchmark/run_scenarios.py --compare-to-history tests/benchmark/baselines/scenario_history.jsonl  # regression gate vs the most recent recorded run
+    python tests/benchmark/run_scenarios.py --append-history tests/benchmark/baselines/scenario_history.jsonl  # record this run into the trend history
 """
 
 from __future__ import annotations
@@ -155,6 +157,7 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             "name": spec.get("name", spec["id"]),
             "user_query": user_query,
             "total": graded["total"],
+            "adjusted_total": graded["adjusted_total"],
             "breakdown": graded["breakdown"],
             "returncode": exec_result["returncode"],
             "timed_out": exec_result["timed_out"],
@@ -176,40 +179,54 @@ async def run_all(specs: List[Dict[str, Any]], parallel: bool) -> Dict[str, Any]
         results = [await run_scenario(spec) for spec in specs]
 
     overall = round(sum(r["total"] for r in results) / len(results), 4) if results else 0.0
+    adjusted = [r["adjusted_total"] for r in results if r["adjusted_total"] is not None]
+    overall_adjusted = round(sum(adjusted) / len(adjusted), 4) if adjusted else None
+    inconclusive_checks = sum(
+        1 for r in results for check in r["breakdown"].values() if check["inconclusive"]
+    )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "overall_score": overall,
+        "overall_score_adjusted": overall_adjusted,
+        "inconclusive_checks": inconclusive_checks,
         "scenarios": {r["id"]: r for r in results},
     }
 
 
-def compare_to_baseline(report: Dict[str, Any], baseline_path: Path) -> int:
-    """Return 0 if no regression beyond tolerance, 1 otherwise. Prints a diff either way."""
-    if not baseline_path.exists():
-        print(f"[scenario-eval] no baseline found at {baseline_path}, nothing to compare against.")
-        return 0
+def _compare_scenarios(current_scenarios: Dict[str, Any], baseline_scenarios: Dict[str, Any]) -> int:
+    """Shared diff logic for both the static-baseline and history-based compare modes.
 
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    baseline_scenarios = baseline.get("capability_scenarios", {}).get("scenarios", {})
-
+    Uses adjusted_total (renormalized over checks that actually ran) rather
+    than the raw total, and skips any check marked inconclusive on either side
+    -- an infra outage (judge unavailable, provider quota exhausted) must never
+    register as a capability regression. Returns 0/1 like compare_to_baseline.
+    """
     regressions = []
-    for scenario_id, current in report["scenarios"].items():
+    for scenario_id, current in current_scenarios.items():
         prior = baseline_scenarios.get(scenario_id)
         if prior is None:
             print(f"[scenario-eval] '{scenario_id}': no prior baseline, first run (total={current['total']})")
             continue
 
-        prior_total = prior.get("total", 0.0)
-        delta = round(current["total"] - prior_total, 4)
+        current_adjusted = current.get("adjusted_total")
+        prior_adjusted = prior.get("adjusted_total", prior.get("total", 0.0))
+        if current_adjusted is None:
+            print(f"[scenario-eval] '{scenario_id}': every check was inconclusive this run, skipping comparison")
+            continue
+
+        delta = round(current_adjusted - prior_adjusted, 4)
         sign = "+" if delta >= 0 else ""
         print(
-            f"[scenario-eval] '{scenario_id}': baseline={prior_total:.3f} current={current['total']:.3f} "
+            f"[scenario-eval] '{scenario_id}': baseline={prior_adjusted:.3f} current={current_adjusted:.3f} "
             f"({sign}{delta:.3f})"
         )
 
         for check_name, current_check in current["breakdown"].items():
+            if current_check.get("inconclusive"):
+                print(f"    {check_name}: SKIPPED (inconclusive this run: {current_check['reason']})")
+                continue
             prior_check = prior.get("breakdown", {}).get(check_name)
-            if prior_check is None:
+            if prior_check is None or prior_check.get("inconclusive"):
                 continue
             tolerance = (
                 JUDGE_REGRESSION_TOLERANCE
@@ -233,34 +250,124 @@ def compare_to_baseline(report: Dict[str, Any], baseline_path: Path) -> int:
     return 0
 
 
+def compare_to_baseline(report: Dict[str, Any], baseline_path: Path) -> int:
+    """Return 0 if no regression beyond tolerance, 1 otherwise. Prints a diff either way."""
+    if not baseline_path.exists():
+        print(f"[scenario-eval] no baseline found at {baseline_path}, nothing to compare against.")
+        return 0
+
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline_scenarios = baseline.get("scenarios", {})
+    return _compare_scenarios(report["scenarios"], baseline_scenarios)
+
+
+def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
+    """Compare against the most recent entry in an append-only JSONL history file."""
+    if not history_path.exists():
+        print(f"[scenario-eval] no history found at {history_path}, nothing to compare against.")
+        return 0
+
+    last_line = None
+    with history_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                last_line = line
+    if last_line is None:
+        print(f"[scenario-eval] history file {history_path} is empty, nothing to compare against.")
+        return 0
+
+    prior_report = json.loads(last_line)
+    print(f"[scenario-eval] comparing against history entry from {prior_report.get('generated_at')}")
+    return _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {}))
+
+
+def append_history(report: Dict[str, Any], history_path: Path) -> None:
+    """Append this run's report as one line to an append-only JSONL history file."""
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    with history_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(report, ensure_ascii=False) + "\n")
+    print(f"[scenario-eval] appended to history: {history_path}")
+
+
+def print_trend(history_path: Path) -> int:
+    """Print overall_score/overall_score_adjusted for every recorded run, oldest first.
+
+    This is the concrete answer to "where's the quantitative diff": each merge
+    to main that ran the scenario suite adds one line here via --append-history,
+    so the trend across PRs/merges is directly readable instead of inferred.
+    """
+    if not history_path.exists():
+        print(f"[scenario-eval] no history found at {history_path}")
+        return 1
+
+    entries = []
+    with history_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entries.append(json.loads(line))
+
+    if not entries:
+        print(f"[scenario-eval] history file {history_path} is empty")
+        return 1
+
+    print(f"{'generated_at':<28} {'overall':>8} {'adjusted':>9} {'inconclusive':>13} {'delta':>8}")
+    prior_adjusted = None
+    for entry in entries:
+        adjusted = entry.get("overall_score_adjusted")
+        adjusted_str = f"{adjusted:.3f}" if adjusted is not None else "n/a"
+        if adjusted is not None and prior_adjusted is not None:
+            delta = adjusted - prior_adjusted
+            delta_str = f"{'+' if delta >= 0 else ''}{delta:.3f}"
+        else:
+            delta_str = "-"
+        print(
+            f"{entry.get('generated_at', '?'):<28} {entry['overall_score']:>8.3f} {adjusted_str:>9} "
+            f"{entry.get('inconclusive_checks', '?'):>13} {delta_str:>8}"
+        )
+        if adjusted is not None:
+            prior_adjusted = adjusted
+    return 0
+
+
 def update_baseline(report: Dict[str, Any], baseline_path: Path) -> None:
-    baseline: Dict[str, Any] = {}
-    if baseline_path.exists():
-        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-    baseline["capability_scenarios"] = report
     baseline_path.parent.mkdir(parents=True, exist_ok=True)
-    baseline_path.write_text(json.dumps(baseline, indent=2, ensure_ascii=False), encoding="utf-8")
+    baseline_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[scenario-eval] baseline updated: {baseline_path}")
 
 
 def print_summary(report: Dict[str, Any]) -> None:
     print(f"\n=== Scenario Eval Report ({report['generated_at']}) ===")
     for scenario_id, r in report["scenarios"].items():
-        print(f"\n[{scenario_id}] {r['name']} — total={r['total']:.3f} ({r['duration_s']}s)")
+        adjusted = r["adjusted_total"]
+        adjusted_str = f"{adjusted:.3f}" if adjusted is not None else "n/a (all checks inconclusive)"
+        print(f"\n[{scenario_id}] {r['name']} — total={r['total']:.3f} adjusted={adjusted_str} ({r['duration_s']}s)")
         for check_name, check in r["breakdown"].items():
-            print(f"    {check_name:<28} {check['score']:.2f} x {check['weight']:.2f} — {check['reason']}")
-    print(f"\nOverall score: {report['overall_score']:.3f}")
+            flag = " [INCONCLUSIVE]" if check["inconclusive"] else ""
+            print(f"    {check_name:<28} {check['score']:.2f} x {check['weight']:.2f} — {check['reason']}{flag}")
+
+    adjusted_overall = report["overall_score_adjusted"]
+    adjusted_overall_str = f"{adjusted_overall:.3f}" if adjusted_overall is not None else "n/a"
+    print(f"\nOverall score: {report['overall_score']:.3f} (adjusted: {adjusted_overall_str})")
+    print(f"Inconclusive checks: {report['inconclusive_checks']} (infra/judge unavailable, excluded from adjusted score)")
 
 
 async def _main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--scenario", help="Run only the scenario with this id")
     parser.add_argument("--list", action="store_true", help="List available scenarios and exit")
-    parser.add_argument("--update-baseline", action="store_true", help="Write results into docs/benchmark_baseline.json")
+    parser.add_argument("--update-baseline", action="store_true", help="Write results into tests/benchmark/baselines/scenario_baseline.json")
     parser.add_argument("--compare-to", help="Path to a baseline JSON to check for regressions (exit 1 on regression)")
+    parser.add_argument("--compare-to-history", help="Path to a JSONL history file; compares against its most recent entry")
+    parser.add_argument("--append-history", help="Path to a JSONL history file to append this run's report to")
+    parser.add_argument("--print-trend", help="Path to a JSONL history file; print overall_score over time and exit")
     parser.add_argument("--json-out", help="Path to write the run's JSON report (default: tests/benchmark/reports/scenario_report_<ts>.json)")
     parser.add_argument("--parallel", action="store_true", help="Run scenarios concurrently instead of one at a time (risks provider rate-limit contention)")
     args = parser.parse_args()
+
+    if args.print_trend:
+        return print_trend(Path(args.print_trend))
 
     specs = load_scenarios(only_id=args.scenario)
     if not specs:
@@ -284,12 +391,18 @@ async def _main() -> int:
     print(f"\n[scenario-eval] report written to {out_path}")
 
     if args.update_baseline:
-        update_baseline(report, Path("docs/benchmark_baseline.json"))
+        update_baseline(report, Path("tests/benchmark/baselines/scenario_baseline.json"))
 
+    if args.append_history:
+        append_history(report, Path(args.append_history))
+
+    exit_code = 0
     if args.compare_to:
-        return compare_to_baseline(report, Path(args.compare_to))
+        exit_code = compare_to_baseline(report, Path(args.compare_to)) or exit_code
+    if args.compare_to_history:
+        exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
 
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
