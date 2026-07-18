@@ -263,14 +263,19 @@ class TestProductionUpgrade:
 
     def test_research_agent_mcp_integration(self):
         """연구 에이전트 MCP 통합 확인."""
-        agent_file = os.path.join(project_root, "src", "agents", "research_agent.py")
-        with open(agent_file, "r") as f:
-            content = f.read()
-            assert "execute_tool" in content, "ResearchAgent should use MCP tools"
-            # 직접 API 호출이 MCP 도구로 대체되었는지 확인
-            assert "from src.core.mcp_integration import execute_tool" in content, (
-                "ResearchAgent should import execute_tool from MCP integration"
-            )
+        # research_agent.py was split into src/agents/research_agent/ (issue #582);
+        # execute_tool usage now lives across multiple modules in that package.
+        agent_dir = os.path.join(project_root, "src", "agents", "research_agent")
+        content = ""
+        for filename in os.listdir(agent_dir):
+            if filename.endswith(".py"):
+                with open(os.path.join(agent_dir, filename), "r") as f:
+                    content += f.read()
+        assert "execute_tool" in content, "ResearchAgent should use MCP tools"
+        # 직접 API 호출이 MCP 도구로 대체되었는지 확인
+        assert "from src.core.mcp_integration import execute_tool" in content, (
+            "ResearchAgent should import execute_tool from MCP integration"
+        )
 
     def test_configuration_updates(self):
         """설정 파일 업데이트 확인."""
