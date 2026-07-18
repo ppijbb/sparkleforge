@@ -385,7 +385,34 @@ class AgentHarness:
             "final_output"
         ] = f"Executed {len(all_tasks)} tasks ({len(anvil_tasks)} via Anvil, {len(legacy_tasks)} via Legacy)."
         state["meta"]["observation_snapshot"] = await self._capture_observation_snapshot()
+        self._update_token_budget(state, all_tasks)
         return state
+
+    def _update_token_budget(self, state: HarnessState, tasks: list[Dict[str, Any]]) -> None:
+        """Accumulate token usage from this execution pass and warn on budget overrun."""
+        from src.core.harness_state import check_token_budget
+        from src.core.researcher_config import get_cost_budget_config
+
+        tokens_this_pass = 0
+        for task in tasks:
+            result = task.get("result")
+            if isinstance(result, dict):
+                tokens_this_pass += result.get("tokens_used", 0) or 0
+
+        state["meta"]["total_tokens_used"] = (
+            state["meta"].get("total_tokens_used", 0) + tokens_this_pass
+        )
+
+        try:
+            session_token_limit = get_cost_budget_config().session_token_limit
+        except Exception as e:
+            logger.debug(f"[Harness] Could not load cost budget config: {e}")
+            return
+
+        warning = check_token_budget(state["meta"], session_token_limit)
+        if warning:
+            logger.warning(f"[Harness] {warning}")
+            state["meta"].setdefault("warnings", []).append(warning)
 
     async def _capture_observation_snapshot(self, timeout: float = 5.0) -> Dict[str, Any]:
         """Record ObservationPlane telemetry at the end of a task-execution level.

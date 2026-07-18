@@ -106,6 +106,21 @@ class HarnessState(TypedDict):
     hil: Annotated[HILState, override_reducer]
 
 
+def check_token_budget(meta: "MetaState", session_token_limit: int) -> str | None:
+    """Compare accumulated token usage against the configured session budget.
+
+    Returns a warning string once total_tokens_used reaches the limit, or
+    None when under budget / unlimited (session_token_limit == 0 means no
+    cap, matching CostBudgetConfig's convention).
+    """
+    if session_token_limit <= 0:
+        return None
+    used = meta.get("total_tokens_used", 0)
+    if used >= session_token_limit:
+        return f"Token budget reached: {used}/{session_token_limit} tokens used this session"
+    return None
+
+
 def _detect_interaction_mode() -> str:
     """실행 환경을 감지하여 HIL interaction mode를 결정합니다.
 
