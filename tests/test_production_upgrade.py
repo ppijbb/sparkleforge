@@ -150,7 +150,7 @@ class TestProductionUpgrade:
         assert len(gemini_models) > 0, "No Gemini models loaded"
 
         # Gemini 2.5 Flash Lite가 기본 모델인지 확인
-        assert "gemini-3.1-flash-lite-preview" in [
+        assert "gemini-2.5-flash-lite" in [
             config.model_id for config in llm_orchestrator.models.values()
         ], "Gemini 2.5 Flash Lite should be loaded"
 
