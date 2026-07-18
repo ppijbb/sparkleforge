@@ -357,31 +357,16 @@ class ModelRegistryMixin:
         if "/" in model_id:
             return model_id
 
-        # Google 모델 ID를 OpenRouter 형식으로 변환
-        # 주의: OpenRouter는 더 이상 Gemini 무료 티어를 제공하지 않으므로
-        # (gemini-2.0-flash-lite-preview:free는 삭제됨) 유료 hy3:free로 대체.
-        google_to_openrouter = {
-            "gemini-2.5-flash-lite": "tencent/hy3:free",
-            "gemini-2.5-flash": "tencent/hy3:free",
-            "gemini-2.5-pro": "tencent/hy3:free",
-            "gemini-flash-lite": "tencent/hy3:free",
-            "gemini-flash": "tencent/hy3:free",
-            "gemini-pro": "tencent/hy3:free",
-        }
-
-        if model_id in google_to_openrouter:
-            return google_to_openrouter[model_id]
-
-        # 모델 이름에서 추론
+        # Gemini 모델 요청 시 사용 가능한 무료 모델 목록 동적 선택
         if "gemini" in model_name.lower() or "gemini" in model_id.lower():
-            # Gemini 무료 티어가 없으므로 가장 강력한 무료 모델로 대체
-            return "tencent/hy3:free"
+            free_models = [m.model_id for m in self.models.values() if m.provider == "openrouter" and m.cost_per_token == 0.0]
+            if free_models:
+                return free_models[0]
 
         # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         fallback_models = [
             "tencent/hy3:free",
-            "meta-llama/llama-3.2-3b-instruct:free",
         ]
 
         logger.warning(
