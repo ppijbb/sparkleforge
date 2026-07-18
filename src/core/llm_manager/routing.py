@@ -105,7 +105,17 @@ class RoutingMixin:
         ]
 
         if not suitable_models:
-            # 기본 모델 사용
+            # 기본 모델 사용: 단일 별칭이 아니라 사용 가능한 Provider의
+            # 적합한 모델을 폴백으로 사용하여 실제 fallback 다양성을 보장한다.
+            for provider in self.provider_rotation_order:
+                if self._is_provider_rate_limited(provider):
+                    continue
+                provider_models = [
+                    name for name, config in self.models.items()
+                    if config.provider == provider and task_type in config.capabilities
+                ]
+                if provider_models:
+                    return provider_models[0]
             return "gemini-flash-lite"
 
         # 사용 가능한 Provider 목록 가져오기
@@ -157,7 +167,21 @@ class RoutingMixin:
         if remaining_providers:
             return self.select_model(task_type, complexity, budget)
 
-        # 모든 Provider 실패 시 폴백: Gemini 모델 사용
+        # 모든 Provider 실패 시 폴백: 단일 Gemini 별칭으로 회귀하기 전에
+        # rate limit되지 않은 모든 Provider의 적합한 모델을 순회한다.
+        for provider in self.provider_rotation_order:
+            if self._is_provider_rate_limited(provider):
+                continue
+            provider_models = [
+                name for name in suitable_models if self.models[name].provider == provider
+            ]
+            if provider_models:
+                logger.info(
+                    f"Selected {provider.upper()} model (cross-provider fallback): {provider_models[0]}"
+                )
+                return provider_models[0]
+
+        # 최종 폴백: Gemini 모델 사용
         gemini_models = [name for name in suitable_models if self.models[name].provider == "google"]
         if gemini_models:
             return gemini_models[0]
