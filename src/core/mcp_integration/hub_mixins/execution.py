@@ -26,6 +26,27 @@ from src.core.tools.registry import ToolCategory
 
 logger = logging.getLogger(__name__)
 
+
+def _infer_required_capability(tool_name: str) -> str | None:
+    """Best-effort map from a tool name to an existing BUILTIN_CAPABILITIES entry.
+
+    Reuses the same prefix conventions execute_tool() already dispatches
+    local tools on (see below), rather than inventing a parallel tool
+    taxonomy. Returns None for tool names that don't clearly map to one of
+    the existing coarse action-risk capabilities -- InvocationGateway
+    treats that as "no capability requirement for this call", not "deny".
+    """
+    if tool_name.startswith(("shell", "run_")) or tool_name == "shell":
+        return "execute_shell"
+    if tool_name.startswith(("write_", "edit_", "create_", "delete_")):
+        return "write_file"
+    if tool_name.startswith(("read_", "list_")) or tool_name == "filesystem":
+        return "read_file"
+    if tool_name.startswith("browser") or tool_name == "browser":
+        return "network_request"
+    return None
+
+
 class ExecutionMixin:
     async def _execute_via_mcp_server(
         self, server_name: str, tool_name: str, params: Dict[str, Any]
@@ -374,6 +395,28 @@ class ExecutionMixin:
         tool_id = f"tool_{uuid.uuid4().hex[:8]}"
         tool_type = _infer_tool_type(tool_name)
         query_str = _format_query_string(tool_name, parameters)
+
+        # 단일 강제 진입점 (issue #568): 모든 MCP 도구 호출은 IntentGuardrail/
+        # CapabilityManager 체크를 강제하는 InvocationGateway를 반드시 거친다.
+        from src.core.agent_security import get_current_agent_name
+        from src.core.guard.invocation_gateway import InvocationKind, get_invocation_gateway
+
+        actor = get_current_agent_name() or "system"
+        gateway_decision = get_invocation_gateway().authorize(
+            kind=InvocationKind.MCP_TOOL,
+            actor=actor,
+            target=tool_name,
+            description=query_str,
+            required_capability=_infer_required_capability(tool_name),
+        )
+        if not gateway_decision.allowed:
+            execution_time = time.time() - start_time
+            return {
+                "success": False,
+                "data": None,
+                "error": f"Denied by invocation gateway: {gateway_decision.reason}",
+                "execution_time": execution_time,
+            }
 
         # 로컬 도구 우선 처리 (suna-style: 실제 동작하는 도구 우선)
         local_tools = {

@@ -111,6 +111,7 @@ class AgentOrchestrator:
         request: str | None = None,
         session_id: str | None = "default_session",
         max_iterations: int | None = None,
+        heat_seconds: float | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """하네스를 기동하여 요청을 처리합니다."""
@@ -154,6 +155,7 @@ class AgentOrchestrator:
             request=request,
             max_iterations=max_iterations,
             identity=identity,
+            heat_seconds=heat_seconds,
         )
 
         # Persist any Gemini prompt-cache handle produced by the harness run
@@ -175,6 +177,7 @@ class AgentOrchestrator:
             "results": final_report,
             "final_report": final_report,  # results를 final_report로 매핑
             "content": final_report,
+            "metadata": harness_result.get("metadata", {}),
             "detailed_results": {
                 "plan": harness_result.get("plan", ""),
                 "tasks": harness_result.get("tasks", []),

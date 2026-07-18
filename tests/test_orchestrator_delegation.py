@@ -7,8 +7,10 @@ import os
 import pytest
 
 from src.core.guard.action_journal import ActionJournal
+from src.core.guard.invocation_gateway import InvocationDecision
 from src.core.orchestrator.delegation import (
     DELEGATION_REGISTRY,
+    DelegationDenied,
     DelegationDepthExceeded,
     delegate_to_agent,
 )
@@ -51,6 +53,35 @@ async def test_unknown_role_rejected_and_journaled(journal):
 
     entries = journal.recent(limit=10)
     assert any(e.action == "delegate_to_agent_rejected" for e in entries)
+
+
+@pytest.mark.asyncio
+async def test_invocation_gateway_denial_blocks_delegation_before_dispatch(monkeypatch):
+    """Issue #568: delegate_to_agent must route through InvocationGateway,
+    and a denial must stop execution before the adapter ever runs."""
+    adapter_called = False
+
+    async def _adapter(task, context):
+        nonlocal adapter_called
+        adapter_called = True
+        return {"ok": True}
+
+    monkeypatch.setitem(DELEGATION_REGISTRY, "gated_role", _adapter)
+
+    import src.core.orchestrator.delegation as delegation_module
+
+    fake_gateway = type(
+        "FakeGateway",
+        (),
+        {"authorize": lambda self, **kwargs: InvocationDecision(allowed=False, reason="test denial")},
+    )()
+    monkeypatch.setattr(delegation_module, "get_invocation_gateway", lambda: fake_gateway)
+
+    state = {"delegation_depth": 0, "max_delegation_depth": 3}
+    with pytest.raises(DelegationDenied):
+        await delegate_to_agent(state, "gated_role", {"id": "t1"})
+
+    assert adapter_called is False
 
 
 @pytest.mark.asyncio
