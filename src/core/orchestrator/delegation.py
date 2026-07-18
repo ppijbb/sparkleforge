@@ -17,6 +17,7 @@ import logging
 from typing import Any, Awaitable, Callable, Dict
 
 from src.core.guard.action_journal import ActionJournal
+from src.core.guard.invocation_gateway import InvocationKind, get_invocation_gateway
 from src.core.orchestrator.state import ResearchState
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,10 @@ DelegationAdapter = Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[Any]]
 
 class DelegationDepthExceeded(RuntimeError):
     """Raised when a delegation chain would exceed the configured depth limit."""
+
+
+class DelegationDenied(RuntimeError):
+    """Raised when InvocationGateway denies a delegation (issue #568)."""
 
 
 async def _delegate_research_agent(task: Dict[str, Any], context: Dict[str, Any]) -> Any:
@@ -173,6 +178,19 @@ async def delegate_to_agent(
         )
         raise ValueError(
             f"Unknown delegation role '{role}'. Available roles: {sorted(DELEGATION_REGISTRY)}"
+        )
+
+    decision = get_invocation_gateway().authorize(
+        kind=InvocationKind.AGENT_DELEGATION,
+        actor=delegator_id,
+        target=role,
+        description=f"delegate task {task.get('id') or task.get('task_id')} to '{role}'",
+        intent_guardrail=context.get("intent_guardrail"),
+        metadata={"depth": depth + 1, "task_id": task.get("id") or task.get("task_id")},
+    )
+    if not decision.allowed:
+        raise DelegationDenied(
+            f"InvocationGateway denied delegation to '{role}': {decision.reason}"
         )
 
     entry = journal.record(

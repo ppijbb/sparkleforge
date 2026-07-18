@@ -588,6 +588,7 @@ class AgentHarness:
         max_iterations: int = 10,
         mode: str = "autonomous",
         identity: str = "researcher",
+        heat_seconds: float | None = None,
     ) -> Dict[str, Any]:
         """하네스 실행 (오케스트레이터의 주 진입점)
 
@@ -596,6 +597,7 @@ class AgentHarness:
             request: 사용자 요청
             max_iterations: 최대 루프 반복 횟수
             mode: 'autonomous' (Hermes-style loop) 또는 'research' (Original LangGraph)
+            heat_seconds: 선택적 시간 예산("Heat", 이슈 #585) -- autonomous 모드에서만 적용됨
         """
         start_time = time.time()
         logger.info(
@@ -627,6 +629,7 @@ class AgentHarness:
                     max_iterations=max_iterations,
                     task_type=TaskType.RESEARCH,
                     system_message=sys_prompt,
+                    heat_seconds=heat_seconds,
                 )
 
                 logger.info(f"✅ Autonomous Harness completed in {time.time() - start_time:.2f}s")
