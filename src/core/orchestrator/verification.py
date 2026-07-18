@@ -158,6 +158,8 @@ Return ONLY a JSON object:
         )
 
         if checkpoint_result.decision == CheckpointDecision.ABORT:
+            if self._mode_controller is not None:
+                self._mode_controller.on_checkpoint_decision("abort")
             state["plan_approved"] = False
             state["should_continue"] = False
             state["error_message"] = (
@@ -165,9 +167,14 @@ Return ONLY a JSON object:
             )
             return True
         if checkpoint_result.decision == CheckpointDecision.REVISE:
+            if self._mode_controller is not None:
+                self._mode_controller.on_checkpoint_decision("revise")
             state["plan_approved"] = False
             state["should_continue"] = True
             state["plan_feedback"] = checkpoint_result.feedback or "Human requested revision"
+        elif checkpoint_result.decision == CheckpointDecision.APPROVE:
+            if self._mode_controller is not None:
+                self._mode_controller.on_checkpoint_decision("approve")
         return False
 
     async def overseer_initial_review(self, state: ResearchState) -> ResearchState:
