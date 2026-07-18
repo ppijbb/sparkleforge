@@ -28,6 +28,7 @@ from src.agents.research_agent.quality_metrics import QualityMetricsMixin
 from src.agents.research_agent.search_providers import SearchProvidersMixin
 from src.agents.research_agent.task_pipelines import TaskPipelinesMixin
 from src.core.researcher_config import get_llm_config, get_research_config
+from src.core.skills.prompts.agents.research_agent import research_agent_prompts
 from src.utils.logger import setup_logger
 
 logger = setup_logger("research_agent", log_level="INFO")
@@ -53,6 +54,19 @@ class ResearchAgent(
 
         # Active research tasks
         self.active_tasks: Dict[str, Dict[str, Any]] = {}
+
+        # Prompt registry consumed by the analysis/synthesis/validation
+        # pipeline methods in task_pipelines.py (issue #790).
+        self.config = type("ResearchAgentConfig", (), {"prompts": research_agent_prompts})
+
+        # Adaptive strategy state mutated by update_capabilities() based on
+        # evaluation feedback (issue #790).
+        self.adaptive_strategies = {
+            "search_depth": 3,
+            "content_length": 5000,
+            "source_diversity": 0.7,
+        }
+        self.analysis_methods = self._load_analysis_methods()
 
         # Learning capabilities
         self.learning_data = []
@@ -401,6 +415,16 @@ class ResearchAgent(
                 "error": str(e),
                 "timestamp": datetime.now().isoformat(),
             }
+
+    async def execute_research_task(
+        self,
+        task: Dict[str, Any],
+        objective_id: str,
+        is_refinement: bool = False,
+        context: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Alias for execute_task(), the name ResearchOperator calls (issue #790)."""
+        return await self.execute_task(task, objective_id, is_refinement, context)
 
 
     async def _llm_conduct_research(
