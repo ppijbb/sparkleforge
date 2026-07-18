@@ -176,3 +176,32 @@ class SystemCollector:
             )
 
         return warnings
+
+
+def check_disk_space_safety(min_free_mb: float = 500.0, path: str = "/") -> tuple[bool, str]:
+    """Pre-flight check: is there enough free disk space to safely start a run.
+
+    Low disk space can cause SQLite writes to fail mid-transaction (and
+    leave a locked/corrupt database), so callers should reject the run
+    rather than let it fail unpredictably partway through.
+
+    Returns (is_safe, message). is_safe is True (with an empty message)
+    when psutil is unavailable, since we'd rather run unchecked than
+    block on a check we can't actually perform.
+    """
+    if not PSUTIL_AVAILABLE:
+        return True, ""
+
+    try:
+        free_mb = psutil.disk_usage(path).free / (1024 * 1024)
+    except Exception as e:
+        logger.warning(f"check_disk_space_safety: failed to read disk usage: {e}")
+        return True, ""
+
+    if free_mb < min_free_mb:
+        return False, (
+            f"Only {free_mb:.0f}MB free on '{path}' (safety threshold {min_free_mb:.0f}MB). "
+            "Free up disk space before starting a run — low disk space can cause "
+            "SQLite writes to fail mid-transaction."
+        )
+    return True, ""
