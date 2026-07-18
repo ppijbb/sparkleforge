@@ -7,6 +7,7 @@
 import logging
 import os
 from dataclasses import dataclass
+from typing import ClassVar
 
 try:
     import docker
@@ -25,17 +26,17 @@ class SandboxConfig:
     """샌드박스 설정"""
 
     image: str = "python:3.11-slim"
-    node_image: str = "node:20-slim"
-    bash_image: str = "debian:bookworm-slim"
-    timeout: int = 30
-    memory_limit: str = "512m"
-    cpu_limit: float = 0.5
-    network_disabled: bool = True
-    read_only: bool = True
-    tmpfs_size: str = "100m"
+    node_image: ClassVar[str] = "node:20-slim"
+    bash_image: ClassVar[str] = "debian:bookworm-slim"
+    timeout: ClassVar[int] = 30
+    memory_limit: ClassVar[str] = "512m"
+    cpu_limit: ClassVar[float] = 0.5
+    network_disabled: ClassVar[bool] = True
+    read_only: ClassVar[bool] = True
+    tmpfs_size: ClassVar[str] = "100m"
     runtime: str | None = "runsc"
     allow_default_runtime_fallback: bool = False
-    pids_limit: int = 128
+    pids_limit: ClassVar[int] = 128
 
 
 @dataclass
@@ -52,6 +53,28 @@ class ExecutionResult:
 
 class DockerSandbox:
     """Docker 기반 코드 실행 샌드박스"""
+
+    @staticmethod
+    def _safe_float(env_key: str, default: float) -> float:
+        raw = os.getenv(env_key)
+        if raw is None:
+            return default
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            logger.warning("Invalid value '%s' for %s, using default %s", raw, env_key, default)
+            return default
+
+    @staticmethod
+    def _safe_int(env_key: str, default: int) -> int:
+        raw = os.getenv(env_key)
+        if raw is None:
+            return default
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            logger.warning("Invalid value '%s' for %s, using default %s", raw, env_key, default)
+            return default
 
     def __init__(self, config: SandboxConfig | None = None):
         if not DOCKER_AVAILABLE:
@@ -228,11 +251,14 @@ def get_sandbox() -> DockerSandbox:
             "SPARKLEFORGE_ALLOW_DOCKER_DEFAULT_RUNTIME_FALLBACK", "false"
         ).lower() in ("true", "1", "yes")
         config = SandboxConfig(
-            image=os.getenv("SPARKLEFORGE_SANDBOX_PYTHON_IMAGE", "python:3.11-slim"),
-            node_image=os.getenv("SPARKLEFORGE_SANDBOX_NODE_IMAGE", "node:20-slim"),
-            bash_image=os.getenv("SPARKLEFORGE_SANDBOX_BASH_IMAGE", "debian:bookworm-slim"),
+            image=os.getenv("SPARKLEFORGE_SANDBOX_PYTHON_IMAGE", SandboxConfig.image),
             runtime=runtime,
             allow_default_runtime_fallback=allow_fallback,
         )
+        # Update instance with env vars using safe parsers
+        config.memory_limit = os.getenv("SPARKLEFORGE_SANDBOX_MEMORY_LIMIT", SandboxConfig.memory_limit)
+        config.cpu_limit = DockerSandbox._safe_float("SPARKLEFORGE_SANDBOX_CPU_LIMIT", SandboxConfig.cpu_limit)
+        config.tmpfs_size = os.getenv("SPARKLEFORGE_SANDBOX_TMPFS_SIZE", SandboxConfig.tmpfs_size)
+        config.pids_limit = DockerSandbox._safe_int("SPARKLEFORGE_SANDBOX_PIDS_LIMIT", SandboxConfig.pids_limit)
         _sandbox_instance = DockerSandbox(config)
     return _sandbox_instance
