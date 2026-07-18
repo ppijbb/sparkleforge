@@ -12,13 +12,36 @@ from src.core.mcp_integration import UniversalMCPHub, get_mcp_hub
 logger = logging.getLogger(__name__)
 
 
+HEAT_SOFT_DEADLINE_RATIO = 0.85
+
+
+def _summarize_tool_result(tool_result: Dict[str, Any]) -> str:
+    """Best-effort one-line description of a successful tool_results entry for the Heat report."""
+    for key in ("summary", "message", "output", "content"):
+        value = tool_result.get(key)
+        if isinstance(value, str) and value:
+            return value[:200]
+    data = tool_result.get("data")
+    if data is not None:
+        return str(data)[:200]
+    return "completed"
+
+
 @dataclass
 class IterationBudget:
-    """Hermes-style iteration budget tracker."""
+    """Hermes-style iteration budget tracker.
+
+    heat_seconds is an optional wall-clock time budget ("Heat", issue #585)
+    layered on top of the iteration count. At HEAT_SOFT_DEADLINE_RATIO of the
+    budget, the loop stops starting new tool-calling iterations and returns a
+    wrap-up report instead of either an abrupt iteration-budget cutoff or
+    risking overshooting heat_seconds mid-iteration.
+    """
 
     max_iterations: int = 90
     current_iteration: int = 0
     start_time: float = field(default_factory=time.time)
+    heat_seconds: float | None = None
 
     def consume(self):
         self.current_iteration += 1
@@ -30,6 +53,18 @@ class IterationBudget:
     @property
     def remaining(self):
         return self.max_iterations - self.current_iteration
+
+    @property
+    def elapsed(self) -> float:
+        return time.time() - self.start_time
+
+    @property
+    def heat_soft_expired(self) -> bool:
+        return self.heat_seconds is not None and self.elapsed >= self.heat_seconds * HEAT_SOFT_DEADLINE_RATIO
+
+    @property
+    def heat_hard_expired(self) -> bool:
+        return self.heat_seconds is not None and self.elapsed >= self.heat_seconds
 
 
 class AgentLoop:
@@ -84,11 +119,19 @@ Autonomous problem-solving contract:
         task_type: TaskType = TaskType.RESEARCH,
         max_iterations: int = 20,
         system_message: str | None = None,
+        heat_seconds: float | None = None,
     ) -> Dict[str, Any]:
-        """Runs the autonomous loop."""
+        """Runs the autonomous loop.
+
+        heat_seconds: optional wall-clock time budget ("Heat", issue #585).
+        When set, the loop stops starting new iterations once
+        HEAT_SOFT_DEADLINE_RATIO of the budget has elapsed and returns a
+        wrap-up report summarizing what was completed/failed/remaining,
+        instead of running until max_iterations or being cut off mid-task.
+        """
         from src.core.error_classifier import ErrorCategory, ErrorClassifier
 
-        budget = IterationBudget(max_iterations=max_iterations)
+        budget = IterationBudget(max_iterations=max_iterations, heat_seconds=heat_seconds)
         tool_results: List[Dict[str, Any]] = []
         errors: List[Dict[str, Any]] = []
         tool_calls_count = 0
@@ -116,7 +159,28 @@ Autonomous problem-solving contract:
         max_retries = 3
         tool_capable_waits = 0
 
-        while budget.remaining > 0:
+        while budget.remaining > 0 and not budget.heat_hard_expired:
+            if budget.heat_soft_expired:
+                logger.info(
+                    "[AgentLoop] Heat soft deadline reached (%.0fs elapsed of %.0fs budget); "
+                    "wrapping up instead of starting a new iteration",
+                    budget.elapsed,
+                    budget.heat_seconds,
+                )
+                return self._build_result(
+                    success=True,
+                    content=self._build_heat_wrap_up_content(tool_results, errors),
+                    iterations=budget.current_iteration,
+                    history=history,
+                    metadata={
+                        "heat_expired": True,
+                        "heat_report": self._build_heat_report(budget, tool_results, errors),
+                    },
+                    tool_calls_count=tool_calls_count,
+                    tool_results=tool_results,
+                    errors=errors,
+                )
+
             budget.consume()
             logger.info(f"[AgentLoop] Iteration {budget.current_iteration}/{max_iterations}")
             self._apply_mode_to_messages(history)
@@ -312,6 +376,29 @@ Autonomous problem-solving contract:
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
 
+        if budget.heat_hard_expired:
+            # Safety net: a single iteration ran long enough to cross the hard
+            # heat deadline before the soft-deadline check could catch it.
+            logger.warning(
+                "[AgentLoop] Heat hard deadline reached (%.0fs elapsed of %.0fs budget)",
+                budget.elapsed,
+                budget.heat_seconds,
+            )
+            return self._build_result(
+                success=True,
+                content=self._build_heat_wrap_up_content(tool_results, errors),
+                iterations=budget.current_iteration,
+                history=history,
+                metadata={
+                    "heat_expired": True,
+                    "heat_hard_cutoff": True,
+                    "heat_report": self._build_heat_report(budget, tool_results, errors),
+                },
+                tool_calls_count=tool_calls_count,
+                tool_results=tool_results,
+                errors=errors,
+            )
+
         errors.append({"type": "iteration_budget_exceeded", "message": "Max iterations reached"})
         return self._build_result(
             success=False,
@@ -323,6 +410,65 @@ Autonomous problem-solving contract:
             tool_results=tool_results,
             errors=errors,
             error="Max iterations reached",
+        )
+
+    def _build_heat_report(
+        self,
+        budget: "IterationBudget",
+        tool_results: List[Dict[str, Any]],
+        errors: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Summarize what was completed/failed/remaining when a Heat time budget expires.
+
+        Built from tool_results/errors -- the loop's own real, live-tracked
+        execution record -- rather than any of the separate (and currently
+        unpopulated) session/task-dashboard tracking systems elsewhere in the
+        codebase.
+        """
+        completed = [
+            {"tool": r.get("tool_name"), "summary": _summarize_tool_result(r)}
+            for r in tool_results
+            if r.get("success", True)
+        ]
+        failed = [
+            {"tool": r.get("tool_name"), "error": r.get("error", "unknown error")}
+            for r in tool_results
+            if not r.get("success", True)
+        ]
+
+        if failed:
+            next_action = (
+                f"Investigate {len(failed)} failed tool call(s) before continuing "
+                f"(most recent: {failed[-1]['tool']} -- {failed[-1]['error']})."
+            )
+        elif completed:
+            next_action = (
+                "Resume this goal with additional Heat time to continue past the "
+                f"{len(completed)} step(s) already completed."
+            )
+        else:
+            next_action = "No tool calls completed in this Heat window; resume with more time or a narrower goal."
+
+        return {
+            "elapsed_seconds": round(budget.elapsed, 1),
+            "heat_budget_seconds": budget.heat_seconds,
+            "iterations_used": budget.current_iteration,
+            "completed": completed,
+            "failed": failed,
+            "errors": errors,
+            "next_recommended_action": next_action,
+        }
+
+    def _build_heat_wrap_up_content(
+        self, tool_results: List[Dict[str, Any]], errors: List[Dict[str, Any]]
+    ) -> str:
+        """Human-readable summary line used as the result's `content` when Heat expires."""
+        completed_count = sum(1 for r in tool_results if r.get("success", True))
+        failed_count = len(tool_results) - completed_count
+        return (
+            f"Heat time budget reached. Completed {completed_count} tool call(s)"
+            + (f", {failed_count} failed" if failed_count else "")
+            + ". See metadata.heat_report for a full breakdown."
         )
 
     def _append_tool_result(
