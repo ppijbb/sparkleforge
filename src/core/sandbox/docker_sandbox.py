@@ -233,6 +233,14 @@ def get_sandbox() -> DockerSandbox:
             bash_image=os.getenv("SPARKLEFORGE_SANDBOX_BASH_IMAGE", "debian:bookworm-slim"),
             runtime=runtime,
             allow_default_runtime_fallback=allow_fallback,
+            memory_limit=os.getenv("SPARKLEFORGE_SANDBOX_MEMORY_LIMIT", SandboxConfig.memory_limit),
+            cpu_limit=float(
+                os.getenv("SPARKLEFORGE_SANDBOX_CPU_LIMIT", str(SandboxConfig.cpu_limit))
+            ),
+            tmpfs_size=os.getenv("SPARKLEFORGE_SANDBOX_TMPFS_SIZE", SandboxConfig.tmpfs_size),
+            pids_limit=int(
+                os.getenv("SPARKLEFORGE_SANDBOX_PIDS_LIMIT", str(SandboxConfig.pids_limit))
+            ),
         )
         _sandbox_instance = DockerSandbox(config)
     return _sandbox_instance
