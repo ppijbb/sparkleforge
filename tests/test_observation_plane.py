@@ -1,6 +1,7 @@
 import asyncio
 from src.core.observe.event_bus import EventBus
 from src.core.observe.observation_plane import ObservationPlane
+from src.core.observe.system_collector import SystemCollector
 from src.core.bootstrap_graph import BootstrapGraph
 
 
@@ -36,6 +37,43 @@ def test_system_collector_metrics():
         assert "network" in metrics
         assert "battery" in metrics
         assert "temperature" in metrics
+
+    asyncio.run(run_test())
+
+
+def test_check_thresholds_flags_exceeded_metrics():
+    collector = SystemCollector(thresholds={"cpu_percent": 50.0, "memory_percent": 50.0, "disk_percent": 50.0})
+    warnings = collector.check_thresholds(
+        {
+            "cpu": {"percent": 95.0},
+            "memory": {"percent": 30.0},
+            "disk": {"percent": 60.0},
+        }
+    )
+    assert len(warnings) == 2
+    assert any("CPU" in w for w in warnings)
+    assert any("Disk" in w for w in warnings)
+    assert not any("Memory" in w for w in warnings)
+
+
+def test_check_thresholds_ignores_errored_metrics():
+    collector = SystemCollector()
+    warnings = collector.check_thresholds(
+        {
+            "cpu": {"error": "boom"},
+            "memory": {"error": "boom"},
+            "disk": {"error": "boom"},
+        }
+    )
+    assert warnings == []
+
+
+def test_integrated_state_includes_resource_warnings():
+    async def run_test():
+        op = ObservationPlane()
+        state = await op.get_integrated_state()
+        assert "resource_warnings" in state
+        assert isinstance(state["resource_warnings"], list)
 
     asyncio.run(run_test())
 
