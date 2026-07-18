@@ -5,8 +5,10 @@ This module provides comprehensive system monitoring capabilities including
 performance metrics, health checks, and real-time alerts with 8 core innovations.
 """
 
+import asyncio
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -721,3 +723,86 @@ class HealthMonitor:
     def print_detailed_health_report(self, report: Dict[str, Any]) -> None:
         """상세 헬스 리포트를 stdout에 출력."""
         print(json.dumps(report, indent=2, default=str))
+
+    async def check_docker_available(self, timeout: float = 5.0) -> Dict[str, Any]:
+        """Actively probe whether Docker is installed and responding to `docker info`.
+
+        Informational only: many valid deployments sandbox via firejail or a
+        plain subprocess fallback instead of Docker, so this never fails the
+        overall health check on its own.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker", "info",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            ok = proc.returncode == 0
+            return {"ok": ok, "detail": "" if ok else stderr.decode(errors="replace")[:300]}
+        except FileNotFoundError:
+            return {"ok": False, "detail": "docker binary not found"}
+        except Exception as e:
+            return {"ok": False, "detail": str(e)}
+
+    async def check_sandbox_write(self, timeout: float = 10.0) -> Dict[str, Any]:
+        """Actually execute a trivial command through the sandbox executor.
+
+        This is the hard requirement of the three active checks: if the
+        sandbox can't run even `echo`, tool execution is broken regardless
+        of which backend (firejail/docker/subprocess fallback) is active.
+        """
+        try:
+            from src.core.guard.sandbox_executor import SandboxExecutor
+
+            executor = SandboxExecutor(timeout_seconds=timeout)
+            result = await executor.execute_async("echo sparkleforge_health_check")
+            ok = result.ok and "sparkleforge_health_check" in result.stdout
+            detail = f"sandbox_type={result.sandbox_type}" if ok else (result.stderr or "unknown failure")[:300]
+            return {"ok": ok, "detail": detail}
+        except Exception as e:
+            return {"ok": False, "detail": str(e)}
+
+    async def check_openrouter_api(self, timeout: float = 5.0) -> Dict[str, Any]:
+        """Ping OpenRouter's API to confirm connectivity and API key validity.
+
+        ok=None (not False) when no API key is configured -- that's a valid
+        setup for OpenRouter-less deployments, not a failure.
+        """
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            return {"ok": None, "detail": "OPENROUTER_API_KEY not set (skipped)"}
+
+        try:
+            import requests
+
+            def _ping():
+                return requests.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=timeout,
+                )
+
+            response = await asyncio.wait_for(asyncio.to_thread(_ping), timeout=timeout + 1)
+            ok = response.status_code == 200
+            return {"ok": ok, "detail": "" if ok else f"HTTP {response.status_code}"}
+        except Exception as e:
+            return {"ok": False, "detail": str(e)}
+
+    async def run_active_subsystem_checks(self) -> Dict[str, Any]:
+        """Run Docker/sandbox/OpenRouter active checks concurrently (issue #683).
+
+        Unlike quick_health_check/run_comprehensive_health_check, which only
+        report passively-collected resource metrics, these checks actually
+        exercise the subsystems `sparkleforge health` is meant to validate.
+        """
+        docker_result, sandbox_result, openrouter_result = await asyncio.gather(
+            self.check_docker_available(),
+            self.check_sandbox_write(),
+            self.check_openrouter_api(),
+        )
+        return {
+            "docker": docker_result,
+            "sandbox_write": sandbox_result,
+            "openrouter_api": openrouter_result,
+        }

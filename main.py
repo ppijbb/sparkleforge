@@ -304,6 +304,12 @@ EXAMPLES:
     # work 커맨드
     work_parser = subparsers.add_parser("work", help="Execute work goal as coworker")
     work_parser.add_argument("goal", nargs="+", help="Work goal")
+    work_parser.add_argument(
+        "--heat",
+        default=None,
+        help="Time budget for this goal, e.g. '30m', '1h', '90s' (issue #585). "
+        "Wraps up with a summary report instead of an abrupt cutoff when the budget is reached.",
+    )
 
     # session 커맨드 (REPL 밖에서도 세션 조회/재개 가능하도록)
     session_parser = subparsers.add_parser(
@@ -508,6 +514,7 @@ EXAMPLES:
     )
     report_subparsers.add_parser("generate", help="Generate the daily metric evaluation report")
     report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
+    report_subparsers.add_parser("aggregate", help="Aggregate all history entries into a release metrics summary")
 
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(

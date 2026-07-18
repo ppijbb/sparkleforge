@@ -501,6 +501,17 @@ class SessionControl:
 
         logger.info(f"Active session registered: {session_id}")
 
+    def release_active_session(self, session_id: str, status: SessionStatus = SessionStatus.COMPLETED) -> None:
+        """세션 종료 후 동시 세션 카운트에서 제외 (쿼터 슬롯 반환).
+
+        register_active_session()으로 등록된 세션은 실행이 끝난 뒤 반드시 이
+        메서드를 호출해야 카운트에서 빠진다 — 그렇지 않으면 프로세스 수명 동안
+        (예: REPL 모드에서 여러 요청을 처리하는 동안) 슬롯이 영구히 점유된다.
+        등록되지 않은 session_id는 안전하게 무시한다.
+        """
+        if session_id in self.active_sessions:
+            self.active_sessions[session_id]["status"] = status
+
     def check_quotas(self, session_id: str) -> bool:
         """쿼터 초과 여부 확인 및 초과 시 자동 취소."""
         if session_id not in self._session_quotas:
