@@ -51,6 +51,30 @@ class ExecutionResult:
     container_id: str | None = None
 
 
+def _safe_float_env(env_key: str, default: float) -> float:
+    """Parse a float env var, falling back to default on missing/invalid values."""
+    raw = os.getenv(env_key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Invalid float value '%s' for %s, using default %s", raw, env_key, default)
+        return default
+
+
+def _safe_int_env(env_key: str, default: int) -> int:
+    """Parse an int env var, falling back to default on missing/invalid values."""
+    raw = os.getenv(env_key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid int value '%s' for %s, using default %s", raw, env_key, default)
+        return default
+
+
 class DockerSandbox:
     """Docker 기반 코드 실행 샌드박스"""
 
@@ -239,13 +263,9 @@ def get_sandbox() -> DockerSandbox:
             runtime=runtime,
             allow_default_runtime_fallback=allow_fallback,
             memory_limit=os.getenv("SPARKLEFORGE_SANDBOX_MEMORY_LIMIT", SandboxConfig.memory_limit),
-            cpu_limit=float(
-                os.getenv("SPARKLEFORGE_SANDBOX_CPU_LIMIT", str(SandboxConfig.cpu_limit))
-            ),
+            cpu_limit=_safe_float_env("SPARKLEFORGE_SANDBOX_CPU_LIMIT", SandboxConfig.cpu_limit),
             tmpfs_size=os.getenv("SPARKLEFORGE_SANDBOX_TMPFS_SIZE", SandboxConfig.tmpfs_size),
-            pids_limit=int(
-                os.getenv("SPARKLEFORGE_SANDBOX_PIDS_LIMIT", str(SandboxConfig.pids_limit))
-            ),
+            pids_limit=_safe_int_env("SPARKLEFORGE_SANDBOX_PIDS_LIMIT", SandboxConfig.pids_limit),
             dns_servers=dns_servers,
         )
         _sandbox_instance = DockerSandbox(config)
