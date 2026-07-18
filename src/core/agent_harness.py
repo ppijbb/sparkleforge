@@ -16,6 +16,7 @@ from src.core.anvil.skill_repository import SkillRepository
 from src.core.anvil.intent_guardrail import IntentGuardrail
 from src.core.anvil.method_resolver import MethodResolver
 from src.core.anvil.mode_controller import ExecutionMode, ModeController
+from src.core.surface.task_dashboard import TaskDashboard
 from src.core.guard.security_tools import register_security_tools
 from src.core.harness_state import HarnessState, create_initial_harness_state
 from src.core.langgraph_checkpointer import build_sqlite_checkpointer
@@ -44,6 +45,7 @@ class AgentHarness:
         self.anvil_engine = AnvilWorkflowEngine(skill_repository=self.skill_repository)
         self.orchestrator = get_llm_orchestrator()
         self.graph = self._build_graph()
+        self.dashboard = TaskDashboard()
 
     async def aclose(self) -> None:
         """Close the underlying SQLite connection."""
@@ -287,6 +289,7 @@ class AgentHarness:
         from src.core.mcp_integration import get_mcp_hub
         from src.core.parallel_agent_executor import ParallelAgentExecutor
 
+        session_id = state["workflow"]["session_id"]
         # Ensure MCP Hub is initialized before execution
         try:
             mcp_hub = get_mcp_hub()
@@ -330,6 +333,12 @@ class AgentHarness:
                     metadata=td,
                 )
                 self.anvil_engine.add_task(anvil_task)
+                self.dashboard.submit(
+                    name=anvil_task.name,
+                    description=anvil_task.handler,
+                    agent_id="anvil_engine",
+                    metadata={"session_id": session_id, "task_id": anvil_task.task_id}
+                )
 
             anvil_results = await self.anvil_engine.execute(context=state["context"])
             logger.info(
@@ -343,6 +352,7 @@ class AgentHarness:
                     at = self.anvil_engine.tasks[tid]
                     td["result"] = at.result
                     td["status"] = at.status
+                    self.dashboard.complete(tid, result=at.result)
 
         # --- 레거시 경로: 기존 ParallelAgentExecutor로 나머지 태스크 처리 ---
         if legacy_tasks:
@@ -355,9 +365,15 @@ class AgentHarness:
                 assigned_agent = await self.router.assign_agent_for_task(task)
                 agent_assignments[agent_id] = assigned_agent
                 logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
+                self.dashboard.submit(
+                    name=task.get("description", "Legacy Task"),
+                    description=task.get("description", ""),
+                    agent_id=assigned_agent,
+                    metadata={"session_id": session_id, "task_id": agent_id}
+                )
+                self.dashboard.start(agent_id)
 
             executor = ParallelAgentExecutor()
-            session_id = state["workflow"]["session_id"]
 
             # Execute tasks using parallel execution engine with dynamic assignments
             results = await executor.execute_parallel_tasks(
@@ -374,6 +390,7 @@ class AgentHarness:
                     if i < len(legacy_tasks):
                         legacy_tasks[i]["result"] = res.get("result")
                         legacy_tasks[i]["status"] = res.get("status")
+                        self.dashboard.complete(legacy_tasks[i].get("task_id", ""), result=res.get("result"))
 
         # 태스크 목록 재합성
         all_tasks = anvil_tasks + legacy_tasks
