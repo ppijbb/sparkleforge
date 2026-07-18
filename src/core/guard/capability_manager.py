@@ -35,6 +35,16 @@ class Capability:
         return isinstance(other, Capability) and self.name == other.name
 
 
+# Default capability policy granted to every real agent at creation time so
+# GuardPlane.check_and_execute() does not fail closed in production (issue #777).
+# HIGH/CRITICAL capabilities still require HITL approval inside GuardPlane, so
+# granting them here only authorizes the agent to *request* the action.
+DEFAULT_AGENT_CAPABILITIES: List[str] = [
+    "read_file", "write_file", "execute_shell", "install_package",
+    "network_request", "credential_read", "system_config", "process_control",
+    "memory_read", "memory_write", "iot_read", "iot_control",
+]
+
 # Built-in capability registry
 BUILTIN_CAPABILITIES: Dict[str, Capability] = {
     "read_file":        Capability("read_file",        "Read files from filesystem",            RiskLevel.LOW),
@@ -80,6 +90,7 @@ class CapabilityManager:
         self._revocations: Dict[str, Set[str]] = {}    # id -> revoked capabilities
         self._lock_data = threading.RLock()
         self._load_state()
+        self.grant_default("__default_agent__", DEFAULT_AGENT_CAPABILITIES)
 
     def _load_state(self) -> None:
         """Load persisted grants from disk."""
@@ -140,6 +151,12 @@ class CapabilityManager:
     def agent_has(self, agent_id: str, capability_name: str) -> bool:
         """Check whether an agent has a specific capability."""
         with self._lock_data:
+            # Fall back to the default agent policy so real agents (which are
+            # never explicitly granted capabilities in production) are not
+            # denied every guarded action. Explicit revocations still win.
+            if capability_name not in self._revocations.get(agent_id, set()):
+                if capability_name in self._agent_grants.get("__default_agent__", set()):
+                    return True
             if capability_name in self._revocations.get(agent_id, set()):
                 return False
             return capability_name in self._agent_grants.get(agent_id, set())
