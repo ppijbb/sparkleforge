@@ -384,7 +384,25 @@ class AgentHarness:
         state["workflow"][
             "final_output"
         ] = f"Executed {len(all_tasks)} tasks ({len(anvil_tasks)} via Anvil, {len(legacy_tasks)} via Legacy)."
+        state["meta"]["observation_snapshot"] = await self._capture_observation_snapshot()
         return state
+
+    async def _capture_observation_snapshot(self, timeout: float = 5.0) -> Dict[str, Any]:
+        """Record ObservationPlane telemetry at the end of a task-execution level.
+
+        Best-effort: observation is diagnostic, not required for the workflow
+        to succeed, so failures/timeouts are logged and swallowed rather than
+        propagated into the executor node.
+        """
+        from src.core.observe.observation_plane import ObservationPlane
+
+        try:
+            return await asyncio.wait_for(
+                ObservationPlane().get_integrated_state(), timeout=timeout
+            )
+        except Exception as e:
+            logger.warning(f"[Harness] Observation snapshot capture failed: {e}")
+            return {"error": str(e)}
 
     async def _node_subagent_delegate(self, state: HarnessState) -> Dict[str, Any]:
         """[Node] 서브에이전트 군단에 태스크 위임 (Context quarantined)"""
@@ -602,6 +620,7 @@ class AgentHarness:
                 "plan": final_state["workflow"].get("plan", ""),
                 "tasks": final_state["workflow"].get("tasks", []),
                 "results": final_state["workflow"].get("final_output", ""),
+                "observation_snapshot": final_state["meta"].get("observation_snapshot", {}),
             }
         except Exception as e:
             logger.error(f"❌ Research Harness failed: {e}")
