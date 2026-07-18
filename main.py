@@ -164,16 +164,6 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 # asyncio 관련 로거
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 
-# Root logger에도 필터 추가
-root_logger = logging.getLogger()
-for handler in root_logger.handlers:
-    if isinstance(handler, logging.StreamHandler) and not any(
-        isinstance(f, HTTPErrorFilter) for f in handler.filters
-    ):
-        handler.addFilter(HTTPErrorFilter())
-
-
-
 
 async def main():
     """Main function - 9가지 핵심 혁신 통합 실행 진입점 (Suna-style CLI)"""
