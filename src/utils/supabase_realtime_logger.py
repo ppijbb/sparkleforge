@@ -23,6 +23,13 @@ _log_queue: queue.Queue = queue.Queue()
 _worker_thread: Optional[threading.Thread] = None
 _stop_event = threading.Event()
 
+# Batch the DB insert side (not the realtime broadcast, which stays per-event
+# for low latency) to cut Supabase API traffic on chatty continuous-mode runs.
+_BATCH_MAX_SIZE = 25
+_BATCH_MAX_WAIT_S = 2.0
+# Lets external monitoring tell "no logs yet" apart from "worker is dead".
+_HEARTBEAT_INTERVAL_S = 30.0
+
 
 class SupabaseRealtimeHandler(logging.Handler):
     """Logging handler that queues logs for real-time broadcast via Supabase."""
@@ -125,23 +132,50 @@ def _supabase_logger_worker_loop():
         logger.debug(f"Failed to subscribe to realtime channel: {e}")
         channel = None
 
-    while not _stop_event.is_set():
-        try:
-            event = _log_queue.get(timeout=0.5)
-        except queue.Empty:
-            continue
+    last_heartbeat = time.monotonic()
 
-        try:
-            if channel:
-                channel.send_broadcast("agent_log", event)
+    while not _stop_event.is_set():
+        batch = []
+        deadline = time.monotonic() + _BATCH_MAX_WAIT_S
+
+        while len(batch) < _BATCH_MAX_SIZE:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
-                client.table("agent_logs").insert(event).execute()
-            except Exception:
-                pass
-        except Exception as e:
-            logger.debug(f"Error sending log to Supabase: {e}")
-        finally:
+                event = _log_queue.get(timeout=remaining)
+            except queue.Empty:
+                break
+
+            if channel:
+                try:
+                    channel.send_broadcast("agent_log", event)
+                except Exception as e:
+                    logger.debug(f"Error broadcasting log to Supabase realtime channel: {e}")
+            batch.append(event)
             _log_queue.task_done()
+
+        if batch:
+            try:
+                client.table("agent_logs").insert(batch).execute()
+            except Exception as e:
+                logger.debug(f"Error sending log batch to Supabase: {e}")
+
+        now = time.monotonic()
+        if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
+            last_heartbeat = now
+            try:
+                client.table("agent_logs").insert(
+                    {
+                        "session_id": "system",
+                        "agent_name": "supabase_logger_worker",
+                        "message": "heartbeat",
+                        "level": "heartbeat",
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                    }
+                ).execute()
+            except Exception as e:
+                logger.debug(f"Error sending heartbeat to Supabase: {e}")
 
 
 class SupabaseStdoutRedirector:
