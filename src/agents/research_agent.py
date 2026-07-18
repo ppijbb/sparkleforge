@@ -30,6 +30,7 @@ sys.path.insert(0, str(project_root))
 from src.core.researcher_config import get_llm_config, get_research_config
 from src.utils.logger import setup_logger
 
+from src.core.skills.prompts.agents.research_agent import research_agent_prompts
 logger = setup_logger("research_agent", log_level="INFO")
 
 
@@ -47,6 +48,14 @@ class ResearchAgent:
 
         # Active research tasks
         self.active_tasks: Dict[str, Dict[str, Any]] = {}
+
+        # Agent configuration with prompt registry used by the
+        # analysis/synthesis/validation pipeline methods.
+        self.config = type("ResearchAgentConfig", (), {"prompts": research_agent_prompts})
+
+        # Adaptive learning state referenced by update_capabilities.
+        self.adaptive_strategies = {"search_depth": 3, "content_length": 5000, "source_diversity": 0.7}
+        self.analysis_methods = self._load_analysis_methods()
 
         # Learning capabilities
         self.learning_data = []
@@ -322,6 +331,36 @@ class ResearchAgent:
         Returns:
             Task execution result
         """
+        return await self._execute_task_impl(task, objective_id, is_refinement, context)
+
+    async def execute_research_task(
+        self,
+        task: Dict[str, Any],
+        objective_id: str,
+        is_refinement: bool = False,
+        context: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Execute a research task with LLM-based research.
+
+        Args:
+            task: Task to execute
+            objective_id: Objective ID for tracking
+            is_refinement: Whether this is a refinement task
+
+        Returns:
+            Task execution result
+        """
+        try:
+            return await self._execute_task_impl(task, objective_id, is_refinement, context)
+
+    async def _execute_task_impl(
+        self,
+        task: Dict[str, Any],
+        objective_id: str,
+        is_refinement: bool = False,
+        context: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Shared implementation backing execute_task/execute_research_task."""
         try:
             task_id = task.get("task_id", str(uuid.uuid4()))
             task_type = task.get("task_type", "general")
@@ -2981,3 +3020,28 @@ class ResearchAgent:
 
         except Exception as e:
             logger.error(f"Browser cleanup failed: {e}")
+
+    def _calculate_reliability_score(self, validation_result: Dict[str, Any]) -> float:
+        """Calculate reliability score for validation results.
+
+        Models the score on the nearby _calculate_data_quality /
+        _calculate_relevance_score helpers: derive a 0.0-1.0 score from the
+        validation result structure, defaulting to a conservative value when
+        the expected fields are missing.
+        """
+        try:
+            if not validation_result:
+                return 0.5
+
+            score = validation_result.get("overall_score")
+            if isinstance(score, (int, float)):
+                return max(0.0, min(1.0, float(score)))
+
+            issues = validation_result.get("issues", [])
+            if isinstance(issues, list) and issues:
+                return max(0.0, min(1.0, 1.0 - (0.1 * len(issues))))
+
+            return 0.8
+        except Exception as e:
+            logger.error(f"Reliability score calculation failed: {e}")
+            return 0.5

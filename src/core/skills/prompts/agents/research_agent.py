@@ -354,6 +354,18 @@ relevance_check = {
 # 프롬프트들을 딕셔너리로 묶어서 export
 research_agent_prompts = {
     "planning": planning,
+
+# Aliases for prompt keys referenced by ResearchAgent pipeline methods
+# (_generate_insights, _create_analysis_report, _perform_synthesis,
+# _generate_recommendations, _perform_validation, _create_validation_report).
+# These map the canonical prompt names above to the keys the agent expects.
+research_agent_prompts["search_execution"] = research_agent_prompts["insights"]
+research_agent_prompts["content_analysis"] = research_agent_prompts["analysis"]
+research_agent_prompts["synthesis_report"] = research_agent_prompts["synthesis"]
+research_agent_prompts["recommendation_generation"] = research_agent_prompts["recommendations"]
+research_agent_prompts["quality_validation"] = research_agent_prompts["validation"]
+research_agent_prompts["final_assessment"] = research_agent_prompts["quality_assessment"]
+
     "google_search": google_search,
     "bing_search": bing_search,
     "web_scraping": web_scraping,
