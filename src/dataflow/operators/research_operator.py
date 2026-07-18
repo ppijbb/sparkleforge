@@ -144,7 +144,7 @@ class ResearchOperator(SparkleForgeOperatorABC):
                     # 동기 함수이므로 asyncio.run 사용
                     try:
                         result = asyncio.run(
-                            self.research_agent.execute_task(
+                            self.research_agent.execute_research_task(
                                 task=task,
                                 objective_id=task.get("objective_id", "default"),
                             )
@@ -164,7 +164,7 @@ class ResearchOperator(SparkleForgeOperatorABC):
                     self.logger.info(f"Executing research query: {task[:50]}...")
                     try:
                         result = asyncio.run(
-                            self.research_agent.execute_task(
+                            self.research_agent.execute_research_task(
                                 task={"description": task, "query": task},
                                 objective_id="default",
                             )
@@ -204,7 +204,7 @@ class ResearchOperator(SparkleForgeOperatorABC):
             }
 
         try:
-            result = await self.research_agent.execute_task(
+            result = await self.research_agent.execute_research_task(
                 task=task, objective_id=task.get("objective_id", "default")
             )
             return result

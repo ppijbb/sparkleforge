@@ -352,6 +352,13 @@ class ResearchAgent:
         """
         try:
             return await self._execute_task_impl(task, objective_id, is_refinement, context)
+        except Exception as e:
+            logger.error(f"Research task execution failed: {e}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat(),
+            }
 
     async def _execute_task_impl(
         self,
@@ -2202,6 +2209,29 @@ class ResearchAgent:
                 "report": f"Report generation failed: {str(e)}",
                 "score": validation_result.get("overall_score", 0.0),
             }
+
+    def _calculate_reliability_score(self, validation_result: Dict[str, Any]) -> float:
+        """Calculate reliability score from validation result.
+
+        Args:
+            validation_result: Validation result data
+
+        Returns:
+            Reliability score (0.0 to 1.0)
+        """
+        try:
+            if not validation_result:
+                return 0.0
+
+            base_score = validation_result.get("overall_score", 0.0)
+            issues = validation_result.get("issues", [])
+            issue_penalty = min(len(issues) * 0.1, 0.5)
+
+            return max(0.0, min(1.0, base_score - issue_penalty))
+
+        except Exception as e:
+            logger.error(f"Reliability score calculation failed: {e}")
+            return 0.5
 
     async def _generate_research_summary(
         self,
