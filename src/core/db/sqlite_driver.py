@@ -4,7 +4,9 @@ SQLite 데이터베이스 드라이버 구현.
 기존 SessionStorage와의 호환성을 유지하면서 트랜잭션 지원을 추가합니다.
 """
 
+import asyncio
 import logging
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List
 
@@ -33,6 +35,41 @@ else:
     ConnectionType = Any
 
 logger = logging.getLogger(__name__)
+
+_BUSY_RETRY_ATTEMPTS = 5
+_BUSY_RETRY_BASE_DELAY = 0.1  # seconds
+
+
+def _is_busy_error(exc: BaseException) -> bool:
+    """True for SQLite lock-contention errors worth retrying (not other OperationalErrors)."""
+    return isinstance(exc, sqlite3.OperationalError) and (
+        "database is locked" in str(exc) or "database is busy" in str(exc)
+    )
+
+
+async def _execute_with_busy_retry(operation):
+    """Run a zero-arg async SQLite operation, retrying with backoff on lock contention.
+
+    aiosqlite's connect(timeout=...) already gives SQLite its own internal busy
+    wait, but once that's exhausted it raises immediately — this adds a second,
+    application-level retry layer for bursts of concurrent writers that outlast
+    the connection-level timeout.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(_BUSY_RETRY_ATTEMPTS):
+        try:
+            return await operation()
+        except sqlite3.OperationalError as e:
+            if not _is_busy_error(e) or attempt == _BUSY_RETRY_ATTEMPTS - 1:
+                raise
+            last_exc = e
+            delay = _BUSY_RETRY_BASE_DELAY * (2**attempt)
+            logger.warning(
+                f"SQLite busy (attempt {attempt + 1}/{_BUSY_RETRY_ATTEMPTS}), "
+                f"retrying in {delay:.2f}s: {e}"
+            )
+            await asyncio.sleep(delay)
+    raise last_exc  # pragma: no cover — loop always returns or raises above
 
 
 class SQLiteTransaction(Transaction):
@@ -189,46 +226,53 @@ class SQLiteDriver(DatabaseDriver):
     async def _execute_in_transaction(
         self, tx: SQLiteTransaction, query: str, params: Dict[str, Any] | None = None
     ) -> Any:
-        """트랜잭션 내에서 쿼리 실행."""
-        if params:
-            # Dict를 tuple로 변환 (SQLite는 위치 기반 파라미터 사용)
-            # Named parameters도 지원하지만, 간단하게 처리
-            cursor = await tx.connection.execute(query, params)
-        else:
-            cursor = await tx.connection.execute(query)
+        """트랜잭션 내에서 쿼리 실행 (락 경합 시 재시도)."""
 
-        return cursor
+        async def _op():
+            if params:
+                # Dict를 tuple로 변환 (SQLite는 위치 기반 파라미터 사용)
+                # Named parameters도 지원하지만, 간단하게 처리
+                return await tx.connection.execute(query, params)
+            return await tx.connection.execute(query)
+
+        return await _execute_with_busy_retry(_op)
 
     async def _execute_many_in_transaction(
         self, tx: SQLiteTransaction, query: str, params_list: List[Dict[str, Any]]
     ) -> Any:
-        """트랜잭션 내에서 여러 쿼리 일괄 실행."""
-        cursor = await tx.connection.executemany(query, params_list)
-        return cursor
+        """트랜잭션 내에서 여러 쿼리 일괄 실행 (락 경합 시 재시도)."""
+        return await _execute_with_busy_retry(
+            lambda: tx.connection.executemany(query, params_list)
+        )
 
     async def execute(self, query: str, params: Dict[str, Any] | None = None) -> Any:
-        """트랜잭션 없이 쿼리 실행."""
+        """트랜잭션 없이 쿼리 실행 (락 경합 시 재시도)."""
         await self.connect()
         if self._connection is None:
             raise RuntimeError("Database connection not established")
 
-        if params:
-            cursor = await self._connection.execute(query, params)
-        else:
-            cursor = await self._connection.execute(query)
+        async def _op():
+            if params:
+                cursor = await self._connection.execute(query, params)
+            else:
+                cursor = await self._connection.execute(query)
+            await self._connection.commit()
+            return cursor
 
-        await self._connection.commit()
-        return cursor
+        return await _execute_with_busy_retry(_op)
 
     async def execute_many(self, query: str, params_list: List[Dict[str, Any]]) -> Any:
-        """트랜잭션 없이 여러 쿼리 일괄 실행."""
+        """트랜잭션 없이 여러 쿼리 일괄 실행 (락 경합 시 재시도)."""
         await self.connect()
         if self._connection is None:
             raise RuntimeError("Database connection not established")
 
-        cursor = await self._connection.executemany(query, params_list)
-        await self._connection.commit()
-        return cursor
+        async def _op():
+            cursor = await self._connection.executemany(query, params_list)
+            await self._connection.commit()
+            return cursor
+
+        return await _execute_with_busy_retry(_op)
 
     async def fetch_one(
         self, query: str, params: Dict[str, Any] | None = None
