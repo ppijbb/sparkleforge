@@ -929,8 +929,8 @@ class MultiModelOrchestrator:
                     self.model_clients[model_name] = genai.GenerativeModel(model_config.model_id)
 
                     # LangChain 클라이언트 (선택적)
-                    # Note: ChatGoogleGenerativeAI does not support safety_settings parameter
-                    # Safety settings are handled at the genai.GenerativeModel level
+                    # See SAFETY_SETTINGS_BLOCK_NONE above: safety_settings is intentionally
+                    # not passed here, ChatGoogleGenerativeAI doesn't accept it directly.
                     if ChatGoogleGenerativeAI is not None:
                         self.model_clients[f"{model_name}_langchain"] = ChatGoogleGenerativeAI(
                             model=model_config.model_id,
