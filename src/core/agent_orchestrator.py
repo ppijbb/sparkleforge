@@ -126,6 +126,13 @@ class AgentOrchestrator:
         # coworker 모드는 로컬 저장소를 다루는 coder 페르소나로 실행
         custom_state = kwargs.get("custom_state") or {}
         identity = "coder" if custom_state.get("mode") == "coworker" else "researcher"
+
+        # Wire the Gemini prompt-cache handle into the harness call path so the
+        # cache plumbing defined above is actually read from and written to.
+        # See issue #778: previously the handle was built but never connected.
+        cached_handle = self.get_cached_handle(session_id)
+        if cached_handle is not None:
+            kwargs.setdefault("gemini_cached_handle", cached_handle)
         
         # Federation check
         if self.federation_enabled and kwargs.get("federated"):
@@ -148,6 +155,16 @@ class AgentOrchestrator:
             max_iterations=max_iterations,
             identity=identity,
         )
+
+        # Persist any Gemini prompt-cache handle produced by the harness run
+        # back into the per-session store so subsequent turns can reuse it.
+        new_handle = (
+            harness_result.get("metadata", {}).get("gemini_cached_handle")
+            if isinstance(harness_result.get("metadata"), dict)
+            else None
+        )
+        if new_handle and self.gemini_cache is not None:
+            self.set_cached_handle(session_id, new_handle)
 
         # main.py 호환을 위한 필드 추가
         final_report = harness_result.get("results", "")
