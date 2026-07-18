@@ -442,7 +442,7 @@ class MultiModelOrchestrator:
         self.models["gemini-flash-lite"] = ModelConfig(
             name="gemini-flash-lite",
             provider="google",
-            model_id="gemini-3.1-flash-lite-preview",
+            model_id="gemini-2.5-flash-lite",
             temperature=0.1,
             max_tokens=2000,
             cost_per_token=0.0001,
@@ -636,7 +636,7 @@ class MultiModelOrchestrator:
         # 주의: OpenRouter는 더 이상 Gemini 무료 티어를 제공하지 않으므로
         # (gemini-2.0-flash-lite-preview:free는 삭제됨) 유료 hy3:free로 대체.
         google_to_openrouter = {
-            "gemini-3.1-flash-lite-preview": "tencent/hy3:free",
+            "gemini-2.5-flash-lite": "tencent/hy3:free",
             "gemini-2.5-flash": "tencent/hy3:free",
             "gemini-2.5-pro": "tencent/hy3:free",
             "gemini-flash-lite": "tencent/hy3:free",
@@ -769,8 +769,8 @@ class MultiModelOrchestrator:
         # 주요 GPT 모델들
         gpt_models = [
             {
-                "name": "gpt-5.2-mini",
-                "model_id": "gpt-5.2-mini",
+                "name": "gpt-5-mini",
+                "model_id": "gpt-5-mini",
                 "speed_rating": 8.0,
                 "quality_rating": 8.5,
                 "capabilities": [
