@@ -13,15 +13,26 @@ fallback (`scenario_grading.py`).
 python tests/benchmark/run_scenarios.py                 # run all 5, print + save a report
 python tests/benchmark/run_scenarios.py --scenario system_cleanup
 python tests/benchmark/run_scenarios.py --list
-python tests/benchmark/run_scenarios.py --update-baseline            # bump docs/benchmark_baseline.json
-python tests/benchmark/run_scenarios.py --compare-to docs/benchmark_baseline.json  # regression gate (CI uses this)
+python tests/benchmark/run_scenarios.py --update-baseline            # bump tests/benchmark/baselines/scenario_baseline.json
+python tests/benchmark/run_scenarios.py --compare-to tests/benchmark/baselines/scenario_baseline.json  # regression gate vs a fixed floor (CI uses this)
+python tests/benchmark/run_scenarios.py --compare-to-history tests/benchmark/baselines/scenario_history.jsonl  # regression gate vs the most recent recorded run (CI uses this)
+python tests/benchmark/run_scenarios.py --print-trend tests/benchmark/baselines/scenario_history.jsonl  # see overall_score/adjusted move over time
 ```
 
 This is the only part of `tests/benchmark/` wired into CI
-(`.github/workflows/scenario-eval.yml`, on PRs touching `src/**`/`main.py`).
-Deterministic sub-scores must never regress; LLM-judge sub-scores get a small
-tolerance for model noise. The baseline itself is only ever bumped by a human
-running `--update-baseline` and committing the result — CI never auto-commits it.
+(`.github/workflows/scenario-eval.yml`, on PRs touching `src/**`/`main.py`, plus
+a `push`-to-`main` trigger that appends each merge's run to
+`scenario_history.jsonl` via a small auto-merged `chore/` PR). Deterministic
+sub-scores must never regress; LLM-judge sub-scores get a small tolerance for
+model noise. Every score has two numbers: `total` (conservative -- an
+inconclusive check, e.g. the judge model being unavailable, still contributes
+0) and `adjusted_total` (renormalized over only the checks that actually ran).
+Regression comparisons and the history trend both use `adjusted_total`, so an
+LLM-provider outage never registers as a capability regression. The static
+`scenario_baseline.json` floor is only ever bumped by a human running
+`--update-baseline` and committing the result — CI never auto-commits it;
+`scenario_history.jsonl` is the living trend and is the more meaningful of the
+two for "did this actually get better or worse."
 
 Scenarios 2 (scheduled automation) and 4 (security scan/quarantine) are
 expected to score low today: the real NL execution path

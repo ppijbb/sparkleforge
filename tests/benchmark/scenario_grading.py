@@ -100,14 +100,24 @@ def keyword_hit(text: str, keywords: Iterable[str]) -> bool:
 
 JUDGE_TIMEOUT_S = 45.0
 
+# Marker prefix for judge_score() reasons that mean "the judge itself never
+# ran" (no model available, timeout) as opposed to "the judge ran and scored
+# the agent's output low". weighted_total() strips this and tracks affected
+# checks as inconclusive rather than failed, since a 0.0 from provider quota
+# exhaustion was previously silently indistinguishable from a 0.0 the agent
+# actually earned, corrupting the overall_score signal.
+INCONCLUSIVE_MARKER = "__INCONCLUSIVE__"
+
 
 async def judge_score(rubric: str, transcript: str, context: str = "") -> GradeResult:
     """Capped-weight LLM-judge fallback for subjective quality checks.
 
-    Never raises and never blocks past JUDGE_TIMEOUT_S: on any failure (no API
-    key, model error, timeout) this returns (0.0, reason) so a missing/slow
-    judge call degrades the score instead of hanging or crashing the whole
-    scenario run.
+    Never raises and never blocks past JUDGE_TIMEOUT_S. Distinguishes two
+    failure classes in the returned reason:
+    - the judge never ran at all (no model available, timeout) -> marked
+      inconclusive, so callers don't count it as a real 0.0 in aggregates.
+    - the judge ran but had nothing worth judging (no rubric configured,
+      empty transcript) -> a genuine 0.0, since the agent produced nothing.
     """
     if not rubric:
         return 0.0, "no judge_rubric configured"
@@ -118,10 +128,10 @@ async def judge_score(rubric: str, transcript: str, context: str = "") -> GradeR
         return await asyncio.wait_for(_call_judge(rubric, transcript, context), timeout=JUDGE_TIMEOUT_S)
     except asyncio.TimeoutError:
         logger.warning("[ScenarioGrading] LLM judge timed out after %ss", JUDGE_TIMEOUT_S)
-        return 0.0, f"judge timed out after {JUDGE_TIMEOUT_S}s"
+        return 0.0, f"{INCONCLUSIVE_MARKER}judge timed out after {JUDGE_TIMEOUT_S}s"
     except Exception as e:  # noqa: BLE001 - judge must never crash grading
         logger.warning("[ScenarioGrading] LLM judge unavailable: %s", e)
-        return 0.0, f"judge unavailable: {e}"
+        return 0.0, f"{INCONCLUSIVE_MARKER}judge unavailable: {e}"
 
 
 async def _call_judge(rubric: str, transcript: str, context: str) -> GradeResult:
@@ -153,12 +163,34 @@ async def _call_judge(rubric: str, transcript: str, context: str) -> GradeResult
 
 
 def weighted_total(scores: Dict[str, GradeResult], weights: Dict[str, float]) -> Dict[str, Any]:
-    """Combine named sub-scores with their configured weights into a scenario total."""
+    """Combine named sub-scores with their configured weights into a scenario total.
+
+    `total` keeps the original, conservative semantics: an inconclusive check
+    (see INCONCLUSIVE_MARKER) still contributes 0 to it, same as before this
+    distinction existed. `adjusted_total` renormalizes weights over only the
+    checks that actually ran, so a scenario isn't penalized for infra outages
+    it had no control over -- that's the number that should drive trend
+    tracking and regression comparisons. `adjusted_total` is None only when
+    every single check in the scenario was inconclusive.
+    """
     total = 0.0
+    conclusive_weight = 0.0
+    conclusive_contribution = 0.0
     breakdown = {}
     for name, weight in weights.items():
         score, reason = scores.get(name, (0.0, f"check '{name}' did not run"))
-        contribution = score * weight
-        total += contribution
-        breakdown[name] = {"score": score, "weight": weight, "reason": reason}
-    return {"total": round(total, 4), "breakdown": breakdown}
+        inconclusive = reason.startswith(INCONCLUSIVE_MARKER)
+        if inconclusive:
+            reason = reason[len(INCONCLUSIVE_MARKER):]
+        else:
+            conclusive_weight += weight
+            conclusive_contribution += score * weight
+        total += score * weight
+        breakdown[name] = {
+            "score": score,
+            "weight": weight,
+            "reason": reason,
+            "inconclusive": inconclusive,
+        }
+    adjusted_total = round(conclusive_contribution / conclusive_weight, 4) if conclusive_weight > 0 else None
+    return {"total": round(total, 4), "adjusted_total": adjusted_total, "breakdown": breakdown}
