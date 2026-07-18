@@ -154,7 +154,7 @@ class AnvilWorkflowEngine:
             coroutines = [
                 self._execute_task(self.tasks[tid], context)
                 for tid in level
-                if self.tasks[tid].status == "pending"
+                if self.tasks[tid].status in ("pending", "failed")
             ]
             if coroutines:
                 await asyncio.gather(*coroutines, return_exceptions=True)
