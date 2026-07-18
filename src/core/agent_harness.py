@@ -385,7 +385,34 @@ class AgentHarness:
             "final_output"
         ] = f"Executed {len(all_tasks)} tasks ({len(anvil_tasks)} via Anvil, {len(legacy_tasks)} via Legacy)."
         state["meta"]["observation_snapshot"] = await self._capture_observation_snapshot()
+        self._update_token_budget(state, all_tasks)
         return state
+
+    def _update_token_budget(self, state: HarnessState, tasks: list[Dict[str, Any]]) -> None:
+        """Accumulate token usage from this execution pass and warn on budget overrun."""
+        from src.core.harness_state import check_token_budget
+        from src.core.researcher_config import get_cost_budget_config
+
+        tokens_this_pass = 0
+        for task in tasks:
+            result = task.get("result")
+            if isinstance(result, dict):
+                tokens_this_pass += result.get("tokens_used", 0) or 0
+
+        state["meta"]["total_tokens_used"] = (
+            state["meta"].get("total_tokens_used", 0) + tokens_this_pass
+        )
+
+        try:
+            session_token_limit = get_cost_budget_config().session_token_limit
+        except Exception as e:
+            logger.debug(f"[Harness] Could not load cost budget config: {e}")
+            return
+
+        warning = check_token_budget(state["meta"], session_token_limit)
+        if warning:
+            logger.warning(f"[Harness] {warning}")
+            state["meta"].setdefault("warnings", []).append(warning)
 
     async def _capture_observation_snapshot(self, timeout: float = 5.0) -> Dict[str, Any]:
         """Record ObservationPlane telemetry at the end of a task-execution level.
@@ -544,6 +571,7 @@ class AgentHarness:
         max_iterations: int = 10,
         mode: str = "autonomous",
         identity: str = "researcher",
+        heat_seconds: float | None = None,
     ) -> Dict[str, Any]:
         """하네스 실행 (오케스트레이터의 주 진입점)
 
@@ -552,6 +580,7 @@ class AgentHarness:
             request: 사용자 요청
             max_iterations: 최대 루프 반복 횟수
             mode: 'autonomous' (Hermes-style loop) 또는 'research' (Original LangGraph)
+            heat_seconds: 선택적 시간 예산("Heat", 이슈 #585) -- autonomous 모드에서만 적용됨
         """
         start_time = time.time()
         logger.info(
@@ -583,6 +612,7 @@ class AgentHarness:
                     max_iterations=max_iterations,
                     task_type=TaskType.RESEARCH,
                     system_message=sys_prompt,
+                    heat_seconds=heat_seconds,
                 )
 
                 logger.info(f"✅ Autonomous Harness completed in {time.time() - start_time:.2f}s")

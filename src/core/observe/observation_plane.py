@@ -48,6 +48,10 @@ class ObservationPlane:
                 metrics_task, snapshot_task, packages_task, window_task
             )
 
+            resource_warnings = self.system.check_thresholds(metrics)
+            for warning in resource_warnings:
+                logger.warning(f"ObservationPlane: {warning}")
+
             return {
                 "metrics": metrics,
                 "snapshot": snapshot,
@@ -55,6 +59,7 @@ class ObservationPlane:
                     mgr: len(pkgs) for mgr, pkgs in packages.items()
                 },
                 "active_window": active_window,
+                "resource_warnings": resource_warnings,
             }
         except Exception as e:
             logger.error(f"ObservationPlane: Failed to compile integrated system state: {e}")

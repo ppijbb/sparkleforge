@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import logging
 import logging.handlers
+import signal
 import sys
 import time
 from datetime import datetime
@@ -168,6 +169,23 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
+def _install_graceful_sigterm(task: "asyncio.Task") -> None:
+    """Cancel `task` on SIGTERM so its existing finally-block cleanup runs.
+
+    SIGINT already surfaces as KeyboardInterrupt without any extra wiring,
+    but SIGTERM (how Docker/systemd/process managers stop a service) kills
+    the process immediately with no chance to run scheduler.stop() and
+    leaves any in-flight scheduled tasks in an incomplete state. Routing it
+    through task.cancel() reuses the same try/finally shutdown path as a
+    normal Ctrl+C instead of adding a second, parallel shutdown mechanism.
+    """
+    try:
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
+    except (NotImplementedError, RuntimeError) as e:
+        # e.g. Windows, or no event loop signal support in this context
+        logger.debug(f"Could not install SIGTERM handler: {e}")
+
+
 async def main():
     """Main function - 9가지 핵심 혁신 통합 실행 진입점 (Suna-style CLI)"""
 
@@ -286,6 +304,12 @@ EXAMPLES:
     # work 커맨드
     work_parser = subparsers.add_parser("work", help="Execute work goal as coworker")
     work_parser.add_argument("goal", nargs="+", help="Work goal")
+    work_parser.add_argument(
+        "--heat",
+        default=None,
+        help="Time budget for this goal, e.g. '30m', '1h', '90s' (issue #585). "
+        "Wraps up with a summary report instead of an abrupt cutoff when the budget is reached.",
+    )
 
     # session 커맨드 (REPL 밖에서도 세션 조회/재개 가능하도록)
     session_parser = subparsers.add_parser(
@@ -490,6 +514,7 @@ EXAMPLES:
     )
     report_subparsers.add_parser("generate", help="Generate the daily metric evaluation report")
     report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
+    report_subparsers.add_parser("aggregate", help="Aggregate all history entries into a release metrics summary")
 
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
@@ -903,10 +928,11 @@ EXAMPLES:
 
                 scheduler = configure_scheduler_execution(get_scheduler())
                 await scheduler.start()
+                _install_graceful_sigterm(asyncio.current_task())
                 cli = REPLCLI()
                 await cli.run()
-            except (EOFError, KeyboardInterrupt, SystemExit):
-                # 정상 종료
+            except (EOFError, KeyboardInterrupt, SystemExit, asyncio.CancelledError):
+                # 정상 종료 (Ctrl+C, EOF, or SIGTERM-triggered cancellation)
                 pass
             finally:
                 if scheduler is not None:
@@ -927,10 +953,14 @@ EXAMPLES:
             # 스케줄러 초기화 및 시작
             scheduler = configure_scheduler_execution(get_scheduler())
             await scheduler.start()
+            _install_graceful_sigterm(asyncio.current_task())
 
             cli = REPLCLI()
             try:
                 await cli.run()
+            except asyncio.CancelledError:
+                # 정상 종료 (SIGTERM-triggered cancellation)
+                pass
             finally:
                 await scheduler.stop()
             return

@@ -66,6 +66,37 @@ async def report_command(cli, args: List[str]):
         except Exception as e:
             logger.error(f"Failed to view history: {e}", exc_info=True)
             cli.console.print(f"[red]❌ Failed to read history: {e}[/red]")
+
+    elif subcommand == "aggregate":
+        cli.console.print("[cyan]📦 Aggregating Release Metrics...[/cyan]")
+        try:
+            import json
+            from src.core.monitoring.report_generator import aggregate_release_metrics
+
+            history_file = Path.cwd() / "results" / "agent_reports" / "history.json"
+            history = []
+            if history_file.exists():
+                history = json.loads(history_file.read_text(encoding="utf-8"))
+
+            summary = aggregate_release_metrics(history)
+            if summary["entry_count"] == 0:
+                cli.console.print("[yellow]No report history found.[/yellow]")
+                return
+
+            start_date, end_date = summary["date_range"]
+            panel_body = (
+                f"[bold]Date Range:[/bold] {start_date} → {end_date}\n"
+                f"[bold]Days Covered:[/bold] {summary['entry_count']}\n"
+                f"[bold]Total Attempts:[/bold] {summary['total_attempts']}\n"
+                f"[bold]Total Maker's Marks:[/bold] {summary['total_marks']}\n"
+                f"[bold]Average Strict Score:[/bold] [yellow]{summary['average_strict_score']:.1f} / 100[/yellow]\n"
+                f"[bold]Weighted Success Rate:[/bold] [green]{summary['weighted_success_rate']:.1f}%[/green]"
+            )
+            cli.console.print(Panel(panel_body, title="Release Metrics Summary"))
+        except Exception as e:
+            logger.error(f"Failed to aggregate release metrics: {e}", exc_info=True)
+            cli.console.print(f"[red]❌ Failed to aggregate release metrics: {e}[/red]")
+
     else:
         cli.console.print(f"[red]❌ Unknown subcommand: {subcommand}[/red]")
-        cli.console.print("Available subcommands: generate, history")
+        cli.console.print("Available subcommands: generate, history, aggregate")

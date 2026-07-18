@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 try:
     import psutil
@@ -9,13 +9,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RESOURCE_THRESHOLDS = {
+    "cpu_percent": 90.0,
+    "memory_percent": 90.0,
+    "disk_percent": 90.0,
+}
+
 
 class SystemCollector:
     """Collects hardware and OS resource metrics using psutil."""
 
-    def __init__(self):
+    def __init__(self, thresholds: Dict[str, float] | None = None):
         if not PSUTIL_AVAILABLE:
             logger.warning("psutil is not installed. SystemCollector will return mock metrics.")
+        self.thresholds = {**DEFAULT_RESOURCE_THRESHOLDS, **(thresholds or {})}
 
     async def get_cpu_info(self) -> Dict[str, Any]:
         """Fetch CPU usage and frequency metrics."""
@@ -135,3 +142,92 @@ class SystemCollector:
             "battery": await self.get_battery_info(),
             "temperature": await self.get_temperature_info(),
         }
+
+    def check_thresholds(self, metrics: Dict[str, Any]) -> List[str]:
+        """Compare a get_all_metrics() snapshot against configured thresholds.
+
+        Returns a list of human-readable warnings for any metric that
+        exceeds its threshold (empty list when everything is within bounds).
+        Errors in an individual metric are ignored here — get_*_info already
+        logs those; this only judges values that were collected successfully.
+        """
+        warnings: List[str] = []
+
+        cpu_percent = metrics.get("cpu", {}).get("percent")
+        if isinstance(cpu_percent, (int, float)) and cpu_percent > self.thresholds["cpu_percent"]:
+            warnings.append(
+                f"CPU usage at {cpu_percent:.1f}% (threshold {self.thresholds['cpu_percent']:.1f}%)"
+            )
+
+        memory_percent = metrics.get("memory", {}).get("percent")
+        if (
+            isinstance(memory_percent, (int, float))
+            and memory_percent > self.thresholds["memory_percent"]
+        ):
+            warnings.append(
+                f"Memory usage at {memory_percent:.1f}% "
+                f"(threshold {self.thresholds['memory_percent']:.1f}%)"
+            )
+
+        disk_percent = metrics.get("disk", {}).get("percent")
+        if isinstance(disk_percent, (int, float)) and disk_percent > self.thresholds["disk_percent"]:
+            warnings.append(
+                f"Disk usage at {disk_percent:.1f}% (threshold {self.thresholds['disk_percent']:.1f}%)"
+            )
+
+        return warnings
+
+
+def check_disk_space_safety(min_free_mb: float = 500.0, path: str = "/") -> tuple[bool, str]:
+    """Pre-flight check: is there enough free disk space to safely start a run.
+
+    Low disk space can cause SQLite writes to fail mid-transaction (and
+    leave a locked/corrupt database), so callers should reject the run
+    rather than let it fail unpredictably partway through.
+
+    Returns (is_safe, message). is_safe is True (with an empty message)
+    when psutil is unavailable, since we'd rather run unchecked than
+    block on a check we can't actually perform.
+    """
+    if not PSUTIL_AVAILABLE:
+        return True, ""
+
+    try:
+        free_mb = psutil.disk_usage(path).free / (1024 * 1024)
+    except Exception as e:
+        logger.warning(f"check_disk_space_safety: failed to read disk usage: {e}")
+        return True, ""
+
+    if free_mb < min_free_mb:
+        return False, (
+            f"Only {free_mb:.0f}MB free on '{path}' (safety threshold {min_free_mb:.0f}MB). "
+            "Free up disk space before starting a run — low disk space can cause "
+            "SQLite writes to fail mid-transaction."
+        )
+    return True, ""
+
+
+def check_network_connectivity(host: str = "8.8.8.8", port: int = 53, timeout: float = 3.0) -> tuple[bool, str]:
+    """Pre-flight check: is there basic network connectivity before scheduling LLM calls.
+
+    A single fast TCP probe, not a guarantee any specific provider endpoint
+    is reachable — just enough to warn upfront on a fully offline host
+    instead of discovering it only after several provider socket timeouts
+    have each run their full course.
+
+    Returns (is_connected, message). Warn-only by design: some setups run
+    entirely against local models and don't need internet access, and a
+    restrictive network that blocks this specific probe host doesn't mean
+    every provider is actually unreachable.
+    """
+    import socket
+
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True, ""
+    except OSError as e:
+        return False, (
+            f"No network connectivity detected ({e}). Remote LLM providers will "
+            "fail/time out without a network connection; local-model-only setups "
+            "can ignore this."
+        )

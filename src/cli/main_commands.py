@@ -52,12 +52,17 @@ async def _resolve_run_session(args) -> tuple[str, str | None]:
     resume_id = getattr(args, "session_id", None)
     should_continue = getattr(args, "continue_session", False)
 
+    from src.core.session_control import get_session_control
+
     if not resume_id and not should_continue:
-        return f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}", None
+        new_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        try:
+            get_session_control().register_active_session(new_session_id, getattr(args, "query", ""))
+        except RuntimeError as e:
+            return "", f"❌ {e}"
+        return new_session_id, None
 
-    from src.core.session_control import SessionControl
-
-    session_control = SessionControl()
+    session_control = get_session_control()
 
     target_id = resume_id
     if not target_id:
@@ -176,6 +181,22 @@ async def handle_run_command(args, config):
     if session_error:
         logger.error(session_error)
         return 1
+
+    from src.core.observe.system_collector import (
+        check_disk_space_safety,
+        check_network_connectivity,
+    )
+    from src.core.session_control import get_session_control
+
+    disk_ok, disk_message = check_disk_space_safety()
+    if not disk_ok:
+        logger.error(disk_message)
+        get_session_control().release_active_session(session_id)
+        return 1
+
+    network_ok, network_message = check_network_connectivity()
+    if not network_ok:
+        logger.warning(network_message)
 
     _apply_runtime_overrides()
     logger.info(f"🔬 Starting research: {args.query}")
@@ -304,22 +325,88 @@ async def handle_run_command(args, config):
     except Exception as e:
         logger.error(f"❌ Research failed: {e}")
         return 1
+    finally:
+        get_session_control().release_active_session(session_id)
     return 0
 
 
-async def _execute_coworker_goal(goal: str) -> int:
+def parse_heat_duration(duration: str) -> float:
+    """Parse a Heat time-budget string ('30m', '1h', '90s', or a bare number of seconds) to seconds.
+
+    Raises ValueError with a clear message on an unparseable input.
+    """
+    text = duration.strip().lower()
+    units = {"s": 1.0, "m": 60.0, "h": 3600.0}
+    if text and text[-1] in units:
+        value_part, unit = text[:-1], text[-1]
+    else:
+        value_part, unit = text, "s"
+    try:
+        value = float(value_part)
+    except ValueError:
+        raise ValueError(
+            f"Invalid --heat duration '{duration}': expected a number optionally "
+            "suffixed with s/m/h, e.g. '30m', '1h', '90s'."
+        )
+    if value <= 0:
+        raise ValueError(f"Invalid --heat duration '{duration}': must be greater than 0.")
+    return value * units[unit]
+
+
+async def _execute_coworker_goal(goal: str, heat_seconds: float | None = None) -> int:
     """Coworker(tool-use) 모드로 목표를 실행하는 공통 경로."""
+    from src.core.observe.system_collector import (
+        check_disk_space_safety,
+        check_network_connectivity,
+    )
+
+    disk_ok, disk_message = check_disk_space_safety()
+    if not disk_ok:
+        logger.error(disk_message)
+        return 1
+
+    network_ok, network_message = check_network_connectivity()
+    if not network_ok:
+        logger.warning(network_message)
+
     logger.info(f"🤝 Starting coworker session for: {goal}")
     from src.core.agent_orchestrator import get_orchestrator
     orchestrator = get_orchestrator()
-    result = await orchestrator.execute(goal, custom_state={"mode": "coworker", "current_goal": goal})
+    result = await orchestrator.execute(
+        goal,
+        custom_state={"mode": "coworker", "current_goal": goal},
+        heat_seconds=heat_seconds,
+    )
     print(result.get("content", ""))
+
+    heat_report = result.get("metadata", {}).get("heat_report")
+    if heat_report:
+        print("\n--- Heat wrap-up report ---")
+        print(f"Elapsed: {heat_report['elapsed_seconds']:.0f}s / {heat_report['heat_budget_seconds']:.0f}s budget")
+        print(f"Completed: {len(heat_report['completed'])} step(s)")
+        for item in heat_report["completed"]:
+            print(f"  ✅ {item['tool']}: {item['summary']}")
+        if heat_report["failed"]:
+            print(f"Failed: {len(heat_report['failed'])} step(s)")
+            for item in heat_report["failed"]:
+                print(f"  ❌ {item['tool']}: {item['error']}")
+        print(f"Next recommended action: {heat_report['next_recommended_action']}")
+
     return 0
 
 
 async def handle_work_command(args):
     """협업 세션 실행 커맨드 처리"""
-    return await _execute_coworker_goal(" ".join(args.goal))
+    heat_seconds = None
+    heat_arg = getattr(args, "heat", None)
+    if heat_arg:
+        try:
+            heat_seconds = parse_heat_duration(heat_arg)
+        except ValueError as e:
+            logger.error(str(e))
+            print(f"❌ {e}")
+            return 1
+    return await _execute_coworker_goal(" ".join(args.goal), heat_seconds=heat_seconds)
 
 
 async def handle_work_command_from_query(args):
@@ -446,9 +533,20 @@ async def handle_health_command(args):
     try:
         health_monitor = HealthMonitor()
 
+        # 능동 검증: Docker 응답성, 샌드박스 실제 실행, OpenRouter API 연결성
+        active_checks = await health_monitor.run_active_subsystem_checks()
+        for name, check in active_checks.items():
+            if check["ok"] is True:
+                logger.info(f"✅ {name}: ok")
+            elif check["ok"] is None:
+                logger.info(f"⏭️  {name}: {check['detail']}")
+            else:
+                logger.warning(f"⚠️  {name}: {check['detail']}")
+
         if args.detailed:
             # 상세 헬스체크
             health_report = await health_monitor.run_comprehensive_health_check()
+            health_report["active_checks"] = active_checks
             health_monitor.print_detailed_health_report(health_report)
         else:
             # 간단한 헬스체크
@@ -458,6 +556,11 @@ async def handle_health_command(args):
             else:
                 logger.error("❌ System has issues")
                 return 1
+
+        # 샌드박스가 기본적인 명령조차 실행하지 못하면 백엔드가 실질적으로 고장난 것
+        if active_checks["sandbox_write"]["ok"] is False:
+            logger.error("❌ Sandbox cannot execute commands")
+            return 1
 
     except Exception as e:
         logger.error(f"❌ Health check failed: {e}")

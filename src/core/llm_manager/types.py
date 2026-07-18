@@ -1,0 +1,67 @@
+"""Shared type/config/result dataclasses for the LLM manager package.
+
+Split out of the former monolithic llm_manager.py (issue #582, mirroring the
+Sigma-1 split of mcp_integration.py). Kept deliberately tiny and dependency-free
+since TaskType/execute_llm_task are imported by ~30 files across the repo --
+importing TaskType should not pull in the whole provider/orchestrator stack.
+"""
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List
+
+
+class TaskType(Enum):
+    """작업 유형."""
+
+    PLANNING = "planning"
+    DEEP_REASONING = "deep_reasoning"
+    VERIFICATION = "verification"
+    GENERATION = "generation"
+    COMPRESSION = "compression"
+    RESEARCH = "research"
+    ANALYSIS = "analysis"
+    SYNTHESIS = "synthesis"
+    CREATIVE = "creative"
+    MEMORY_EXTRACTION = "memory_extraction"  # 메모리 추출 (백서 요구사항)
+    MEMORY_CONSOLIDATION = "memory_consolidation"  # 메모리 통합 (백서 요구사항)
+
+
+class Provider(Enum):
+    """LLM 제공자."""
+
+    GOOGLE = "google"
+    OPENROUTER = "openrouter"
+    GROQ = "groq"
+    OPENAI = "openai"
+    LOCAL = "local"
+    NVIDIA = "nvidia"
+
+
+@dataclass
+class ModelConfig:
+    """모델 설정."""
+
+    name: str
+    provider: str
+    model_id: str
+    temperature: float
+    max_tokens: int
+    cost_per_token: float
+    speed_rating: float  # 1-10, 높을수록 빠름
+    quality_rating: float  # 1-10, 높을수록 품질 좋음
+    capabilities: List[TaskType]
+
+
+@dataclass
+class ModelResult:
+    """모델 실행 결과."""
+
+    content: str
+    model_used: str
+    execution_time: float
+    confidence: float
+    cost: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+

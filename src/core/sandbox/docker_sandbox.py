@@ -36,6 +36,7 @@ class SandboxConfig:
     runtime: str | None = "runsc"
     allow_default_runtime_fallback: bool = False
     pids_limit: int = 128
+    dns_servers: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -193,6 +194,8 @@ class DockerSandbox:
         }
         if self.config.runtime:
             kwargs["runtime"] = self.config.runtime
+        if self.config.dns_servers:
+            kwargs["dns"] = list(self.config.dns_servers)
         return kwargs
 
     def _should_retry_without_runtime(self, error: Exception) -> bool:
@@ -227,12 +230,23 @@ def get_sandbox() -> DockerSandbox:
         allow_fallback = os.getenv(
             "SPARKLEFORGE_ALLOW_DOCKER_DEFAULT_RUNTIME_FALLBACK", "false"
         ).lower() in ("true", "1", "yes")
+        dns_env = os.getenv("SPARKLEFORGE_SANDBOX_DNS_SERVERS", "").strip()
+        dns_servers = tuple(host.strip() for host in dns_env.split(",") if host.strip()) or None
         config = SandboxConfig(
             image=os.getenv("SPARKLEFORGE_SANDBOX_PYTHON_IMAGE", "python:3.11-slim"),
             node_image=os.getenv("SPARKLEFORGE_SANDBOX_NODE_IMAGE", "node:20-slim"),
             bash_image=os.getenv("SPARKLEFORGE_SANDBOX_BASH_IMAGE", "debian:bookworm-slim"),
             runtime=runtime,
             allow_default_runtime_fallback=allow_fallback,
+            memory_limit=os.getenv("SPARKLEFORGE_SANDBOX_MEMORY_LIMIT", SandboxConfig.memory_limit),
+            cpu_limit=float(
+                os.getenv("SPARKLEFORGE_SANDBOX_CPU_LIMIT", str(SandboxConfig.cpu_limit))
+            ),
+            tmpfs_size=os.getenv("SPARKLEFORGE_SANDBOX_TMPFS_SIZE", SandboxConfig.tmpfs_size),
+            pids_limit=int(
+                os.getenv("SPARKLEFORGE_SANDBOX_PIDS_LIMIT", str(SandboxConfig.pids_limit))
+            ),
+            dns_servers=dns_servers,
         )
         _sandbox_instance = DockerSandbox(config)
     return _sandbox_instance

@@ -195,6 +195,51 @@ def update_trend_gap_history(
     return entry
 
 
+def aggregate_release_metrics(history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Roll up per-day history.json entries into a single release-metrics summary.
+
+    generate_daily_report() only ever appends one entry per day; there was
+    previously no way to see performance across a range of runs (e.g. "since
+    the last release") without reading every row by hand. success_rate and
+    strict_score are weighted by each day's total_attempts so days with more
+    runs count proportionally more; days with zero attempts don't skew the
+    average. Returns zeroed-out fields (not an error) for an empty history,
+    since "no runs yet" is a valid state for a fresh repo.
+    """
+    entries = [e for e in history if isinstance(e, dict)]
+    if not entries:
+        return {
+            "entry_count": 0,
+            "date_range": None,
+            "total_attempts": 0,
+            "total_marks": 0,
+            "average_strict_score": 0.0,
+            "weighted_success_rate": 0.0,
+        }
+
+    dates = sorted(e.get("date", "") for e in entries if e.get("date"))
+    total_attempts = sum(e.get("total_attempts", 0) for e in entries)
+    total_marks = sum(e.get("total_marks", 0) for e in entries)
+    average_strict_score = sum(e.get("strict_score", 0.0) for e in entries) / len(entries)
+
+    if total_attempts > 0:
+        weighted_success_rate = (
+            sum(e.get("success_rate", 0.0) * e.get("total_attempts", 0) for e in entries)
+            / total_attempts
+        )
+    else:
+        weighted_success_rate = 0.0
+
+    return {
+        "entry_count": len(entries),
+        "date_range": (dates[0], dates[-1]) if dates else None,
+        "total_attempts": total_attempts,
+        "total_marks": total_marks,
+        "average_strict_score": average_strict_score,
+        "weighted_success_rate": weighted_success_rate,
+    }
+
+
 async def generate_daily_report(project_root: Path) -> Dict[str, Any]:
     """Calculate metrics, run critical LLM review, and write the report."""
     reports_dir = project_root / "results" / "agent_reports"
