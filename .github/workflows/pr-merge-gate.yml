@@ -60,6 +60,9 @@ jobs:
       - name: Check for stray git-diff a/b prefix paths
         run: python scripts/check_no_diff_prefix_paths.py
 
+      - name: Check InvocationGateway wiring is intact
+        run: python scripts/check_invocation_gateway_wiring.py
+
   import-smoke:
     name: Import smoke test
     runs-on: ubuntu-latest

@@ -330,7 +330,30 @@ async def handle_run_command(args, config):
     return 0
 
 
-async def _execute_coworker_goal(goal: str) -> int:
+def parse_heat_duration(duration: str) -> float:
+    """Parse a Heat time-budget string ('30m', '1h', '90s', or a bare number of seconds) to seconds.
+
+    Raises ValueError with a clear message on an unparseable input.
+    """
+    text = duration.strip().lower()
+    units = {"s": 1.0, "m": 60.0, "h": 3600.0}
+    if text and text[-1] in units:
+        value_part, unit = text[:-1], text[-1]
+    else:
+        value_part, unit = text, "s"
+    try:
+        value = float(value_part)
+    except ValueError:
+        raise ValueError(
+            f"Invalid --heat duration '{duration}': expected a number optionally "
+            "suffixed with s/m/h, e.g. '30m', '1h', '90s'."
+        )
+    if value <= 0:
+        raise ValueError(f"Invalid --heat duration '{duration}': must be greater than 0.")
+    return value * units[unit]
+
+
+async def _execute_coworker_goal(goal: str, heat_seconds: float | None = None) -> int:
     """Coworker(tool-use) 모드로 목표를 실행하는 공통 경로."""
     from src.core.observe.system_collector import (
         check_disk_space_safety,
@@ -349,14 +372,41 @@ async def _execute_coworker_goal(goal: str) -> int:
     logger.info(f"🤝 Starting coworker session for: {goal}")
     from src.core.agent_orchestrator import get_orchestrator
     orchestrator = get_orchestrator()
-    result = await orchestrator.execute(goal, custom_state={"mode": "coworker", "current_goal": goal})
+    result = await orchestrator.execute(
+        goal,
+        custom_state={"mode": "coworker", "current_goal": goal},
+        heat_seconds=heat_seconds,
+    )
     print(result.get("content", ""))
+
+    heat_report = result.get("metadata", {}).get("heat_report")
+    if heat_report:
+        print("\n--- Heat wrap-up report ---")
+        print(f"Elapsed: {heat_report['elapsed_seconds']:.0f}s / {heat_report['heat_budget_seconds']:.0f}s budget")
+        print(f"Completed: {len(heat_report['completed'])} step(s)")
+        for item in heat_report["completed"]:
+            print(f"  ✅ {item['tool']}: {item['summary']}")
+        if heat_report["failed"]:
+            print(f"Failed: {len(heat_report['failed'])} step(s)")
+            for item in heat_report["failed"]:
+                print(f"  ❌ {item['tool']}: {item['error']}")
+        print(f"Next recommended action: {heat_report['next_recommended_action']}")
+
     return 0
 
 
 async def handle_work_command(args):
     """협업 세션 실행 커맨드 처리"""
-    return await _execute_coworker_goal(" ".join(args.goal))
+    heat_seconds = None
+    heat_arg = getattr(args, "heat", None)
+    if heat_arg:
+        try:
+            heat_seconds = parse_heat_duration(heat_arg)
+        except ValueError as e:
+            logger.error(str(e))
+            print(f"❌ {e}")
+            return 1
+    return await _execute_coworker_goal(" ".join(args.goal), heat_seconds=heat_seconds)
 
 
 async def handle_work_command_from_query(args):
