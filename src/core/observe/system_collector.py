@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 try:
     import psutil
@@ -9,13 +9,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RESOURCE_THRESHOLDS = {
+    "cpu_percent": 90.0,
+    "memory_percent": 90.0,
+    "disk_percent": 90.0,
+}
+
 
 class SystemCollector:
     """Collects hardware and OS resource metrics using psutil."""
 
-    def __init__(self):
+    def __init__(self, thresholds: Dict[str, float] | None = None):
         if not PSUTIL_AVAILABLE:
             logger.warning("psutil is not installed. SystemCollector will return mock metrics.")
+        self.thresholds = {**DEFAULT_RESOURCE_THRESHOLDS, **(thresholds or {})}
 
     async def get_cpu_info(self) -> Dict[str, Any]:
         """Fetch CPU usage and frequency metrics."""
@@ -135,3 +142,37 @@ class SystemCollector:
             "battery": await self.get_battery_info(),
             "temperature": await self.get_temperature_info(),
         }
+
+    def check_thresholds(self, metrics: Dict[str, Any]) -> List[str]:
+        """Compare a get_all_metrics() snapshot against configured thresholds.
+
+        Returns a list of human-readable warnings for any metric that
+        exceeds its threshold (empty list when everything is within bounds).
+        Errors in an individual metric are ignored here — get_*_info already
+        logs those; this only judges values that were collected successfully.
+        """
+        warnings: List[str] = []
+
+        cpu_percent = metrics.get("cpu", {}).get("percent")
+        if isinstance(cpu_percent, (int, float)) and cpu_percent > self.thresholds["cpu_percent"]:
+            warnings.append(
+                f"CPU usage at {cpu_percent:.1f}% (threshold {self.thresholds['cpu_percent']:.1f}%)"
+            )
+
+        memory_percent = metrics.get("memory", {}).get("percent")
+        if (
+            isinstance(memory_percent, (int, float))
+            and memory_percent > self.thresholds["memory_percent"]
+        ):
+            warnings.append(
+                f"Memory usage at {memory_percent:.1f}% "
+                f"(threshold {self.thresholds['memory_percent']:.1f}%)"
+            )
+
+        disk_percent = metrics.get("disk", {}).get("percent")
+        if isinstance(disk_percent, (int, float)) and disk_percent > self.thresholds["disk_percent"]:
+            warnings.append(
+                f"Disk usage at {disk_percent:.1f}% (threshold {self.thresholds['disk_percent']:.1f}%)"
+            )
+
+        return warnings
