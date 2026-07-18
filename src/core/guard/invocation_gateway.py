@@ -16,9 +16,14 @@ enough to reconstruct any invocation's history.
 
 Credential delegation (the third path #568 names) has no real implementation
 yet -- `CredentialVault` is local secret storage with no delegation concept.
-`InvocationKind.CREDENTIAL_DELEGATION` is reserved here for #614 (agent
-identity & mandates) to route through once that call path actually exists;
-retrofitting a path that doesn't exist would be premature.
+`InvocationKind.CREDENTIAL_DELEGATION` is reserved here for whenever that
+call path is actually built; retrofitting a path that doesn't exist would
+be premature. What issue #614 (agent identity & signed mandates) *did* add
+is `authorize()`'s optional `mandate`/`issuer_public_key_b64` parameters --
+any invocation kind (agent delegation, MCP tool, or credential delegation
+once it exists) can present a cryptographically signed `Mandate`
+(`src/core/guard/agent_identity.py`) instead of relying on a pre-existing
+local capability grant for `actor`.
 
 CapabilityManager's existing model is coarse action-risk capabilities
 (execute_shell, write_file, network_request, ...), not "may X delegate to
@@ -40,6 +45,7 @@ from src.core.guard.capability_manager import CapabilityManager
 
 if TYPE_CHECKING:
     from src.core.anvil.intent_guardrail import IntentGuardrail
+    from src.core.guard.agent_identity import Mandate
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +95,11 @@ class InvocationGateway:
         description: str,
         required_capability: Optional[str] = None,
         intent_guardrail: Optional["IntentGuardrail"] = None,
+        mandate: Optional["Mandate"] = None,
+        issuer_public_key_b64: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> InvocationDecision:
-        """Authorize a single agent-delegation or MCP-tool invocation.
+        """Authorize a single agent-delegation, MCP-tool, or credential-delegation invocation.
 
         actor: who is making the call (delegator_id, or the current agent
             identity for a tool call).
@@ -104,13 +112,55 @@ class InvocationGateway:
             evaluate() rather than its periodic should_check() sampling,
             since this is a discrete per-call authorization decision, not a
             periodic health check.
+        mandate / issuer_public_key_b64: a signed Mandate (issue #614) and
+            the issuer's public key to verify it against. When present, this
+            supersedes the plain actor-based capability check: the identity
+            being authorized is mandate.subject, not `actor` (actor is still
+            who placed the call, for the journal). A valid mandate that
+            covers required_capability grants that capability to
+            mandate.subject via CapabilityManager -- so the grant persists
+            for the mandate's remaining validity window, not just this call.
 
-        Every call is journaled to ActionJournal regardless of outcome.
+        Every call is journaled to ActionJournal regardless of outcome,
+        including the mandate verification result when one was presented.
         """
         reasons: list[str] = []
         allowed = True
+        mandate_info: Optional[Dict[str, Any]] = None
 
-        if required_capability is not None:
+        if mandate is not None:
+            from src.core.guard.agent_identity import mandate_covers_capability, verify_mandate
+
+            if issuer_public_key_b64 is None:
+                allowed = False
+                reasons.append("mandate presented without an issuer public key to verify against")
+                mandate_info = {"subject": mandate.subject, "issuer": mandate.issuer, "valid": False}
+            else:
+                valid, verify_reason = verify_mandate(mandate, issuer_public_key_b64)
+                mandate_info = {
+                    "issuer": mandate.issuer,
+                    "subject": mandate.subject,
+                    "scope": mandate.scope,
+                    "valid": valid,
+                    "reason": verify_reason,
+                }
+                if not valid:
+                    allowed = False
+                    reasons.append(f"mandate invalid: {verify_reason}")
+                elif required_capability is not None and not mandate_covers_capability(
+                    mandate, required_capability
+                ):
+                    allowed = False
+                    reasons.append(
+                        f"mandate scope {mandate.scope} does not cover required capability "
+                        f"'{required_capability}'"
+                    )
+                elif required_capability is not None:
+                    # Reflect the verified delegation as a real (persisted) capability
+                    # grant for the mandate's subject, so agent_has() checks elsewhere
+                    # in the codebase also see it -- not just this one gateway decision.
+                    self.capability_manager.grant_agent(mandate.subject, required_capability)
+        elif required_capability is not None:
             if not self.capability_manager.agent_has(actor, required_capability):
                 allowed = False
                 reasons.append(f"missing capability '{required_capability}'")
@@ -129,6 +179,14 @@ class InvocationGateway:
             reason="; ".join(reasons) if reasons else "authorized",
         )
 
+        journal_metadata = {
+            "target": target,
+            "required_capability": required_capability,
+            **(metadata or {}),
+        }
+        if mandate_info is not None:
+            journal_metadata["mandate"] = mandate_info
+
         self.action_journal.record(
             agent_id=actor,
             action=f"invocation_gateway:{kind.value}",
@@ -136,11 +194,7 @@ class InvocationGateway:
                 f"{'ALLOWED' if allowed else 'DENIED'}: {kind.value} -> {target} ({description})"
             ),
             risk_level="low" if allowed else "medium",
-            metadata={
-                "target": target,
-                "required_capability": required_capability,
-                **(metadata or {}),
-            },
+            metadata=journal_metadata,
         )
         return decision
 
