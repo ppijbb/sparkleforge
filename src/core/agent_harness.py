@@ -280,6 +280,8 @@ class AgentHarness:
     async def _node_executor(self, state: HarnessState) -> Dict[str, Any]:
         """[Node] 병렬 에이전트로 태스크 처리 (Anvil 엔진 + 레거시 Fallback)"""
         logger.info("[Harness] Executor Node")
+        await self._enforce_session_control(state)
+        self._register_session_tasks(state)
         state["workflow"]["phase"] = "execute"
         self._apply_mode_to_state(state)
         await self._guard_intent(state)
@@ -347,6 +349,8 @@ class AgentHarness:
         # --- 레거시 경로: 기존 ParallelAgentExecutor로 나머지 태스크 처리 ---
         if legacy_tasks:
             # 에이전트 동적 할당 (TaskRouter 활용)
+            await self._enforce_session_control(state)
+            self._update_session_tasks(state, legacy_tasks, status="running")
             self._record_execution_signal(anvil_tasks + legacy_tasks)
             agent_assignments = {}
             for task in legacy_tasks:
@@ -374,6 +378,7 @@ class AgentHarness:
                     if i < len(legacy_tasks):
                         legacy_tasks[i]["result"] = res.get("result")
                         legacy_tasks[i]["status"] = res.get("status")
+                self._update_session_tasks(state, legacy_tasks)
 
         # 태스크 목록 재합성
         all_tasks = anvil_tasks + legacy_tasks
@@ -384,6 +389,7 @@ class AgentHarness:
         state["workflow"][
             "final_output"
         ] = f"Executed {len(all_tasks)} tasks ({len(anvil_tasks)} via Anvil, {len(legacy_tasks)} via Legacy)."
+        self._update_session_progress(state, all_tasks)
         state["meta"]["observation_snapshot"] = await self._capture_observation_snapshot()
         self._update_token_budget(state, all_tasks)
         return state
@@ -413,6 +419,120 @@ class AgentHarness:
         if warning:
             logger.warning(f"[Harness] {warning}")
             state["meta"].setdefault("warnings", []).append(warning)
+
+    async def _enforce_session_control(self, state: HarnessState) -> None:
+        """Block execution while the owning session is paused (SessionControl wiring).
+
+        Mirrors the token-budget wiring from #681: best-effort, never lets a
+        SessionControl failure abort the workflow. If the session is paused we
+        await its resume event before continuing the executor node.
+        """
+        session_id = state["workflow"].get("session_id")
+        if not session_id:
+            return
+        try:
+            from src.core.session_control import get_session_control
+
+            control = get_session_control()
+            if not control.check_session_control(session_id):
+                logger.info(f"[Harness] Session {session_id} paused; waiting for resume")
+                await control.wait_for_resume(session_id)
+        except Exception as e:
+            logger.debug(f"[Harness] Session control check failed: {e}")
+
+    def _register_session_tasks(self, state: HarnessState) -> None:
+        """Register planned tasks with SessionControl for per-task visibility."""
+        session_id = state["workflow"].get("session_id")
+        if not session_id:
+            return
+        try:
+            from src.core.session_control import get_session_control
+
+            control = get_session_control()
+            for task in state["workflow"].get("tasks", []):
+                task_id = task.get("task_id") or task.get("id") or ""
+                if not task_id:
+                    continue
+                if control.get_task(session_id, task_id) is None:
+                    control.register_task(
+                        session_id=session_id,
+                        task_id=task_id,
+                        task_type=task.get("task_type", "general"),
+                        description=task.get("description", task.get("name", "")),
+                        metadata=task,
+                    )
+        except Exception as e:
+            logger.debug(f"[Harness] Session task registration failed: {e}")
+
+    def _update_session_tasks(
+        self, state: HarnessState, tasks: list[Dict[str, Any]], status: str | None = None
+    ) -> None:
+        """Reflect task execution status/progress into SessionControl."""
+        session_id = state["workflow"].get("session_id")
+        if not session_id:
+            return
+        try:
+            from src.core.session_control import TaskStatus, get_session_control
+
+            control = get_session_control()
+            total = len(state["workflow"].get("tasks", [])) or len(tasks) or 1
+            done = 0
+            for task in tasks:
+                task_id = task.get("task_id") or task.get("id") or ""
+                if not task_id:
+                    continue
+                raw_status = status or task.get("status", "")
+                mapped = {
+                    "completed": TaskStatus.COMPLETED,
+                    "failed": TaskStatus.FAILED,
+                    "cancelled": TaskStatus.CANCELLED,
+                    "running": TaskStatus.RUNNING,
+                    "pending": TaskStatus.PENDING,
+                }.get(raw_status)
+                if mapped is None:
+                    continue
+                progress = 100.0 if mapped in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED) else 0.0
+                control.update_task_status(
+                    session_id=session_id,
+                    task_id=task_id,
+                    status=mapped,
+                    progress=progress,
+                    result=task.get("result"),
+                    error=task.get("error"),
+                )
+                if mapped in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+                    done += 1
+            if done:
+                control.update_session_progress(
+                    session_id=session_id, progress=(done / total) * 100.0
+                )
+        except Exception as e:
+            logger.debug(f"[Harness] Session task update failed: {e}")
+
+    def _update_session_progress(
+        self, state: HarnessState, tasks: list[Dict[str, Any]]
+    ) -> None:
+        """Push aggregate execution progress to SessionControl."""
+        session_id = state["workflow"].get("session_id")
+        if not session_id:
+            return
+        try:
+            from src.core.session_control import get_session_control
+
+            control = get_session_control()
+            total = len(tasks) or 1
+            done = sum(
+                1
+                for t in tasks
+                if t.get("status") in ("completed", "failed", "cancelled")
+            )
+            control.update_session_progress(
+                session_id=session_id,
+                current_task=tasks[-1].get("description") if tasks else None,
+                progress=(done / total) * 100.0,
+            )
+        except Exception as e:
+            logger.debug(f"[Harness] Session progress update failed: {e}")
 
     async def _capture_observation_snapshot(self, timeout: float = 5.0) -> Dict[str, Any]:
         """Record ObservationPlane telemetry at the end of a task-execution level.
