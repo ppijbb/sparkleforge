@@ -3,12 +3,39 @@
 백서 요구사항: 세션 데이터 저장 전 PII 자동 감지 및 제거
 """
 
+import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+class _LLMPIIClient:
+    """PIIRedactor가 기대하는 동기 generate() 인터페이스로 execute_llm_task를 감싼 어댑터."""
+
+    def generate(self, prompt: str) -> str:
+        from src.core.llm_manager import TaskType, execute_llm_task
+
+        async def _run() -> str:
+            result = await execute_llm_task(prompt=prompt, task_type=TaskType.ANALYSIS)
+            return result.content or ""
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is None:
+            return asyncio.run(_run())
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(asyncio.run, _run())
+            return fut.result(timeout=30)
 
 
 @dataclass
@@ -273,9 +300,20 @@ class PIIRedactor:
 _pii_redactor: PIIRedactor | None = None
 
 
-def get_pii_redactor(use_llm_detection: bool = False) -> PIIRedactor:
-    """전역 PII 제거기 인스턴스 반환."""
+def get_pii_redactor(use_llm_detection: bool | None = None) -> PIIRedactor:
+    """전역 PII 제거기 인스턴스 반환.
+
+    use_llm_detection이 명시되지 않으면 PII_LLM_DETECTION_ENABLED 환경 변수로 결정한다
+    (기본값 비활성화: LLM 호출은 세션 저장 경로의 지연 시간과 비용을 늘리기 때문).
+    """
     global _pii_redactor
+    if use_llm_detection is None:
+        use_llm_detection = os.getenv("PII_LLM_DETECTION_ENABLED", "false").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
     if _pii_redactor is None:
-        _pii_redactor = PIIRedactor(use_llm_detection=use_llm_detection)
+        llm_client = _LLMPIIClient() if use_llm_detection else None
+        _pii_redactor = PIIRedactor(use_llm_detection=use_llm_detection, llm_client=llm_client)
     return _pii_redactor
