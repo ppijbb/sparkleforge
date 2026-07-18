@@ -205,3 +205,29 @@ def check_disk_space_safety(min_free_mb: float = 500.0, path: str = "/") -> tupl
             "SQLite writes to fail mid-transaction."
         )
     return True, ""
+
+
+def check_network_connectivity(host: str = "8.8.8.8", port: int = 53, timeout: float = 3.0) -> tuple[bool, str]:
+    """Pre-flight check: is there basic network connectivity before scheduling LLM calls.
+
+    A single fast TCP probe, not a guarantee any specific provider endpoint
+    is reachable — just enough to warn upfront on a fully offline host
+    instead of discovering it only after several provider socket timeouts
+    have each run their full course.
+
+    Returns (is_connected, message). Warn-only by design: some setups run
+    entirely against local models and don't need internet access, and a
+    restrictive network that blocks this specific probe host doesn't mean
+    every provider is actually unreachable.
+    """
+    import socket
+
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True, ""
+    except OSError as e:
+        return False, (
+            f"No network connectivity detected ({e}). Remote LLM providers will "
+            "fail/time out without a network connection; local-model-only setups "
+            "can ignore this."
+        )

@@ -182,7 +182,10 @@ async def handle_run_command(args, config):
         logger.error(session_error)
         return 1
 
-    from src.core.observe.system_collector import check_disk_space_safety
+    from src.core.observe.system_collector import (
+        check_disk_space_safety,
+        check_network_connectivity,
+    )
     from src.core.session_control import get_session_control
 
     disk_ok, disk_message = check_disk_space_safety()
@@ -190,6 +193,10 @@ async def handle_run_command(args, config):
         logger.error(disk_message)
         get_session_control().release_active_session(session_id)
         return 1
+
+    network_ok, network_message = check_network_connectivity()
+    if not network_ok:
+        logger.warning(network_message)
 
     _apply_runtime_overrides()
     logger.info(f"🔬 Starting research: {args.query}")
@@ -325,12 +332,19 @@ async def handle_run_command(args, config):
 
 async def _execute_coworker_goal(goal: str) -> int:
     """Coworker(tool-use) 모드로 목표를 실행하는 공통 경로."""
-    from src.core.observe.system_collector import check_disk_space_safety
+    from src.core.observe.system_collector import (
+        check_disk_space_safety,
+        check_network_connectivity,
+    )
 
     disk_ok, disk_message = check_disk_space_safety()
     if not disk_ok:
         logger.error(disk_message)
         return 1
+
+    network_ok, network_message = check_network_connectivity()
+    if not network_ok:
+        logger.warning(network_message)
 
     logger.info(f"🤝 Starting coworker session for: {goal}")
     from src.core.agent_orchestrator import get_orchestrator
