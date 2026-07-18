@@ -111,9 +111,6 @@ class ModeController:
 
     # --- 계획 우선 모드 (Plan Mode) ---
 
-    def is_plan_first(self) -> bool:
-        return self.mode == ExecutionMode.PLAN_FIRST
-
     def is_write_blocked(self) -> bool:
         """PLAN_FIRST 모드에서 계획이 승인되기 전까지 쓰기 액션 차단 여부."""
         return self.is_plan_first() and not self.plan_approved
