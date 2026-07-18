@@ -52,12 +52,17 @@ async def _resolve_run_session(args) -> tuple[str, str | None]:
     resume_id = getattr(args, "session_id", None)
     should_continue = getattr(args, "continue_session", False)
 
+    from src.core.session_control import get_session_control
+
     if not resume_id and not should_continue:
-        return f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}", None
+        new_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        try:
+            get_session_control().register_active_session(new_session_id, getattr(args, "query", ""))
+        except RuntimeError as e:
+            return "", f"❌ {e}"
+        return new_session_id, None
 
-    from src.core.session_control import SessionControl
-
-    session_control = SessionControl()
+    session_control = get_session_control()
 
     target_id = resume_id
     if not target_id:
@@ -178,10 +183,12 @@ async def handle_run_command(args, config):
         return 1
 
     from src.core.observe.system_collector import check_disk_space_safety
+    from src.core.session_control import get_session_control
 
     disk_ok, disk_message = check_disk_space_safety()
     if not disk_ok:
         logger.error(disk_message)
+        get_session_control().release_active_session(session_id)
         return 1
 
     _apply_runtime_overrides()
@@ -311,6 +318,8 @@ async def handle_run_command(args, config):
     except Exception as e:
         logger.error(f"❌ Research failed: {e}")
         return 1
+    finally:
+        get_session_control().release_active_session(session_id)
     return 0
 
 
