@@ -508,6 +508,7 @@ EXAMPLES:
     )
     report_subparsers.add_parser("generate", help="Generate the daily metric evaluation report")
     report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
+    report_subparsers.add_parser("aggregate", help="Aggregate all history entries into a release metrics summary")
 
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
