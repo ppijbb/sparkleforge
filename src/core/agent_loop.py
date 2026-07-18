@@ -95,6 +95,7 @@ Autonomous problem-solving contract:
         from src.core.llm_manager import MultiModelOrchestrator
 
         self.orchestrator = orchestrator or MultiModelOrchestrator()
+        self._plan_first = False
         self.mcp_hub: UniversalMCPHub = get_mcp_hub()
 
         # Phase 3: Context Compression
@@ -109,7 +110,7 @@ Autonomous problem-solving contract:
         from src.core.anvil.mode_controller import ExecutionMode, ModeController
 
         self.memory = PersistentMemory()
-        self.mode_controller = ModeController()
+        self.mode_controller = ModeController(plan_first=self._plan_first)
         self.method_resolver = MethodResolver()
         self.intent_guardrail = None
 
