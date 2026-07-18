@@ -17,6 +17,7 @@ Usage:
 import argparse
 import asyncio
 import logging
+import logging.handlers
 import sys
 import time
 from datetime import datetime
@@ -122,8 +123,10 @@ root_logger.setLevel(logging.INFO)
 if root_logger.hasHandlers():
     root_logger.handlers.clear()
 
-# File handler
-file_handler = logging.FileHandler(log_file, encoding="utf-8")
+# File handler (rotating: 10MB per file, 5 backups — matches src/utils/logger.py convention)
+file_handler = logging.handlers.RotatingFileHandler(
+    log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+)
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
