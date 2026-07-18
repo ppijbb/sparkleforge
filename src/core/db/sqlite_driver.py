@@ -131,6 +131,7 @@ class SQLiteDriver(DatabaseDriver):
         if self._connection is None:
             self._connection = await aiosqlite.connect(str(self.db_path), timeout=self.timeout)
             # 외래 키 제약 조건 활성화
+            await self._connection.execute(f"PRAGMA busy_timeout = {int(self.timeout * 1000)}")
             await self._connection.execute("PRAGMA foreign_keys = ON")
             await self._connection.commit()
             logger.info(f"SQLite connected: {self.db_path}")
@@ -191,20 +192,15 @@ class SQLiteDriver(DatabaseDriver):
     ) -> Any:
         """트랜잭션 내에서 쿼리 실행."""
         if params:
-            # Dict를 tuple로 변환 (SQLite는 위치 기반 파라미터 사용)
-            # Named parameters도 지원하지만, 간단하게 처리
-            cursor = await tx.connection.execute(query, params)
+            return await tx.connection.execute(query, params)
         else:
-            cursor = await tx.connection.execute(query)
-
-        return cursor
+            return await tx.connection.execute(query)
 
     async def _execute_many_in_transaction(
         self, tx: SQLiteTransaction, query: str, params_list: List[Dict[str, Any]]
     ) -> Any:
         """트랜잭션 내에서 여러 쿼리 일괄 실행."""
-        cursor = await tx.connection.executemany(query, params_list)
-        return cursor
+        return await tx.connection.executemany(query, params_list)
 
     async def execute(self, query: str, params: Dict[str, Any] | None = None) -> Any:
         """트랜잭션 없이 쿼리 실행."""
