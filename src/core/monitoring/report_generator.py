@@ -220,7 +220,14 @@ def aggregate_release_metrics(history: List[Dict[str, Any]]) -> Dict[str, Any]:
     dates = sorted(e.get("date", "") for e in entries if e.get("date"))
     total_attempts = sum(e.get("total_attempts", 0) for e in entries)
     total_marks = sum(e.get("total_marks", 0) for e in entries)
-    average_strict_score = sum(e.get("strict_score", 0.0) for e in entries) / len(entries)
+
+    if total_attempts > 0:
+        average_strict_score = (
+            sum(e.get("strict_score", 0.0) * e.get("total_attempts", 0) for e in entries)
+            / total_attempts
+        )
+    else:
+        average_strict_score = 0.0
 
     if total_attempts > 0:
         weighted_success_rate = (
