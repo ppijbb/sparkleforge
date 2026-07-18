@@ -173,6 +173,24 @@ class QualityMetricsMixin:
         return self._calculate_synthesis_quality(synthesis_result) * 0.9
 
 
+    def _calculate_reliability_score(self, validation_result: Dict[str, Any]) -> float:
+        """Calculate reliability score from a validation result (issue #790).
+
+        Derives from overall_score, penalized by the number of reported
+        issues -- mirrors the existing quality/confidence scorers' pattern of
+        deriving a 0.0-1.0 score from result structure with a conservative
+        fallback when fields are missing.
+        """
+        if not validation_result:
+            return 0.5
+
+        base_score = validation_result.get("overall_score", 0.8)
+        issues = validation_result.get("issues", [])
+        issue_penalty = min(len(issues) * 0.1, 0.5) if isinstance(issues, list) else 0.0
+
+        return max(0.0, min(1.0, base_score - issue_penalty))
+
+
     def _calculate_research_quality_from_data(
         self, collected_data: List[Dict[str, Any]], additional_research: Dict[str, Any]
     ) -> float:

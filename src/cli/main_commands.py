@@ -1024,6 +1024,7 @@ async def handle_nightwelding_command(args):
 async def handle_interactive_command(args):
     """인터랙티브 모드 처리"""
     logger.info("💬 Starting interactive mode...")
+    scheduler = None
 
     try:
         from src.cli.repl_cli import REPLCLI
@@ -1035,18 +1036,35 @@ async def handle_interactive_command(args):
         scheduler = configure_scheduler_execution(get_scheduler())
         await scheduler.start()
 
-        cli = REPLCLI()
         try:
-            await cli.run()
-        finally:
-            await scheduler.stop()
+            cli = REPLCLI()
+            try:
+                await cli.run()
+            finally:
+                if scheduler is not None:
+                    await scheduler.stop()
+        except asyncio.CancelledError:
+            logger.info("👋 Interactive mode cancelled; shutting down")
+            if scheduler is not None:
+                await scheduler.stop()
+            raise
         return 0
 
     except (EOFError, KeyboardInterrupt, SystemExit):
         logger.info("👋 Goodbye!")
+        if scheduler is not None:
+            try:
+                await scheduler.stop()
+            except Exception:
+                logger.debug("Scheduler stop during shutdown raised", exc_info=True)
         return 0
     except Exception as e:
         logger.error(f"❌ Interactive mode failed: {e}")
+        if scheduler is not None:
+            try:
+                await scheduler.stop()
+            except Exception:
+                logger.debug("Scheduler stop during failure raised", exc_info=True)
         return 1
     return 0
 

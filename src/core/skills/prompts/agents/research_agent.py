@@ -369,4 +369,14 @@ research_agent_prompts = {
     "completeness_check": completeness_check,
     "accuracy_check": accuracy_check,
     "relevance_check": relevance_check,
+
+    # Aliases for keys referenced by ResearchAgent's analysis/synthesis/
+    # validation pipeline (src/agents/research_agent/task_pipelines.py,
+    # issue #790) -- same underlying prompts, task-pipeline-facing names.
+    "search_execution": insights,
+    "content_analysis": analysis,
+    "synthesis_report": synthesis,
+    "recommendation_generation": recommendations,
+    "quality_validation": validation,
+    "final_assessment": quality_assessment,
 }

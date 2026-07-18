@@ -50,6 +50,20 @@ def test_get_sandbox_honors_resource_limit_env_vars(monkeypatch):
     assert config.pids_limit == 64
 
 
+def test_get_sandbox_falls_back_on_invalid_numeric_env_vars(monkeypatch):
+    """Issue #766: invalid values must not raise ValueError out of get_sandbox()."""
+    config = _get_sandbox_config(
+        monkeypatch,
+        {
+            "SPARKLEFORGE_SANDBOX_CPU_LIMIT": "not-a-number",
+            "SPARKLEFORGE_SANDBOX_PIDS_LIMIT": "also-not-a-number",
+        },
+    )
+
+    assert config.cpu_limit == SandboxConfig.cpu_limit
+    assert config.pids_limit == SandboxConfig.pids_limit
+
+
 def test_get_sandbox_falls_back_to_defaults_without_env_vars(monkeypatch):
     for key in (
         "SPARKLEFORGE_SANDBOX_MEMORY_LIMIT",
