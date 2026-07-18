@@ -8,9 +8,9 @@ Includes both global functions (legacy/compatibility) and per-session logger cla
 import logging
 import threading
 import queue
-import time
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
@@ -28,6 +28,12 @@ _stop_event = threading.Event()
 _BATCH_MAX_SIZE = 25
 _BATCH_MAX_WAIT_S = 2.0
 # Lets external monitoring tell "no logs yet" apart from "worker is dead".
+
+# Heartbeat payload constants (extracted for maintainability).
+_HEARTBEAT_SESSION_ID = "system"
+_HEARTBEAT_AGENT_NAME = "supabase_logger_worker"
+_HEARTBEAT_MESSAGE = "heartbeat"
+_HEARTBEAT_LEVEL = "heartbeat"
 _HEARTBEAT_INTERVAL_S = 30.0
 
 
@@ -107,7 +113,7 @@ def enqueue_log_event(session_id: str, agent_name: str, message: str, level: str
         "agent_name": agent_name,
         "message": message,
         "level": level,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
     _log_queue.put(event)
 
@@ -133,17 +139,20 @@ def _supabase_logger_worker_loop():
         channel = None
 
     last_heartbeat = time.monotonic()
+    next_heartbeat = last_heartbeat + _HEARTBEAT_INTERVAL_S
 
     while not _stop_event.is_set():
         batch = []
-        deadline = time.monotonic() + _BATCH_MAX_WAIT_S
 
         while len(batch) < _BATCH_MAX_SIZE:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            now = time.monotonic()
+            remaining_batch = deadline - now
+            remaining_heartbeat = next_heartbeat - now
+            wait_timeout = min(_BATCH_MAX_WAIT_S, max(0.0, remaining_heartbeat), max(0.0, remaining_batch))
+            if wait_timeout <= 0:
                 break
             try:
-                event = _log_queue.get(timeout=remaining)
+                event = _log_queue.get(timeout=wait_timeout)
             except queue.Empty:
                 break
 
@@ -161,17 +170,17 @@ def _supabase_logger_worker_loop():
             except Exception as e:
                 logger.debug(f"Error sending log batch to Supabase: {e}")
 
-        now = time.monotonic()
-        if now - last_heartbeat >= _HEARTBEAT_INTERVAL_S:
-            last_heartbeat = now
+        if time.monotonic() >= next_heartbeat:
+            last_heartbeat = time.monotonic()
+            next_heartbeat = last_heartbeat + _HEARTBEAT_INTERVAL_S
             try:
                 client.table("agent_logs").insert(
                     {
-                        "session_id": "system",
-                        "agent_name": "supabase_logger_worker",
-                        "message": "heartbeat",
-                        "level": "heartbeat",
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "session_id": _HEARTBEAT_SESSION_ID,
+                        "agent_name": _HEARTBEAT_AGENT_NAME,
+                        "message": _HEARTBEAT_MESSAGE,
+                        "level": _HEARTBEAT_LEVEL,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 ).execute()
             except Exception as e:
