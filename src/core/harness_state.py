@@ -86,6 +86,7 @@ class MetaState(TypedDict):
     warnings: List[str]
     current_agent: str
     output_dir: str
+    observation_snapshot: Dict[str, Any]
 
 
 class HarnessState(TypedDict):
@@ -173,6 +174,7 @@ def create_initial_harness_state(
             "warnings": [],
             "current_agent": "system",
             "output_dir": f"output/{time.strftime('%Y%m%d_%H%M%S')}_{safe_session_id[:8]}",
+            "observation_snapshot": {},
         },
         "hil": {
             "interaction_mode": _detect_interaction_mode(),
