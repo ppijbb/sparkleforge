@@ -118,7 +118,7 @@ def test_authorize_denies_on_intent_drift(isolated_gateway):
     assert "drift" in decision.reason
 
 
-def test_authorize_tolerates_intent_guardrail_failure(isolated_gateway):
+def test_authorize_fails_closed_on_intent_guardrail_failure(isolated_gateway):
     def _raise(_description):
         raise RuntimeError("boom")
 
@@ -132,7 +132,10 @@ def test_authorize_tolerates_intent_guardrail_failure(isolated_gateway):
         intent_guardrail=broken_guardrail,
     )
 
-    assert decision.allowed is True  # fails safe: a broken guardrail doesn't block real work
+    # fail closed: a guardrail that can't render a verdict must not be treated
+    # as a pass -- it's the only real check in front of dangerous tool calls.
+    assert decision.allowed is False
+    assert "guardrail_evaluation_failed" in decision.reason
 
 
 def test_every_decision_is_journaled_regardless_of_outcome(isolated_gateway):
