@@ -172,7 +172,15 @@ class InvocationGateway:
                     allowed = False
                     reasons.append(f"intent drift detected (score={assessment.drift_score:.2f})")
             except Exception as e:
-                logger.warning("InvocationGateway: IntentGuardrail evaluation failed: %s", e)
+                # Fail closed: a guardrail that cannot render a verdict must not be
+                # treated as a pass. With SYSTEM_ACTOR pre-granted every dangerous
+                # capability and get_current_agent_name() always resolving to it
+                # today, this guardrail is the only real check in front of
+                # execute_shell/write_file -- allowing on error would make it a
+                # no-op exactly when it errors.
+                logger.error("InvocationGateway: IntentGuardrail evaluation failed: %s", e)
+                allowed = False
+                reasons.append(f"guardrail_evaluation_failed: {e}")
 
         decision = InvocationDecision(
             allowed=allowed,
