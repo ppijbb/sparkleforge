@@ -362,23 +362,16 @@ class ProviderAdaptersMixin:
                     continue  # 재시도
                 else:
                     # 재시도 불가능한 에러 (401, 403, 404 등) 또는 최대 재시도 횟수 초과
-                    # 400 에러는 모델 ID가 잘못된 경우일 수 있음
-                    if response.status_code == 400 and (
-                        "not a valid model ID" in error_text.lower() or "400" in error_text
-                    ):
-                        # OpenRouter에 존재하는 모델로 자동 대체 시도
+                    # 429 (Rate limit) 또는 400 (Invalid model ID) 에러 발생 시 fallback 모델 시도
+                    if response.status_code in (429, 400):
                         logger.warning(
-                            f"Model {model_id} not found in OpenRouter, trying fallback models..."
+                            f"Model {model_id} returned HTTP {response.status_code} in OpenRouter, trying fallback models..."
                         )
-                        # gemini-2.0-flash-lite-preview:free, mistral-7b-instruct:free는
-                        # OpenRouter 카탈로그에서 삭제되어 살아있는 무료 모델로 교체.
-                        fallback_models = [
-                            "tencent/hy3:free",
-                            "qwen/qwen3-coder:free",
-                            "meta-llama/llama-3.2-3b-instruct:free",
-                        ]
+                        fallback_models = self.get_openrouter_fallback_models()
 
                         for fallback_model in fallback_models:
+                            if fallback_model == model_id:
+                                continue
                             try:
                                 logger.info(f"Trying fallback model: {fallback_model}")
                                 payload["model"] = fallback_model
