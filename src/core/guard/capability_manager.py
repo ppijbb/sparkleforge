@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
@@ -78,6 +79,7 @@ class CapabilityManager:
         self._agent_grants: Dict[str, Set[str]] = {}   # agent_id -> set of capability names
         self._tool_grants: Dict[str, Set[str]] = {}    # tool_name -> set of capability names
         self._revocations: Dict[str, Set[str]] = {}    # id -> revoked capabilities
+        self._grant_expirations: Dict[tuple[str, str], float] = {} # (agent_id, cap) -> timestamp
         self._lock_data = threading.RLock()
         self._load_state()
 
@@ -90,6 +92,7 @@ class CapabilityManager:
                     self._agent_grants = {k: set(v) for k, v in data.get("agents", {}).items()}
                     self._tool_grants  = {k: set(v) for k, v in data.get("tools", {}).items()}
                     self._revocations  = {k: set(v) for k, v in data.get("revocations", {}).items()}
+                    self._grant_expirations = {tuple(k.split(":", 1)): v for k, v in data.get("expirations", {}).items()}
                     logger.info("Loaded capability grants from %s", self._state_path)
             except Exception as e:
                 logger.warning("Failed to load capability state: %s", e)
@@ -103,6 +106,7 @@ class CapabilityManager:
                     "agents": {k: list(v) for k, v in self._agent_grants.items()},
                     "tools":  {k: list(v) for k, v in self._tool_grants.items()},
                     "revocations": {k: list(v) for k, v in self._revocations.items()},
+                    "expirations": {f"{k[0]}:{k[1]}": v for k, v in self._grant_expirations.items()},
                 }, f, indent=2)
         except Exception as e:
             logger.warning("Failed to save capability state: %s", e)
@@ -117,6 +121,18 @@ class CapabilityManager:
             self._revocations.get(agent_id, set()).discard(capability_name)
             self._save_state()
         logger.info("Granted capability '%s' to agent '%s'", capability_name, agent_id)
+        return True
+
+    def _cleanup_expired_grants(self) -> bool:
+        """Remove expired grants. Returns True if state changed."""
+        now = time.time()
+        expired = [(k, v) for k, v in self._grant_expirations.items() if v < now]
+        if not expired:
+            return False
+        for (agent_id, cap), _ in expired:
+            self._agent_grants.get(agent_id, set()).discard(cap)
+            del self._grant_expirations[(agent_id, cap)]
+        self._save_state()
         return True
 
     def revoke_agent(self, agent_id: str, capability_name: str) -> bool:
@@ -140,6 +156,7 @@ class CapabilityManager:
     def agent_has(self, agent_id: str, capability_name: str) -> bool:
         """Check whether an agent has a specific capability."""
         with self._lock_data:
+            self._cleanup_expired_grants()
             if capability_name in self._revocations.get(agent_id, set()):
                 return False
             return capability_name in self._agent_grants.get(agent_id, set())
@@ -158,6 +175,7 @@ class CapabilityManager:
     def get_agent_capabilities(self, agent_id: str) -> List[Capability]:
         """Return the list of capabilities granted to an agent."""
         with self._lock_data:
+            self._cleanup_expired_grants()
             caps = self._agent_grants.get(agent_id, set()) - self._revocations.get(agent_id, set())
             return [BUILTIN_CAPABILITIES[c] for c in caps if c in BUILTIN_CAPABILITIES]
 
@@ -170,3 +188,4 @@ class CapabilityManager:
             self._agent_grants.clear()
             self._tool_grants.clear()
             self._revocations.clear()
+            self._grant_expirations.clear()
