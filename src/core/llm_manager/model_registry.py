@@ -10,6 +10,8 @@ import logging
 import os
 import warnings
 
+from typing import Any, Dict, List, Optional
+
 import requests
 
 with warnings.catch_warnings():
@@ -351,27 +353,57 @@ class ModelRegistryMixin:
             return 8.0
 
 
+    def get_openrouter_fallback_models(self) -> List[str]:
+        """OpenRouter 호환 유효 무료 모델 후보 목록 반환 (deprecated 모델 제외)."""
+        fallback_candidates = []
+
+        # 1. 동적 로드된 무료 OpenRouter 모델 수집
+        free_dynamic_models = [
+            m.model_id
+            for m in self.models.values()
+            if m.provider == "openrouter" and m.cost_per_token == 0.0
+        ]
+
+        deprecated = [
+            "kwaipilot/kat-coder-pro:free",
+            "mistralai/mistral-7b-instruct:free",
+            "qwen/qwen3-4b:free",
+            "google/gemma-3n-e2b-it:free",
+            "google/gemma-3-4b-it:free",
+            "meta-llama/llama-3.2-3b-instruct:free",
+        ]
+
+        for m_id in free_dynamic_models:
+            if not any(dep in m_id.lower() for dep in deprecated) and m_id not in fallback_candidates:
+                fallback_candidates.append(m_id)
+
+        # 2. 알려진 검증된 무료 OpenRouter 기본 모델 후보군 (fallback diversity)
+        default_candidates = [
+            "tencent/hy3:free",
+            "qwen/qwen3-coder:free",
+            "deepseek/deepseek-r1:free",
+        ]
+        for m_id in default_candidates:
+            if m_id not in fallback_candidates:
+                fallback_candidates.append(m_id)
+
+        return fallback_candidates
+
     def _get_valid_openrouter_model_id(self, model_id: str, model_name: str) -> str:
         """OpenRouter에 실제 존재하는 모델 ID 반환."""
         # 이미 OpenRouter 형식인 경우 (provider/model:tag)
         if "/" in model_id:
             return model_id
 
-        # Gemini 모델 요청 시 사용 가능한 무료 모델 목록 동적 선택
+        # Gemini 모델 및 미인식 모델 요청 시 사용 가능한 무료 모델 목록 동적 선택
+        fallback_models = self.get_openrouter_fallback_models()
         if "gemini" in model_name.lower() or "gemini" in model_id.lower():
-            free_models = [m.model_id for m in self.models.values() if m.provider == "openrouter" and m.cost_per_token == 0.0]
-            if free_models:
-                return free_models[0]
-
-        # 최소 Fallback 정책: LLM 모델 요청 실패 시에만 fallback 사용
-        # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
-        fallback_models = [
-            "tencent/hy3:free",
-        ]
+            if fallback_models:
+                return fallback_models[0]
 
         logger.warning(
             f"Model ID {model_id} not in OpenRouter format. "
-            f"Using minimal fallback for agent service stability: {fallback_models[0]}"
+            f"Using fallback for agent service stability: {fallback_models[0]}"
         )
         return fallback_models[0]
 
