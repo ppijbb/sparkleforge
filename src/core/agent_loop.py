@@ -393,6 +393,7 @@ Autonomous problem-solving contract:
                 metadata={
                     "heat_expired": True,
                     "heat_hard_cutoff": True,
+                    "error_category": "heat_hard_deadline_exceeded",
                     "heat_report": self._build_heat_report(budget, tool_results, errors),
                 },
                 tool_calls_count=tool_calls_count,
@@ -406,7 +407,10 @@ Autonomous problem-solving contract:
             content="Iteration budget exceeded.",
             iterations=budget.current_iteration,
             history=history,
-            metadata={"error_category": "iteration_budget_exceeded"},
+            metadata={
+                "error_category": "iteration_budget_exceeded",
+                "iteration_exhausted": True,
+            },
             tool_calls_count=tool_calls_count,
             tool_results=tool_results,
             errors=errors,
