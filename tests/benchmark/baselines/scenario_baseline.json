@@ -1,14 +1,8 @@
 {
-  "generated_at": "2025-01-01T00:00:00Z",
-  "scenarios": {
-    "01_system_cleanup": {"score": 0.85, "status": "pass"},
-    "02_scheduled_summary": {"score": 0.82, "status": "pass"},
-    "03_semantic_search": {"score": 0.88, "status": "pass"},
-    "04_security_scan": {"score": 0.80, "status": "pass"},
-    "05_build_env": {"score": 0.84, "status": "pass"}
-  },
-  "summary": {
-    "overall_score": 0.838,
-    "passing_scenarios": 5
-  }
+  "generated_at": null,
+  "overall_score": null,
+  "overall_score_adjusted": null,
+  "inconclusive_checks": null,
+  "scenarios": {},
+  "_note": "No real run has been recorded here yet. The previous contents of this file (0.8x scores keyed by numbered filename stems like '01_system_cleanup') were hand-typed placeholders that never matched the actual scenario ids ('system_cleanup', etc.) or the schema compare_to_baseline()/update_baseline() actually read and wrote -- the regression gate silently never compared anything. Populate this for real with: python tests/benchmark/run_scenarios.py --update-baseline (once judge model availability is fixed, see the linked issue on the Gemini->OpenRouter single-model fallback gap). Prefer tests/benchmark/reports/scenario_history.jsonl + --compare-to-history for day-to-day regression checks; this file is a manually-refreshed floor, not a live trend."
 }

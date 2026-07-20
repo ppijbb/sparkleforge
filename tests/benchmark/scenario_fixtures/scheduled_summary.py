@@ -4,8 +4,9 @@ This is the scenario most likely to score low today: nothing in the NL
 execution graph (AgentHarness/AgentLoop) currently calls into
 src/core/automation/automation_engine.py or src/core/scheduler.py, so a
 generic-tool-only agent has no direct path to register a real automation.
-That's a real, useful finding, not a fixture bug — see docs/benchmark_baseline.json
-and issue #330/#329 for the wiring gap this exposes.
+That's a real, useful finding, not a fixture bug — see
+tests/benchmark/baselines/scenario_history.jsonl and issue #330/#329 for the
+wiring gap this exposes.
 
 Grading therefore checks two independently-achievable things:
   1. was any 9am-ish recurring trigger registered (Scheduler store or real crontab)

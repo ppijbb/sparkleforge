@@ -8,6 +8,13 @@ on:
       - 'main.py'
       - 'tests/benchmark/**'
       - '.github/workflows/scenario-eval.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'main.py'
+      - 'tests/benchmark/**'
+      - '.github/workflows/scenario-eval.yml'
   workflow_dispatch: {}
 
 concurrency:
@@ -36,12 +43,13 @@ jobs:
       - name: Install SparkleForge
         run: uv sync
 
-      - name: Run acceptance scenarios and compare against baseline
+      - name: Run acceptance scenarios and compare against recorded history
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           timeout 25m uv run python tests/benchmark/run_scenarios.py \
             --compare-to tests/benchmark/baselines/scenario_baseline.json \
+            --compare-to-history tests/benchmark/baselines/scenario_history.jsonl \
             --json-out tests/benchmark/reports/scenario_report_ci.json
 
       - name: Upload scenario report
@@ -51,3 +59,63 @@ jobs:
           name: scenario-eval-report
           path: tests/benchmark/reports/scenario_report_ci.json
           if-no-files-found: ignore
+
+  # Only on an actual merge to main (not every PR push) -- records this run's
+  # score into the tracked history so overall_score/overall_score_adjusted
+  # over time is directly readable (python tests/benchmark/run_scenarios.py
+  # --print-trend tests/benchmark/baselines/scenario_history.jsonl) instead of
+  # inferred from a single point-in-time pass/fail gate. Opens a chore/ branch
+  # PR rather than pushing straight to main, so the existing
+  # auto-merge-ready-fix-prs automation (gemini-assistant.yml) merges it once
+  # checks pass -- reuses the already-proven merge path instead of new
+  # direct-to-protected-branch push logic.
+  record-history:
+    name: Record scenario history
+    needs: scenario-eval
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: scenario-eval-report
+          path: tests/benchmark/reports/
+
+      - name: Append report to history and open a PR
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::warning::PAT repository secret not set; skipping scenario history recording."
+            exit 0
+          fi
+          if [ ! -f tests/benchmark/reports/scenario_report_ci.json ]; then
+            echo "No scenario report artifact found for this commit; nothing to record."
+            exit 0
+          fi
+
+          BRANCH="chore/scenario-history-${GITHUB_SHA::12}"
+          git checkout -b "$BRANCH"
+          python3 -c "
+          import json
+          report = json.load(open('tests/benchmark/reports/scenario_report_ci.json'))
+          with open('tests/benchmark/baselines/scenario_history.jsonl', 'a') as f:
+              f.write(json.dumps(report, ensure_ascii=False) + '\n')
+          "
+          git config user.name "sparkleforge-bot"
+          git config user.email "actions@github.com"
+          git add tests/benchmark/baselines/scenario_history.jsonl
+          git commit -m "chore: record scenario-eval history for ${GITHUB_SHA::12}"
+          git push origin "$BRANCH"
+          gh pr create --repo "${{ github.repository }}" \
+            --title "chore: record scenario-eval history for ${GITHUB_SHA::12}" \
+            --body "Appends this merge's scenario-eval report to tests/benchmark/baselines/scenario_history.jsonl. Auto-merges via the existing fix/chore auto-merge automation once checks pass." \
+            --base main --head "$BRANCH"
