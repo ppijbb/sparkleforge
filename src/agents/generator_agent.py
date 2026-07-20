@@ -4,8 +4,10 @@
 """
 
 import logging
+import logging
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Dict
 
@@ -101,11 +103,26 @@ class GeneratorAgent:
                 # 가상환경의 python 경로 사용
                 venv_python = os.path.join(os.getcwd(), ".venv", "bin", "python3")
                 if not os.path.exists(venv_python):
-                    venv_python = "python3"
+                    venv_python = sys.executable or "python3"
 
                 logger.info(f"[{self.name}] Executing {script_path} using {venv_python}...")
-                # output 디렉토리 작업을 위해 cwd 설정 대신 경로를 넘김 (위에서 code_to_run을 수정함)
-                os.system(f"{venv_python} {script_path}")
+                result = subprocess.run(
+                    [venv_python, str(script_path)],
+                    cwd=str(self.output_dir),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode != 0:
+                    logger.error(
+                        "[%s] Generator script failed (exit %d): %s",
+                        self.name,
+                        result.returncode,
+                        result.stderr,
+                    )
+                    raise RuntimeError(
+                        f"Script execution failed with exit code {result.returncode}"
+                    )
 
                 final_output += f"\n\n[Auto-Generated Artifacts]: Saved and executed codebase in {self.output_dir}/"
             except Exception as e:
