@@ -22,10 +22,30 @@ from src.core.guard.invocation_gateway import (
 
 
 @pytest.fixture
-def isolated_gateway(tmp_path):
-    """A gateway backed by throwaway CapabilityManager/ActionJournal state,
-    so tests don't read/write the real data/ directory or leak grants
-    between tests (both are process-wide singletons otherwise)."""
+def isolated_identity_manager(tmp_path):
+    """Issue #614: an AgentIdentityManager backed by throwaway vault/registry
+    files, for testing InvocationGateway's mandate-based authorization."""
+    from src.core.guard.agent_identity import AgentIdentityManager
+    from src.core.guard.credential_vault import CredentialVault
+
+    vault = CredentialVault.__new__(CredentialVault)
+    vault._initialized = False
+    CredentialVault.__init__(vault, fallback_path=str(tmp_path / ".credential_store"))
+
+    identity_manager = AgentIdentityManager.__new__(AgentIdentityManager)
+    identity_manager._initialized = False
+    AgentIdentityManager.__init__(
+        identity_manager, vault=vault, registry_path=str(tmp_path / "pubkeys.json")
+    )
+    return identity_manager
+
+
+@pytest.fixture
+def isolated_gateway(tmp_path, isolated_identity_manager):
+    """A gateway backed by throwaway CapabilityManager/ActionJournal/identity
+    registry state, so tests don't read/write the real data/ directory or
+    leak grants between tests (all three are process-wide singletons
+    otherwise)."""
     cm = CapabilityManager.__new__(CapabilityManager)
     cm._initialized = False
     CapabilityManager.__init__(cm, state_path=str(tmp_path / "capability_grants.json"))
@@ -34,7 +54,9 @@ def isolated_gateway(tmp_path):
     journal._initialized = False
     ActionJournal.__init__(journal, journal_path=str(tmp_path / "action_journal.jsonl"))
 
-    return InvocationGateway(capability_manager=cm, action_journal=journal)
+    return InvocationGateway(
+        capability_manager=cm, action_journal=journal, identity_manager=isolated_identity_manager
+    )
 
 
 def test_system_actor_gets_bootstrap_capabilities(isolated_gateway):
@@ -136,20 +158,6 @@ def test_every_decision_is_journaled_regardless_of_outcome(isolated_gateway):
     assert any("DENIED" in e.description for e in gateway_entries)
 
 
-@pytest.fixture
-def isolated_identity_manager(tmp_path):
-    """Issue #614: an AgentIdentityManager backed by throwaway vault/registry
-    files, for testing InvocationGateway's mandate-based authorization."""
-    from src.core.guard.agent_identity import AgentIdentityManager
-    from src.core.guard.credential_vault import CredentialVault
-
-    vault = CredentialVault.__new__(CredentialVault)
-    vault._initialized = False
-    CredentialVault.__init__(vault, fallback_path=str(tmp_path / ".credential_store"))
-
-    return AgentIdentityManager(vault=vault, registry_path=str(tmp_path / "pubkeys.json"))
-
-
 class TestMandateAuthorization:
     """Issue #614: a valid signed mandate should authorize its subject even
     with no pre-existing local capability grant, and reflect that as a real
@@ -172,7 +180,6 @@ class TestMandateAuthorization:
             description="run a build command",
             required_capability="execute_shell",
             mandate=mandate,
-            issuer_public_key_b64=issuer.public_key_b64(),
         )
 
         assert decision.allowed is True
@@ -191,19 +198,27 @@ class TestMandateAuthorization:
             description="try shell without scope",
             required_capability="execute_shell",
             mandate=mandate,
-            issuer_public_key_b64=issuer.public_key_b64(),
         )
 
         assert decision.allowed is False
         assert "does not cover" in decision.reason
         assert isolated_gateway.capability_manager.agent_has("remote_agent", "execute_shell") is False
 
-    def test_mandate_with_wrong_issuer_key_is_denied(self, isolated_gateway, isolated_identity_manager):
+    def test_impersonated_issuer_is_denied(self, isolated_gateway, isolated_identity_manager):
+        """Issue #798 vuln 2: an attacker with their own real keypair signs a
+        mandate that *claims* issuer="human_operator", then presents it. The
+        gateway must verify against human_operator's *registered* public key
+        -- never a key the caller supplies -- so a signature made with the
+        impostor's own key is rejected rather than trusted at face value."""
         from src.core.guard.agent_identity import issue_mandate
 
-        issuer = isolated_identity_manager.get_or_create_identity("human_operator")
+        isolated_identity_manager.get_or_create_identity("human_operator")
         impostor = isolated_identity_manager.get_or_create_identity("impostor")
-        mandate = issue_mandate(issuer, subject="remote_agent", scope=["execute_shell"], ttl_seconds=60)
+
+        forged_mandate = issue_mandate(
+            impostor, subject="remote_agent", scope=["execute_shell"], ttl_seconds=60
+        )
+        forged_mandate.issuer = "human_operator"  # claim an identity that isn't theirs
 
         decision = isolated_gateway.authorize(
             kind=InvocationKind.MCP_TOOL,
@@ -211,12 +226,35 @@ class TestMandateAuthorization:
             target="shell_exec",
             description="forged mandate attempt",
             required_capability="execute_shell",
-            mandate=mandate,
-            issuer_public_key_b64=impostor.public_key_b64(),
+            mandate=forged_mandate,
         )
 
         assert decision.allowed is False
         assert "invalid" in decision.reason
+        assert isolated_gateway.capability_manager.agent_has("remote_agent", "execute_shell") is False
+
+    def test_mandate_with_unregistered_issuer_is_denied(self, isolated_gateway, isolated_identity_manager):
+        """Issue #798 vuln 2: an issuer identity that was never created via
+        AgentIdentityManager has no registered public key, so the gateway
+        must reject the mandate rather than trust a caller-supplied key."""
+        from src.core.guard.agent_identity import issue_mandate
+
+        ghost_issuer = isolated_identity_manager.get_or_create_identity("ghost_operator")
+        mandate = issue_mandate(ghost_issuer, subject="remote_agent", scope=["execute_shell"], ttl_seconds=60)
+        # Simulate an issuer identity absent from this gateway's registry.
+        mandate.issuer = "never_registered"
+
+        decision = isolated_gateway.authorize(
+            kind=InvocationKind.MCP_TOOL,
+            actor="remote_agent",
+            target="shell_exec",
+            description="unregistered issuer attempt",
+            required_capability="execute_shell",
+            mandate=mandate,
+        )
+
+        assert decision.allowed is False
+        assert "not a registered identity" in decision.reason
 
     def test_expired_mandate_is_denied(self, isolated_gateway, isolated_identity_manager):
         from src.core.guard.agent_identity import issue_mandate
@@ -231,28 +269,10 @@ class TestMandateAuthorization:
             description="expired mandate attempt",
             required_capability="execute_shell",
             mandate=mandate,
-            issuer_public_key_b64=issuer.public_key_b64(),
         )
 
         assert decision.allowed is False
         assert "expired" in decision.reason
-
-    def test_mandate_without_public_key_is_denied(self, isolated_gateway, isolated_identity_manager):
-        from src.core.guard.agent_identity import issue_mandate
-
-        issuer = isolated_identity_manager.get_or_create_identity("human_operator")
-        mandate = issue_mandate(issuer, subject="remote_agent", scope=["execute_shell"], ttl_seconds=60)
-
-        decision = isolated_gateway.authorize(
-            kind=InvocationKind.MCP_TOOL,
-            actor="remote_agent",
-            target="shell_exec",
-            description="no public key provided",
-            required_capability="execute_shell",
-            mandate=mandate,
-        )
-
-        assert decision.allowed is False
 
     def test_mandate_verification_result_is_journaled(self, isolated_gateway, isolated_identity_manager):
         from src.core.guard.agent_identity import issue_mandate
@@ -267,7 +287,6 @@ class TestMandateAuthorization:
             description="journaled mandate call",
             required_capability="execute_shell",
             mandate=mandate,
-            issuer_public_key_b64=issuer.public_key_b64(),
         )
 
         entries = isolated_gateway.action_journal._entries
@@ -275,6 +294,31 @@ class TestMandateAuthorization:
         assert len(gateway_entries) == 1
         assert gateway_entries[0].metadata["mandate"]["valid"] is True
         assert gateway_entries[0].metadata["mandate"]["subject"] == "remote_agent"
+
+    def test_mandate_grant_expires_with_mandate(self, isolated_gateway, isolated_identity_manager, monkeypatch):
+        """Issue #798 vuln 1: the capability grant reflected from a mandate
+        must stop counting once mandate.not_after passes, instead of
+        persisting in CapabilityManager indefinitely."""
+        import time as time_module
+
+        from src.core.guard.agent_identity import issue_mandate
+
+        issuer = isolated_identity_manager.get_or_create_identity("human_operator")
+        mandate = issue_mandate(issuer, subject="remote_agent", scope=["execute_shell"], ttl_seconds=60)
+
+        decision = isolated_gateway.authorize(
+            kind=InvocationKind.MCP_TOOL,
+            actor="remote_agent",
+            target="shell_exec",
+            description="run a build command",
+            required_capability="execute_shell",
+            mandate=mandate,
+        )
+        assert decision.allowed is True
+        assert isolated_gateway.capability_manager.agent_has("remote_agent", "execute_shell") is True
+
+        monkeypatch.setattr(time_module, "time", lambda: mandate.not_after + 1)
+        assert isolated_gateway.capability_manager.agent_has("remote_agent", "execute_shell") is False
 
 
 class TestInferRequiredCapability:
