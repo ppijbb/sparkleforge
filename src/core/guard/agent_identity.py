@@ -143,14 +143,19 @@ class AgentIdentityManager:
         vault: Optional[CredentialVault] = None,
         registry_path: Optional[str] = None,
     ) -> None:
-        if self._initialized:
+        # Guard against the attribute missing entirely if a prior
+        # initialization attempt raised before `_initialized` was set.
+        if getattr(self, "_initialized", False):
             return
-        self._initialized = True
         self.vault = vault or CredentialVault()
         self._registry_path = registry_path or _DEFAULT_REGISTRY_PATH
         self._public_keys: Dict[str, str] = {}
         self._lock_data = threading.RLock()
-        self._load_registry()
+        try:
+            self._load_registry()
+        finally:
+            # Only mark initialized after fallible work completes (or re-raises).
+            self._initialized = True
 
     def _load_registry(self) -> None:
         if os.path.exists(self._registry_path):

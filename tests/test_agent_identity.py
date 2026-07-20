@@ -161,3 +161,33 @@ def test_mandate_serialization_round_trip(isolated_manager):
 
     assert valid is True
     assert restored.scope == mandate.scope
+
+
+def test_initialization_retry_after_transient_load_failure(tmp_path, monkeypatch):
+    """Regression for issue #822: if `_load_registry()` raises on the first
+    initialization attempt, `_initialized` must still be defined so a retry
+    re-runs initialization cleanly instead of raising AttributeError."""
+    vault = CredentialVault.__new__(CredentialVault)
+    vault._initialized = False
+    CredentialVault.__init__(vault, fallback_path=str(tmp_path / ".credential_store"))
+
+    registry_path = str(tmp_path / "pubkeys.json")
+
+    calls = {"count": 0}
+    original_load_registry = AgentIdentityManager._load_registry
+
+    def flaky_load(self):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("transient registry corruption")
+        return original_load_registry(self)
+
+    monkeypatch.setattr(AgentIdentityManager, "_load_registry", flaky_load)
+
+    manager = AgentIdentityManager(vault=vault, registry_path=registry_path)
+    # First attempt raised; retry should initialize cleanly without AttributeError.
+    manager = AgentIdentityManager(vault=vault, registry_path=registry_path)
+
+    assert calls["count"] == 2
+    assert manager._initialized is True
+    assert manager.get_public_key_b64("never_seen") is None
