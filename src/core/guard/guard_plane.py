@@ -84,12 +84,15 @@ class GuardPlane:
         # request already timed out and denied after a multi-minute hang.
         # Denying immediately preserves that outcome without the pointless wait.
         if cap and cap.requires_hitl:
-            self.action_journal.record(
+            entry = self.action_journal.record(
                 agent_id=agent_id,
                 action=command,
                 description=description,
                 risk_level=str(risk_level),
                 metadata={"blocked_by": "hitl_unavailable"},
+            )
+            self.action_journal.update_outcome(
+                entry.entry_id, outcome="failure", error="human approval not available"
             )
             return {"ok": False, "error": "Action requires human approval, which is not available"}
 
@@ -158,12 +161,15 @@ class GuardPlane:
         # block above for why: no live approval channel is wired in
         # production, so this always denied after a timeout anyway).
         if cap and cap.requires_hitl:
-            self.action_journal.record(
+            entry = self.action_journal.record(
                 agent_id=agent_id,
                 action=f"iot_control:{device_id}",
                 description=description,
                 risk_level=str(risk_level),
                 metadata={"blocked_by": "hitl_unavailable"},
+            )
+            self.action_journal.update_outcome(
+                entry.entry_id, outcome="failure", error="human approval not available"
             )
             return {"ok": False, "error": "Action requires human approval, which is not available"}
 

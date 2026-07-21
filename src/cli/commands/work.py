@@ -86,11 +86,17 @@ async def approve_command(cli, args: List[str]):
         return
 
     user_responses = state.get("user_responses", {})
+    matched = False
     for q in state.get("pending_questions", []):
         qid = q.get("id", "")
         if qid.startswith("action_") and (action_id == "all" or qid == f"action_{action_id}"):
             user_responses[qid] = {"response": "approved"}
             cli.console.print(f"[green]✅ Approved action {qid[7:]}[/green]")
+            matched = True
+
+    if not matched:
+        cli.console.print(f"[yellow]No matching pending action '{action_id}'.[/yellow]")
+        return
 
     with cli.console.status("[bold cyan]Executing approved actions...", spinner="dots"):
         result = await orchestrator.execute(
@@ -127,11 +133,17 @@ async def deny_command(cli, args: List[str]):
         return
 
     user_responses = state.get("user_responses", {})
+    matched = False
     for q in state.get("pending_questions", []):
         qid = q.get("id", "")
         if qid.startswith("action_") and (action_id == "all" or qid == f"action_{action_id}"):
             user_responses[qid] = {"response": "denied", "reason": reason}
             cli.console.print(f"[red]❌ Denied action {qid[7:]}[/red]")
+            matched = True
+
+    if not matched:
+        cli.console.print(f"[yellow]No matching pending action '{action_id}'.[/yellow]")
+        return
 
     with cli.console.status("[bold cyan]Applying denial...", spinner="dots"):
         result = await orchestrator.execute(
