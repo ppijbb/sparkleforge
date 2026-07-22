@@ -38,5 +38,3 @@ def optimize_assets():
 if __name__ == "__main__":
     asyncio.run(record_demo())
     optimize_assets()
-
-diff --git a/.github/ISSUE_TEMPLATE/bug_report.md b/.github/ISSUE_TEMPLATE/bug_report.md
