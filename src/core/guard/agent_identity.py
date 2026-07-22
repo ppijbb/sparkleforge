@@ -151,11 +151,8 @@ class AgentIdentityManager:
         self._registry_path = registry_path or _DEFAULT_REGISTRY_PATH
         self._public_keys: Dict[str, str] = {}
         self._lock_data = threading.RLock()
-        try:
-            self._load_registry()
-        finally:
-            # Only mark initialized after fallible work completes (or re-raises).
-            self._initialized = True
+        self._load_registry()
+        self._initialized = True
 
     def _load_registry(self) -> None:
         if os.path.exists(self._registry_path):

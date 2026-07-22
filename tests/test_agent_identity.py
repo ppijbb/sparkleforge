@@ -167,6 +167,7 @@ def test_initialization_retry_after_transient_load_failure(tmp_path, monkeypatch
     """Regression for issue #822: if `_load_registry()` raises on the first
     initialization attempt, `_initialized` must still be defined so a retry
     re-runs initialization cleanly instead of raising AttributeError."""
+    AgentIdentityManager._instance = None
     vault = CredentialVault.__new__(CredentialVault)
     vault._initialized = False
     CredentialVault.__init__(vault, fallback_path=str(tmp_path / ".credential_store"))
@@ -184,7 +185,9 @@ def test_initialization_retry_after_transient_load_failure(tmp_path, monkeypatch
 
     monkeypatch.setattr(AgentIdentityManager, "_load_registry", flaky_load)
 
-    manager = AgentIdentityManager(vault=vault, registry_path=registry_path)
+    with pytest.raises(RuntimeError, match="transient registry corruption"):
+        AgentIdentityManager(vault=vault, registry_path=registry_path)
+
     # First attempt raised; retry should initialize cleanly without AttributeError.
     manager = AgentIdentityManager(vault=vault, registry_path=registry_path)
 
