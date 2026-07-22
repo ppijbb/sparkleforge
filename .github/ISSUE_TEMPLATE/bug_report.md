@@ -42,3 +42,4 @@ Add screenshots to help explain your problem.
 - [ ] **Social Media Assets**: Prepare Twitter/LinkedIn thread content.
 - [ ] **Benchmark Infographic**: Update with latest cost-savings data.
 - [ ] **Launch**: Publish to social channels.
+- [ ] **Demo Recording**: Generate `docs/demo_scenario.gif` and `docs/demo_scenario.webp`.
