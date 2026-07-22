@@ -40,6 +40,29 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Inject SEO/GEO Meta Tags
+st.markdown("""
+<head>
+    <meta name="description" content="SparkleForge: 24/7 Autonomous Generic Agent OS with 141.08 min Mean Time to Merge & 92% Zero-Cost Token Savings.">
+    <meta name="keywords" content="SparkleForge, Autonomous Agent OS, AI Agent, GEO, SEO, JSON-LD">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "SparkleForge",
+      "description": "24/7 Autonomous Generic Agent OS with 141.08 min Mean Time to Merge & 92% Zero-Cost Token Savings.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+</head>
+""", unsafe_allow_html=True)
+
 # Initialize session state
 if "orchestrator" not in st.session_state:
     st.session_state.orchestrator = None
