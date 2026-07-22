@@ -133,17 +133,24 @@ async def test_run_conversation_without_heat_seconds_behaves_as_before():
 
 
 @pytest.mark.asyncio
-async def test_run_conversation_wraps_up_when_heat_soft_deadline_already_passed():
-    # heat_seconds so small that by the time the loop checks heat_soft_expired
-    # (a few microseconds after construction), it is already past the 85%
-    # threshold -- deterministic without needing to mock time mid-loop.
+async def test_run_conversation_wraps_up_when_heat_soft_deadline_already_passed(monkeypatch):
+    # Patch IterationBudget.elapsed directly rather than time.time(): the
+    # dataclass's start_time=field(default_factory=time.time) binds the real
+    # time.time function object at class-definition time, so patching the
+    # module-level time.time afterward can't retroactively change it (see
+    # test_iteration_budget_heat_soft_expired_at_ratio below for the same
+    # caveat at the IterationBudget-unit-test level). Patching elapsed sidesteps
+    # that entirely and pins "now" past the soft ratio (85) but under the hard
+    # deadline (100), deterministically, before any model call happens.
+    monkeypatch.setattr(IterationBudget, "elapsed", property(lambda self: 90.0))
+
     orchestrator = FakeOrchestrator([])
     loop = make_loop(orchestrator, FakeMCPHub())
 
     result = await loop.run_conversation(
         [{"role": "user", "content": "research sparkleforge"}],
         max_iterations=10,
-        heat_seconds=1e-6,
+        heat_seconds=100.0,
     )
 
     assert result["success"] is True
@@ -153,6 +160,83 @@ async def test_run_conversation_wraps_up_when_heat_soft_deadline_already_passed(
     assert report["failed"] == []
     assert "resume" in report["next_recommended_action"].lower()
     assert orchestrator.calls == []  # never even called the model
+
+
+@pytest.mark.asyncio
+async def test_run_conversation_hard_deadline_with_remaining_iterations_is_not_success(monkeypatch):
+    """Issue #794 bug 2: a run cut off by the hard heat deadline was
+    interrupted mid-goal and must not be reported as success=True."""
+    state = {"elapsed": 0.0}
+    monkeypatch.setattr(IterationBudget, "elapsed", property(lambda self: state["elapsed"]))
+
+    tool_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "x"}'},
+    }
+
+    class SlowOrchestrator(FakeOrchestrator):
+        async def execute_with_model(self, **kwargs):
+            # Simulate this iteration's LLM call taking long enough to cross
+            # the hard heat deadline, while iterations still remain.
+            state["elapsed"] += 150.0
+            return await super().execute_with_model(**kwargs)
+
+    orchestrator = SlowOrchestrator(
+        [ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [tool_call]})]
+    )
+    loop = make_loop(orchestrator, FakeMCPHub())
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research sparkleforge"}],
+        max_iterations=10,
+        heat_seconds=100.0,
+    )
+
+    assert result["success"] is False
+    assert result["metadata"]["heat_hard_cutoff"] is True
+    assert result["metadata"]["iterations_exhausted"] is False
+    assert any(e["type"] == "heat_hard_deadline_exceeded" for e in result["errors"])
+
+
+@pytest.mark.asyncio
+async def test_run_conversation_iteration_exhaustion_past_soft_deadline_is_flagged(monkeypatch):
+    """Issue #794 bug 1: when the loop exits because iterations ran out and
+    the *last* iteration also crossed the soft deadline (but not the hard
+    one), the soft-deadline warning must accompany the iteration-exhaustion
+    error instead of being silently dropped."""
+    state = {"elapsed": 0.0}
+    monkeypatch.setattr(IterationBudget, "elapsed", property(lambda self: state["elapsed"]))
+
+    tool_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "x"}'},
+    }
+
+    class SoftCrossingOrchestrator(FakeOrchestrator):
+        async def execute_with_model(self, **kwargs):
+            # Crosses the soft (85s) but not the hard (100s) deadline.
+            state["elapsed"] += 90.0
+            return await super().execute_with_model(**kwargs)
+
+    orchestrator = SoftCrossingOrchestrator(
+        [ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [tool_call]})]
+    )
+    loop = make_loop(orchestrator, FakeMCPHub())
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research sparkleforge"}],
+        max_iterations=1,
+        heat_seconds=100.0,
+    )
+
+    assert result["success"] is False
+    assert result["metadata"]["error_category"] == "iteration_budget_exceeded"
+    assert any(
+        e["type"] == "iteration_budget_exceeded" and "soft deadline" in e["message"]
+        for e in result["errors"]
+    )
 
 
 def test_build_heat_report_classifies_completed_and_failed():

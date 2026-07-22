@@ -8,7 +8,6 @@ import logging
 from typing import Any, Dict, Optional
 
 from src.core.guard.capability_manager import CapabilityManager
-from src.core.guard.hitl_gate import HITLGate
 from src.core.guard.sandbox_executor import SandboxExecutor
 from src.core.guard.action_journal import ActionJournal
 from src.core.guard.anomaly_detector import AnomalyDetector
@@ -27,7 +26,6 @@ class GuardPlane:
 
     def __init__(self) -> None:
         self.capability_manager = CapabilityManager()
-        self.hitl_gate          = HITLGate()
         self.sandbox_executor   = SandboxExecutor()
         self.action_journal     = ActionJournal()
         self.anomaly_detector   = AnomalyDetector()
@@ -79,27 +77,24 @@ class GuardPlane:
         if any(a.severity == "critical" for a in anomalies):
             return {"ok": False, "error": "Critical anomaly detected — action blocked"}
 
-        # 3. HITL approval if needed
+        # 3. HITL approval if needed -- fail closed. There is no live
+        # human-approval channel wired to this path in production (issue
+        # #776): it used to block on HITLGate.request_approval(), but nothing
+        # outside tests ever called HITLGate.resolve(), so every HIGH/CRITICAL
+        # request already timed out and denied after a multi-minute hang.
+        # Denying immediately preserves that outcome without the pointless wait.
         if cap and cap.requires_hitl:
-            # request_approval() blocks synchronously (up to APPROVAL_TIMEOUTS,
-            # 300s for CRITICAL) — run it off the event loop so a pending
-            # approval can't starve other coroutines.
-            req = await asyncio.to_thread(
-                self.hitl_gate.request_approval,
+            entry = self.action_journal.record(
                 agent_id=agent_id,
-                action=capability_name,
+                action=command,
                 description=description,
-                risk_level=risk_level,
+                risk_level=str(risk_level),
+                metadata={"blocked_by": "hitl_unavailable"},
             )
-            if not self.hitl_gate.is_approved(req):
-                self.action_journal.record(
-                    agent_id=agent_id,
-                    action=command,
-                    description=description,
-                    risk_level=str(risk_level),
-                    metadata={"blocked_by": "hitl", "request_id": req.request_id},
-                )
-                return {"ok": False, "error": f"Action not approved: {req.status}"}
+            self.action_journal.update_outcome(
+                entry.entry_id, outcome="failure", error="human approval not available"
+            )
+            return {"ok": False, "error": "Action requires human approval, which is not available"}
 
         # 4. Journal pre-execution
         entry = self.action_journal.record(
@@ -162,24 +157,21 @@ class GuardPlane:
         cap = BUILTIN_CAPABILITIES.get(capability_name)
         risk_level = cap.risk_level if cap else "low"
 
-        # 2. HITL approval check
+        # 2. HITL approval check -- fail closed (see check_and_execute's HITL
+        # block above for why: no live approval channel is wired in
+        # production, so this always denied after a timeout anyway).
         if cap and cap.requires_hitl:
-            req = await asyncio.to_thread(
-                self.hitl_gate.request_approval,
+            entry = self.action_journal.record(
                 agent_id=agent_id,
-                action=capability_name,
-                description=f"Control IoT device '{device_id}' with command: '{command}'",
-                risk_level=risk_level,
+                action=f"iot_control:{device_id}",
+                description=description,
+                risk_level=str(risk_level),
+                metadata={"blocked_by": "hitl_unavailable"},
             )
-            if not self.hitl_gate.is_approved(req):
-                self.action_journal.record(
-                    agent_id=agent_id,
-                    action=f"iot_control:{device_id}",
-                    description=description,
-                    risk_level=str(risk_level),
-                    metadata={"blocked_by": "hitl", "request_id": req.request_id},
-                )
-                return {"ok": False, "error": f"Action not approved: {req.status}"}
+            self.action_journal.update_outcome(
+                entry.entry_id, outcome="failure", error="human approval not available"
+            )
+            return {"ok": False, "error": "Action requires human approval, which is not available"}
 
         # 3. Journal pre-execution
         entry = self.action_journal.record(
@@ -230,12 +222,10 @@ class GuardPlane:
 
     def get_status(self) -> Dict[str, Any]:
         """Return a status summary of all guard subsystems."""
-        pending_approvals = self.hitl_gate.get_pending()
         recent_anomalies  = self.anomaly_detector.get_anomalies(limit=5)
         recent_actions    = self.action_journal.recent(limit=5)
 
         return {
-            "pending_approvals": len(pending_approvals),
             "recent_anomalies":  len(recent_anomalies),
             "recent_actions":    len(recent_actions),
             "credential_keys":   len(self.credential_vault.list_keys()),

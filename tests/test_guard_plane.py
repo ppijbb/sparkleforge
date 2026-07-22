@@ -1,14 +1,12 @@
 """
 tests/test_guard_plane.py — Unit tests for Phase G: Guard (Security & Trust)
 """
-import asyncio
 import os
 import tempfile
-import time
+
 import pytest
 
-from src.core.guard.capability_manager import CapabilityManager, RiskLevel, BUILTIN_CAPABILITIES
-from src.core.guard.hitl_gate import HITLGate, ApprovalStatus
+from src.core.guard.capability_manager import CapabilityManager
 from src.core.guard.action_journal import ActionJournal
 from src.core.guard.anomaly_detector import AnomalyDetector
 from src.core.guard.credential_vault import CredentialVault
@@ -19,13 +17,11 @@ from src.core.guard.sandbox_executor import SandboxExecutor
 def reset_singletons():
     """Reset all singletons before each test."""
     CapabilityManager._instance = None
-    HITLGate._instance = None
     ActionJournal._instance = None
     AnomalyDetector._instance = None
     CredentialVault._instance = None
     yield
     CapabilityManager._instance = None
-    HITLGate._instance = None
     ActionJournal._instance = None
     AnomalyDetector._instance = None
     CredentialVault._instance = None
@@ -61,98 +57,46 @@ def test_capability_list():
         assert "write_file" in names
 
 
-def test_hitl_auto_approve_low_risk():
-    gate = HITLGate()
-    req = gate.request_approval(
-        agent_id="agent_1",
-        action="read_file",
-        description="Read config file",
-        risk_level=RiskLevel.LOW,
-    )
-    assert gate.is_approved(req)
-    assert req.status == ApprovalStatus.AUTO
-
-
-def test_hitl_auto_approve_medium_risk():
-    gate = HITLGate()
-    req = gate.request_approval(
-        agent_id="agent_1",
-        action="write_file",
-        description="Write log file",
-        risk_level=RiskLevel.MEDIUM,
-    )
-    assert gate.is_approved(req)
-
-
-def test_hitl_headless_approval():
-    gate = HITLGate()
-    gate.set_default_approver(lambda req: True)  # Always approve
-    
-    req = gate.request_approval(
-        agent_id="agent_1",
-        action="execute_shell",
-        description="Run test command",
-        risk_level=RiskLevel.HIGH,
-    )
-    assert gate.is_approved(req)
-    assert req.status == ApprovalStatus.APPROVED
-
-
-def test_hitl_headless_rejection():
-    gate = HITLGate()
-    gate.set_default_approver(lambda req: False)  # Always reject
-    
-    req = gate.request_approval(
-        agent_id="agent_1",
-        action="execute_shell",
-        description="Dangerous command",
-        risk_level=RiskLevel.HIGH,
-    )
-    assert not gate.is_approved(req)
-    assert req.status == ApprovalStatus.REJECTED
-
-
-async def test_check_and_execute_does_not_block_event_loop_during_hitl_wait():
-    """A pending HIGH-risk HITL approval must not starve other coroutines
-    on the event loop (regression test for GHSA-wqp8-67cf-3j26)."""
+@pytest.mark.asyncio
+async def test_check_and_execute_fails_closed_for_hitl_capability():
+    """Issue #776: HITLGate.resolve() was never called outside tests, so any
+    HIGH/CRITICAL capability requiring HITL always timed out and denied in
+    production after a multi-minute hang. HITLGate is removed; the same
+    capability must still be denied, just immediately instead of after a wait."""
     from src.core.guard.guard_plane import GuardPlane
 
     guard = GuardPlane()
     guard.capability_manager.reset()
     guard.capability_manager.grant_agent("agent_1", "execute_shell")
 
-    # Approve asynchronously after a short delay instead of instantly,
-    # so request_approval() actually blocks on evt.wait() for a while.
-    def delayed_approver(req):
-        time.sleep(0.3)
-        return True
-
-    guard.hitl_gate.set_default_approver(delayed_approver)
-
-    ticks = 0
-
-    async def ticker():
-        nonlocal ticks
-        for _ in range(20):
-            ticks += 1
-            await asyncio.sleep(0.02)
-
-    exec_task = asyncio.create_task(
-        guard.check_and_execute(
-            agent_id="agent_1",
-            capability_name="execute_shell",
-            command="echo hi",
-            description="regression test command",
-            dry_run=True,
-        )
+    result = await guard.check_and_execute(
+        agent_id="agent_1",
+        capability_name="execute_shell",
+        command="echo hi",
+        description="regression test command",
+        dry_run=True,
     )
-    tick_task = asyncio.create_task(ticker())
 
-    result, _ = await asyncio.gather(exec_task, tick_task)
+    assert result["ok"] is False
+    assert "approval" in result["error"].lower()
 
-    # If request_approval() blocked the loop, the ticker would have made
-    # little to no progress while check_and_execute awaited approval.
-    assert ticks >= 10
+
+@pytest.mark.asyncio
+async def test_check_and_execute_allows_capability_without_hitl():
+    from src.core.guard.guard_plane import GuardPlane
+
+    guard = GuardPlane()
+    guard.capability_manager.reset()
+    guard.capability_manager.grant_agent("agent_1", "read_file")
+
+    result = await guard.check_and_execute(
+        agent_id="agent_1",
+        capability_name="read_file",
+        command="echo hi",
+        description="no-hitl capability",
+        dry_run=True,
+    )
+
     assert result["ok"] is True
 
 

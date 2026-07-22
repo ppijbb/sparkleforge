@@ -67,9 +67,6 @@ class UniversalMCPHub(
         # ToolRegistry 통합 관리
         self.registry = global_registry
 
-        # 실행 컨텍스트별 MCP 세션 관리 (ROMA 스타일)
-        # 각 실행마다 독립적인 MCP 세션 풀을 유지
-        self._execution_sessions: Dict[str, Dict[str, Any]] = {}
         self.tools: Dict[str, ToolInfo] = {}  # 하위 호환성을 위해 유지 (registry.tools 참조)
         self.openrouter_client: OpenRouterClient | None = None
 

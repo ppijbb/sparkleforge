@@ -14,6 +14,7 @@ import io
 import json
 import logging
 import os
+import shlex
 import subprocess
 from typing import Any
 
@@ -397,8 +398,7 @@ async def open_application(input: OpenAppInput) -> str:
         display_num = _ensure_display()
         env = {**os.environ, "DISPLAY": f":{display_num}"}
         proc = subprocess.Popen(
-            input.command,
-            shell=True,
+            shlex.split(input.command),
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
