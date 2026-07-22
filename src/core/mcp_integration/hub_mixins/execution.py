@@ -2,7 +2,6 @@
 import asyncio
 import logging
 import time
-from datetime import datetime
 from typing import Any, Dict, List
 
 from src.core.mcp_integration.executors.browser import _execute_browser_tool
@@ -1758,75 +1757,3 @@ class ExecutionMixin:
                 "execution_time": execution_time,
                 "confidence": 0.0,
             }
-    async def get_tool_for_execution(
-        self, tool_name: str, execution_id: str | None = None
-    ) -> Any | None:
-        """실행 컨텍스트별 도구 반환 (ROMA 스타일).
-
-        각 실행마다 독립적인 도구 인스턴스를 관리하여 실행 간 격리를 보장합니다.
-
-        Args:
-            tool_name: 도구 이름
-            execution_id: 실행 ID (None이면 ExecutionContext에서 가져옴)
-
-        Returns:
-            도구 인스턴스 또는 None
-        """
-        # ExecutionContext에서 execution_id 가져오기
-        if execution_id is None:
-            try:
-                from src.core.recursive_context_manager import ExecutionContext
-
-                ctx = ExecutionContext.get()
-                if ctx:
-                    execution_id = ctx.execution_id
-            except Exception:
-                pass
-
-        # execution_id가 없으면 기본 도구 반환 (하위 호환성)
-        if not execution_id:
-            return self.registry.get_tool(tool_name)
-
-        # 실행별 세션 초기화
-        if execution_id not in self._execution_sessions:
-            self._execution_sessions[execution_id] = {
-                "tools": {},
-                "created_at": datetime.now(),
-            }
-
-        execution_session = self._execution_sessions[execution_id]
-
-        # 도구가 이미 캐시되어 있으면 반환
-        if tool_name in execution_session["tools"]:
-            return execution_session["tools"][tool_name]
-
-        # 도구 초기화 및 캐싱
-        # LangChain Tool이 있으면 반환, 없으면 ToolInfo 반환
-        tool = self.registry.get_langchain_tool(tool_name)
-        if not tool:
-            # LangChain Tool이 없으면 ToolInfo 반환
-            tool = self.registry.get_tool_info(tool_name)
-
-        if tool:
-            execution_session["tools"][tool_name] = tool
-            logger.debug(f"Tool {tool_name} cached for execution {execution_id}")
-
-        return tool
-    async def cleanup_execution(self, execution_id: str):
-        """실행 종료 시 세션 정리 (ROMA 스타일).
-
-        실행별로 관리된 도구 인스턴스와 세션을 정리합니다.
-
-        Args:
-            execution_id: 정리할 실행 ID
-        """
-        if execution_id in self._execution_sessions:
-            session = self._execution_sessions[execution_id]
-            tools_count = len(session.get("tools", {}))
-
-            # 세션 정리
-            del self._execution_sessions[execution_id]
-
-            logger.info(f"Cleaned up execution session {execution_id} ({tools_count} tools)")
-        else:
-            logger.debug(f"Execution session {execution_id} not found (already cleaned up?)")

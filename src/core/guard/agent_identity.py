@@ -145,12 +145,12 @@ class AgentIdentityManager:
     ) -> None:
         if self._initialized:
             return
-        self._initialized = True
         self.vault = vault or CredentialVault()
         self._registry_path = registry_path or _DEFAULT_REGISTRY_PATH
         self._public_keys: Dict[str, str] = {}
         self._lock_data = threading.RLock()
         self._load_registry()
+        self._initialized = True
 
     def _load_registry(self) -> None:
         if os.path.exists(self._registry_path):
