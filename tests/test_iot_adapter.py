@@ -17,9 +17,10 @@ from src.core.actuate.iot_device import (
     USBHIDDevice,
 )
 from src.core.guard.capability_manager import CapabilityManager
-from src.core.guard.guard_plane import GuardPlane
+from src.core.guard.guard_plane import GuardPlane, register_iot_guard_tools
 from src.core.observe.event_bus import EventBus
 from src.core.observe.iot_telemetry_loop import IOTTelemetryLoop
+from src.core.tools.registry import registry
 
 # --- 1. Basic Adapter Tests ---
 
@@ -565,6 +566,74 @@ async def test_guard_plane_allows_iot_after_grant():
     
     assert res["ok"] is True
     assert "moved to 45" in res["stdout"]
+
+
+# --- 5. Production tool wiring (issue #783) ---
+
+
+def test_control_iot_device_tool_is_registered():
+    # check_and_control_device used to be reachable only from tests -- no
+    # agent-callable tool exposed it in production. register_iot_guard_tools
+    # should make it discoverable through the shared tool registry.
+    register_iot_guard_tools()
+
+    assert "control_iot_device" in registry.get_all_tool_names()
+    assert registry.tool_sources["control_iot_device"] == "local"
+
+
+@pytest.mark.asyncio
+async def test_control_iot_device_tool_enforces_capability_check():
+    register_iot_guard_tools()
+    GuardPlane().capability_manager.reset()
+
+    ActuationPlane._instance = None
+    actuator = ActuationPlane()
+    camera = CameraDevice("registry_cam")
+    camera.connect()
+    actuator.register_device("registry_cam", camera)
+
+    result = await registry.execute(
+        "control_iot_device",
+        {
+            "agent_id": "attacker_agent",
+            "device_id": "registry_cam",
+            "command": "capture",
+            "is_write": True,
+        },
+    )
+
+    assert result["ok"] is False
+    assert "Missing capability" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_control_iot_device_tool_executes_after_grant():
+    register_iot_guard_tools()
+    guard = GuardPlane()
+    guard.capability_manager.reset()
+
+    ActuationPlane._instance = None
+    actuator = ActuationPlane()
+    arm = RobotArmDevice("registry_arm")
+    arm.connect()
+    actuator.register_device("registry_arm", arm)
+
+    guard.capability_manager.grant_agent("operator_agent", "iot_control")
+    cap = guard.capability_manager.get_capability("iot_control")
+    cap.requires_hitl = False
+
+    result = await registry.execute(
+        "control_iot_device",
+        {
+            "agent_id": "operator_agent",
+            "device_id": "registry_arm",
+            "command": "move_joint 1 45",
+            "is_write": True,
+        },
+    )
+
+    assert result["ok"] is True
+    assert "moved to 45" in result["stdout"]
 
 
 def test_gpio_input_configuration_and_commands():

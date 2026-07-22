@@ -231,3 +231,83 @@ class GuardPlane:
             "credential_keys":   len(self.credential_vault.list_keys()),
             "initialized":       True,
         }
+
+
+async def _control_iot_device_tool(
+    agent_id: str,
+    device_id: str,
+    command: str,
+    description: str = "",
+    is_write: bool = True,
+) -> Dict[str, Any]:
+    """Agent-callable wrapper around GuardPlane.check_and_control_device (issue #783).
+
+    Before this, the IoT device guard pipeline was fully implemented and
+    tested but had no production call site -- an agent had no way to
+    actually reach it. Registered as the `control_iot_device` tool so it can.
+    """
+    return await GuardPlane().check_and_control_device(
+        agent_id=agent_id,
+        device_id=device_id,
+        command=command,
+        description=description or f"{'control' if is_write else 'read'} device {device_id}: {command}",
+        is_write=is_write,
+    )
+
+
+CONTROL_IOT_DEVICE_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "agent_id": {
+            "type": "string",
+            "description": "Identifier of the agent performing this action, for capability checks and the audit journal.",
+        },
+        "device_id": {
+            "type": "string",
+            "description": "Identifier of a device already registered with the ActuationPlane (see ActuationPlane.register_device).",
+        },
+        "command": {
+            "type": "string",
+            "description": "Device-specific command string to send (write) or query to run (read).",
+        },
+        "description": {
+            "type": "string",
+            "description": "Human-readable description of the action, for the audit journal.",
+            "default": "",
+        },
+        "is_write": {
+            "type": "boolean",
+            "description": (
+                "True to send a control command (requires the high-risk 'iot_control' "
+                "capability and human-in-the-loop approval); false to read device state "
+                "(requires the low-risk 'iot_read' capability)."
+            ),
+            "default": True,
+        },
+    },
+    "required": ["agent_id", "device_id", "command"],
+}
+
+
+def register_iot_guard_tools() -> None:
+    """Register `control_iot_device` into the shared tool registry."""
+    from src.core.tools.registry import ToolCategory, ToolMetadata, registry
+
+    registry.register(
+        ToolMetadata(
+            name="control_iot_device",
+            description=(
+                "Send a control command to, or read state from, a physical/IoT device "
+                "already registered with the ActuationPlane. Write commands require the "
+                "high-risk 'iot_control' capability and are subject to human-in-the-loop "
+                "approval (denied if no approval channel is configured); reads require "
+                "the low-risk 'iot_read' capability."
+            ),
+            parameters=CONTROL_IOT_DEVICE_PARAMETERS,
+            category=ToolCategory.UTILITY,
+            tags=["iot", "guard", "actuation"],
+            source="local",
+        ),
+        _control_iot_device_tool,
+        _control_iot_device_tool,
+    )
