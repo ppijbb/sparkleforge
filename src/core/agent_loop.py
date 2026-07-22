@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 
 HEAT_SOFT_DEADLINE_RATIO = 0.85
 
+# Repetition/stuck-state guard (issue #807): max consecutive tool calls with
+# identical (tool_name, arguments) before the loop terminates with a
+# stuck_loop reason instead of burning the full iteration budget.
+MAX_STUCK_TOOL_REPEATS = 3
+
 
 def _summarize_tool_result(tool_result: Dict[str, Any]) -> str:
     """Best-effort one-line description of a successful tool_results entry for the Heat report."""
@@ -136,6 +141,8 @@ Autonomous problem-solving contract:
         tool_results: List[Dict[str, Any]] = []
         errors: List[Dict[str, Any]] = []
         tool_calls_count = 0
+        last_tool_call_signature: tuple[str, str] | None = None
+        stuck_repeat_count = 0
 
         # Ensure MCP is initialized
         try:
@@ -355,6 +362,59 @@ Autonomous problem-solving contract:
                         history, tool_call, tool_name, tool_exec_result, tool_results
                     )
                     continue
+
+                normalized_args = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+                call_signature = (tool_name, normalized_args)
+                if call_signature == last_tool_call_signature:
+                    stuck_repeat_count += 1
+                else:
+                    stuck_repeat_count = 0
+                last_tool_call_signature = call_signature
+
+                if stuck_repeat_count >= MAX_STUCK_TOOL_REPEATS:
+                    logger.warning(
+                        "[AgentLoop] Stuck loop detected: %s called %d times consecutively "
+                        "with identical arguments",
+                        tool_name,
+                        stuck_repeat_count + 1,
+                    )
+                    errors.append(
+                        {
+                            "type": "stuck_loop",
+                            "tool_name": tool_name,
+                            "message": (
+                                f"Agent repeated {tool_name} {stuck_repeat_count + 1} times "
+                                "consecutively with identical arguments and no progress."
+                            ),
+                        }
+                    )
+                    return self._build_result(
+                        success=False,
+                        content=(
+                            f"Stuck loop detected: {tool_name} repeated "
+                            f"{stuck_repeat_count + 1} times consecutively without progress."
+                        ),
+                        iterations=budget.current_iteration,
+                        history=history,
+                        metadata={"error_category": "stuck_loop", "stuck_tool": tool_name},
+                        tool_calls_count=tool_calls_count,
+                        tool_results=tool_results,
+                        errors=errors,
+                        error="stuck_loop",
+                    )
+
+                if stuck_repeat_count > 0:
+                    history.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                f"You have already called `{tool_name}` with the same "
+                                f"arguments {stuck_repeat_count} time(s) in a row and received "
+                                "the same result. Try a different approach or tool instead of "
+                                "repeating this call."
+                            ),
+                        }
+                    )
 
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
                 try:
