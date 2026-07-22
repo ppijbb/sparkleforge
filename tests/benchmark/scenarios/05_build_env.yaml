@@ -6,8 +6,9 @@ user_query: >-
   이 프로젝트 빌드 환경 세팅해줘. 프로젝트 경로는 {workspace}/project 야. 실행하면
   잘 되는지 확인도 해줘.
 weights:
-  verify_runs: 0.55
-  packages_declared: 0.25
+  verify_runs: 0.45
+  packages_declared: 0.2
+  env_setup: 0.15
   judge_quality: 0.2
 judge_rubric: >-
   Does the agent explain the build-environment setup steps taken
