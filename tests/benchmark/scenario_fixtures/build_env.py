@@ -10,6 +10,7 @@ network/package installs required, and get a real pass/fail signal.
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -55,8 +56,23 @@ def build(workspace: Path) -> Dict[str, Any]:
     }
 
 
+def _env_configured(project: Path, required_env: str) -> bool:
+    """Check whether the agent configured the required env var via .env or export."""
+    env_file = project / ".env"
+    if env_file.exists() and keyword_hit(read_text_safe(env_file), [f"{required_env}="]):
+        return True
+    return required_env in os.environ
+
+
 async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, tuple[float, str]]:
     project = workspace / ctx["project_dir"]
+
+    env_setup = (
+        (1.0, f"{ctx['required_env']} is configured via .env file or environment")
+        if _env_configured(project, ctx["required_env"])
+        else (0.0, f"{ctx['required_env']} is not configured: create a .env file or export it before re-running the project")
+    )
+
     try:
         result = await asyncio.to_thread(
             subprocess.run,
@@ -101,5 +117,6 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
     return {
         "verify_runs": verify_runs,
         "packages_declared": packages_declared,
+        "env_setup": env_setup,
         "judge_quality": judge,
     }

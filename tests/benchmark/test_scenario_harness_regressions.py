@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tests.benchmark import run_scenarios
-from tests.benchmark.scenario_fixtures import scheduled_summary
+from tests.benchmark.scenario_fixtures import build_env, scheduled_summary
 
 
 def test_require_openrouter_api_key_fails_closed_when_missing(monkeypatch, capsys):
@@ -116,3 +116,34 @@ async def test_scheduled_summary_grade_passes_yaml_rubric_to_judge(monkeypatch, 
     await scheduled_summary.grade(tmp_path, ctx, stdout="summary")
 
     assert captured["rubric"] == "custom scheduled-summary rubric"
+
+
+@pytest.mark.asyncio
+async def test_build_env_grade_reports_env_setup_failure_when_unconfigured(monkeypatch, tmp_path):
+    async def fake_judge_score(rubric, transcript, context=""):
+        return 1.0, "ok"
+
+    monkeypatch.setattr(build_env, "judge_score", fake_judge_score)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    ctx = build_env.build(tmp_path)
+
+    scores = await build_env.grade(tmp_path, ctx, stdout="")
+
+    assert scores["env_setup"][0] == 0.0
+    assert scores["verify_runs"][0] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_build_env_grade_reports_env_setup_success_via_dotenv_file(monkeypatch, tmp_path):
+    async def fake_judge_score(rubric, transcript, context=""):
+        return 1.0, "ok"
+
+    monkeypatch.setattr(build_env, "judge_score", fake_judge_score)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    ctx = build_env.build(tmp_path)
+    project = tmp_path / ctx["project_dir"]
+    (project / ".env").write_text("APP_ENV=development\n", encoding="utf-8")
+
+    scores = await build_env.grade(tmp_path, ctx, stdout="")
+
+    assert scores["env_setup"][0] == 1.0
