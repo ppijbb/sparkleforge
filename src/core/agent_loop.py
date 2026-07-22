@@ -424,7 +424,10 @@ Autonomous problem-solving contract:
             content="Iteration budget exceeded.",
             iterations=budget.current_iteration,
             history=history,
-            metadata={"error_category": "iteration_budget_exceeded"},
+            metadata={
+                "error_category": "iteration_budget_exceeded",
+                "iteration_exhausted": True,
+            },
             tool_calls_count=tool_calls_count,
             tool_results=tool_results,
             errors=errors,
