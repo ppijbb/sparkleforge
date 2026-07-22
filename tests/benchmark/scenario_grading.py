@@ -115,6 +115,13 @@ INCONCLUSIVE_MARKER = "__INCONCLUSIVE__"
 # appear in stdout/stderr, the recorded returncode must be treated as a failure
 # even if the subprocess wrapper exited 0, and the run must not be ingested
 # into the baseline JSONL as a valid data point.
+# Exit code mapping (see issue #879):
+#   0 — scenario executed, agent produced output, scoring completed
+#   1 — scenario execution failed due to unrecoverable error (model unavailable, retry exhaustion)
+#   2 — scenario timed out
+#   3 — scenario skipped due to pre-condition failure
+# normalize_returncode() maps a wrapper-exited-0 run with an execution-failure
+# signature to 1 (unrecoverable execution failure), not a timeout.
 EXECUTION_FAILURE_SIGNATURES = (
     "Execution failed",
     "All fallback models failed",
@@ -131,7 +138,7 @@ def detect_execution_failure(stdout: str, stderr: str = "") -> bool:
 def normalize_returncode(returncode: int, stdout: str, stderr: str = "") -> int:
     """Override a zero returncode to non-zero when an execution failure signature is present."""
     if returncode == 0 and detect_execution_failure(stdout, stderr):
-        return 2
+        return 1
     return returncode
 
 
