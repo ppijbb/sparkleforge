@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python 파일 문법 오류 점검 스크립트. CI 헬스체크 회귀 감지용으로도 사용됨."""
+"""Python file syntax check script. Used for CI health check regression detection."""
 
 import ast
 import sys
@@ -42,15 +42,15 @@ for py_file in src_dir.rglob("*.py"):
         )
 
 if errors:
-    print(f"❌ {len(errors)}개 문법 오류 발견:\n")
+    print(f"❌ {len(errors)} syntax errors found:\n")
     for err in errors:
-        print(f"파일: {err['file']}")
-        print(f"  라인: {err['line']}")
-        print(f"  오류: {err['message']}")
+        print(f"File: {err['file']}")
+        print(f"  Line: {err['line']}")
+        print(f"  Error: {err['message']}")
         if err["text"]:
-            print(f"  코드: {err['text'].strip()}")
+            print(f"  Code: {err['text'].strip()}")
         print()
     sys.exit(1)
 else:
-    print(f"✅ 모든 Python 파일 문법 오류 없음 ({checked}개 파일 점검 완료)")
+    print(f"✅ No syntax errors in Python files ({checked} files checked)")
     sys.exit(0)

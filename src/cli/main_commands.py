@@ -44,10 +44,10 @@ def _ensure_database_driver_for_cli() -> None:
 
 
 async def _resolve_run_session(args) -> tuple[str, str | None]:
-    """`--session`/`--continue`를 처리해 세션 ID를 결정하고, 이어가는 경우 이전 컨텍스트를 query에 반영.
+    """Handle `--session`/`--continue` to determine session ID and inject previous context if resuming.
 
     Returns:
-        (session_id, error_message). error_message가 있으면 caller가 즉시 중단해야 함.
+        (session_id, error_message). If error_message is present, the caller should abort.
     """
     resume_id = getattr(args, "session_id", None)
     should_continue = getattr(args, "continue_session", False)
@@ -86,7 +86,7 @@ async def _resolve_run_session(args) -> tuple[str, str | None]:
 
 
 def _persist_run_session(session_id: str, query: str, output_text: str | None) -> None:
-    """연구 실행 완료 후 세션을 저장해 이후 --session/--continue로 이어갈 수 있게 함."""
+    """Save session after research execution to allow resumption via --session/--continue."""
     try:
         from src.core.session_manager import get_session_manager
 
@@ -103,7 +103,7 @@ def _persist_run_session(session_id: str, query: str, output_text: str | None) -
 
 
 async def handle_run_command(args, config):
-    """연구 실행 커맨드 처리"""
+    """Handle research execution command."""
     if getattr(args, "mode", "research") == "work":
         return await handle_work_command_from_query(args)
 
@@ -136,9 +136,9 @@ async def handle_run_command(args, config):
             config.llm.max_tokens = max_tokens
 
     def _sanitize_embedded_cli_flags(query: str) -> tuple[str, bool]:
-        """Query 문자열에 잘못 포함된 CLI 플래그를 제거.
+        """Remove CLI flags incorrectly embedded in the query string.
 
-        예: "질문 ... --format markdown --output out.md"
+        Example: "Question ... --format markdown --output out.md"
         """
         if not query:
             return query, False
@@ -155,8 +155,6 @@ async def handle_run_command(args, config):
             return query, False
         cut_at = min(cut_positions)
         cleaned = query[:cut_at].strip()
-        # CLI 플래그가 제거된 결과가 빈 문자열이더라도, "플래그 제거가 감지됨"은 맞으므로 True 유지.
-        # 대신 caller에서 빈 쿼리를 실행하지 않도록 처리한다.
         return cleaned, True
 
     original_query = getattr(args, "query", "")
@@ -206,13 +204,9 @@ async def handle_run_command(args, config):
         logger.info(f"🔬 Starting research: {args.query}")
 
         _ensure_database_driver_for_cli()
-        # Autonomous Orchestrator 초기화
         AutonomousOrchestrator = _load_autonomous_orchestrator()
         orchestrator = AutonomousOrchestrator()
 
-        # CLI에서 추가 단서를 즉시 받아 재시도할지 여부
-        # - 인터랙티브(실제 콘솔 입력 가능)일 때만 사용
-        # - stdin이 TTY가 아니면 자동으로 기존 비대화형 동작으로 폴백
         should_interact = (
             hasattr(sys, "stdin")
             and hasattr(sys, "stdout")
@@ -226,23 +220,21 @@ async def handle_run_command(args, config):
         def _needs_clarification(content: str) -> bool:
             if not content:
                 return False
-            # "리포트에 질문을 넣는" 기존 패턴을 감지
             keywords = (
-                "추가로 사용자가 제공해야 할 단서",
-                "후보 확정을 위한 추가 정보 요청",
-                "추가 질문",
-                "추가 단서",
-                "식별을 위해",
+                "additional clues needed",
+                "request for additional information",
+                "additional question",
+                "additional clue",
+                "for identification",
             )
             return any(k in content for k in keywords) and (
-                "확정" in content or "단정" in content or "미확정" in content
+                "confirm" in content or "determination" in content or "unconfirmed" in content
             )
 
         def _extract_clarification_block(content: str) -> str:
-            # 콘솔 표시용: 특정 섹션 헤딩 주변만 보여준다.
             markers = (
-                "추가로 사용자가 제공해야 할 단서",
-                "후보 확정을 위한 추가 정보 요청",
+                "additional clues needed",
+                "request for additional information",
             )
             for m in markers:
                 idx = content.find(m)
@@ -254,7 +246,6 @@ async def handle_run_command(args, config):
                     return content[idx : end].strip()
             return ""
 
-        # 연구 실행 (run_research 사용)
         base_query = args.query
         user_addendum = ""
         max_rounds = 3 if should_interact else 1
@@ -267,17 +258,16 @@ async def handle_run_command(args, config):
                 context={},
             )
 
-            # 추가 단서가 필요하면 콘솔에서 받아서 이어가기
             content = extract_cli_result_content(result)
             if should_interact and _needs_clarification(content) and round_idx < max_rounds - 1:
                 clarification_block = _extract_clarification_block(content)
                 if clarification_block:
-                    print("\n[추가 단서 요청 감지]\n")
+                    print("\n[Additional clue request detected]\n")
                     print(clarification_block)
 
                 prompt = (
-                    "\n위 요청에 맞는 추가 단서(자유 입력)를 넣고 Enter를 누르면 "
-                    "SparkleForge가 이어서 재시도합니다. (원하면 빈 입력으로 건너뜁니다): "
+                    "\nPlease provide additional clues (free input) and press Enter "
+                    "to let SparkleForge retry. (Press Enter to skip): "
                 )
                 try:
                     user_input = input(prompt).strip()
@@ -287,13 +277,11 @@ async def handle_run_command(args, config):
                 if not user_input:
                     break
 
-                # 다음 라운드에서 프롬프트에 사용자 단서 반영
-                user_addendum = f"[사용자 추가 단서]\n{user_input}"
+                user_addendum = f"[User additional clue]\n{user_input}"
                 continue
 
             break
 
-        # 결과 출력/저장 (output 미지정 시 output/ 아래 기본 파일 생성)
         output_path = args.output
         if not output_path:
             output_dir = project_root / "output"
@@ -399,7 +387,7 @@ async def _execute_coworker_goal(goal: str, heat_seconds: float | None = None) -
 
 
 async def handle_work_command(args):
-    """협업 세션 실행 커맨드 처리"""
+    """Handle coworker session execution command."""
     heat_seconds = None
     heat_arg = getattr(args, "heat", None)
     if heat_arg:
@@ -413,12 +401,12 @@ async def handle_work_command(args):
 
 
 async def handle_work_command_from_query(args):
-    """`run --mode work`에서 진입하는 coworker 실행 경로 (query를 goal로 사용)."""
+    """Coworker execution path from `run --mode work` (uses query as goal)."""
     return await _execute_coworker_goal(getattr(args, "query", "") or "")
 
 
 async def handle_session_command(args):
-    """REPL 밖에서 세션을 조회/관리하는 커맨드 처리 (session list / show / stats / quota)."""
+    """Handle session management commands outside REPL (list / show / stats / quota)."""
     from rich.console import Console
 
     from src.cli.commands.session import (
@@ -467,7 +455,7 @@ async def handle_deny_command(args):
     return 0
 
 async def handle_web_command(args):
-    """웹 대시보드 시작 커맨드 처리"""
+    """Handle web dashboard start command."""
     logger.info("🌐 Starting web dashboard...")
 
     web_manager = WebAppManager()
@@ -485,13 +473,12 @@ async def handle_web_command(args):
 
 
 async def handle_mcp_command(args):
-    """MCP 관리 커맨드 처리"""
+    """Handle MCP management command."""
     if args.mcp_command == "status":
         logger.info("🔍 Checking MCP server status...")
         mcp_hub = None
 
         try:
-            # MCP Hub 초기화 및 상태 확인
             from src.core.mcp_integration import get_mcp_hub
 
             mcp_hub = get_mcp_hub()
@@ -530,13 +517,12 @@ async def handle_mcp_command(args):
 
 
 async def handle_health_command(args):
-    """시스템 헬스체크 커맨드 처리"""
+    """Handle system health check command."""
     logger.info("🏥 Running system health check...")
 
     try:
         health_monitor = HealthMonitor()
 
-        # 능동 검증: Docker 응답성, 샌드박스 실제 실행, OpenRouter API 연결성
         active_checks = await health_monitor.run_active_subsystem_checks()
         for name, check in active_checks.items():
             if check["ok"] is True:
@@ -547,12 +533,10 @@ async def handle_health_command(args):
                 logger.warning(f"⚠️  {name}: {check['detail']}")
 
         if args.detailed:
-            # 상세 헬스체크
             health_report = await health_monitor.run_comprehensive_health_check()
             health_report["active_checks"] = active_checks
             health_monitor.print_detailed_health_report(health_report)
         else:
-            # 간단한 헬스체크
             is_healthy = await health_monitor.quick_health_check()
             if is_healthy:
                 logger.info("✅ System is healthy")
@@ -560,7 +544,6 @@ async def handle_health_command(args):
                 logger.error("❌ System has issues")
                 return 1
 
-        # 샌드박스가 기본적인 명령조차 실행하지 못하면 백엔드가 실질적으로 고장난 것
         if active_checks["sandbox_write"]["ok"] is False:
             logger.error("❌ Sandbox cannot execute commands")
             return 1
@@ -572,7 +555,7 @@ async def handle_health_command(args):
 
 
 async def handle_tools_command(args):
-    """도구 관리 커맨드 처리"""
+    """Handle tool management command."""
 
     def _default_tool_test_parameters(tool_name: str) -> Dict[str, Any]:
         """Return minimal non-destructive parameters for CLI tool smoke tests."""
@@ -594,14 +577,12 @@ async def handle_tools_command(args):
 
             mcp_hub = get_mcp_hub()
             try:
-                # 전체 초기화가 지연될 수 있으므로 타임아웃 후 부분 결과로 진행
                 await asyncio.wait_for(mcp_hub.initialize_mcp(), timeout=25.0)
             except TimeoutError:
                 logger.warning(
                     "⚠️ MCP initialization timed out; showing currently discovered tools only"
                 )
 
-            # 도구 목록 출력 (ToolInfo dataclass 또는 dict 모두 허용)
             tools_by_category: Dict[str, List[str]] = {}
             for tool_name, tool_info in mcp_hub.tools.items():
                 if isinstance(tool_info, dict):
@@ -649,7 +630,6 @@ async def handle_tools_command(args):
             mcp_hub = get_mcp_hub()
             await asyncio.wait_for(mcp_hub.initialize_mcp(), timeout=25.0)
 
-            # 도구 테스트
             result = await mcp_hub.execute_tool(
                 args.tool_name,
                 _default_tool_test_parameters(args.tool_name),
@@ -671,14 +651,12 @@ async def handle_tools_command(args):
 
 
 async def handle_docker_command(args):
-    """Docker 서비스 관리 커맨드 처리 (Suna-style)"""
+    """Handle Docker service management command."""
     import os
     import subprocess
 
-    # Docker Compose 명령어 자동 감지
     def get_docker_compose_cmd():
-        """Docker Compose 명령어 자동 감지"""
-        # Docker Compose v2 (docker compose)
+        """Auto-detect Docker Compose command."""
         try:
             subprocess.run(
                 ["docker", "compose", "version"], capture_output=True, check=True
@@ -687,7 +665,6 @@ async def handle_docker_command(args):
         except (subprocess.CalledProcessError, FileNotFoundError):
             pass
 
-        # Docker Compose v1 (docker-compose)
         try:
             subprocess.run(
                 ["docker-compose", "version"], capture_output=True, check=True
@@ -698,25 +675,22 @@ async def handle_docker_command(args):
 
         return None
 
-    # Docker 설치 확인
     def check_docker():
-        """Docker 설치 상태 확인"""
+        """Check Docker installation status."""
         try:
             subprocess.run(["docker", "--version"], capture_output=True, check=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
-    # Docker Compose 파일 존재 확인
     def check_compose_file():
-        """docker-compose.yaml 파일 존재 확인"""
+        """Check for docker-compose.yaml file."""
         compose_files = ["docker-compose.yaml", "docker-compose.yml"]
         for filename in compose_files:
             if (project_root / filename).exists():
                 return filename
         return None
 
-    # Docker 환경 확인
     if not check_docker():
         logger.error("❌ Docker is not installed or not running")
         logger.info("Please install Docker: https://docs.docker.com/get-docker/")
@@ -747,18 +721,15 @@ async def handle_docker_command(args):
                 cmd.append("--build")
                 logger.info("🔨 Building images...")
 
-            # 프로필 지원 (예: sandbox)
             if hasattr(args, "profile") and args.profile:
                 for profile in args.profile:
                     cmd.extend(["--profile", profile])
                     logger.info(f"🔧 Enabling profile: {profile}")
 
-            # 환경 변수 로드 (.env 파일)
             env = os.environ.copy()
             env_file = project_root / ".env"
             if env_file.exists():
                 logger.info("📄 Loading environment from .env file")
-                # .env 파일에서 환경 변수 로드 (간단한 구현)
                 with open(env_file) as f:
                     for line in f:
                         line = line.strip()
@@ -905,11 +876,10 @@ async def handle_docker_command(args):
 
 
 async def handle_setup_command(args):
-    """시스템 설정 커맨드 처리"""
+    """Handle system setup command."""
     logger.info("⚙️ Running system setup...")
 
     try:
-        # 간단한 설정 확인
         required_files = [
             "pyproject.toml",
             "requirements.txt",
