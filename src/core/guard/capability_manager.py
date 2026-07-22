@@ -72,9 +72,10 @@ class CapabilityManager:
             return cls._instance
 
     def __init__(self, state_path: Optional[str] = None) -> None:
-        if self._initialized:
+        # Guard against the attribute missing entirely if a prior
+        # initialization attempt raised before `_initialized` was set.
+        if getattr(self, "_initialized", False):
             return
-        self._initialized = True
         self._state_path = state_path or os.path.join("data", "capability_grants.json")
         self._agent_grants: Dict[str, Set[str]] = {}   # agent_id -> set of capability names
         self._tool_grants: Dict[str, Set[str]] = {}    # tool_name -> set of capability names
@@ -83,7 +84,10 @@ class CapabilityManager:
         # no entry here (or none for that capability) never expires on its own.
         self._grant_expirations: Dict[str, Dict[str, float]] = {}
         self._lock_data = threading.RLock()
-        self._load_state()
+        try:
+            self._load_state()
+        finally:
+            self._initialized = True
 
     def _load_state(self) -> None:
         """Load persisted grants from disk."""
