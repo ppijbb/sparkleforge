@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set
@@ -79,6 +80,9 @@ class CapabilityManager:
         self._agent_grants: Dict[str, Set[str]] = {}   # agent_id -> set of capability names
         self._tool_grants: Dict[str, Set[str]] = {}    # tool_name -> set of capability names
         self._revocations: Dict[str, Set[str]] = {}    # id -> revoked capabilities
+        # agent_id -> {capability_name: expires_at epoch seconds}; a grant with
+        # no entry here (or none for that capability) never expires on its own.
+        self._grant_expirations: Dict[str, Dict[str, float]] = {}
         self._lock_data = threading.RLock()
         try:
             self._load_state()
@@ -94,6 +98,9 @@ class CapabilityManager:
                     self._agent_grants = {k: set(v) for k, v in data.get("agents", {}).items()}
                     self._tool_grants  = {k: set(v) for k, v in data.get("tools", {}).items()}
                     self._revocations  = {k: set(v) for k, v in data.get("revocations", {}).items()}
+                    self._grant_expirations = {
+                        k: dict(v) for k, v in data.get("grant_expirations", {}).items()
+                    }
                     logger.info("Loaded capability grants from %s", self._state_path)
             except Exception as e:
                 logger.warning("Failed to load capability state: %s", e)
@@ -107,18 +114,29 @@ class CapabilityManager:
                     "agents": {k: list(v) for k, v in self._agent_grants.items()},
                     "tools":  {k: list(v) for k, v in self._tool_grants.items()},
                     "revocations": {k: list(v) for k, v in self._revocations.items()},
+                    "grant_expirations": {k: dict(v) for k, v in self._grant_expirations.items()},
                 }, f, indent=2)
         except Exception as e:
             logger.warning("Failed to save capability state: %s", e)
 
-    def grant_agent(self, agent_id: str, capability_name: str) -> bool:
-        """Grant a capability to an agent."""
+    def grant_agent(self, agent_id: str, capability_name: str, expires_at: Optional[float] = None) -> bool:
+        """Grant a capability to an agent.
+
+        expires_at: optional epoch-seconds timestamp after which the grant is
+        no longer honored by agent_has() (e.g. a mandate's not_after). None
+        means the grant never expires on its own.
+        """
         if capability_name not in BUILTIN_CAPABILITIES:
             logger.error("Unknown capability: %s", capability_name)
             return False
         with self._lock_data:
             self._agent_grants.setdefault(agent_id, set()).add(capability_name)
             self._revocations.get(agent_id, set()).discard(capability_name)
+            expirations = self._grant_expirations.setdefault(agent_id, {})
+            if expires_at is not None:
+                expirations[capability_name] = expires_at
+            else:
+                expirations.pop(capability_name, None)
             self._save_state()
         logger.info("Granted capability '%s' to agent '%s'", capability_name, agent_id)
         return True
@@ -127,6 +145,7 @@ class CapabilityManager:
         """Revoke a capability from an agent."""
         with self._lock_data:
             self._agent_grants.get(agent_id, set()).discard(capability_name)
+            self._grant_expirations.get(agent_id, {}).pop(capability_name, None)
             self._revocations.setdefault(agent_id, set()).add(capability_name)
             self._save_state()
         logger.info("Revoked capability '%s' from agent '%s'", capability_name, agent_id)
@@ -142,11 +161,20 @@ class CapabilityManager:
         return True
 
     def agent_has(self, agent_id: str, capability_name: str) -> bool:
-        """Check whether an agent has a specific capability."""
+        """Check whether an agent has a specific capability.
+
+        A time-bound grant (expires_at passed to grant_agent) stops counting
+        the moment it expires, even though it is never explicitly revoked.
+        """
         with self._lock_data:
             if capability_name in self._revocations.get(agent_id, set()):
                 return False
-            return capability_name in self._agent_grants.get(agent_id, set())
+            if capability_name not in self._agent_grants.get(agent_id, set()):
+                return False
+            expires_at = self._grant_expirations.get(agent_id, {}).get(capability_name)
+            if expires_at is not None and time.time() > expires_at:
+                return False
+            return True
 
     def grant_default(self, agent_id: str, capability_names: List[str]) -> None:
         """Grant a batch of built-in capabilities to an agent (convenience helper)."""
@@ -163,6 +191,9 @@ class CapabilityManager:
         """Return the list of capabilities granted to an agent."""
         with self._lock_data:
             caps = self._agent_grants.get(agent_id, set()) - self._revocations.get(agent_id, set())
+            expirations = self._grant_expirations.get(agent_id, {})
+            now = time.time()
+            caps = {c for c in caps if expirations.get(c) is None or expirations[c] > now}
             return [BUILTIN_CAPABILITIES[c] for c in caps if c in BUILTIN_CAPABILITIES]
 
     def get_capability(self, name: str) -> Optional[Capability]:
