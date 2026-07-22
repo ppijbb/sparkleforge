@@ -1575,12 +1575,26 @@ class ExecutionMixin:
 
                         tool_result = await _execute_git_tool(tool_name, parameters)
                     else:
-                        # 기본적으로 데이터 도구로 처리 (동일 이름 shadowing 방지 alias)
-                        from src.core.mcp_integration import (
-                            _execute_data_tool as data_execute_tool,
-                        )
+                        # Categories with no dedicated dispatch function (e.g. UTILITY,
+                        # BROWSER for CDP tools) are plain Python callables registered
+                        # directly in the ToolRegistry -- invoke them through it instead
+                        # of assuming they belong to the DATA dispatcher, which only
+                        # knows about fetch/filesystem/browser/shell and would raise
+                        # "Unknown data tool" for anything else (e.g. the scheduler's
+                        # create_automation_task/list_automation_tasks).
+                        from src.core.mcp_integration import ToolResult
 
-                        tool_result = await data_execute_tool(tool_name, parameters)
+                        raw_result = await self.registry.execute(tool_name, parameters)
+                        tool_result = (
+                            raw_result
+                            if isinstance(raw_result, ToolResult)
+                            else ToolResult(
+                                success=True,
+                                data=raw_result,
+                                confidence=1.0,
+                                tool_name=tool_name,
+                            )
+                        )
 
                     execution_time = time.time() - start_time
 
