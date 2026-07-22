@@ -31,3 +31,14 @@ Add screenshots to help explain your problem.
 
 ## 🔗 Related Review/Comment
 (If this issue was created automatically from a code review, link it here)
+
+---
+
+## 🚀 Marketing & Outreach (Internal)
+*For SparkleForge team use only.*
+
+- [ ] **Architecture Comparison Diagram**: Create visual showing polling vs. reactive scheduling.
+- [ ] **Self-Repair Flywheel Visual**: Illustrate the issue-to-merge cycle.
+- [ ] **Social Media Assets**: Prepare Twitter/LinkedIn thread content.
+- [ ] **Benchmark Infographic**: Update with latest cost-savings data.
+- [ ] **Launch**: Publish to social channels.
