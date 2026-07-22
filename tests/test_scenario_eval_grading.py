@@ -277,3 +277,30 @@ class TestBaselineAndHistoryFiles:
         assert "2026-01-01T00:00:00Z" in out
         assert "2026-01-02T00:00:00Z" in out
         assert "+0.200" in out  # delta between the two adjusted scores
+
+
+class TestBuildEnvEnvConfigured:
+    """Regression tests for the host env path in build_env._env_configured.
+
+    Covers the os.environ branch (`return required_env in os.environ`) which
+    previously had no test coverage, and guards against the NameError/KeyError
+    regressions described in issue #859.
+    """
+
+    def test_env_configured_returns_true_when_host_env_set(self, tmp_path, monkeypatch):
+        from tests.benchmark.scenario_fixtures.build_env import _env_configured, REQUIRED_ENV
+
+        monkeypatch.setenv(REQUIRED_ENV, "production")
+        assert _env_configured(tmp_path, REQUIRED_ENV) is True
+
+    def test_env_configured_returns_false_when_host_env_absent(self, tmp_path, monkeypatch):
+        from tests.benchmark.scenario_fixtures.build_env import _env_configured, REQUIRED_ENV
+
+        monkeypatch.delenv(REQUIRED_ENV, raising=False)
+        assert _env_configured(tmp_path, REQUIRED_ENV) is False
+
+    def test_build_returns_required_env_key(self, tmp_path):
+        from tests.benchmark.scenario_fixtures.build_env import build, REQUIRED_ENV
+
+        ctx = build(tmp_path)
+        assert ctx["required_env"] == REQUIRED_ENV
