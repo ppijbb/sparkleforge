@@ -147,6 +147,9 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
 
         if exec_result["timed_out"]:
             scores = {name: (0.0, "scenario timed out") for name in spec["weights"]}
+        elif exec_result["returncode"] != 0 and "No available models" in exec_result["stderr"]:
+            # Consistent policy: agent failure due to model unavailability marks all checks inconclusive
+            scores = {name: (0.0, "agent execution failed: no model available") for name in spec["weights"]}
         else:
             scores = await fixture_module.grade(workspace, ctx, exec_result["stdout"])
 
@@ -159,6 +162,7 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             "total": graded["total"],
             "adjusted_total": graded["adjusted_total"],
             "breakdown": graded["breakdown"],
+            "inconclusive": (exec_result["returncode"] != 0 and "No available models" in exec_result["stderr"]),
             "returncode": exec_result["returncode"],
             "timed_out": exec_result["timed_out"],
             "duration_s": round(exec_result["duration_s"], 2),
@@ -182,7 +186,8 @@ async def run_all(specs: List[Dict[str, Any]], parallel: bool) -> Dict[str, Any]
     adjusted = [r["adjusted_total"] for r in results if r["adjusted_total"] is not None]
     overall_adjusted = round(sum(adjusted) / len(adjusted), 4) if adjusted else None
     inconclusive_checks = sum(
-        1 for r in results for check in r["breakdown"].values() if check["inconclusive"]
+        1 for r in results for check in r["breakdown"].values() 
+        if check["inconclusive"] or r.get("inconclusive")
     )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
