@@ -120,6 +120,72 @@ async def test_agent_loop_records_invalid_tool_arguments_as_structured_error():
 
 
 @pytest.mark.asyncio
+async def test_agent_loop_stops_on_repeated_identical_tool_calls():
+    # Regression for issue #807: the benchmark's security_scan scenario had
+    # the agent call git_status 12+ times in a row with identical arguments
+    # until the iteration budget ceiling fired, wasting the whole budget on
+    # no forward progress. The loop should detect this and bail out with a
+    # stuck_loop reason well before iterations run out.
+    repeated_call = {
+        "id": "call_repeat",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "same"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [repeated_call]})
+            for _ in range(10)
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "scan the repo"}], max_iterations=20
+    )
+
+    assert result["success"] is False
+    assert result["metadata"]["error_category"] == "stuck_loop"
+    assert result["errors"][-1]["type"] == "stuck_loop"
+    # Terminated well before exhausting the iteration budget.
+    assert result["iterations"] < 20
+    # Only the first 3 identical calls actually executed; the 4th was
+    # short-circuited instead of burning another round-trip.
+    assert len(mcp_hub.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_allows_alternating_tool_calls_without_tripping_guard():
+    # Non-repeating tool calls (even to the same tool with different args)
+    # must not be mistaken for a stuck loop.
+    calls = [
+        {
+            "id": f"call_{i}",
+            "type": "function",
+            "function": {"name": "search", "arguments": f'{{"query": "q{i}"}}'},
+        }
+        for i in range(4)
+    ]
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [c]})
+            for c in calls
+        ]
+        + [ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {})]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    assert result["content"] == "done"
+    assert len(mcp_hub.calls) == 4
+
+
+@pytest.mark.asyncio
 async def test_execution_node_uses_hermes_results_in_state(monkeypatch):
     agent_config = SimpleNamespace(max_concurrent_research_units=1)
     node = ExecutionNode(
