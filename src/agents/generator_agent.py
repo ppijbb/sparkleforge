@@ -6,6 +6,7 @@
 import logging
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Dict
 
@@ -105,7 +106,7 @@ class GeneratorAgent:
 
                 logger.info(f"[{self.name}] Executing {script_path} using {venv_python}...")
                 # output 디렉토리 작업을 위해 cwd 설정 대신 경로를 넘김 (위에서 code_to_run을 수정함)
-                os.system(f"{venv_python} {script_path}")
+                subprocess.run([venv_python, str(script_path)], check=False)
 
                 final_output += f"\n\n[Auto-Generated Artifacts]: Saved and executed codebase in {self.output_dir}/"
             except Exception as e:

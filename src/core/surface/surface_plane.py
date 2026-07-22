@@ -47,14 +47,6 @@ class SurfacePlane:
                     severity=evt.severity,
                 )
             )
-            guard_plane.hitl_gate.set_approval_callback(
-                lambda req: self.notification_channel.notify_approval_needed(
-                    action=req.action,
-                    agent_id=req.agent_id,
-                    risk_level=str(req.risk_level),
-                    request_id=req.request_id,
-                )
-            )
             logger.info("SurfacePlane wired to GuardPlane alerts")
         except Exception as e:
             logger.warning("Could not wire guard plane to surface: %s", e)

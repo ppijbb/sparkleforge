@@ -19,11 +19,14 @@ yet -- `CredentialVault` is local secret storage with no delegation concept.
 `InvocationKind.CREDENTIAL_DELEGATION` is reserved here for whenever that
 call path is actually built; retrofitting a path that doesn't exist would
 be premature. What issue #614 (agent identity & signed mandates) *did* add
-is `authorize()`'s optional `mandate`/`issuer_public_key_b64` parameters --
-any invocation kind (agent delegation, MCP tool, or credential delegation
-once it exists) can present a cryptographically signed `Mandate`
-(`src/core/guard/agent_identity.py`) instead of relying on a pre-existing
-local capability grant for `actor`.
+is `authorize()`'s optional `mandate` parameter -- any invocation kind (agent
+delegation, MCP tool, or credential delegation once it exists) can present a
+cryptographically signed `Mandate` (`src/core/guard/agent_identity.py`)
+instead of relying on a pre-existing local capability grant for `actor`. The
+issuer's public key is always resolved from this gateway's
+AgentIdentityManager registry by `mandate.issuer` (issue #798) -- never taken
+from the caller -- so presenting a mandate can't be used to impersonate an
+issuer whose key the caller doesn't actually control.
 
 CapabilityManager's existing model is coarse action-risk capabilities
 (execute_shell, write_file, network_request, ...), not "may X delegate to
@@ -45,7 +48,7 @@ from src.core.guard.capability_manager import CapabilityManager
 
 if TYPE_CHECKING:
     from src.core.anvil.intent_guardrail import IntentGuardrail
-    from src.core.guard.agent_identity import Mandate
+    from src.core.guard.agent_identity import AgentIdentityManager, Mandate
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +84,16 @@ class InvocationGateway:
         self,
         capability_manager: CapabilityManager | None = None,
         action_journal: ActionJournal | None = None,
+        identity_manager: "AgentIdentityManager | None" = None,
     ):
         self.capability_manager = capability_manager or CapabilityManager()
         self.action_journal = action_journal or ActionJournal()
+        if identity_manager is not None:
+            self.identity_manager = identity_manager
+        else:
+            from src.core.guard.agent_identity import get_agent_identity_manager
+
+            self.identity_manager = get_agent_identity_manager()
         self.capability_manager.grant_default(SYSTEM_ACTOR, _SYSTEM_ACTOR_DEFAULT_CAPABILITIES)
 
     def authorize(
@@ -96,7 +106,6 @@ class InvocationGateway:
         required_capability: Optional[str] = None,
         intent_guardrail: Optional["IntentGuardrail"] = None,
         mandate: Optional["Mandate"] = None,
-        issuer_public_key_b64: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> InvocationDecision:
         """Authorize a single agent-delegation, MCP-tool, or credential-delegation invocation.
@@ -112,14 +121,18 @@ class InvocationGateway:
             evaluate() rather than its periodic should_check() sampling,
             since this is a discrete per-call authorization decision, not a
             periodic health check.
-        mandate / issuer_public_key_b64: a signed Mandate (issue #614) and
-            the issuer's public key to verify it against. When present, this
-            supersedes the plain actor-based capability check: the identity
-            being authorized is mandate.subject, not `actor` (actor is still
-            who placed the call, for the journal). A valid mandate that
-            covers required_capability grants that capability to
-            mandate.subject via CapabilityManager -- so the grant persists
-            for the mandate's remaining validity window, not just this call.
+        mandate: a signed Mandate (issue #614). When present, this supersedes
+            the plain actor-based capability check: the identity being
+            authorized is mandate.subject, not `actor` (actor is still who
+            placed the call, for the journal). The issuer's public key is
+            never taken from the caller -- it is looked up in this gateway's
+            AgentIdentityManager registry by `mandate.issuer`, so a caller
+            cannot present its own key to impersonate a different issuer; a
+            mandate whose issuer has no registered identity is rejected. A
+            valid mandate that covers required_capability grants that
+            capability to mandate.subject via CapabilityManager, bounded by
+            `mandate.not_after` -- the grant stops counting once the mandate
+            expires, rather than persisting indefinitely.
 
         Every call is journaled to ActionJournal regardless of outcome,
         including the mandate verification result when one was presented.
@@ -131,12 +144,13 @@ class InvocationGateway:
         if mandate is not None:
             from src.core.guard.agent_identity import mandate_covers_capability, verify_mandate
 
-            if issuer_public_key_b64 is None:
+            trusted_public_key_b64 = self.identity_manager.get_public_key_b64(mandate.issuer)
+            if trusted_public_key_b64 is None:
                 allowed = False
-                reasons.append("mandate presented without an issuer public key to verify against")
+                reasons.append(f"mandate issuer '{mandate.issuer}' is not a registered identity")
                 mandate_info = {"subject": mandate.subject, "issuer": mandate.issuer, "valid": False}
             else:
-                valid, verify_reason = verify_mandate(mandate, issuer_public_key_b64)
+                valid, verify_reason = verify_mandate(mandate, trusted_public_key_b64)
                 mandate_info = {
                     "issuer": mandate.issuer,
                     "subject": mandate.subject,
@@ -158,8 +172,11 @@ class InvocationGateway:
                 elif required_capability is not None:
                     # Reflect the verified delegation as a real (persisted) capability
                     # grant for the mandate's subject, so agent_has() checks elsewhere
-                    # in the codebase also see it -- not just this one gateway decision.
-                    self.capability_manager.grant_agent(mandate.subject, required_capability)
+                    # in the codebase also see it -- bounded by the mandate's own
+                    # validity window rather than persisting past its expiration.
+                    self.capability_manager.grant_agent(
+                        mandate.subject, required_capability, expires_at=mandate.not_after
+                    )
         elif required_capability is not None:
             if not self.capability_manager.agent_has(actor, required_capability):
                 allowed = False
@@ -172,7 +189,15 @@ class InvocationGateway:
                     allowed = False
                     reasons.append(f"intent drift detected (score={assessment.drift_score:.2f})")
             except Exception as e:
-                logger.warning("InvocationGateway: IntentGuardrail evaluation failed: %s", e)
+                # Fail closed: a guardrail that cannot render a verdict must not be
+                # treated as a pass. With SYSTEM_ACTOR pre-granted every dangerous
+                # capability and get_current_agent_name() always resolving to it
+                # today, this guardrail is the only real check in front of
+                # execute_shell/write_file -- allowing on error would make it a
+                # no-op exactly when it errors.
+                logger.error("InvocationGateway: IntentGuardrail evaluation failed: %s", e)
+                allowed = False
+                reasons.append(f"guardrail_evaluation_failed: {e}")
 
         decision = InvocationDecision(
             allowed=allowed,

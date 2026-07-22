@@ -379,20 +379,27 @@ Autonomous problem-solving contract:
 
         if budget.heat_hard_expired:
             # Safety net: a single iteration ran long enough to cross the hard
-            # heat deadline before the soft-deadline check could catch it.
+            # heat deadline before the soft-deadline check could catch it. This
+            # also fires when the iteration budget ran out on the very same
+            # tick -- time was still the binding constraint on an incomplete
+            # run either way, so it's reported as a heat cutoff, not a success.
             logger.warning(
                 "[AgentLoop] Heat hard deadline reached (%.0fs elapsed of %.0fs budget)",
                 budget.elapsed,
                 budget.heat_seconds,
             )
+            errors.append(
+                {"type": "heat_hard_deadline_exceeded", "message": "Heat hard deadline reached"}
+            )
             return self._build_result(
-                success=True,
+                success=False,
                 content=self._build_heat_wrap_up_content(tool_results, errors),
                 iterations=budget.current_iteration,
                 history=history,
                 metadata={
                     "heat_expired": True,
                     "heat_hard_cutoff": True,
+                    "iterations_exhausted": budget.remaining <= 0,
                     "error_category": "heat_hard_deadline_exceeded",
                     "heat_report": self._build_heat_report(budget, tool_results, errors),
                 },
@@ -401,7 +408,17 @@ Autonomous problem-solving contract:
                 errors=errors,
             )
 
-        errors.append({"type": "iteration_budget_exceeded", "message": "Max iterations reached"})
+        # Loop exited purely because iterations ran out, with the hard heat
+        # deadline (if any) still not crossed.
+        if budget.heat_soft_expired:
+            errors.append(
+                {
+                    "type": "iteration_budget_exceeded",
+                    "message": "Max iterations reached after crossing the heat soft deadline",
+                }
+            )
+        else:
+            errors.append({"type": "iteration_budget_exceeded", "message": "Max iterations reached"})
         return self._build_result(
             success=False,
             content="Iteration budget exceeded.",
