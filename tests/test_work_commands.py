@@ -112,3 +112,52 @@ async def test_deny_command_requires_args(monkeypatch):
     await work.deny_command(cli, [])
 
     assert any("Usage: deny" in m for m in cli.console.messages)
+
+
+@pytest.mark.asyncio
+async def test_deny_command_no_active_session(monkeypatch):
+    orchestrator = make_orchestrator({})
+    monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+
+    cli = SimpleNamespace(console=FakeConsole(), session_control=None)
+    await work.deny_command(cli, ["1"])
+
+    orchestrator.execute.assert_not_awaited()
+    assert any("No active session" in m for m in cli.console.messages)
+
+
+@pytest.mark.asyncio
+async def test_deny_command_no_matching_action_skips_orchestrator(monkeypatch):
+    """A typo'd or already-resolved action_id must not silently re-invoke the
+    orchestrator with an unmodified user_responses -- it should tell the user
+    nothing matched and stop."""
+    state = {
+        "user_query": "do the thing",
+        "pending_questions": [{"id": "action_42"}],
+        "user_responses": {},
+    }
+    orchestrator = make_orchestrator(state)
+    monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+
+    cli = make_cli(state)
+    await work.deny_command(cli, ["99"])
+
+    orchestrator.execute.assert_not_awaited()
+    assert any("No matching pending action" in m for m in cli.console.messages)
+
+
+@pytest.mark.asyncio
+async def test_approve_command_no_matching_action_skips_orchestrator(monkeypatch):
+    state = {
+        "user_query": "do the thing",
+        "pending_questions": [{"id": "action_42"}],
+        "user_responses": {},
+    }
+    orchestrator = make_orchestrator(state)
+    monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+
+    cli = make_cli(state)
+    await work.approve_command(cli, ["99"])
+
+    orchestrator.execute.assert_not_awaited()
+    assert any("No matching pending action" in m for m in cli.console.messages)
