@@ -101,3 +101,41 @@ def test_handle_run_command_releases_session_on_disk_check_failure(monkeypatch):
     registered_ids = list(control.active_sessions.keys())
     assert len(registered_ids) == 1
     assert control.active_sessions[registered_ids[0]]["status"] == SessionStatus.COMPLETED
+
+
+def test_handle_run_command_releases_session_when_runtime_overrides_raise(monkeypatch):
+    """Issue #763: an exception between the disk check and the old try block
+    (e.g. _apply_runtime_overrides() touching a config shape it doesn't
+    expect) must not leak the session slot -- the try/finally now starts
+    before that call, not after it."""
+    control = _fresh_control(max_sessions=2)
+    monkeypatch.setattr("src.core.session_control.get_session_control", lambda: control)
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_disk_space_safety",
+        lambda: (True, ""),
+    )
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_network_connectivity",
+        lambda: (True, ""),
+    )
+
+    args = SimpleNamespace(
+        mode="research",
+        query="test query",
+        model="custom-model",  # forces _apply_runtime_overrides to read config.llm.provider
+        max_tokens=None,
+        task=None,
+        session_id=None,
+        continue_session=False,
+    )
+    # config.llm has no `provider` attribute, so _apply_runtime_overrides()
+    # raises AttributeError as soon as args.model is set; handle_run_command's
+    # own except Exception turns that into a `return 1` rather than a raise.
+    config = SimpleNamespace(llm=SimpleNamespace())
+
+    result = asyncio.run(main_commands.handle_run_command(args, config))
+
+    assert result == 1
+    registered_ids = list(control.active_sessions.keys())
+    assert len(registered_ids) == 1
+    assert control.active_sessions[registered_ids[0]]["status"] == SessionStatus.COMPLETED

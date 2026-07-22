@@ -188,20 +188,23 @@ async def handle_run_command(args, config):
     )
     from src.core.session_control import get_session_control
 
-    disk_ok, disk_message = check_disk_space_safety()
-    if not disk_ok:
-        logger.error(disk_message)
-        get_session_control().release_active_session(session_id)
-        return 1
-
-    network_ok, network_message = check_network_connectivity()
-    if not network_ok:
-        logger.warning(network_message)
-
-    _apply_runtime_overrides()
-    logger.info(f"🔬 Starting research: {args.query}")
-
+    # Everything from here on must go through the finally below so the
+    # session slot is always released -- including the disk check and
+    # _apply_runtime_overrides(), either of which can raise or return early
+    # before the old try block (which used to start after both) ever ran.
     try:
+        disk_ok, disk_message = check_disk_space_safety()
+        if not disk_ok:
+            logger.error(disk_message)
+            return 1
+
+        network_ok, network_message = check_network_connectivity()
+        if not network_ok:
+            logger.warning(network_message)
+
+        _apply_runtime_overrides()
+        logger.info(f"🔬 Starting research: {args.query}")
+
         _ensure_database_driver_for_cli()
         # Autonomous Orchestrator 초기화
         AutonomousOrchestrator = _load_autonomous_orchestrator()
