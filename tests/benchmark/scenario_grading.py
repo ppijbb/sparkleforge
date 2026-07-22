@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, Tuple
 
@@ -107,6 +108,31 @@ JUDGE_TIMEOUT_S = 45.0
 # exhaustion was previously silently indistinguishable from a 0.0 the agent
 # actually earned, corrupting the overall_score signal.
 INCONCLUSIVE_MARKER = "__INCONCLUSIVE__"
+
+
+# Subprocess failure signatures that indicate the agent runtime failed to
+# execute the scenario at all (e.g. all fallback models exhausted). When these
+# appear in stdout/stderr, the recorded returncode must be treated as a failure
+# even if the subprocess wrapper exited 0, and the run must not be ingested
+# into the baseline JSONL as a valid data point.
+EXECUTION_FAILURE_SIGNATURES = (
+    "Execution failed",
+    "All fallback models failed",
+    "No available models",
+)
+
+
+def detect_execution_failure(stdout: str, stderr: str = "") -> bool:
+    """Return True if a known execution-failure signature appears in subprocess output."""
+    combined = f"{stdout}\n{stderr}"
+    return any(sig in combined for sig in EXECUTION_FAILURE_SIGNATURES)
+
+
+def normalize_returncode(returncode: int, stdout: str, stderr: str = "") -> int:
+    """Override a zero returncode to non-zero when an execution failure signature is present."""
+    if returncode == 0 and detect_execution_failure(stdout, stderr):
+        return 2
+    return returncode
 
 
 async def judge_score(rubric: str, transcript: str, context: str = "") -> GradeResult:
