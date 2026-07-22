@@ -38,7 +38,7 @@ if _env_file.exists():
             _k, _v = _line.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip())
 
-print(f"APP_ENV={os.environ['APP_ENV']}")
+print(f"APP_ENV={os.environ.get('APP_ENV', 'development')}")
 '''
 
 
