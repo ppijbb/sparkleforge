@@ -15,11 +15,40 @@ since ``Path(__file__).parent.parent.parent`` is directory-depth-relative
 -- computing it from a deeper file would silently point somewhere else.
 """
 
+import os
 import sys
 from pathlib import Path
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+
+def resolve_tools_config_path() -> Path:
+    """Resolve the location of ``tools_config.json`` robustly.
+
+    The benchmark harness historically failed because the tool registration
+    code looked for ``tools_config.json`` at a hardcoded path relative to the
+    package root (``src/tools_config.json``), which does not exist in the CI
+    runner workspace. This resolver checks, in order:
+
+    1. The ``TOOLS_CONFIG_PATH`` environment variable override.
+    2. A path relative to the package root via ``__file__``.
+    3. A well-known system config directory (``/etc/sparkleforge``).
+
+    Returns the first existing candidate, or the package-root default so
+    callers can still emit a clear "not found" diagnostic.
+    """
+    candidates: list[Path] = []
+    env_override = os.getenv("TOOLS_CONFIG_PATH")
+    if env_override:
+        candidates.append(Path(env_override).expanduser())
+    package_default = project_root / "tools_config.json"
+    candidates.append(package_default)
+    candidates.append(Path("/etc/sparkleforge/tools_config.json"))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return package_default
 
 try:
     import httpx
