@@ -150,6 +150,9 @@ SparkleForge builds upon the massive strides made by the open-source community. 
 SparkleForge is built on top of **Anvil**, an OS-shaped execution layer for
 agents (observe / actuate / guard / surface planes, capability-based
 permissions, a workflow scheduler, and a self-healing Nightwelding daemon).
-Anvil has shipped through Phase Σ (structural integrity & autonomy). See
-[`docs/ANVIL_PLAN.md`](docs/ANVIL_PLAN.md) for the phase history and
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current architecture.
+Anvil has shipped through Phase Σ (structural integrity & autonomy), with a
+141-min mean-time-to-merge and zero-cost waiting during async tool execution.
+See [`docs/ANVIL_PLAN.md`](docs/ANVIL_PLAN.md) for the phase history,
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current architecture,
+and [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md) for empirical
+benchmarks including the 92% token cost reduction during async tool execution.
