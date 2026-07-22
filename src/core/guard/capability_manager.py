@@ -8,7 +8,7 @@ import logging
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Set
 
@@ -141,6 +141,23 @@ class CapabilityManager:
         logger.info("Granted capability '%s' to agent '%s'", capability_name, agent_id)
         return True
 
+    def _cleanup_expired_grants(self) -> bool:
+        """Remove expired grants. Returns True if state changed."""
+        now = time.time()
+        changed = False
+        with self._lock_data:
+            for agent_id, exps in list(self._grant_expirations.items()):
+                expired_caps = [cap for cap, exp_time in exps.items() if exp_time < now]
+                for cap in expired_caps:
+                    self._agent_grants.get(agent_id, set()).discard(cap)
+                    del exps[cap]
+                    changed = True
+                if not exps:
+                    del self._grant_expirations[agent_id]
+            if changed:
+                self._save_state()
+        return changed
+
     def revoke_agent(self, agent_id: str, capability_name: str) -> bool:
         """Revoke a capability from an agent."""
         with self._lock_data:
@@ -167,6 +184,7 @@ class CapabilityManager:
         the moment it expires, even though it is never explicitly revoked.
         """
         with self._lock_data:
+            self._cleanup_expired_grants()
             if capability_name in self._revocations.get(agent_id, set()):
                 return False
             if capability_name not in self._agent_grants.get(agent_id, set()):
@@ -190,6 +208,7 @@ class CapabilityManager:
     def get_agent_capabilities(self, agent_id: str) -> List[Capability]:
         """Return the list of capabilities granted to an agent."""
         with self._lock_data:
+            self._cleanup_expired_grants()
             caps = self._agent_grants.get(agent_id, set()) - self._revocations.get(agent_id, set())
             expirations = self._grant_expirations.get(agent_id, {})
             now = time.time()
@@ -205,3 +224,4 @@ class CapabilityManager:
             self._agent_grants.clear()
             self._tool_grants.clear()
             self._revocations.clear()
+            self._grant_expirations.clear()
