@@ -17,6 +17,7 @@ from src.core.anvil.intent_guardrail import IntentGuardrail
 from src.core.anvil.method_resolver import MethodResolver
 from src.core.anvil.mode_controller import ExecutionMode, ModeController
 from src.core.surface.task_dashboard import TaskDashboard
+from src.core.guard.guard_plane import register_iot_guard_tools
 from src.core.guard.security_tools import register_security_tools
 from src.core.harness_state import HarnessState, create_initial_harness_state
 from src.core.langgraph_checkpointer import build_sqlite_checkpointer
@@ -66,6 +67,12 @@ class AgentHarness:
             logger.info("[Harness] Registered quarantine_file/revoke_capability security tools")
         except Exception as e:
             logger.warning(f"[Harness] Failed to register security tools: {e}")
+
+        try:
+            register_iot_guard_tools()
+            logger.info("[Harness] Registered control_iot_device tool")
+        except Exception as e:
+            logger.warning(f"[Harness] Failed to register IoT guard tool: {e}")
 
     def _build_graph(self):
         """LangGraph 상태 머신 구축"""
