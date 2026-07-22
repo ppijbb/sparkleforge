@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.core.mcp_integration.hub_mixins.execution import ExecutionMixin
+from src.core.tools.registry import ToolCategory
 
 
 def test_main_commands_imports_without_error() -> None:
@@ -104,3 +105,61 @@ async def test_execute_tool_does_not_fall_back_to_local_when_mcp_server_disconne
     assert result["source"] == "mcp"
     assert "myserver" in result["error"]
     assert "not connected" in result["error"]
+
+
+class _UtilityFakeRegistry:
+    """A local, non-MCP tool registered under a category with no dedicated
+    dispatch function (e.g. UTILITY for scheduler tools, BROWSER for CDP
+    tools)."""
+
+    def __init__(self, executor):
+        self.tool_sources = {"create_automation_task": "local"}
+        self._executor = executor
+
+    def get_tool_info(self, name: str):
+        return SimpleNamespace(category=ToolCategory.UTILITY, mcp_server=None)
+
+    def get_all_tool_names(self):
+        return ["create_automation_task"]
+
+    def is_mcp_tool(self, name: str) -> bool:
+        return False
+
+    def get_mcp_server_info(self, name: str):
+        return None
+
+    async def execute(self, name: str, arguments: dict):
+        return await self._executor(name, arguments)
+
+
+class _UtilityFakeHub(ExecutionMixin):
+    def __init__(self, registry):
+        self.registry = registry
+        self.mcp_sessions: dict = {}
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_dispatches_utility_category_tools_through_registry() -> None:
+    # Local tools registered under a category with no dedicated dispatch
+    # function (UTILITY, BROWSER, ...) used to fall through to the DATA-tool
+    # dispatcher, which only recognizes fetch/filesystem/browser/shell and
+    # raised "Unknown data tool" for anything else -- e.g. the scheduler's
+    # create_automation_task/list_automation_tasks (#817). They should be
+    # invoked through the registry's own registered executor instead.
+    created = {"id": "sched-1", "name": "daily-report"}
+
+    async def fake_executor(name, arguments):
+        assert name == "create_automation_task"
+        assert arguments == {"name": "daily-report", "cron_expression": "0 9 * * *"}
+        return created
+
+    hub = _UtilityFakeHub(_UtilityFakeRegistry(fake_executor))
+
+    result = await hub.execute_tool(
+        "create_automation_task",
+        {"name": "daily-report", "cron_expression": "0 9 * * *"},
+    )
+
+    assert result["success"] is True
+    assert result["data"] == created
+    assert result["source"] == "local"
