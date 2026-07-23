@@ -134,6 +134,25 @@ jobs:
             --json title \
             --jq '.title')
           NORMALIZED_TITLE=$(printf '%s\n' "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+          BRACKET_TAG=$(printf '%s\n' "$NORMALIZED_TITLE" | grep -oE '^\[[A-Za-z]+\]' || true)
+          if [ -n "$BRACKET_TAG" ]; then
+            TAG_LOWER=$(printf '%s' "$BRACKET_TAG" | tr -d '[]' | tr '[:upper:]' '[:lower:]')
+            REST=$(printf '%s\n' "$NORMALIZED_TITLE" | sed -E 's/^\[[A-Za-z]+\][[:space:]]*:?[[:space:]]*//')
+            case "$TAG_LOWER" in
+              feat|feature)
+                NORMALIZED_TITLE="feat: $REST"
+                ;;
+              fix)
+                NORMALIZED_TITLE="fix: $REST"
+                ;;
+              refactor)
+                NORMALIZED_TITLE="refactor: $REST"
+                ;;
+              chore)
+                NORMALIZED_TITLE="chore: $REST"
+                ;;
+            esac
+          fi
           CONVENTIONAL_TYPE="fix"
           case "$NORMALIZED_TITLE" in
             "🔧 fix:"*)
