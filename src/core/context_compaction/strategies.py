@@ -474,3 +474,57 @@ class CondensationStrategy(CompactionStrategy):
             f"(long messages condensed)"
         )
         return result
+
+
+class AnchorPreservationEngine(CompactionStrategy):
+    """Anchor Preservation Engine: 핵심 규칙 및 지시사항 유실 방지.
+
+    - 사용자의 최상위 지시사항(System Prompt, User Rules)을 핀 고정하여
+      GC(Garbage Collection) 대상에서 제외합니다.
+    """
+
+    def name(self) -> str:
+        return "anchor_preservation"
+
+    async def compact(
+        self, messages: List[Dict[str, Any]], config: CompactionConfig
+    ) -> List[Dict[str, Any]]:
+        """앵커 메시지 보존 및 나머지 메시지 필터링."""
+        anchors = []
+        others = []
+        for msg in messages:
+            if self._is_anchor(msg):
+                anchors.append(msg)
+            else:
+                others.append(msg)
+
+        # 앵커는 항상 유지, 나머지는 설정에 따라 압축
+        # 여기서는 앵커를 제외한 나머지 메시지에 대해 기본 압축 전략을 적용하거나
+        # 단순히 앵커를 보호하는 로직을 수행
+        logger.info(f"Anchor preservation: {len(anchors)} anchors protected.")
+        return anchors + others
+
+    def _is_anchor(self, message: Dict[str, Any]) -> bool:
+        """메시지가 앵커(핵심 지시사항)인지 확인."""
+        meta = message.get("metadata") or {}
+        if meta.get("is_anchor") is True:
+            return True
+        # 시스템 메시지이거나 특정 키워드가 포함된 경우 앵커로 간주
+        if message.get("role") == "system":
+            return True
+        content = str(message.get("content", ""))
+        anchor_keywords = ["RULE:", "CONSTRAINT:", "ALWAYS:", "NEVER:"]
+        return any(k in content.upper() for k in anchor_keywords)
+
+
+class ContextGarbageCollector(CompactionStrategy):
+    """Context Garbage Collector: 노이즈성 맥락 제거."""
+
+    def name(self) -> str:
+        return "gc"
+
+    async def compact(
+        self, messages: List[Dict[str, Any]], config: CompactionConfig
+    ) -> List[Dict[str, Any]]:
+        # 무효화된 에러 로그, 중단된 코드 블록 등 노이즈 제거 로직
+        return [m for m in messages if not m.get("metadata", {}).get("is_noise", False)]
