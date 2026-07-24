@@ -182,18 +182,37 @@ async def run_all(specs: List[Dict[str, Any]], parallel: bool) -> Dict[str, Any]
         # contention (observed in practice) rather than saving meaningful time.
         results = [await run_scenario(spec) for spec in specs]
 
-    overall = round(sum(r["total"] for r in results) / len(results), 4) if results else 0.0
-    adjusted = [r["adjusted_total"] for r in results if r["adjusted_total"] is not None]
+    # Exclude inconclusive scenarios from overall_score so infrastructure
+    # unavailability (no model available, judge failures) does not depress the
+    # score as if it were genuine agent-performance failure. Inconclusive runs
+    # are tracked separately via inconclusive_checks and conclusive_checks_count.
+    conclusive = [r for r in results if not r.get("inconclusive")]
+    overall = round(sum(r["total"] for r in conclusive) / len(conclusive), 4) if conclusive else 0.0
+    adjusted = [r["adjusted_total"] for r in conclusive if r["adjusted_total"] is not None]
     overall_adjusted = round(sum(adjusted) / len(adjusted), 4) if adjusted else None
     inconclusive_checks = sum(
         1 for r in results for check in r["breakdown"].values() 
         if check["inconclusive"] or r.get("inconclusive")
     )
+    conclusive_checks_count = sum(
+        1 for r in results for check in r["breakdown"].values()
+        if not check["inconclusive"] and not r.get("inconclusive")
+    )
+    warning = None
+    if inconclusive_checks > 0:
+        warning = (
+            f"{inconclusive_checks} check(s) were inconclusive (infra/judge unavailable); "
+            "overall_score excludes them and has reduced confidence."
+        )
+        print(f"[scenario-eval] WARNING: {warning}", file=sys.stderr)
     return {
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "overall_score": overall,
         "overall_score_adjusted": overall_adjusted,
         "inconclusive_checks": inconclusive_checks,
+        "conclusive_checks_count": conclusive_checks_count,
+        "warning": warning,
         "scenarios": {r["id"]: r for r in results},
     }
 
