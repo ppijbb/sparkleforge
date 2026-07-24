@@ -51,6 +51,15 @@ jobs:
             --compare-to tests/benchmark/baselines/scenario_baseline.json \
             --compare-to-history tests/benchmark/baselines/scenario_history.jsonl \
             --json-out tests/benchmark/reports/scenario_report_ci.json
+          
+          # Gate: Reject inconclusive/failed baselines
+          python3 -c "
+          import json, sys
+          report = json.load(open('tests/benchmark/reports/scenario_report_ci.json'))
+          if report.get('inconclusive') is True:
+              print('::error::Benchmark record is inconclusive; blocking commit.')
+              sys.exit(1)
+          "
 
       - name: Upload scenario report
         if: always()
