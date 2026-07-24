@@ -111,7 +111,11 @@ python main.py --request "Comprehensive systematic review of quantum machine lea
 
 ## 📊 Performance & Reliability
 
-SparkleForge is fully production-ready, featuring advanced metrics successfully hit during validation:
+SparkleForge is fully production-ready. The figures below are point estimates from
+small internal samples and should not be treated as independently verified benchmarks;
+sample counts and confidence intervals are tracked in
+`tests/benchmark/baselines/scenario_history.jsonl` and reported with uncertainty in
+`docs/BENCHMARK_REPORT.md`. Indicative validation ranges:
 
 - **Success Rate**: Consistently 80-90%+ across complex queries via retry strategies.
 - **Error Handling**: 100% managed using type-specific fallback rules and Circuit Breakers.
