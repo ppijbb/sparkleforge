@@ -2,6 +2,8 @@ import hashlib
 import json
 import logging
 import os
+import re
+import time
 import sqlite3
 import math
 from typing import Any, Dict, List, Optional, Sequence
@@ -15,6 +17,12 @@ EMBEDDING_DIM = 256
 _STOPWORDS = frozenset(
     {
         "a", "an", "the", "and", "or", "but", "if", "then", "else", "for",
+        "about", "above", "after", "again", "all", "am", "any", "are",
+        "as", "at", "be", "because", "been", "before", "being", "below",
+        "between", "both", "but", "by", "can", "did", "do", "does", "doing",
+        "down", "during", "each", "few", "for", "from", "further", "had",
+        "has", "have", "having", "he", "her", "here", "hers", "herself",
+        "him", "himself", "his", "how", "into", "is", "it", "its", "itself",
         "of", "to", "in", "on", "at", "by", "with", "from", "as", "is",
         "are", "was", "were", "be", "been", "being", "this", "that", "these",
         "those", "it", "its", "i", "you", "he", "she", "we", "they", "them",
@@ -22,6 +30,34 @@ _STOPWORDS = frozenset(
         "will", "just", "into", "about", "up", "out", "over", "after",
     }
 )
+
+
+# Four-layer long-term memory taxonomy (Working, Episodic, Semantic, Procedural)
+MEMORY_LAYERS = ("working", "episodic", "semantic", "procedural")
+
+
+def _normalize_layer(layer: Optional[str]) -> str:
+    """Normalize an optional memory-layer hint to a known taxonomy value."""
+    if not layer:
+        return "semantic"
+    normalized = layer.strip().lower()
+    if normalized in MEMORY_LAYERS:
+        return normalized
+    return "semantic"
+
+
+def _parse_timestamp(value: Any) -> Optional[float]:
+    """Best-effort coercion of a metadata value into a unix timestamp."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _tokenize(text: str) -> List[str]:
@@ -144,9 +180,47 @@ class SemanticMemory:
                         key TEXT NOT NULL,
                         text TEXT NOT NULL,
                         metadata_json TEXT,
-                        embedding_json TEXT
+                        embedding_json TEXT,
+                        layer TEXT NOT NULL DEFAULT 'semantic',
+                        created_at REAL,
+                        source TEXT,
+                        entity TEXT,
+                        relation TEXT,
+                        target TEXT,
+                        valid_from REAL,
+                        valid_to REAL
                     )
                 """)
+                # Backfill schema for pre-existing databases created before the
+                # Temporal GraphRAG columns existed.
+                existing = {
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(memories)").fetchall()
+                }
+                for column, ddl in (
+                    ("layer", "ALTER TABLE memories ADD COLUMN layer TEXT NOT NULL DEFAULT 'semantic'"),
+                    ("created_at", "ALTER TABLE memories ADD COLUMN created_at REAL"),
+                    ("source", "ALTER TABLE memories ADD COLUMN source TEXT"),
+                    ("entity", "ALTER TABLE memories ADD COLUMN entity TEXT"),
+                    ("relation", "ALTER TABLE memories ADD COLUMN relation TEXT"),
+                    ("target", "ALTER TABLE memories ADD COLUMN target TEXT"),
+                    ("valid_from", "ALTER TABLE memories ADD COLUMN valid_from REAL"),
+                    ("valid_to", "ALTER TABLE memories ADD COLUMN valid_to REAL"),
+                ):
+                    if column not in existing:
+                        try:
+                            conn.execute(ddl)
+                        except sqlite3.OperationalError:
+                            pass
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(layer)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_memories_entity ON memories(entity)"
+                )
                 conn.commit()
         except Exception as e:
             logger.error(f"SemanticMemory: Failed to initialize SQLite store: {e}")
@@ -155,16 +229,37 @@ class SemanticMemory:
         """Embed text and insert it into the semantic memory database."""
         metadata = metadata or {}
         embedding = generate_pseudo_embedding(text)
+
+        layer = _normalize_layer(metadata.get("layer"))
+        created_at = _parse_timestamp(metadata.get("created_at")) or time.time()
+        source = metadata.get("source")
+        entity = metadata.get("entity")
+        relation = metadata.get("relation")
+        target = metadata.get("target")
+        valid_from = _parse_timestamp(metadata.get("valid_from"))
+        valid_to = _parse_timestamp(metadata.get("valid_to"))
         
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
-                    "INSERT INTO memories (key, text, metadata_json, embedding_json) VALUES (?, ?, ?, ?)",
+                    """INSERT INTO memories (
+                        key, text, metadata_json, embedding_json, layer,
+                        created_at, source, entity, relation, target,
+                        valid_from, valid_to
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         key,
                         text,
                         json.dumps(metadata),
-                        json.dumps(embedding)
+                        json.dumps(embedding),
+                        layer,
+                        created_at,
+                        source,
+                        entity,
+                        relation,
+                        target,
+                        valid_from,
+                        valid_to,
                     )
                 )
                 conn.commit()
@@ -182,10 +277,15 @@ class SemanticMemory:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT key, text, metadata_json, embedding_json FROM memories")
+                cursor.execute(
+                    """SELECT key, text, metadata_json, embedding_json, layer,
+                              created_at, source, entity, relation, target,
+                              valid_from, valid_to
+                       FROM memories"""
+                )
                 rows = cursor.fetchall()
                 
-                for key, text, meta_json, emb_json in rows:
+                for key, text, meta_json, emb_json, layer, created_at, source, entity, relation, target, valid_from, valid_to in rows:
                     try:
                         emb = json.loads(emb_json)
                         meta = json.loads(meta_json)
@@ -194,7 +294,15 @@ class SemanticMemory:
                             "key": key,
                             "text": text,
                             "metadata": meta,
-                            "score": float(similarity)
+                            "score": float(similarity),
+                            "layer": layer,
+                            "created_at": created_at,
+                            "source": source,
+                            "entity": entity,
+                            "relation": relation,
+                            "target": target,
+                            "valid_from": valid_from,
+                            "valid_to": valid_to,
                         })
                     except (TypeError, ValueError, json.JSONDecodeError):
                         continue
@@ -205,6 +313,160 @@ class SemanticMemory:
         # Sort descending by similarity score
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:limit]
+
+    def deep_query(
+        self,
+        query: str,
+        limit: int = 5,
+        layer: Optional[str] = None,
+        entity: Optional[str] = None,
+        relation: Optional[str] = None,
+        target: Optional[str] = None,
+        min_age_seconds: Optional[float] = None,
+        as_of: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        """Temporal GraphRAG deep retrieval across the four-layer memory store.
+
+        Combines vector similarity with structured graph filters (entity,
+        relation, target), temporal validity windows (valid_from/valid_to),
+        and a minimum-age filter so long-context recall can target memories
+        older than a threshold (e.g. >1 week) without losing causal order.
+        """
+        query_vector = generate_pseudo_embedding(query)
+        results: List[Dict[str, Any]] = []
+
+        clauses: List[str] = []
+        params: List[Any] = []
+
+        normalized_layer = _normalize_layer(layer) if layer else None
+        if normalized_layer:
+            clauses.append("layer = ?")
+            params.append(normalized_layer)
+        if entity:
+            clauses.append("entity = ?")
+            params.append(entity)
+        if relation:
+            clauses.append("relation = ?")
+            params.append(relation)
+        if target:
+            clauses.append("target = ?")
+            params.append(target)
+        if min_age_seconds is not None:
+            cutoff = time.time() - float(min_age_seconds)
+            clauses.append("(created_at IS NOT NULL AND created_at <= ?)")
+            params.append(cutoff)
+        if as_of is not None:
+            clauses.append(
+                "(valid_from IS NULL OR valid_from <= ?) AND "
+                "(valid_to IS NULL OR valid_to >= ?)"
+            )
+            params.extend([as_of, as_of])
+
+        where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"""SELECT key, text, metadata_json, embedding_json, layer,
+                              created_at, source, entity, relation, target,
+                              valid_from, valid_to
+                       FROM memories{where_sql}""",
+                    params,
+                )
+                rows = cursor.fetchall()
+
+                for key, text, meta_json, emb_json, mem_layer, created_at, source, mem_entity, mem_relation, mem_target, valid_from, valid_to in rows:
+                    try:
+                        emb = json.loads(emb_json)
+                        meta = json.loads(meta_json)
+                        similarity = calculate_cosine_similarity(query_vector, emb)
+                        results.append({
+                            "key": key,
+                            "text": text,
+                            "metadata": meta,
+                            "score": float(similarity),
+                            "layer": mem_layer,
+                            "created_at": created_at,
+                            "source": source,
+                            "entity": mem_entity,
+                            "relation": mem_relation,
+                            "target": mem_target,
+                            "valid_from": valid_from,
+                            "valid_to": valid_to,
+                        })
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
+        except Exception as e:
+            logger.error(f"SemanticMemory: Failed to run deep query: {e}")
+            return []
+
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:limit]
+
+    def temporal_neighbors(
+        self,
+        entity: str,
+        limit: int = 10,
+        direction: str = "outgoing",
+    ) -> List[Dict[str, Any]]:
+        """Return graph edges adjacent to an entity, ordered by valid_from.
+
+        `direction` may be "outgoing" (entity as subject), "incoming"
+        (entity as object/target), or "both".
+        """
+        if direction not in ("outgoing", "incoming", "both"):
+            direction = "both"
+
+        clauses: List[str] = []
+        params: List[Any] = []
+        if direction == "outgoing":
+            clauses.append("entity = ?")
+            params.append(entity)
+        elif direction == "incoming":
+            clauses.append("target = ?")
+            params.append(entity)
+        else:
+            clauses.append("(entity = ? OR target = ?)")
+            params.extend([entity, entity])
+
+        where_sql = " WHERE " + " AND ".join(clauses)
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"""SELECT key, text, metadata_json, layer, created_at,
+                              source, entity, relation, target, valid_from, valid_to
+                       FROM memories{where_sql}
+                       ORDER BY COALESCE(valid_from, created_at) ASC""",
+                    params,
+                )
+                rows = cursor.fetchall()
+        except Exception as e:
+            logger.error(f"SemanticMemory: Failed to query temporal neighbors: {e}")
+            return []
+
+        neighbors: List[Dict[str, Any]] = []
+        for key, text, meta_json, layer, created_at, source, mem_entity, relation_name, mem_target, valid_from, valid_to in rows:
+            try:
+                meta = json.loads(meta_json)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                meta = {}
+            neighbors.append({
+                "key": key,
+                "text": text,
+                "metadata": meta,
+                "layer": layer,
+                "created_at": created_at,
+                "source": source,
+                "entity": mem_entity,
+                "relation": relation_name,
+                "target": mem_target,
+                "valid_from": valid_from,
+                "valid_to": valid_to,
+            })
+        return neighbors[:limit]
 
     def clear(self):
         """Reset the SQLite memories table."""
