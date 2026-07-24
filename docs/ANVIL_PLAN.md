@@ -98,6 +98,17 @@ CLAUDE.md의 auto-fix 에이전트(Nightwelding)가 올리는 리액티브 버�
 프로덕션 경로에서 한 번도 안 불림)을 CI에서 상시 검증한다 — README.md의
 "Anvil: The Agentic OS Layer" 절 참고.
 
+**증명의 종류가 다른 축 하나 더**: 위 §3/§4는 "우리가 주장하는 게 실제로
+배선돼 있는가"를 검증하지만, 그것과 별개로 "우리 벤치마크 수치를 남이도
+믿을 수 있는가"라는 이슈 #909의 문제가 있었다. `.github/workflows/
+swebench-weekly.yml`(2026-07-25)이 그 답이다 — `scripts/
+run_swebench_lite.py`가 Nightwelding과 동일한 `fix-issue` 경로로 SWE-bench
+Lite의 실제 GitHub 이슈(`psf/requests`의 6개 인스턴스로 시작)를 풀게 하고,
+채점은 이 저장소가 손대지 않은 업스트림 `swebench.harness.run_evaluation`
+CLI가 한다. 결과는 `docs/SWEBENCH_REPORT.md`에 주간 단위로 쌓인다 — 자체
+대시보드 수치가 아니라 제3자가 정의한 공개 데이터셋과 하네스로 점수가
+매겨진다는 점이 다르다.
+
 ## 4. 다음 phase 후보 (모두 확정 — §2 참고)
 
 Σ 다음 단계로 검토했던 방향들. 전부 phase로 확정되어 §2 표로 이동했다:

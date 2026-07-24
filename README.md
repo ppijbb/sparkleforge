@@ -165,3 +165,11 @@ the `pytest` job in
 [`.github/workflows/pr-merge-gate.yml`](.github/workflows/pr-merge-gate.yml)).
 A green run means the OS-plane guarantees hold today, not merely that they
 once passed a manual audit (issue #715).
+
+Separately, [`docs/SWEBENCH_REPORT.md`](docs/SWEBENCH_REPORT.md) tracks a
+different kind of proof: a weekly run of the real `fix-issue` path against
+the official [SWE-bench Lite](https://www.swebench.com/) dataset, scored by
+the unmodified upstream `swebench.harness.run_evaluation` CLI (see
+[`.github/workflows/swebench-weekly.yml`](.github/workflows/swebench-weekly.yml)
+and `scripts/run_swebench_lite.py`) — a third-party-defined benchmark and
+harness, not a self-reported number.
