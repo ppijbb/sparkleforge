@@ -134,24 +134,23 @@ jobs:
             --json title \
             --jq '.title')
           NORMALIZED_TITLE=$(printf '%s\n' "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-          BRACKET_TAG=$(printf '%s\n' "$NORMALIZED_TITLE" | grep -oE '^\[[A-Za-z]+\]' || true)
+          BRACKET_TAG=$(printf '%s' "$NORMALIZED_TITLE" | sed -nE 's/^\[([^]]+)\].*/\1/p')
           if [ -n "$BRACKET_TAG" ]; then
-            TAG_LOWER=$(printf '%s' "$BRACKET_TAG" | tr -d '[]' | tr '[:upper:]' '[:lower:]')
-            REST=$(printf '%s\n' "$NORMALIZED_TITLE" | sed -E 's/^\[[A-Za-z]+\][[:space:]]*:?[[:space:]]*//')
-            case "$TAG_LOWER" in
-              feat|feature)
-                NORMALIZED_TITLE="feat: $REST"
-                ;;
-              fix)
-                NORMALIZED_TITLE="fix: $REST"
-                ;;
-              refactor)
-                NORMALIZED_TITLE="refactor: $REST"
-                ;;
-              chore)
-                NORMALIZED_TITLE="chore: $REST"
-                ;;
+            REST=$(printf '%s' "$NORMALIZED_TITLE" | sed -E 's/^\[[^]]+\][[:space:]]*//')
+            case "$BRACKET_TAG" in
+              feat|feature) CONVENTIONAL_TYPE="feat" ;;
+              fix) CONVENTIONAL_TYPE="fix" ;;
+              refactor) CONVENTIONAL_TYPE="refactor" ;;
+              chore) CONVENTIONAL_TYPE="chore" ;;
+              docs) CONVENTIONAL_TYPE="docs" ;;
+              test) CONVENTIONAL_TYPE="test" ;;
+              perf) CONVENTIONAL_TYPE="perf" ;;
+              ci) CONVENTIONAL_TYPE="ci" ;;
+              build) CONVENTIONAL_TYPE="build" ;;
+              style) CONVENTIONAL_TYPE="style" ;;
+              *) CONVENTIONAL_TYPE="chore" ;;
             esac
+            NORMALIZED_TITLE="${CONVENTIONAL_TYPE}: ${REST}"
           fi
           CONVENTIONAL_TYPE="fix"
           case "$NORMALIZED_TITLE" in
@@ -202,6 +201,10 @@ jobs:
           SUBJECT=$(printf '%s\n' "$SUBJECT" | tr '[:upper:]' '[:lower:]')
           PR_TITLE=$(printf '%s: %s' "$CONVENTIONAL_TYPE" "$SUBJECT" | sed 's/"/\\"/g')
           COMMIT_TITLE="$PR_TITLE"
+          if ! printf '%s' "$COMMIT_TITLE" | grep -Eq '^(feat|fix|refactor|chore|docs|test|perf|ci|build|style)(\(.+\))?!?: .+'; then
+            echo "::error::Normalized commit title does not match Conventional Commits format: '$COMMIT_TITLE'"
+            exit 1
+          fi
           python scripts/validate_commit_messages.py --message "$COMMIT_TITLE"
           BASE_BRANCH="${{ vars.AUTO_FIX_BASE_BRANCH }}"
           if [ -z "$BASE_BRANCH" ]; then
