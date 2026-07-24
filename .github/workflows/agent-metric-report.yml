@@ -54,7 +54,7 @@ jobs:
         run: |
           git config --global user.name "ppijbb"
           git config --global user.email "45420008+ppijbb@users.noreply.github.com"
-          git add results/agent_reports/
+          git add -f results/agent_reports/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
