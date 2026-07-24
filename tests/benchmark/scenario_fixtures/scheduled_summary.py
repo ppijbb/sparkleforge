@@ -44,30 +44,29 @@ def _schedules_file(workspace: Path) -> Path:
     return workspace / ".sparkleforge" / "schedules" / "schedules.json"
 
 
-def _read_schedule_ids(workspace: Path) -> set[str]:
+def _read_schedule_records(workspace: Path) -> Dict[str, Any]:
+    # Stored as {"schedules": [{"schedule_id": ..., "cron_expression": ..., ...}, ...],
+    # "updated_at": ...} per src/core/scheduler.py._save_schedules -- keyed by
+    # schedule_id here for lookup convenience, dropping any entry missing an id.
     schedules_file = _schedules_file(workspace)
     if not schedules_file.exists():
-        return set()
+        return {}
     try:
         import json
 
         data = json.loads(schedules_file.read_text(encoding="utf-8"))
-        # Stored as {schedule_id: {...}} per src/core/scheduler.py._save_schedules
-        return set(data.keys()) if isinstance(data, dict) else set()
-    except Exception:
-        return set()
-
-
-def _read_schedule_records(workspace: Path) -> Dict[str, Any]:
-    schedules_file = _schedules_file(workspace)
-    if not schedules_file.exists():
-        return {}
-    try:
-        import json
-
-        return json.loads(schedules_file.read_text(encoding="utf-8"))
+        entries = data.get("schedules", []) if isinstance(data, dict) else []
+        return {
+            entry["schedule_id"]: entry
+            for entry in entries
+            if isinstance(entry, dict) and "schedule_id" in entry
+        }
     except Exception:
         return {}
+
+
+def _read_schedule_ids(workspace: Path) -> set[str]:
+    return set(_read_schedule_records(workspace).keys())
 
 
 def _crontab_lines() -> list[str]:
