@@ -74,6 +74,29 @@ CLAUDE.md의 auto-fix 에이전트(Nightwelding)가 올리는 리액티브 버�
   커밋된 적이 없었다 — 이 문서로 해소.
 - `docs/ARCHITECTURE.md`는 SparkleForge/Anvil 리네임 이전 "Local Researcher"
   시절 문서가 그대로 남아 있어 현재 아키텍처와 무관했다 — 별도로 재작성.
+- (2026-07-24, 이슈 #910) `VerificationNode.__init__`이 `self._mode_controller`를
+  한 번도 초기화하지 않아, 사람이 붙은 HITL 체크포인트(APPROVE/REVISE/ABORT)
+  경로가 실제로는 `AttributeError`로 매번 죽고 있었다 — `verify_plan`의
+  광범위한 `except Exception` 재시도 루프가 이를 삼켜 "Verification failed
+  after 3 attempts"라는 무관한 에러로만 드러났다. 이 경로를 커버하는
+  `tests/test_verify_plan_hitl.py`가 CI `pytest` 잡에 아예 포함되어 있지
+  않아서 아무도 못 봤다. `src/core/orchestrator/verification.py`에서 수정,
+  해당 테스트 및 다른 plane 테스트들(`test_guard_plane.py`,
+  `test_security_tools.py`, `test_iot_adapter.py`, `test_coordinator.py`,
+  `test_session_*.py`)을 `pr-merge-gate.yml`의 `pytest` 잡에 추가.
+- (2026-07-24, 이슈 #910) `AnomalyDetector.observe()`는 `GuardPlane.
+  check_and_execute()`를 통해서만 호출되는데, 그 유일한 실제 호출자인
+  `WorkerNode.handle_execute()`는 `tests/test_coordinator.py` 밖에서 한 번도
+  인스턴스화되지 않는다 — 이 저장소가 실제로 배포하는 단일 노드 실행
+  경로(CLI / `AgentHarness` / `AgentLoop`)에서는 `AnomalyDetector`가 전혀
+  호출되지 않는다는 뜻. #715류 결함이지만 아직 고치지 않았고,
+  `tests/test_os_plane_integrity.py::test_anomaly_detector_has_no_reachable_single_node_entrypoint`가
+  이 상태를 명시적으로 고정해 앞으로의 변화(수정이든 방치든)를 추적한다.
+
+이 §3 목록이 앞으로도 "수동 감사가 우연히 발견"에 의존하지 않도록,
+`tests/test_os_plane_integrity.py`가 #715류 결함(컴포넌트는 있는데 실제
+프로덕션 경로에서 한 번도 안 불림)을 CI에서 상시 검증한다 — README.md의
+"Anvil: The Agentic OS Layer" 절 참고.
 
 ## 4. 다음 phase 후보 (모두 확정 — §2 참고)
 

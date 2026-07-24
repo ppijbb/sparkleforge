@@ -156,3 +156,12 @@ See [`docs/ANVIL_PLAN.md`](docs/ANVIL_PLAN.md) for the phase history,
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current architecture,
 and [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md) for empirical
 benchmarks including the 92% token cost reduction during async tool execution.
+
+The governance claim above is continuously checked, not just documented:
+[`tests/test_os_plane_integrity.py`](tests/test_os_plane_integrity.py) drives
+the real capability-grant, action-journal, task-dashboard, and session-control
+entry points through their actual production constructors on every PR (see
+the `pytest` job in
+[`.github/workflows/pr-merge-gate.yml`](.github/workflows/pr-merge-gate.yml)).
+A green run means the OS-plane guarantees hold today, not merely that they
+once passed a manual audit (issue #715).
