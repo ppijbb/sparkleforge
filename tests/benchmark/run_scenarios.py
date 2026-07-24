@@ -155,6 +155,16 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
 
         graded = weighted_total(scores, spec["weights"])
 
+        critical_failure = (
+            exec_result["returncode"] != 0
+            and "No available models" in exec_result["stderr"]
+        )
+        # Infrastructure failures (model unavailability) must propagate a
+        # non-zero returncode so CI gates can distinguish a total model
+        # collapse from a genuinely successful run. Use exit code 2 for
+        # infrastructure failure, distinct from 1 (agent task failure).
+        recorded_returncode = 2 if critical_failure else exec_result["returncode"]
+
         return {
             "id": spec["id"],
             "name": spec.get("name", spec["id"]),
@@ -162,8 +172,9 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             "total": graded["total"],
             "adjusted_total": graded["adjusted_total"],
             "breakdown": graded["breakdown"],
-            "inconclusive": (exec_result["returncode"] != 0 and "No available models" in exec_result["stderr"]),
-            "returncode": exec_result["returncode"],
+            "inconclusive": critical_failure,
+            "critical_failure": critical_failure,
+            "returncode": recorded_returncode,
             "timed_out": exec_result["timed_out"],
             "duration_s": round(exec_result["duration_s"], 2),
             "stdout_excerpt": exec_result["stdout"][:1500],
@@ -425,6 +436,16 @@ async def _main() -> int:
         exit_code = compare_to_baseline(report, Path(args.compare_to)) or exit_code
     if args.compare_to_history:
         exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
+
+    # Aggregate critical infrastructure failures: if any scenario experienced a
+    # total model collapse, the runner must exit non-zero so CI gates catch it.
+    if any(r.get("critical_failure") for r in report["scenarios"].values()):
+        print(
+            "[scenario-eval] CRITICAL: one or more scenarios failed due to model "
+            "infrastructure unavailability; exiting non-zero.",
+            file=sys.stderr,
+        )
+        exit_code = exit_code or 2
 
     return exit_code
 
