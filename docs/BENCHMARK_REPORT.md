@@ -60,8 +60,8 @@ This benchmark report presents empirical performance metrics collected from real
 ## 🎯 Verification & Integrity Statement
 
 All data points in this benchmark report are directly verifiable via the repository's open CI/CD execution logs and commit history:
-- Scenario Evaluation Logs: [tests/benchmark/baselines/scenario_history.jsonl](file:///home/user/workspace/mcp_agent/primary/SparkleForge/tests/benchmark/baselines/scenario_history.jsonl)
-- Automated Workflows: [.github/workflows/scenario-eval.yml](file:///home/user/workspace/mcp_agent/primary/SparkleForge/.github/workflows/scenario-eval.yml) & [.github/workflows/opencode-auto-fix.yml](file:///home/user/workspace/mcp_agent/primary/SparkleForge/.github/workflows/opencode-auto-fix.yml)
+- Scenario Evaluation Logs: [tests/benchmark/baselines/scenario_history.jsonl](../tests/benchmark/baselines/scenario_history.jsonl)
+- Automated Workflows: [.github/workflows/scenario-eval.yml](../.github/workflows/scenario-eval.yml) & [.github/workflows/opencode-auto-fix.yml](../.github/workflows/opencode-auto-fix.yml)
 
 The performance numbers above measure *speed and cost*; they say nothing about
 whether the governance layer (capability grants, action journal, task

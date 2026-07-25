@@ -211,11 +211,6 @@ def main():
             "@type": "Offer",
             "price": "0",
             "priceCurrency": "USD"
-          },
-          "aggregateRating": {
-            "@type": "AggregateRating",
-            "ratingValue": "4.9",
-            "reviewCount": "128"
           }
         }
         </script>
@@ -237,7 +232,7 @@ def main():
                 "**Key Innovations:**\n"
                 "- **Zero-Cost Reactive Scheduler**: LLM calls drop to 0 during async waiting.\n"
                 "- **Two-Tier Constant Memory**: Bounded memory buffer caps context size.\n"
-                "- **Audit Verification**: Verify in [`BENCHMARK_REPORT.md`](file:///home/user/workspace/mcp_agent/primary/SparkleForge/docs/BENCHMARK_REPORT.md)."
+                "- **Audit Verification**: Verify in `docs/BENCHMARK_REPORT.md` in the repository."
             )
 
         # 시스템 상태
