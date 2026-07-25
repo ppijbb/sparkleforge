@@ -1,0 +1,136 @@
+name: SWE-bench Lite (weekly)
+
+# Third-party-verifiable scoring, not a self-reported number: this runs
+# SparkleForge's real fix-issue path (scripts/run_swebench_lite.py) against
+# the official SWE-bench Lite dataset and scores it with the unmodified
+# upstream swebench.harness.run_evaluation CLI. See docs/ANVIL_PLAN.md and
+# issue #909 for why the previously-published benchmark numbers (N=3,
+# self-reported) needed a reproducible, externally-defined counterpart.
+#
+# Weekly, not per-PR: each instance's evaluation spins up a real Docker
+# container to run that repo's test suite, which is far too heavy for the
+# fast pr-merge-gate.yml path. Starts with the 6 psf/requests instances in
+# SWE-bench Lite (same repo -> shared environment image layers, kept small
+# on a standard runner's disk budget) -- widen the subset once this has
+# proven itself over a few weeks.
+
+on:
+  schedule:
+    - cron: '0 3 * * 0' # Sunday 03:00 UTC
+  workflow_dispatch: {}
+
+concurrency:
+  group: swebench-lite
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run-swebench-lite:
+    name: Generate + evaluate SWE-bench Lite subset
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    outputs:
+      run_id: ${{ steps.run-id.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge
+        run: uv sync
+
+      - name: Install SWE-bench harness
+        run: uv pip install swebench datasets
+
+      - name: Generate predictions via SparkleForge's fix-issue path
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          uv run python scripts/run_swebench_lite.py \
+            --predictions-out swebench_predictions.jsonl
+
+      - name: Compute run id
+        id: run-id
+        run: echo "run_id=ci-$(date -u +%Y%m%d)-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Run SWE-bench Lite evaluation (pre-built images)
+        run: |
+          uv run python -m swebench.harness.run_evaluation \
+            --dataset_name princeton-nlp/SWE-bench_Lite \
+            --predictions_path swebench_predictions.jsonl \
+            --instance_ids psf__requests-863 psf__requests-1963 psf__requests-2148 psf__requests-2317 psf__requests-2674 psf__requests-3362 \
+            --run_id "${{ steps.run-id.outputs.run_id }}" \
+            --max_workers 1 \
+            --cache_level none \
+            --clean True
+
+      - name: Upload predictions and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swebench-lite-results
+          path: |
+            swebench_predictions.jsonl
+            sparkleforge-nightwelding.*.json
+          if-no-files-found: warn
+
+  record-report:
+    name: Record SWE-bench Lite report
+    needs: run-swebench-lite
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: swebench-lite-results
+          path: swebench-results/
+
+      - name: Append report and open a PR
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+          RUN_ID: ${{ needs.run-swebench-lite.outputs.run_id }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::warning::PAT repository secret not set; skipping SWE-bench report recording."
+            exit 0
+          fi
+          REPORT_FILE=$(ls swebench-results/sparkleforge-nightwelding.*.json 2>/dev/null | head -1)
+          if [ -z "$REPORT_FILE" ]; then
+            echo "No SWE-bench evaluation report artifact found; nothing to record."
+            exit 0
+          fi
+
+          BRANCH="chore/swebench-lite-report-$(date -u +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          python3 scripts/record_swebench_report.py "$REPORT_FILE" "$RUN_ID" docs/SWEBENCH_REPORT.md
+          git config user.name "sparkleforge-bot"
+          git config user.email "actions@github.com"
+          git add docs/SWEBENCH_REPORT.md
+          if git diff --cached --quiet; then
+            echo "No changes to record."
+            exit 0
+          fi
+          git commit -m "chore: record swebench-lite report for $(date -u +%Y-%m-%d)"
+          git push origin "$BRANCH"
+          gh pr create --repo "${{ github.repository }}" \
+            --title "chore: record swebench-lite report for $(date -u +%Y-%m-%d)" \
+            --body "Appends this week's SWE-bench Lite evaluation results to docs/SWEBENCH_REPORT.md. Auto-merges via the existing chore/ auto-merge automation once checks pass." \
+            --base main --head "$BRANCH"

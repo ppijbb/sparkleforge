@@ -27,6 +27,12 @@ class VerificationNode(BaseNode):
     def __init__(self, researcher_config=None):
         self.researcher_config = researcher_config
         self._hitl_manager: HITLCheckpointManager | None = None
+        # No ModeController is constructed for this research-graph execution
+        # path today (ModeController belongs to the separate agent_harness.py
+        # / agent_loop.py actuate path) — kept optional so _run_human_plan_checkpoint
+        # can report checkpoint decisions if one is ever wired in without
+        # crashing in the meantime.
+        self._mode_controller = None
 
     def _get_hitl_manager(self) -> HITLCheckpointManager:
         if self._hitl_manager is None:

@@ -107,7 +107,15 @@ jobs:
             tests/test_cli_entrypoints.py \
             tests/test_open_code_agent_config.py \
             tests/test_cli_result_handling.py \
-            tests/test_verification_gate_scripts.py
+            tests/test_verification_gate_scripts.py \
+            tests/test_os_plane_integrity.py \
+            tests/test_verify_plan_hitl.py \
+            tests/test_guard_plane.py \
+            tests/test_security_tools.py \
+            tests/test_iot_adapter.py \
+            tests/test_coordinator.py \
+            tests/test_session_concurrency_limit.py \
+            tests/test_session_quota.py
 
   workflow-lint:
     name: GitHub Actions syntax

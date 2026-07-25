@@ -1,0 +1,159 @@
+name: TODO Debt Issue Sync
+
+# Turns Critical/High-priority TODO/FIXME code comments (scripts/collect_todos.py)
+# into GitHub issues so they flow into the existing issue-driven auto-fix pipeline
+# (opencode-auto-fix.yml / nightwelding.yml) instead of only living in a local
+# docs/todo_inventory.md snapshot. Medium/Low items stay report-only to avoid
+# flooding auto-fix with low-value or context-dependent comments.
+
+on:
+  schedule:
+    - cron: '0 5 * * 1' # Monday 05:00 UTC (weekly; the backlog moves slowly)
+  workflow_dispatch: {}
+
+concurrency:
+  group: todo-issue-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync-todo-issues:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate automation PAT
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required so todo-debt issues are authored by the PAT owner instead of github-actions[bot] (the default token's issues don't trigger the opened-issue auto-fix workflows)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Ensure todo-debt label exists
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh label create "todo-debt" \
+            --repo "${{ github.repository }}" \
+            --color "5319E7" \
+            --description "Auto-registered from a TODO/FIXME code comment scan" \
+            2>/dev/null || true
+
+      - name: Collect TODO/FIXME items
+        run: python scripts/collect_todos.py
+
+      - name: Fetch existing todo-debt issues
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh issue list --repo "${{ github.repository }}" --state all \
+            --label "todo-debt" --limit 200 \
+            --json number,body,state > existing-todo-issues.json
+
+      - name: Plan new todo-debt issues
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          inventory = json.loads(Path("docs/todo_inventory.json").read_text(encoding="utf-8"))
+          existing = json.loads(Path("existing-todo-issues.json").read_text(encoding="utf-8"))
+
+          anchor_re = re.compile(r"<!-- todo-debt:(.+?) -->")
+          known_anchors = set()
+          for issue in existing:
+              match = anchor_re.search(issue.get("body") or "")
+              if match:
+                  known_anchors.add(match.group(1))
+
+          plan = []
+          for item in inventory["all_items"]:
+              if item["priority"] not in ("Critical", "High"):
+                  continue
+
+              anchor = f'{item["file"]}:{item["line"]}'
+              if anchor in known_anchors:
+                  continue
+
+              # Lowercased so the generated title reliably passes the repo's
+              # Conventional Commits subject policy (scripts/validate_commit_messages.py);
+              # the body below keeps the real-case path for humans/agents.
+              title = (
+                  f'chore: resolve {item["issue_type"].lower()} at '
+                  f'{item["file"].lower()}:{item["line"]}'
+              )
+
+              body_lines = [
+                  f"<!-- todo-debt:{anchor} -->",
+                  "",
+                  "Auto-registered from a TODO/FIXME code comment scan (`scripts/collect_todos.py`),",
+                  "scoped for the existing issue-driven auto-fix pipeline.",
+                  "",
+                  "## Location",
+                  f"- File: `{item['file']}`",
+                  f"- Line: {item['line']}",
+                  f"- Category: {item['category']}",
+                  f"- Priority: {item['priority']}",
+                  "",
+                  "## Comment",
+                  f"> {item['content']}",
+                  "",
+                  "## Expected fix",
+                  "Resolve the referenced TODO/FIXME with the smallest correct change, "
+                  "or replace it with an accurate comment if it depends on context that "
+                  "isn't available yet.",
+                  "",
+                  "## Acceptance criteria",
+                  "- [ ] The TODO/FIXME comment at the referenced location is resolved "
+                  "or replaced with an accurate comment.",
+                  "- [ ] Existing tests pass; add coverage if the fix changes behavior.",
+                  "",
+              ]
+
+              plan.append({
+                  "anchor": anchor,
+                  "title": title,
+                  "body": "\n".join(body_lines),
+              })
+
+          Path("todo-issue-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+          print(f"Planned {len(plan)} new todo-debt issue(s); {len(known_anchors)} already tracked.")
+          PY
+
+      - name: Create planned todo-debt issues
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          COUNT=$(jq 'length' todo-issue-plan.json)
+          for i in $(seq 0 $((COUNT - 1))); do
+            [ "$COUNT" -eq 0 ] && break
+            TITLE=$(jq -r ".[$i].title" todo-issue-plan.json)
+            ANCHOR=$(jq -r ".[$i].anchor" todo-issue-plan.json)
+            jq -r ".[$i].body" todo-issue-plan.json > issue-body.md
+
+            if ! python scripts/validate_commit_messages.py --message "$TITLE"; then
+              echo "::warning::Skipping $ANCHOR — generated title failed commit-message validation: $TITLE"
+              continue
+            fi
+
+            gh issue create --repo "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body-file issue-body.md \
+              --label "todo-debt"
+            echo "Created issue for $ANCHOR"
+          done
