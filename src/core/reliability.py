@@ -27,6 +27,13 @@ class CircuitState(Enum):
     OPEN = "open"  # 차단됨
     HALF_OPEN = "half_open"  # 부분 복구 시도
 
+class RateLimitError(Exception):
+    """API rate-limit (HTTP 429) error.
+
+    Raised by LLM providers when OpenRouter/Gemini returns a 429 response so the
+    reliability layer can throttle sub-agent concurrency instead of failing.
+    """
+
 
 @dataclass
 class CircuitBreakerConfig:
@@ -36,6 +43,14 @@ class CircuitBreakerConfig:
     recovery_timeout: int = 60
     success_threshold: int = 3
     timeout: float = 30.0
+    rate_limit_threshold: int = 2
+    rate_limit_recovery_timeout: int = 120
+    min_concurrency: int = 1
+    max_concurrency: int = 16
+    concurrency_step: int = 2
+    backoff_base: float = 2.0
+    backoff_max: float = 300.0
+    backoff_jitter: float = 0.3
 
 
 @dataclass
@@ -64,9 +79,17 @@ class HealthStatus:
 class CircuitBreaker:
     """Circuit Breaker 패턴 구현."""
 
-    def __init__(self, name: str, config: CircuitBreakerConfig):
+    def __init__(self, name: str, config: CircuitBreakerConfig, concurrency_manager=None):
         self.name = name
         self.config = config
+        self.concurrency_manager = concurrency_manager
+        self.rate_limit_count = 0
+        self.last_rate_limit_time = None
+        self.current_concurrency = None
+        if concurrency_manager is not None:
+            self.current_concurrency = getattr(
+                concurrency_manager, "get_current_concurrency", lambda: None
+            )() or getattr(config, "max_concurrency", 16)
         self.state = CircuitState.CLOSED
         self.failure_count = 0
         self.success_count = 0
@@ -97,6 +120,11 @@ class CircuitBreaker:
         self.success_count += 1
         self.last_success_time = time.time()
 
+        # Gradually restore concurrency after successful recovery from rate limiting
+        if self.rate_limit_count > 0:
+            self.rate_limit_count = max(0, self.rate_limit_count - 1)
+            self._restore_concurrency()
+
         if self.state == CircuitState.HALF_OPEN:
             if self.success_count >= self.config.success_threshold:
                 self.state = CircuitState.CLOSED
@@ -104,6 +132,71 @@ class CircuitBreaker:
                 logger.info(f"Circuit breaker {self.name} closed after recovery")
         elif self.state == CircuitState.CLOSED:
             self.failure_count = 0
+
+    def record_rate_limit(self):
+        """Record an API rate-limit (429) event and throttle concurrency.
+
+        Unlike generic failures, rate limits do not immediately open the circuit.
+        Instead the breaker dynamically reduces sub-agent concurrency and applies
+        exponential backoff so ongoing research tasks can continue at a lower
+        throughput instead of failing outright.
+        """
+        self.rate_limit_count += 1
+        self.last_rate_limit_time = time.time()
+
+        self._throttle_concurrency()
+
+        if self.rate_limit_count >= self.config.rate_limit_threshold:
+            self.state = CircuitState.OPEN
+            logger.warning(
+                f"Circuit breaker {self.name} opened after "
+                f"{self.rate_limit_count} rate-limit events"
+            )
+
+    def get_rate_limit_backoff(self, attempt: int) -> float:
+        """Compute exponential backoff delay for a rate-limit retry attempt."""
+        delay = min(
+            self.config.backoff_base * (2**attempt),
+            self.config.backoff_max,
+        )
+        jitter = delay * self.config.backoff_jitter
+        return delay + jitter
+
+    def _throttle_concurrency(self):
+        """Reduce the effective concurrency limit when rate limits are observed."""
+        if self.concurrency_manager is None or self.current_concurrency is None:
+            return
+        new_concurrency = max(
+            self.config.min_concurrency,
+            self.current_concurrency - self.config.concurrency_step,
+        )
+        if new_concurrency != self.current_concurrency:
+            self.current_concurrency = new_concurrency
+            setter = getattr(self.concurrency_manager, "set_concurrency_limit", None)
+            if callable(setter):
+                setter(new_concurrency)
+            logger.warning(
+                f"Circuit breaker {self.name} throttled concurrency to "
+                f"{new_concurrency} due to rate limiting"
+            )
+
+    def _restore_concurrency(self):
+        """Gradually restore concurrency once rate limits subside."""
+        if self.concurrency_manager is None or self.current_concurrency is None:
+            return
+        new_concurrency = min(
+            self.config.max_concurrency,
+            self.current_concurrency + self.config.concurrency_step,
+        )
+        if new_concurrency != self.current_concurrency:
+            self.current_concurrency = new_concurrency
+            setter = getattr(self.concurrency_manager, "set_concurrency_limit", None)
+            if callable(setter):
+                setter(new_concurrency)
+            logger.info(
+                f"Circuit breaker {self.name} restored concurrency to "
+                f"{new_concurrency} after recovery"
+            )
 
     def record_failure(self):
         """실패 기록."""
@@ -121,6 +214,9 @@ class CircuitBreaker:
             "state": self.state.value,
             "failure_count": self.failure_count,
             "success_count": self.success_count,
+            "rate_limit_count": self.rate_limit_count,
+            "last_rate_limit_time": self.last_rate_limit_time,
+            "current_concurrency": self.current_concurrency,
             "last_failure_time": self.last_failure_time,
             "last_success_time": self.last_success_time,
         }
@@ -391,6 +487,20 @@ class ProductionReliability:
         for attempt in range(self.retry_config.max_attempts):
             try:
                 return await func(*args, **kwargs)
+            except RateLimitError as e:
+                last_exception = e
+                circuit_breaker = self.circuit_breakers.get(func.__name__)
+                if circuit_breaker is not None:
+                    circuit_breaker.record_rate_limit()
+                if attempt < self.retry_config.max_attempts - 1:
+                    wait_time = circuit_breaker.get_rate_limit_backoff(attempt)
+                    logger.warning(
+                        f"RateLimitError on attempt {attempt + 1}, "
+                        f"throttling and retrying in {wait_time:.2f}s"
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise
             except TimeoutError as e:
                 last_exception = e
                 # TimeoutError: Immediate retry with increased timeout
