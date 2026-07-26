@@ -79,9 +79,9 @@ def get_langfuse_run_config(
         meta["langfuse_session_id"] = session_id
     if user_id is not None:
         meta["langfuse_user_id"] = user_id
-    if tags is not None:
+    if tags is None:
+        tags = []
     ctx = get_trace_context()
-    tags: List[str] = []
     if ctx:
         for key in (
             TRACE_TURN_ID,
