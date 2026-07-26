@@ -138,6 +138,14 @@ EMBEDDED_SERVERS = {
         "type": "embedded",
         "transport": "stdio",
     },
+    "synthetic-load": {
+        "name": "synthetic-load",
+        "module": "src.core.mcp_servers.synthetic_load_server",
+        "description": "Multi-modal synthetic workload stream generator",
+        "tools": ["generate_json_payload", "stream_video_data", "rpc_audio_stream"],
+        "type": "embedded",
+        "transport": "stdio",
+    },
 }
 
 
