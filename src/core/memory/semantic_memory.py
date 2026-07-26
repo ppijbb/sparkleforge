@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import socket
 import os
 import re
 import time
@@ -150,6 +151,11 @@ def calculate_cosine_similarity(v1: List[float], v2: List[float]) -> float:
     return sum(a * b for a, b in zip(v1, v2))
 
 
+def _instance_id() -> str:
+    """Stable identifier for this SparkleForge instance used in peer sync."""
+    return hashlib.md5(f"{socket.gethostname()}:{os.getpid()}".encode("utf-8")).hexdigest()[:12]
+
+
 class SemanticMemory:
     """Provides semantic vector storage and similarity searches backed by local SQLite caching.
 
@@ -206,6 +212,8 @@ class SemanticMemory:
                     ("target", "ALTER TABLE memories ADD COLUMN target TEXT"),
                     ("valid_from", "ALTER TABLE memories ADD COLUMN valid_from REAL"),
                     ("valid_to", "ALTER TABLE memories ADD COLUMN valid_to REAL"),
+                    ("origin_instance", "ALTER TABLE memories ADD COLUMN origin_instance TEXT"),
+                    ("sync_vector", "ALTER TABLE memories ADD COLUMN sync_vector INTEGER NOT NULL DEFAULT 0"),
                 ):
                     if column not in existing:
                         try:
@@ -220,6 +228,9 @@ class SemanticMemory:
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_memories_entity ON memories(entity)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_memories_sync_vector ON memories(sync_vector)"
                 )
                 conn.commit()
         except Exception as e:
@@ -238,6 +249,8 @@ class SemanticMemory:
         target = metadata.get("target")
         valid_from = _parse_timestamp(metadata.get("valid_from"))
         valid_to = _parse_timestamp(metadata.get("valid_to"))
+        origin_instance = metadata.get("origin_instance") or _instance_id()
+        sync_vector = int(bool(metadata.get("sync_vector", False)))
         
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -245,8 +258,8 @@ class SemanticMemory:
                     """INSERT INTO memories (
                         key, text, metadata_json, embedding_json, layer,
                         created_at, source, entity, relation, target,
-                        valid_from, valid_to
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        valid_from, valid_to, origin_instance, sync_vector
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         key,
                         text,
@@ -260,6 +273,8 @@ class SemanticMemory:
                         target,
                         valid_from,
                         valid_to,
+                        origin_instance,
+                        sync_vector,
                     )
                 )
                 conn.commit()
@@ -280,12 +295,12 @@ class SemanticMemory:
                 cursor.execute(
                     """SELECT key, text, metadata_json, embedding_json, layer,
                               created_at, source, entity, relation, target,
-                              valid_from, valid_to
+                              valid_from, valid_to, origin_instance, sync_vector
                        FROM memories"""
                 )
                 rows = cursor.fetchall()
                 
-                for key, text, meta_json, emb_json, layer, created_at, source, entity, relation, target, valid_from, valid_to in rows:
+                for key, text, meta_json, emb_json, layer, created_at, source, entity, relation, target, valid_from, valid_to, origin_instance, sync_vector in rows:
                     try:
                         emb = json.loads(emb_json)
                         meta = json.loads(meta_json)
@@ -303,6 +318,8 @@ class SemanticMemory:
                             "target": target,
                             "valid_from": valid_from,
                             "valid_to": valid_to,
+                            "origin_instance": origin_instance,
+                            "sync_vector": sync_vector,
                         })
                     except (TypeError, ValueError, json.JSONDecodeError):
                         continue
@@ -477,3 +494,130 @@ class SemanticMemory:
             logger.info("SemanticMemory: Cleared database table.")
         except Exception as e:
             logger.error(f"SemanticMemory: Failed to clear database table: {e}")
+
+    def export_epistemic_graph(
+        self,
+        since: Optional[float] = None,
+        layer: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Export learned domain insights for peer-to-peer cross-session sync.
+
+        Returns a JSON-serializable payload of memories (the epistemic graph)
+        learned by this instance, optionally restricted to entries newer than
+        `since` (a unix timestamp) and/or a specific memory layer. Each entry
+        carries its origin instance id and embedding so a peer can merge it
+        without recomputation.
+        """
+        clauses: List[str] = []
+        params: List[Any] = []
+        normalized_layer = _normalize_layer(layer) if layer else None
+        if normalized_layer:
+            clauses.append("layer = ?")
+            params.append(normalized_layer)
+        if since is not None:
+            clauses.append("(created_at IS NOT NULL AND created_at >= ?)")
+            params.append(float(since))
+        where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+        entries: List[Dict[str, Any]] = []
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"""SELECT key, text, metadata_json, embedding_json, layer,
+                              created_at, source, entity, relation, target,
+                              valid_from, valid_to, origin_instance
+                        FROM memories{where_sql}""",
+                    params,
+                )
+                rows = cursor.fetchall()
+                for key, text, meta_json, emb_json, mem_layer, created_at, source, entity, relation, target, valid_from, valid_to, origin_instance in rows:
+                    try:
+                        meta = json.loads(meta_json) if meta_json else {}
+                        emb = json.loads(emb_json) if emb_json else []
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        meta, emb = {}, []
+                    entries.append({
+                        "key": key,
+                        "text": text,
+                        "metadata": meta,
+                        "embedding": emb,
+                        "layer": mem_layer,
+                        "created_at": created_at,
+                        "source": source,
+                        "entity": entity,
+                        "relation": relation,
+                        "target": target,
+                        "valid_from": valid_from,
+                        "valid_to": valid_to,
+                        "origin_instance": origin_instance or _instance_id(),
+                    })
+        except Exception as e:
+            logger.error(f"SemanticMemory: Failed to export epistemic graph: {e}")
+            return {"origin_instance": _instance_id(), "entries": []}
+
+        return {"origin_instance": _instance_id(), "entries": entries}
+
+    def import_epistemic_graph(self, payload: Dict[str, Any]) -> int:
+        """Merge a peer instance's exported epistemic graph into this store.
+
+        Peer entries are inserted idempotently: a (origin_instance, key) pair
+        that already exists locally is skipped, so repeated syncs do not
+        duplicate memories. Imported entries are marked with `sync_vector=1`
+        so local queries can distinguish self-learned from peer-learned
+        insights. Returns the number of newly imported entries.
+        """
+        entries = payload.get("entries") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            return 0
+
+        imported = 0
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    key = entry.get("key")
+                    text = entry.get("text")
+                    if not key or not text:
+                        continue
+                    origin = entry.get("origin_instance") or _instance_id()
+                    cursor.execute(
+                        "SELECT 1 FROM memories WHERE origin_instance = ? AND key = ?",
+                        (origin, key),
+                    )
+                    if cursor.fetchone():
+                        continue
+                    meta = entry.get("metadata") or {}
+                    meta["origin_instance"] = origin
+                    embedding = entry.get("embedding") or generate_pseudo_embedding(text)
+                    conn.execute(
+                        """INSERT INTO memories (
+                            key, text, metadata_json, embedding_json, layer,
+                            created_at, source, entity, relation, target,
+                            valid_from, valid_to, origin_instance, sync_vector
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+                        (
+                            key,
+                            text,
+                            json.dumps(meta),
+                            json.dumps(embedding),
+                            _normalize_layer(entry.get("layer")),
+                            entry.get("created_at") or time.time(),
+                            entry.get("source"),
+                            entry.get("entity"),
+                            entry.get("relation"),
+                            entry.get("target"),
+                            entry.get("valid_from"),
+                            entry.get("valid_to"),
+                            origin,
+                        ),
+                    )
+                    imported += 1
+                conn.commit()
+            logger.info(f"SemanticMemory: Imported {imported} peer epistemic entries.")
+        except Exception as e:
+            logger.error(f"SemanticMemory: Failed to import epistemic graph: {e}")
+            return 0
+        return imported
