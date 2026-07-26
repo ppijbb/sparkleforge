@@ -98,11 +98,11 @@ def get_langfuse_run_config(
         entrypoint = ctx.get(TRACE_ENTRYPOINT)
         source_type = ctx.get(TRACE_SOURCE_TYPE)
         if entrypoint:
-            tags.append(f"entrypoint:{entrypoint}")
+            trace_tags.append(f"entrypoint:{entrypoint}")
         if source_type and source_type != entrypoint:
-            tags.append(f"source:{source_type}")
-    if tags:
-        meta["langfuse_tags"] = tags
+            trace_tags.append(f"source:{source_type}")
+    if trace_tags:
+        meta["langfuse_tags"] = trace_tags
     return {"callbacks": callbacks, "metadata": meta} if meta else {"callbacks": callbacks}
 
 
