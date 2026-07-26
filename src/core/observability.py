@@ -80,7 +80,6 @@ def get_langfuse_run_config(
     if user_id is not None:
         meta["langfuse_user_id"] = user_id
     if tags is not None:
-        meta["langfuse_tags"] = tags
     ctx = get_trace_context()
     tags: List[str] = []
     if ctx:
