@@ -32,15 +32,10 @@ from src.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-    ASSUMPTION_INVERSION = "assumption_inversion"  # 표준 도메인 가정 전환
-    RADICAL_SYNTHESIS = "radical_synthesis"  # 급진적 대안 아키텍처 합성
-
-
-from dataclasses import dataclass, field
-
 class CreativityType(Enum):
     """창의성 타입."""
-
+    ASSUMPTION_INVERSION = "assumption_inversion"  # 표준 도메인 가정 전환
+    RADICAL_SYNTHESIS = "radical_synthesis"  # 급진적 대안 아키텍처 합성
     ANALOGICAL = "analogical"  # 유추적 추론
     CROSS_DOMAIN = "cross_domain"  # 교차 도메인 결합
     LATERAL = "lateral"  # 측면적 사고
