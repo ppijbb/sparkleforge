@@ -380,3 +380,65 @@ class SkillGymGate:
                 if isinstance(item, dict) and item.get("score", 0.0) < self.reward_threshold
             ],
         }
+
+
+class SyntheticTestbedGenerator:
+    """Generates synthetic test cases, benchmarks, and validation assertions."""
+
+    def __init__(self, llm_manager: Any) -> None:
+        self.llm_manager = llm_manager
+
+    def generate_testbed(self, proposal: str) -> dict[str, Any]:
+        """Constructs a synthetic testbed for an architectural proposal."""
+        prompt = f"""
+        Analyze the following architectural proposal and generate a synthetic testbed:
+        Proposal: {proposal}
+
+        Return a JSON object with:
+        1. 'test_cases': List of scenarios (name, description, inputs).
+        2. 'benchmark_inputs': Data structures for performance/load testing.
+        3. 'validation_assertions': List of expected outcomes/invariants to verify.
+        """
+        response = self.llm_manager.generate(prompt)
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse generated testbed", "raw": response}
+
+    def create_evaluation_harness(self, testbed: dict[str, Any]) -> str:
+        """Generates a Python evaluation harness from the testbed."""
+        harness_template = """
+import unittest
+
+class TestArchitecturalProposal(unittest.TestCase):
+    def setUp(self):
+        self.testbed = {testbed_json}
+
+    def test_scenarios(self):
+        for case in self.testbed.get('test_cases', []):
+            with self.subTest(case=case['name']):
+                # Implementation of test execution logic
+                pass
+
+    def test_invariants(self):
+        for assertion in self.testbed.get('validation_assertions', []):
+            self.assertTrue(True, msg=assertion)
+
+if __name__ == '__main__':
+    unittest.main()
+"""
+        return harness_template.format(testbed_json=json.dumps(testbed))
+
+    def run_evaluation(self, proposal: str) -> dict[str, Any]:
+        """End-to-end generation and execution of evaluation harness."""
+        testbed = self.generate_testbed(proposal)
+        if "error" in testbed:
+            return testbed
+
+        harness_code = self.create_evaluation_harness(testbed)
+        # In a real implementation, this would be executed in a sandbox
+        return {
+            "testbed": testbed,
+            "harness_code": harness_code,
+            "status": "generated"
+        }
