@@ -519,7 +519,7 @@ class BenchmarkAnalyzer:
         if not results:
             return 0.0
 
-        # Use the overall_score from each result directly
+        # Use the overall_score from each result directly, defaulting to 0.0 if no attempts
         scores = [
             result.overall_score
             for result in results
