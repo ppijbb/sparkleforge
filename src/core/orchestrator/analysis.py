@@ -101,6 +101,7 @@ class AnalysisNode(BaseNode):
         6. Success criteria and quality metrics
         
         Use production-level analysis with specific, actionable insights.
+        7. Categorize ideas into Pareto tiers: "Quick Wins", "High Impact", "Radical Innovation".
         Return the result in JSON format with the following structure:
         {{
             "objectives": [{{"id": "obj_1", "description": "Research objective", "priority": "high"}}],
@@ -108,6 +109,7 @@ class AnalysisNode(BaseNode):
             "domain": {{"fields": ["technology", "research"], "expertise": "general"}},
             "scope": {{"breadth": "comprehensive", "depth": "detailed"}},
             "complexity": 7.0
+            "pareto_frontier": {{"quick_wins": [], "high_impact": [], "radical_innovation": []}}
         }}
         """
 
@@ -167,6 +169,7 @@ class AnalysisNode(BaseNode):
                     "domain_analysis": analysis_data.get("domain", {}),
                     "scope_analysis": analysis_data.get("scope", {}),
                     "complexity_score": analysis_data.get("complexity", 5.0),
+                    "pareto_frontier": analysis_data.get("pareto_frontier", {}),
                     "current_step": "planning_agent",
                     "similar_research": similar_research,
                     "innovation_stats": {
@@ -205,6 +208,7 @@ class AnalysisNode(BaseNode):
             "complexity_score": analysis_data.get("complexity", 5.0),
             "intent_analysis": analysis_data.get("intent", {}),
             "domain_analysis": analysis_data.get("domain", {}),
+            "pareto_frontier": analysis_data.get("pareto_frontier", {}),
         }
         self._log_node_output("analyze_objectives", state, key_changes)
 
@@ -224,7 +228,7 @@ class AnalysisNode(BaseNode):
             try:
                 parsed = json.loads(cleaned)
                 # 최소 필수 필드 검증
-                if "objectives" in parsed or "intent" in parsed or "complexity" in parsed:
+                if "objectives" in parsed or "intent" in parsed or "complexity" in parsed or "pareto_frontier" in parsed:
                     return parsed
                 logger.warning("Parsed JSON missing required fields")
                 return None
