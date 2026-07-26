@@ -32,6 +32,11 @@ from src.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+    ASSUMPTION_INVERSION = "assumption_inversion"  # 표준 도메인 가정 전환
+    RADICAL_SYNTHESIS = "radical_synthesis"  # 급진적 대안 아키텍처 합성
+
+
+from dataclasses import dataclass, field
 
 class CreativityType(Enum):
     """창의성 타입."""
@@ -79,6 +84,20 @@ class IdeaCombination:
     potential_impact: str
     implementation_difficulty: str
     reasoning: str
+
+@dataclass
+class AssumptionInversion:
+    """도메인 가정 전환 결과."""
+
+    inversion_id: str
+    assumption: str
+    inverted_assumption: str
+    radical_alternative: str
+    solves_core_problem: bool
+    feasibility_score: float
+    reasoning: str
+    risks: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class CreativityAgent:
@@ -305,6 +324,10 @@ class CreativityAgent:
                 return await self._generate_convergent_insights(context, current_ideas)
             elif creativity_type == CreativityType.DIVERGENT:
                 return await self._generate_divergent_insights(context, current_ideas)
+            elif creativity_type == CreativityType.ASSUMPTION_INVERSION:
+                return await self._generate_assumption_inversion_insights(context, current_ideas)
+            elif creativity_type == CreativityType.RADICAL_SYNTHESIS:
+                return await self._generate_radical_synthesis_insights(context, current_ideas)
             else:
                 return []
 
@@ -710,6 +733,165 @@ class CreativityAgent:
 
         except Exception as e:
             logger.debug(f"Failed to generate divergent insights: {e}")
+            return []
+
+    async def _generate_assumption_inversion_insights(
+        self, context: str, current_ideas: List[str]
+    ) -> List[CreativeInsight]:
+        """표준 도메인 가정을 추출하고 전환하여 인사이트를 생성합니다."""
+        try:
+            inversion_prompt = f"""
+            Extract the implicit standard domain assumptions for the following context,
+            systematically invert each assumption, and evaluate whether the inverted
+            assumption reveals a viable alternative approach.
+
+            Context: {context}
+            Current Ideas: {", ".join(current_ideas)}
+
+            For each inversion:
+            1. Name the implicit standard assumption
+            2. State the inverted assumption
+            3. Describe the radical alternative architecture it implies
+            4. Evaluate whether it can still solve the core problem
+
+            Return JSON format:
+            {{
+                "insights": [
+                    {{
+                        "title": "Assumption inversion title",
+                        "description": "Detailed description",
+                        "assumption": "The standard assumption",
+                        "inverted_assumption": "The inverted assumption",
+                        "radical_alternative": "Alternative architecture description",
+                        "solves_core_problem": true,
+                        "feasibility_score": 0.0-1.0,
+                        "related_concepts": ["concept1", "concept2"],
+                        "reasoning": "Why this inversion is valuable",
+                        "examples": ["example1", "example2"],
+                        "risks": ["risk1", "risk2"],
+                        "confidence": 0.0-1.0,
+                        "novelty_score": 0.0-1.0,
+                        "applicability_score": 0.0-1.0
+                    }}
+                ]
+            }}
+            """
+
+            result = await execute_llm_task(
+                prompt=inversion_prompt,
+                task_type=TaskType.CREATIVE,
+                system_message="You are a creative thinking expert specializing in systemic assumption inversion. Extract implicit domain assumptions, invert them, and evaluate radical alternatives.",
+            )
+
+            analysis = json.loads(result.content)
+            insights = []
+
+            for insight_data in analysis.get("insights", []):
+                insight = CreativeInsight(
+                    insight_id=f"assumption_inversion_{len(insights) + 1}",
+                    type=CreativityType.ASSUMPTION_INVERSION,
+                    title=insight_data["title"],
+                    description=insight_data["description"],
+                    related_concepts=insight_data["related_concepts"],
+                    confidence=insight_data["confidence"],
+                    novelty_score=insight_data["novelty_score"],
+                    applicability_score=insight_data["applicability_score"],
+                    reasoning=insight_data["reasoning"],
+                    examples=insight_data["examples"],
+                    metadata={
+                        "assumption": insight_data["assumption"],
+                        "inverted_assumption": insight_data["inverted_assumption"],
+                        "radical_alternative": insight_data["radical_alternative"],
+                        "solves_core_problem": insight_data["solves_core_problem"],
+                        "feasibility_score": insight_data["feasibility_score"],
+                        "risks": insight_data.get("risks", []),
+                        "generation_method": "assumption_inversion",
+                    },
+                )
+                insights.append(insight)
+
+            return insights
+
+        except Exception as e:
+            logger.debug(f"Failed to generate assumption inversion insights: {e}")
+            return []
+
+    async def _generate_radical_synthesis_insights(
+        self, context: str, current_ideas: List[str]
+    ) -> List[CreativeInsight]:
+        """전환된 가정들을 급진적 대안 아키텍처로 합성합니다."""
+        try:
+            synthesis_prompt = f"""
+            Synthesize radical alternative architectures that solve the core problem
+            by combining inverted assumptions from the following context.
+
+            Context: {context}
+            Current Ideas: {", ".join(current_ideas)}
+
+            Generate 3-5 radical synthesis insights that:
+            1. Combine multiple inverted assumptions into a coherent architecture
+            2. Evaluate whether the radical alternative solves the core problem
+            3. Identify trade-offs and feasibility
+            4. Suggest concrete implementation directions
+
+            Return JSON format:
+            {{
+                "insights": [
+                    {{
+                        "title": "Radical synthesis title",
+                        "description": "Detailed architecture description",
+                        "combined_inversions": ["inversion1", "inversion2"],
+                        "radical_architecture": "Architecture description",
+                        "solves_core_problem": true,
+                        "feasibility_score": 0.0-1.0,
+                        "related_concepts": ["concept1", "concept2"],
+                        "reasoning": "Why this radical synthesis works",
+                        "examples": ["example1", "example2"],
+                        "risks": ["risk1", "risk2"],
+                        "confidence": 0.0-1.0,
+                        "novelty_score": 0.0-1.0,
+                        "applicability_score": 0.0-1.0
+                    }}
+                ]
+            }}
+            """
+
+            result = await execute_llm_task(
+                prompt=synthesis_prompt,
+                task_type=TaskType.CREATIVE,
+                system_message="You are a creative thinking expert specializing in radical idea synthesis. Combine inverted assumptions into coherent alternative architectures that solve core problems.",
+            )
+
+            analysis = json.loads(result.content)
+            insights = []
+
+            for insight_data in analysis.get("insights", []):
+                insight = CreativeInsight(
+                    insight_id=f"radical_synthesis_{len(insights) + 1}",
+                    type=CreativityType.RADICAL_SYNTHESIS,
+                    title=insight_data["title"],
+                    description=insight_data["description"],
+                    related_concepts=insight_data["related_concepts"],
+                    confidence=insight_data["confidence"],
+                    novelty_score=insight_data["novelty_score"],
+                    applicability_score=insight_data["applicability_score"],
+                    reasoning=insight_data["reasoning"],
+                    examples=insight_data["examples"],
+                    metadata={
+                        "combined_inversions": insight_data["combined_inversions"],
+                        "radical_architecture": insight_data["radical_architecture"],
+                        "solves_core_problem": insight_data["solves_core_problem"],
+                        "feasibility_score": insight_data["feasibility_score"],
+                        "risks": insight_data.get("risks", []),
+                        "generation_method": "radical_synthesis",
+                    },
+                )
+                insights.append(insight)
+
+            return insights
+
+        except Exception as e:
+            logger.debug(f"Failed to generate radical synthesis insights: {e}")
             return []
 
     def _filter_and_rank_insights(self, insights: List[CreativeInsight]) -> List[CreativeInsight]:
