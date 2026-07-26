@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from src.core.llm_manager import ModelResult, MultiModelOrchestrator, TaskType
 from src.core.mcp_integration import UniversalMCPHub, get_mcp_hub
+from src.agents.greedy_overseer_agent import get_greedy_overseer_agent
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ Autonomous problem-solving contract:
         self.orchestrator = orchestrator or MultiModelOrchestrator()
         self._plan_first = False
         self.mcp_hub: UniversalMCPHub = get_mcp_hub()
+        self.overseer = get_greedy_overseer_agent()
 
         # Phase 3: Context Compression
         from src.core.context_compressor import ContextCompressor
@@ -207,6 +209,12 @@ Autonomous problem-solving contract:
             self._apply_mode_to_messages(history)
             await self._guard_intent(history)
             await self._oversee_iteration(budget, history, tool_results, errors)
+
+            # Monitor token budgets and step limits via GreedyOverseerAgent
+            if budget.current_iteration > 1:
+                # Pass current state to overseer for budget/limit monitoring
+                # This integrates the orphaned agent into the loop lifecycle
+                await self.overseer.evaluate_execution_results({"overseer_iterations": budget.current_iteration})
 
             # Phase 3: Compress context if needed
             history = await self.compressor.compress_if_needed(history)
