@@ -114,6 +114,9 @@ class CreativityAgent:
             "cross_domain_threshold": 0.7,
         }
 
+        if CreativityAgent.bottleneck_engine is None:
+            CreativityAgent.bottleneck_engine = BottleneckIdeationEngine()
+
         logger.info("CreativityAgent initialized with production-grade creativity engine")
 
     def _initialize_creativity_patterns(self) -> Dict[str, List[str]]:
@@ -829,6 +832,132 @@ class CreativityAgent:
             "domain_knowledge": len(self.domain_knowledge),
             "analogical_mappings": len(self.analogical_mappings),
             "config": self.config,
+            "bottleneck_engine": self.bottleneck_engine.get_stats() if self.bottleneck_engine else {},
+        }
+
+
+class BottleneckIdeationEngine:
+    """Meta-Ideation engine that pinpoints structural rate-limiting bottlenecks
+    in complex systems and auto-generates targeted ideation prompts for their
+    creative resolution (issue #942).
+    """
+
+    def __init__(self):
+        self.bottleneck_signatures = self._initialize_bottleneck_signatures()
+        self.resolution_prompt_templates = self._initialize_resolution_templates()
+        logger.info("BottleneckIdeationEngine initialized")
+
+    def _initialize_bottleneck_signatures(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            "single_point_of_concentration": {
+                "description": "Throughput collapses onto one component, queue, or actor.",
+                "indicators": ["unbounded queue growth", "head-of-line blocking", "skewed load"],
+                "resolution_angle": "parallelize, shard, or introduce backpressure.",
+            },
+            "serialization_lock": {
+                "description": "A global lock serializes otherwise concurrent work.",
+                "indicators": ["lock contention", "wait-time spikes", "low parallel speedup"],
+                "resolution_angle": "lock-free structures, finer granularity, or optimistic concurrency.",
+            },
+            "feedback_delay": {
+                "description": "Long feedback loops prevent adaptation to change.",
+                "indicators": ["stale state", "thrashing", "over/under-correction"],
+                "resolution_angle": "shorten the loop, add predictive feed-forward.",
+            },
+            "resource_saturation": {
+                "description": "A finite resource caps total system throughput.",
+                "indicators": ["utilization near 100%", "tail latency explosion", "denial under load"],
+                "resolution_angle": "elastic scaling, pooling, or demand shaping.",
+            },
+            "coordination_overhead": {
+                "description": "Coordination cost grows superlinearly with participants.",
+                "indicators": ["quadratic messaging", "consensus stalls", "deadlock risk"],
+                "resolution_angle": "decompose into autonomous cells, reduce coupling.",
+            },
+        }
+
+    def _initialize_resolution_templates(self) -> Dict[str, str]:
+        return {
+            "single_point_of_concentration": (
+                "Identify the single component absorbing all throughput in '{system}' and "
+                "propose three structurally distinct ways to distribute that load without "
+                "introducing a new bottleneck."
+            ),
+            "serialization_lock": (
+                "Locate the serialization lock that caps concurrency in '{system}' and "
+                "ideate lock-free, optimistic, or sharded alternatives that preserve correctness."
+            ),
+            "feedback_delay": (
+                "Map the slowest feedback loop in '{system}' and generate creative designs "
+                "that collapse it via predictive feed-forward or local autonomy."
+            ),
+            "resource_saturation": (
+                "Pinpoint the saturated finite resource in '{system}' and propose elastic, "
+                "pooled, or demand-shaped resolutions that lift the ceiling."
+            ),
+            "coordination_overhead": (
+                "Find the coordination boundary where cost grows superlinearly in '{system}' "
+                "and ideate cell-based, event-driven, or eventual-consistency decompositions."
+            ),
+        }
+
+    def identify_bottlenecks(self, system_description: str, signals: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+        """Pinpoint candidate structural bottlenecks from a system description and signals."""
+        system_description = (system_description or "").lower()
+        signals = signals or {}
+        found: List[Dict[str, Any]] = []
+
+        for name, signature in self.bottleneck_signatures.items():
+            score = 0.0
+            matched_indicators: List[str] = []
+            for indicator in signature["indicators"]:
+                key = indicator.replace(" ", "_")
+                if signals.get(key):
+                    score += 0.4
+                    matched_indicators.append(indicator)
+                elif indicator in system_description:
+                    score += 0.2
+                    matched_indicators.append(indicator)
+            if signature["description"].lower().split()[0] in system_description:
+                score += 0.1
+            if score > 0:
+                found.append({
+                    "bottleneck": name,
+                    "description": signature["description"],
+                    "resolution_angle": signature["resolution_angle"],
+                    "matched_indicators": matched_indicators,
+                    "confidence": min(1.0, score),
+                })
+
+        found.sort(key=lambda x: x["confidence"], reverse=True)
+        return found
+
+    def generate_ideation_prompts(self, system_description: str, bottlenecks: List[Dict[str, Any]] | None = None) -> List[str]:
+        """Auto-generate targeted ideation prompts for creative bottleneck resolution."""
+        if bottlenecks is None:
+            bottlenecks = self.identify_bottlenecks(system_description)
+        prompts: List[str] = []
+        for entry in bottlenecks:
+            template = self.resolution_prompt_templates.get(entry["bottleneck"])
+            if not template:
+                continue
+            prompts.append(template.format(system=system_description.strip() or "the system"))
+        return prompts
+
+    def analyze(self, system_description: str, signals: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        """End-to-end bottleneck analysis returning both bottlenecks and ideation prompts."""
+        bottlenecks = self.identify_bottlenecks(system_description, signals)
+        prompts = self.generate_ideation_prompts(system_description, bottlenecks)
+        return {
+            "system": system_description,
+            "bottlenecks": bottlenecks,
+            "ideation_prompts": prompts,
+        }
+
+    def get_stats(self) -> Dict[str, Any]:
+        return {
+            "signature_count": len(self.bottleneck_signatures),
+            "template_count": len(self.resolution_prompt_templates),
         }
 
     async def evaluate_with_persona_perspectives(
