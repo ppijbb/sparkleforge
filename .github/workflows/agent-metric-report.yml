@@ -39,8 +39,12 @@ jobs:
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
         run: |
-          uv run python main.py report generate
+          uv run python main.py report generate || EXIT=$?
+          exit ${EXIT:-0}
 
       - name: Expose Report to Job Summary
         run: |
