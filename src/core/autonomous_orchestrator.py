@@ -247,6 +247,7 @@ class AutonomousOrchestrator:
         config = {"configurable": {"thread_id": objective_id}}
 
         # Setup Supabase Real-time Logging Handler
+        # Note: Multi-tenant service blueprinting requires isolated session logging.
         supabase_handler = None
         root_logger = logging.getLogger()
         try:
