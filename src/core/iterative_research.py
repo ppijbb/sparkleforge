@@ -17,6 +17,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List
 
+from src.agents.creativity_agent import CreativityAgent
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -219,6 +220,7 @@ class IterativeResearchEngine:
         self.quality_threshold = quality_threshold
         self.min_improvement_threshold = min_improvement_threshold
         self.workspace_reconstructor = workspace_reconstructor or WorkspaceReconstructor()
+        self.creativity_agent = CreativityAgent()
 
         # Callbacks
         self.on_round_start: Callable | None = None
@@ -269,6 +271,7 @@ class IterativeResearchEngine:
         previous_quality = 0.0
         stagnation_count = 0
         max_stagnation = 2  # 연속 2라운드 개선 없으면 종료
+        creativity_triggered = False
 
         logger.info(
             f"🔄 Starting iterative research for query: {query[:100]}... (Continuous: {state.is_continuous})"
@@ -386,6 +389,18 @@ class IterativeResearchEngine:
                         )
                         logger.info(f"⚠️ {state.termination_reason}")
                 else:
+                    # 개선 정체 시 창의성 에이전트 호출
+                    if not creativity_triggered and stagnation_count >= 1:
+                        logger.info("💡 Research plateau detected. Invoking CreativityAgent for new hypotheses.")
+                        insights = await self.creativity_agent.generate_creative_insights(
+                            context=query,
+                            current_ideas=[state.evolving_summary]
+                        )
+                        if insights:
+                            state.evolving_summary += "\n\n[Creative Hypotheses]\n" + "\n".join(
+                                [f"- {i.title}: {i.description}" for i in insights]
+                            )
+                            creativity_triggered = True
                     stagnation_count = 0
 
                 previous_quality = current_quality
