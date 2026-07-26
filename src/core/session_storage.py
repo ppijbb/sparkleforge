@@ -9,6 +9,7 @@ import gzip
 import json
 import logging
 import sqlite3
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -377,6 +378,68 @@ class SessionStorage:
             logger.error(f"Failed to load session {session_id}: {e}")
             return None
 
+    async def load_session_async(self, session_id: str) -> Dict[str, Any] | None:
+        """세션 로드 (비동기).
+
+        Args:
+            session_id: 세션 ID
+
+        Returns:
+            세션 데이터 또는 None
+        """
+        try:
+            # 압축 파일 우선 시도
+            file_path = self.sessions_dir / f"{session_id}.json.gz"
+            if not file_path.exists():
+                file_path = self.sessions_dir / f"{session_id}.json"
+
+            if not file_path.exists():
+                logger.warning(f"Session file not found: {session_id}")
+                return None
+
+            # 로드 (블로킹 I/O를 스레드 풀로 오프로드)
+            loop = asyncio.get_running_loop()
+
+            def _read_file():
+                if file_path.suffix == ".gz":
+                    with gzip.open(file_path, "rt", encoding="utf-8") as f:
+                        return json.loads(f.read())
+                return json.loads(file_path.read_text(encoding="utf-8"))
+
+            session_data = await loop.run_in_executor(None, _read_file)
+
+            # 메타데이터 업데이트 (last_accessed)
+            await self._update_last_accessed_async(session_id)
+
+            logger.info(f"Session loaded: {session_id}")
+            return session_data
+
+        except Exception as e:
+            logger.error(f"Failed to load session {session_id}: {e}")
+            return None
+
+    async def _update_last_accessed_async(self, session_id: str):
+        """마지막 접근 시간 업데이트 (비동기)."""
+        if not self.use_database:
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+
+            def _update():
+                conn = sqlite3.connect(str(self.db_path))
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE session_metadata SET last_accessed = ? WHERE session_id = ?",
+                    (datetime.now().isoformat(), session_id),
+                )
+                conn.commit()
+                conn.close()
+
+            await loop.run_in_executor(None, _update)
+        except Exception as e:
+            logger.error(f"Failed to update last_accessed: {e}")
+
     def delete_session(self, session_id: str) -> bool:
         """세션 삭제.
 
@@ -435,6 +498,52 @@ class SessionStorage:
                 return self._list_sessions_from_db(user_id, limit, offset, order_by, order_desc)
             else:
                 return self._list_sessions_from_files(user_id, limit, offset, order_by, order_desc)
+        except Exception as e:
+            logger.error(f"Failed to list sessions: {e}")
+            return []
+
+    async def list_sessions_async(
+        self,
+        user_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order_by: str = "last_accessed",
+        order_desc: bool = True,
+    ) -> List[SessionMetadata]:
+        """세션 목록 조회 (비동기).
+
+        Args:
+            user_id: 사용자 ID 필터
+            limit: 최대 결과 수
+            offset: 오프셋
+            order_by: 정렬 기준
+            order_desc: 내림차순 여부
+
+        Returns:
+            세션 메타데이터 목록
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            if self.use_database:
+                return await loop.run_in_executor(
+                    None,
+                    self._list_sessions_from_db,
+                    user_id,
+                    limit,
+                    offset,
+                    order_by,
+                    order_desc,
+                )
+            else:
+                return await loop.run_in_executor(
+                    None,
+                    self._list_sessions_from_files,
+                    user_id,
+                    limit,
+                    offset,
+                    order_by,
+                    order_desc,
+                )
         except Exception as e:
             logger.error(f"Failed to list sessions: {e}")
             return []
