@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Dict, List, TypedDict
+from typing import Annotated, Any, Dict, List, TypedDict, Final
 
 from langchain_core.messages import BaseMessage
 
@@ -17,9 +17,9 @@ class ResearchState(TypedDict):
     """LangGraph 연구 워크플로우 상태 정의 (8대 혁신 통합)."""
 
     # Input
-    user_request: str
-    context: Dict[str, Any] | None
-    objective_id: str
+    user_request: Final[str]
+    context: Final[Dict[str, Any] | None]
+    objective_id: Final[str]
 
     # Adaptive Supervisor (혁신 1)
     complexity_score: float
@@ -34,20 +34,20 @@ class ResearchState(TypedDict):
     scope_analysis: Dict[str, Any]
 
     # Planning Agent (새 필드)
-    preliminary_research: Dict[str, Any]  # MCP 도구로 수집한 사전 조사 결과
-    planned_tasks: List[Dict[str, Any]]  # 세부 task 목록
-    agent_assignments: Dict[str, List[str]]  # agent별 할당된 task
-    execution_plan: Dict[str, Any]  # 실행 전략 (순서, 병렬성)
-    plan_approved: bool  # Plan 검증 통과 여부
-    plan_feedback: str | None  # Plan 검증 피드백
-    plan_iteration: int  # Plan 재작성 횟수
+    preliminary_research: Dict[str, Any]
+    planned_tasks: List[Dict[str, Any]]
+    agent_assignments: Dict[str, List[str]]
+    execution_plan: Dict[str, Any]
+    plan_approved: bool
+    plan_feedback: str | None
+    plan_iteration: int
 
     # Execution (Universal MCP Hub + Streaming Pipeline)
     execution_results: List[Dict[str, Any]]
     agent_status: Dict[str, Any]
     execution_metadata: Dict[str, Any]
     streaming_data: List[Dict[str, Any]]
-    streaming_events: List[Dict[str, Any]]  # 실시간 스트리밍 이벤트
+    streaming_events: List[Dict[str, Any]]
 
     # Hierarchical Compression (혁신 2)
     compression_results: List[Dict[str, Any]]
@@ -74,20 +74,20 @@ class ResearchState(TypedDict):
     synthesis_metadata: Dict[str, Any]
 
     # Human-in-the-loop 관련 필드
-    pending_questions: List[Dict[str, Any]]  # 대기 중인 질문들
-    user_responses: Dict[str, Any]  # 질문 ID -> 사용자 응답
-    clarification_context: Dict[str, Any]  # 명확화된 정보
-    waiting_for_user: bool  # 사용자 응답 대기 중인지
-    autopilot_mode: bool  # CLI 모드에서 자동 선택 모드
+    pending_questions: List[Dict[str, Any]]
+    user_responses: Dict[str, Any]
+    clarification_context: Dict[str, Any]
+    waiting_for_user: bool
+    autopilot_mode: bool
     context_window_usage: Dict[str, Any]
 
     # Greedy Overseer 필드
-    overseer_iterations: int  # Overseer 반복 횟수
-    overseer_requirements: List[Dict[str, Any]]  # 추가 요구사항
-    overseer_evaluations: List[Dict[str, Any]]  # 각 iteration의 평가
-    completeness_scores: Dict[str, float]  # 목표별 완전성 점수
-    quality_assessments: Dict[str, Dict[str, float]]  # 결과별 품질 평가
-    overseer_decision: str | None  # 'continue', 'retry', 'ask_user', 'proceed'
+    overseer_iterations: int
+    overseer_requirements: List[Dict[str, Any]]
+    overseer_evaluations: List[Dict[str, Any]]
+    completeness_scores: Dict[str, float]
+    quality_assessments: Dict[str, Dict[str, float]]
+    overseer_decision: str | None
 
     # Control Flow
     current_step: str
