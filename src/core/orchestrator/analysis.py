@@ -101,6 +101,7 @@ class AnalysisNode(BaseNode):
         6. Success criteria and quality metrics
         
         Use production-level analysis with specific, actionable insights.
+        Perform a Homological Data Analysis (HDA) of the workflow to detect potential structural voids or redundant loops.
         Return the result in JSON format with the following structure:
         {{
             "objectives": [{{"id": "obj_1", "description": "Research objective", "priority": "high"}}],
@@ -108,6 +109,7 @@ class AnalysisNode(BaseNode):
             "domain": {{"fields": ["technology", "research"], "expertise": "general"}},
             "scope": {{"breadth": "comprehensive", "depth": "detailed"}},
             "complexity": 7.0
+            "hda_report": {{"voids": [], "redundant_loops": []}}
         }}
         """
 
