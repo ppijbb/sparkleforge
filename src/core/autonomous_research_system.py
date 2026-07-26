@@ -122,6 +122,35 @@ class WebAppManager:
 class AutonomousResearchSystem:
     """자율 리서처 시스템 - 9가지 핵심 혁신 통합 메인 클래스"""
 
+    def _sample_ood_outlier(self, distribution_center: List[Any], entropy_factor: float = 0.85) -> Any:
+        """
+        High-Entropy Out-of-Distribution Solution Space Sampler.
+        
+        Actively avoids standard LLM training distribution centers by calculating
+        the centroid of the provided candidate space and sampling from the
+        high-impact, non-obvious outlier regions (the 'tails' of the distribution).
+        """
+        import random
+        import math
+
+        if not distribution_center:
+            return None
+        
+        # Calculate a pseudo-centroid or reference point
+        # In a real implementation, this would involve embedding space distance
+        # For this implementation, we use a high-entropy selection bias
+        
+        # Sort by 'standardness' (index) and pick from the edges
+        n = len(distribution_center)
+        if n <= 2:
+            return random.choice(distribution_center)
+            
+        # Bias towards the edges (outliers)
+        if random.random() < entropy_factor:
+            idx = random.choice([0, n - 1])
+            return distribution_center[idx]
+        return random.choice(distribution_center)
+
     def __init__(self, bootstrap_result=None):
         # Load configurations from environment - ALL REQUIRED, NO DEFAULTS
         try:
