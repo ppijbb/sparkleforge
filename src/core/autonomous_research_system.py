@@ -577,6 +577,7 @@ class AutonomousResearchSystem:
 
                 # Use new multi-agent orchestrator (no fallback - fail clearly)
                 workflow_result = await self.orchestrator.execute(request)
+                workflow_result = await self._run_deep_validation(workflow_result, request)
 
                 # Guardrails Output 검증 (선택적)
                 if hasattr(self, "guardrails_validator") and self.guardrails_validator:
@@ -836,6 +837,7 @@ class AutonomousResearchSystem:
         # Unified path: same as non-streaming (AgentOrchestrator.execute)
         raw = await self.orchestrator.execute(request)
         _, agent_workflow_result_to_public_dict = _load_agent_orchestrator()
+        raw = await self._run_deep_validation(raw, request)
         result = agent_workflow_result_to_public_dict(raw)
 
         # Extract and format result
@@ -941,6 +943,65 @@ class AutonomousResearchSystem:
                 )
 
         return unique_sources[:20]  # Limit to 20 sources
+
+    async def _run_deep_validation(
+        self, workflow_result: Dict[str, Any], request: str
+    ) -> Dict[str, Any]:
+        """Wire ValidationAgent (issue #1041) into the research synthesis loop.
+
+        Runs the deep multi-pass ValidationAgent over the synthesized research
+        results before report generation. Best-effort: validation failures are
+        logged and surfaced in metadata but never abort the pipeline.
+        """
+        try:
+            from src.agents.validation_agent import ValidationAgent
+
+            execution_results = list(workflow_result.get("research_results", []))
+            verified_results = workflow_result.get("verified_results", [])
+            if verified_results:
+                execution_results.extend(verified_results)
+
+            if not execution_results:
+                logger.info("ℹ️ Deep validation skipped: no execution results to validate")
+                return workflow_result
+
+            original_objectives = workflow_result.get("research_plan", {}).get(
+                "objectives", []
+            ) or []
+
+            validation_agent = ValidationAgent()
+            validation_result = await validation_agent.validate_results(
+                execution_results=execution_results,
+                original_objectives=original_objectives,
+                user_request=request,
+                objective_id=workflow_result.get("session_id"),
+            )
+
+            workflow_result["deep_validation"] = validation_result
+
+            validation_report = validation_result.get("validation_report", {})
+            if validation_report:
+                recommendations = validation_report.get("recommendations", [])
+                if recommendations:
+                    logger.info(
+                        f"🔍 Deep validation recommendations: {recommendations}"
+                    )
+
+            logger.info(
+                f"✅ Deep validation completed: "
+                f"{validation_result.get('validation_level', 'unknown')} "
+                f"({validation_result.get('validation_score', 0.0):.2f})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"⚠️ Deep validation failed (continuing without): {e}"
+            )
+            workflow_result["deep_validation"] = {
+                "success": False,
+                "error": str(e),
+            }
+
+        return workflow_result
 
     async def _apply_hierarchical_compression(
         self, result: Dict[str, Any]
