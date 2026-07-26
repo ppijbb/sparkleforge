@@ -85,6 +85,7 @@ class AgentLoop:
     mode_controller = None
     method_resolver = None
     intent_guardrail = None
+    greedy_overseer = None
 
     AUTONOMOUS_PROBLEM_SOLVING_CONTRACT = """
 Autonomous problem-solving contract:
@@ -118,6 +119,18 @@ Autonomous problem-solving contract:
         self.mode_controller = ModeController(plan_first=self._plan_first)
         self.method_resolver = MethodResolver()
         self.intent_guardrail = None
+
+        # GreedyOverseerAgent wiring (issue #1038): monitor token budgets and
+        # step limits. Construction is best-effort because the overseer pulls
+        # LLM/shared-memory config that may be unavailable in lightweight test
+        # harnesses; a None overseer is treated as a no-op throughout the loop.
+        try:
+            from src.agents.greedy_overseer_agent import GreedyOverseerAgent
+
+            self.greedy_overseer = GreedyOverseerAgent(max_iterations=max(1, max_iterations // 4))
+        except Exception as e:
+            logger.warning("[AgentLoop] GreedyOverseerAgent unavailable: %s", e)
+            self.greedy_overseer = None
 
     async def run_conversation(
         self,
@@ -193,6 +206,7 @@ Autonomous problem-solving contract:
             logger.info(f"[AgentLoop] Iteration {budget.current_iteration}/{max_iterations}")
             self._apply_mode_to_messages(history)
             await self._guard_intent(history)
+            await self._oversee_iteration(budget, history, tool_results, errors)
 
             # Phase 3: Compress context if needed
             history = await self.compressor.compress_if_needed(history)
@@ -821,6 +835,57 @@ Autonomous problem-solving contract:
             return
         if self.intent_guardrail.needs_human_review() and self.mode_controller:
             self.mode_controller.on_intent_review_needed()
+
+    async def _oversee_iteration(
+        self,
+        budget: "IterationBudget",
+        history: List[Dict[str, Any]],
+        tool_results: List[Dict[str, Any]],
+        errors: List[Dict[str, Any]],
+    ) -> None:
+        """GreedyOverseerAgent hook (issue #1038).
+
+        Monitors token budgets and step limits each iteration. The overseer is
+        optional: if it was never constructed (or its config is unavailable),
+        this is a no-op. Failures are logged and swallowed so the agent loop
+        never depends on the overseer for correctness.
+        """
+        overseer = getattr(self, "greedy_overseer", None)
+        if overseer is None:
+            return
+        try:
+            # Approximate token usage from the pruned history so the overseer
+            # has a concrete budget signal without coupling to a tokenizer.
+            approx_tokens = sum(
+                len(str(m.get("content", ""))) // 4
+                for m in history
+                if isinstance(m, dict)
+            )
+            state = {
+                "user_request": "",
+                "planned_tasks": [],
+                "execution_results": tool_results,
+                "verified_results": tool_results,
+                "quality_assessments": {},
+                "overseer_requirements": [],
+                "overseer_iterations": budget.current_iteration,
+                "completeness_scores": {},
+                "approx_token_usage": approx_tokens,
+                "iteration_budget": budget.max_iterations,
+            }
+            updated = await overseer.evaluate_execution_results(state)
+            decision = updated.get("overseer_decision")
+            if decision and decision != "proceed":
+                errors.append(
+                    {
+                        "type": "greedy_overseer_signal",
+                        "decision": decision,
+                        "iteration": budget.current_iteration,
+                        "message": f"GreedyOverseerAgent decision: {decision}",
+                    }
+                )
+        except Exception as e:
+            logger.warning("[AgentLoop] GreedyOverseerAgent evaluation failed: %s", e)
 
     async def _record_resolved_capability(self, capability: str) -> None:
         """MethodResolver를 통해 도구 capability 해결 시도를 기록."""
