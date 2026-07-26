@@ -217,6 +217,24 @@ class CreativityAgent:
         """user_query만으로 초기(sparkle) 아이디어를 생성합니다. 워크플로우 앞단 시드용."""
         if not (user_query or "").strip():
             return []
+        
+        # Meta-Ideation: Dynamic Horizon Context Expansion
+        # If the query is complex, we trigger a deep research scan to expand the horizon
+        # before generating creative insights.
+        try:
+            from src.core.mcp_integration.executors.search import SearchExecutor
+            search_executor = SearchExecutor()
+            # Perform a multi-hop deep research scan for cross-domain context
+            deep_context = await search_executor.execute_search(
+                query=f"cross-domain research papers and patents on {user_query}",
+                limit=3
+            )
+            if deep_context:
+                # Inject deep research findings into the context
+                user_query = f"{user_query}\n\nDeep Research Context:\n{deep_context}"
+        except Exception as e:
+            logger.debug(f"Deep research expansion skipped: {e}")
+
         return await self.generate_creative_insights(
             context=user_query.strip(),
             current_ideas=[user_query.strip()],
