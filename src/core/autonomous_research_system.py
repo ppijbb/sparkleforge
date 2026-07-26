@@ -215,6 +215,11 @@ class AutonomousResearchSystem:
 
             logger.info("✅ Multi-Agent Orchestrator initialized (no fallback mode)")
             logger.info("✅ Autonomous Orchestrator initialized")
+
+            from src.agents.task_analyzer import TaskAnalyzerAgent
+            self.task_analyzer = TaskAnalyzerAgent()
+            logger.info("✅ Task Analyzer Agent initialized")
+
         except Exception as e:
             logger.error(f"❌ Orchestrator initialization failed: {e}")
             raise
@@ -519,6 +524,13 @@ class AutonomousResearchSystem:
         try:
             # Start health monitoring
             await self.health_monitor.start_monitoring()
+
+            # Pre-analyze request using TaskAnalyzer
+            logger.info("🔍 Analyzing request with TaskAnalyzer...")
+            analysis_result = await self.task_analyzer.analyze_objective(request)
+            logger.info(f"✅ Task analysis completed: {len(analysis_result.get('objectives', []))} objectives identified")
+            # Optionally inject analysis into context or state if needed
+            # request = f"{request}\n\nAnalysis: {json.dumps(analysis_result)}"
 
             # Initialize MCP client if enabled
             if self.config.mcp.enabled:
