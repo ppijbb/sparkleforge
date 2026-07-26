@@ -145,6 +145,27 @@ class MCPStabilityService:
         self.throttler = SearchThrottler()
         logger.info("MCP Stability Service initialized")
 
+    async def run_background_watchdog(self, mcp_hub):
+        """Zero-cost background service health watchdog.
+        
+        Runs in a loop to monitor service telemetry without LLM token usage.
+        Triggers auto-healing if services are unhealthy.
+        """
+        logger.info("Starting background MCP stability watchdog")
+        while True:
+            try:
+                # Perform health check without LLM interaction
+                await self.health_monitor.check_and_reconnect(mcp_hub)
+                
+                # Idle period: 60 seconds between checks
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                logger.info("Background watchdog cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Background watchdog error: {e}")
+                await asyncio.sleep(30)
+
     async def enhance_mcp_call(
         self,
         mcp_hub,
