@@ -1,5 +1,6 @@
 import logging
 from enum import Enum
+from typing import Any, Dict, List, Set
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class PromptBuilder:
 
 
 # Utility function for quick access
-def get_system_prompt(identity_key: str = "general", extras: str = None) -> str:
+def get_system_prompt(identity_key: str = "general", extras: str | None = None) -> str:
     try:
         identity = AgentIdentity(identity_key.lower())
     except ValueError:

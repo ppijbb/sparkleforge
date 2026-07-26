@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import time
+from typing import Any, Dict, List, Set
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -28,12 +29,20 @@ logger = logging.getLogger(__name__)
 # Bootstrap file name (CLAUDE.md equivalent)
 SPARKLE_FILENAME = "SPARKLE.md"
 BOOTSTRAP_DIR = ".sparkleforge"
+
 GLOBAL_BOOTSTRAP_DIR = "sparkleforge"
 
 
 def _get_project_root() -> Path:
     """Project root (SparkleForge repo root)."""
     return Path(__file__).resolve().parent.parent.parent
+
+
+def get_system_prompt(identity_key: str = "general", extras: str = None) -> str:
+    """Delegates to PromptBuilder for system prompt construction."""
+    from src.core.prompt_builder import get_system_prompt as _get_prompt
+
+    return _get_prompt(identity_key, extras)
 
 
 def load_bootstrap_content(max_chars: int = 8000) -> str:
