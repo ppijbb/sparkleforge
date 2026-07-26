@@ -60,6 +60,14 @@ class TrajectoryRecord:
 
 class ReasoningMemoryInducer:
     """궤적으로부터 메모리를 추출하고 평가하는 유틸리티 클래스."""
+    """
+    Self-Reflective Knowledge Pruning & Distillation Daemon.
+
+    Background daemon that distills raw research logs (trajectories) into
+    compact, reusable procedural skills without human intervention. It prunes
+    redundant/low-value induced memories and consolidates overlapping items
+    into distilled procedural skills.
+    """
 
     @staticmethod
     def _parse_memory_items(
