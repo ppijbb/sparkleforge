@@ -8,6 +8,7 @@ import logging
 import os
 from typing import Any, Dict, List, TypedDict
 
+from src.core.isomorphism_extractor import CrossDomainIsomorphismExtractor
 # Removed global AgentHarness import for optimization
 
 
@@ -35,6 +36,7 @@ class AgentOrchestrator:
         from src.core.agent_harness import AgentHarness
         self.harness = AgentHarness()
         self.config = config
+        self.isomorphism_extractor = CrossDomainIsomorphismExtractor()
         self.recursion_limit = getattr(config, "recursion_limit", 20000)
         self.gemini_cache = self._init_gemini_cache()
         self.federation_enabled = getattr(config, "federation_enabled", False)
@@ -157,6 +159,11 @@ class AgentOrchestrator:
             identity=identity,
             heat_seconds=heat_seconds,
         )
+
+        # Cross-domain isomorphism extraction (issue #922): map abstract
+        # operational topologies from non-obvious domains onto the request.
+        isomorphisms = self.isomorphism_extractor.extract(request)
+        harness_result.setdefault("metadata", {})["isomorphisms"] = isomorphisms
 
         # Persist any Gemini prompt-cache handle produced by the harness run
         # back into the per-session store so subsequent turns can reuse it.
