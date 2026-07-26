@@ -147,7 +147,7 @@ class InvocationGateway:
             trusted_public_key_b64 = self.identity_manager.get_public_key_b64(mandate.issuer)
             if trusted_public_key_b64 is None:
                 allowed = False
-                reasons.append(f"mandate issuer '{mandate.issuer}' is not a registered identity")
+                reasons.append(f"mandate issuer '{mandate.issuer}' is not a registered identity or key missing")
                 mandate_info = {"subject": mandate.subject, "issuer": mandate.issuer, "valid": False}
             else:
                 valid, verify_reason = verify_mandate(mandate, trusted_public_key_b64)
