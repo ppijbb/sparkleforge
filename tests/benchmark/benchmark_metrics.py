@@ -388,6 +388,35 @@ class MetricsCollector:
             ),
         ]
 
+    def measure_ideation_quality(
+        self, ideation_nodes: List[Dict[str, Any]]
+    ) -> List[MetricResult]:
+        """Measure ideation diversity, synthesis rate, and verification pass rates."""
+        if not ideation_nodes:
+            return [
+                MetricResult("idea_diversity", 0.0, 0.5, False, "ideation"),
+                MetricResult("synthesis_rate", 0.0, 0.5, False, "ideation"),
+                MetricResult("verification_pass_rate", 0.0, 0.8, False, "ideation"),
+            ]
+
+        # Diversity: Unique topics/approaches
+        topics = {n.get("topic") for n in ideation_nodes if n.get("topic")}
+        diversity = len(topics) / len(ideation_nodes)
+
+        # Synthesis: Nodes with derived insights
+        synthesized = [n for n in ideation_nodes if n.get("derived_from")]
+        synthesis_rate = len(synthesized) / len(ideation_nodes)
+
+        # Verification: Pass rate of self-verification checks
+        verifications = [n.get("verified", False) for n in ideation_nodes]
+        pass_rate = sum(verifications) / len(verifications)
+
+        return [
+            MetricResult("idea_diversity", diversity, 0.5, diversity >= 0.5, "ideation"),
+            MetricResult("synthesis_rate", synthesis_rate, 0.5, synthesis_rate >= 0.5, "ideation"),
+            MetricResult("verification_pass_rate", pass_rate, 0.8, pass_rate >= 0.8, "ideation"),
+        ]
+
     def _estimate_domain_credibility(self, domain: str) -> float:
         """Estimate credibility based on domain reputation."""
         if not domain:
