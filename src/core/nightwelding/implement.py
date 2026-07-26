@@ -66,6 +66,11 @@ def implement_until_green(
     for attempt in range(1, max_iterations + 1):
         before_sig = patch_ops.repository_change_signature()
 
+        # Issue #917: validate the synthetic schema of the worker's diff before
+        # attempting to apply it, so malformed LLM output fails fast with a clear
+        # reason instead of an opaque `git apply` failure deep in patch_ops.
+        from src.core.nightwelding.gate import _validate_repro_diff_schema
+
         proc = _run(
             [
                 sys.executable,
@@ -80,6 +85,19 @@ def implement_until_green(
             timeout=_FIX_ISSUE_TIMEOUT_SECONDS,
         )
         if proc.returncode != 0:
+            candidate_diff = patch_ops.extract_diff(proc.stdout or "")
+            if candidate_diff.strip():
+                schema_ok, schema_reason = _validate_repro_diff_schema(candidate_diff)
+                if not schema_ok:
+                    extra_context_path.write_text(
+                        f"Previous attempt produced a malformed diff: {schema_reason}\n\n"
+                        "Regenerate a minimal git-apply compatible diff with "
+                        "'diff --git', '--- a/'/'+++ b/' headers and 'a/'/'b/' path prefixes.",
+                        encoding="utf-8",
+                    )
+                    if attempt == max_iterations:
+                        return ImplementResult(success=False, reason=schema_reason, log=proc.stderr[-4000:], attempts=attempt)
+                    continue
             extra_context_path.write_text(
                 "Previous attempt failed before commit.\n\n"
                 f"Worker error:\n{proc.stderr}\n\n"
