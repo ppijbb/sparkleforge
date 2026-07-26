@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+from src.core.adaptive_memory import get_adaptive_memory
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,8 @@ class DocumentOrganizerAgent:
         self.root_path = root_path or Path.cwd()
         self.root_path = self.root_path.resolve()
         self.index: DocumentIndex | None = None
+        self.memory = get_adaptive_memory()
+        logger.info("DocumentOrganizerAgent initialized with AdaptiveMemory integration")
 
     async def analyze_documents(
         self,
@@ -142,6 +145,16 @@ class DocumentOrganizerAgent:
 
         logger.info(
             f"Document analysis complete: {len(documents)} documents, {len(categories)} categories"
+        )
+
+        # 메모리 시스템에 분석 결과 저장
+        await self.memory.store_memory_async(
+            create_memory_from_dict({
+                "memory_id": f"doc_index_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "memory_type": "semantic",
+                "content": f"Analyzed {len(documents)} documents in {self.root_path}",
+                "user_id": "system",
+            })
         )
         return self.index
 
