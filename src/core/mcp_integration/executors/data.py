@@ -123,10 +123,76 @@ async def _execute_data_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
             return await _execute_shell_tool(tool_name, parameters)
 
         else:
-            raise ValueError(f"Unknown data tool: {tool_name}")
+            return await _execute_backend_data_tool(tool_name, parameters)
 
     except Exception as e:
         logger.error(f"Data tool execution failed: {tool_name} - {e}")
+        return ToolResult(
+            success=False,
+            data=None,
+            error=f"Data tool execution failed: {str(e)}",
+            execution_time=time.time() - start_time,
+            confidence=0.0,
+        )
+
+
+async def _execute_backend_data_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
+    """Dispatch first-class backend data tools (AutomationEngine, GuardPlane, SemanticFS).
+
+    Binds the natural-language execution graph to the actuate/guard/observe backend
+    modules so `main.py work "<goal>"` can dispatch create_automation_task,
+    list_automation_tasks, guard_* and semantic_fs_* tools without raising
+    `Unknown data tool`.
+    """
+    start_time = time.time()
+    try:
+        if tool_name in {"create_automation_task", "list_automation_tasks"}:
+            from src.core.automation.automation_engine import AutomationEngine
+
+            engine = AutomationEngine()
+            if tool_name == "create_automation_task":
+                task = engine.create_task(parameters)
+                return ToolResult(
+                    success=True,
+                    data=task,
+                    execution_time=time.time() - start_time,
+                    confidence=0.9,
+                )
+            return ToolResult(
+                success=True,
+                data=engine.list_tasks(parameters),
+                execution_time=time.time() - start_time,
+                confidence=0.9,
+            )
+
+        if tool_name.startswith("guard_"):
+            from src.core.guard.guard_plane import GuardPlane
+
+            plane = GuardPlane()
+            result = plane.dispatch(tool_name, parameters)
+            return ToolResult(
+                success=True,
+                data=result,
+                execution_time=time.time() - start_time,
+                confidence=0.9,
+            )
+
+        if tool_name.startswith("semantic_fs_"):
+            from src.core.actuate.semantic_fs import SemanticFS
+
+            fs = SemanticFS()
+            op = tool_name[len("semantic_fs_"):]
+            result = getattr(fs, op)(parameters)
+            return ToolResult(
+                success=True,
+                data=result,
+                execution_time=time.time() - start_time,
+                confidence=0.9,
+            )
+
+        raise ValueError(f"Unknown data tool: {tool_name}")
+    except Exception as e:
+        logger.error(f"Backend data tool execution failed: {tool_name} - {e}")
         return ToolResult(
             success=False,
             data=None,
