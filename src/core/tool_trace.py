@@ -29,7 +29,7 @@ class ToolTrace:
     tool_type: str  # 도구 타입 (rag_naive, web_search, mcp_tool 등)
     query: str  # 발행된 쿼리
     raw_answer: str  # 도구가 반환한 원시 상세 결과 (50KB 제한)
-    summary: str  # Note Agent가 생성한 핵심 요약
+    summary: str  # Agent가 생성한 핵심 요약
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     raw_answer_truncated: bool = False  # raw_answer가 잘렸는지 여부
     raw_answer_original_size: int = 0  # 잘리기 전 원본 크기
