@@ -8,6 +8,7 @@ import logging
 import os
 from datetime import datetime
 from typing import Any, Dict
+from pathlib import Path
 
 from src.core.orchestrator import create_orchestrator_graph
 from src.core.researcher_config import (
@@ -34,12 +35,156 @@ def _autopilot_mode_enabled(context: Dict[str, Any] | None = None) -> bool:
     return True
 
 
+class LivenessWatchdog:
+    """24x7 liveness watchdog detecting stagnation during autonomous runs.
+
+    Tracks the most recent commit timestamp and orchestrator heartbeat. When
+    the autonomous run stays inactive for longer than the configured stagnation
+    threshold, the watchdog emits a liveness event so the self-recovery planner
+    can restart ``research_planner`` along an alternative execution path.
+    """
+
+    DEFAULT_STAGNATION_HOURS = 1
+    REPORT_DIR = Path("results/agent_reports")
+
+    def __init__(
+        self,
+        stagnation_hours: float | None = None,
+        report_dir: str | Path | None = None,
+    ) -> None:
+        env_hours = os.getenv("SPARKLEFORGE_LIVENESS_STAGNATION_HOURS")
+        if stagnation_hours is not None:
+            self.stagnation_hours = float(stagnation_hours)
+        elif env_hours is not None:
+            self.stagnation_hours = float(env_hours)
+        else:
+            self.stagnation_hours = float(self.DEFAULT_STAGNATION_HOURS)
+        self.report_dir = Path(report_dir) if report_dir else self.REPORT_DIR
+        self._last_commit_at: datetime | None = None
+        self._last_heartbeat_at: datetime | None = None
+        self._recovery_attempts: list[Dict[str, Any]] = []
+
+    def record_commit(self, timestamp: datetime | None = None) -> None:
+        self._last_commit_at = timestamp or datetime.now()
+
+    def record_heartbeat(self, timestamp: datetime | None = None) -> None:
+        self._last_heartbeat_at = timestamp or datetime.now()
+
+    def last_activity_at(self) -> datetime | None:
+        candidates = [ts for ts in (self._last_commit_at, self._last_heartbeat_at) if ts]
+        return max(candidates) if candidates else None
+
+    def is_stagnant(self, now: datetime | None = None) -> bool:
+        last = self.last_activity_at()
+        if last is None:
+            return True
+        now = now or datetime.now()
+        return (now - last).total_seconds() >= self.stagnation_hours * 3600
+
+    def emit_event(self, reason: str, now: datetime | None = None) -> Dict[str, Any]:
+        now = now or datetime.now()
+        event = {
+            "event": "liveness_stagnation_detected",
+            "reason": reason,
+            "timestamp": now.isoformat(),
+            "last_commit_at": self._last_commit_at.isoformat() if self._last_commit_at else None,
+            "last_heartbeat_at": (
+                self._last_heartbeat_at.isoformat() if self._last_heartbeat_at else None
+            ),
+            "stagnation_hours": self.stagnation_hours,
+        }
+        self._write_report(event, now)
+        return event
+
+    def _write_report(self, event: Dict[str, Any], now: datetime) -> Path | None:
+        try:
+            self.report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = self.report_dir / f"liveness_{now.strftime('%Y%m%d_%H%M%S')}.md"
+            lines = [
+                "# Liveness Watchdog Event",
+                "",
+                f"- Timestamp: {event['timestamp']}",
+                f"- Reason: {event['reason']}",
+                f"- Stagnation threshold (hours): {event['stagnation_hours']}",
+                f"- Last commit at: {event['last_commit_at']}",
+                f"- Last heartbeat at: {event['last_heartbeat_at']}",
+                "",
+                "## Recovery Attempts",
+                "",
+            ]
+            if not self._recovery_attempts:
+                lines.append("- (none yet)")
+            for attempt in self._recovery_attempts:
+                lines.append(
+                    f"- {attempt.get('timestamp')}: {attempt.get('action')} "
+                    f"-> {attempt.get('status')}"
+                )
+            report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            return report_path
+        except Exception as exc:  # pragma: no cover - best-effort telemetry
+            logger.debug(f"Failed to write liveness report: {exc}")
+            return None
+
+    def record_recovery(self, action: str, status: str) -> None:
+        self._recovery_attempts.append(
+            {
+                "timestamp": datetime.now().isoformat(),
+                "action": action,
+                "status": status,
+            }
+        )
+
+
+class SelfRecoveryPlanner:
+    """Autonomous self-recovery planner.
+
+    When the liveness watchdog detects stagnation, this planner restarts the
+    research planner along an alternative execution path and records the
+    recovery attempt for transparent telemetry.
+    """
+
+    def __init__(self, watchdog: LivenessWatchdog | None = None) -> None:
+        self.watchdog = watchdog or LivenessWatchdog()
+
+    def diagnose(self, now: datetime | None = None) -> Dict[str, Any]:
+        stagnant = self.watchdog.is_stagnant(now)
+        reason = (
+            "no recent commits or heartbeats within stagnation window"
+            if stagnant
+            else "active"
+        )
+        diagnosis = {
+            "stagnant": stagnant,
+            "reason": reason,
+            "last_activity_at": (
+                self.watchdog.last_activity_at().isoformat()
+                if self.watchdog.last_activity_at()
+                else None
+            ),
+        }
+        if stagnant:
+            self.watchdog.emit_event(reason, now)
+        return diagnosis
+
+    def plan_recovery(self, diagnosis: Dict[str, Any]) -> Dict[str, Any]:
+        if not diagnosis.get("stagnant"):
+            return {"action": "none", "reason": diagnosis.get("reason", "active")}
+        self.watchdog.record_recovery("restart_research_planner", "initiated")
+        return {
+            "action": "restart_research_planner",
+            "alternative_path": "research_planner",
+            "reason": diagnosis.get("reason", "stagnation"),
+        }
+
+
 class AutonomousOrchestrator:
     """Modularized LangGraph Orchestrator delegating to specialized nodes."""
 
     def __init__(self):
         """초기화 및 의존성 주입."""
         self.llm_config = get_llm_config()
+        self.liveness_watchdog = LivenessWatchdog()
+        self.self_recovery_planner = SelfRecoveryPlanner(self.liveness_watchdog)
         self.agent_config = get_agent_config()
         self.research_config = get_research_config()
         self.mcp_config = get_mcp_config()
@@ -129,6 +274,8 @@ class AutonomousOrchestrator:
             logger.info(f"🚀 Starting modularized autonomous research: {request[:50]}...")
             initial_state = {
                 "user_request": request,
+                )
+                self.liveness_watchdog.record_heartbeat()
                 "context": context or {},
                 "autopilot_mode": _autopilot_mode_enabled(context),
                 "objective_id": objective_id,
@@ -139,12 +286,20 @@ class AutonomousOrchestrator:
                 "innovation_stats": {},
                 "messages": [],
             }
+            self.liveness_watchdog.record_heartbeat()
             with redirect_stdout_to_supabase(objective_id):
                 final_state = await self.graph.ainvoke(initial_state, config)
+            self.liveness_watchdog.record_commit()
             return final_state
         except Exception as e:
             logger.error(f"❌ Orchestrator execution failed: {e}")
-            return {"error": str(e), "success": False}
+            diagnosis = self.self_recovery_planner.diagnose()
+            if diagnosis.get("stagnant"):
+                recovery = self.self_recovery_planner.plan_recovery(diagnosis)
+                logger.warning(
+                    "Liveness watchdog triggered self-recovery: %s", recovery.get("action")
+                )
+            return {"error": str(e), "success": False, "recovery": recovery if 'recovery' in locals() else None}
         finally:
             if supabase_handler:
                 try:
@@ -154,6 +309,7 @@ class AutonomousOrchestrator:
                     logger.debug(f"Unregistered SupabaseRealtimeHandler for session '{objective_id}'")
                 except Exception as cleanup_err:
                     logger.debug(f"Failed to clean up Supabase logging: {cleanup_err}")
+            return final_state
 
     async def run_research(
         self,
