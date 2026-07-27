@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 # Safety settings to block nothing (allow all content)
 # This is required for the research agent to function without being blocked by safety filters
 # for harmless queries or research topics.
-# Note: ChatGoogleGenerativeAI does not support safety_settings parameter directly.
-# Safety settings are handled at the genai.GenerativeModel level, not in LangChain wrapper.
+# ChatGoogleGenerativeAI does not accept a safety_settings parameter directly; safety
+# configuration is applied at the genai.GenerativeModel level instead. The constant is
 # Setting to None to avoid validation errors.
 SAFETY_SETTINGS_BLOCK_NONE = None
 
