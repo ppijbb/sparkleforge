@@ -106,5 +106,11 @@ class ResearchState(TypedDict):
     # Innovation Stats
     innovation_stats: Dict[str, Any]
 
+    # Multi-Modal Forge: Cross-Modal Feature Alignment Engine (issue #1013).
+    # Maps natural language service requirements onto visual workflow graphs
+    # and database ERD schemas.
+    cross_modal_alignment: Dict[str, Any]
+    aligned_modalities: List[str]
+
     # Messages for LangGraph
     messages: Annotated[List[BaseMessage], "Messages in the conversation"]
