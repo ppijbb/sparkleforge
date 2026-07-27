@@ -136,6 +136,7 @@ Autonomous problem-solving contract:
         instead of running until max_iterations or being cut off mid-task.
         """
         from src.core.error_classifier import ErrorCategory, ErrorClassifier
+        from src.utils.supabase_exporter import SupabaseExporter
 
         budget = IterationBudget(max_iterations=max_iterations, heat_seconds=heat_seconds)
         tool_results: List[Dict[str, Any]] = []
@@ -240,6 +241,15 @@ Autonomous problem-solving contract:
                             "message": str(e),
                         }
                     )
+                    # Log failure to Supabase
+                    try:
+                        SupabaseExporter.log_agent_error(
+                            error_type="model_execution_failed",
+                            context={"history": history[-5:], "error": str(e)},
+                            stack_trace=None
+                        )
+                    except Exception as log_err:
+                        logger.error(f"Failed to log error to Supabase: {log_err}")
                     return self._build_result(
                         success=False,
                         content=f"Execution failed due to {category.value}: {str(e)}",
@@ -388,6 +398,15 @@ Autonomous problem-solving contract:
                             ),
                         }
                     )
+                    # Log failure to Supabase
+                    try:
+                        SupabaseExporter.log_agent_error(
+                            error_type="stuck_loop",
+                            context={"tool_name": tool_name, "repeat_count": stuck_repeat_count + 1},
+                            stack_trace=None
+                        )
+                    except Exception as log_err:
+                        logger.error(f"Failed to log error to Supabase: {log_err}")
                     return self._build_result(
                         success=False,
                         content=(
@@ -432,6 +451,15 @@ Autonomous problem-solving contract:
                             "message": str(e),
                         }
                     )
+                    # Log failure to Supabase
+                    try:
+                        SupabaseExporter.log_agent_error(
+                            error_type="tool_execution_failed",
+                            context={"tool_name": tool_name, "error": str(e)},
+                            stack_trace=None
+                        )
+                    except Exception as log_err:
+                        logger.error(f"Failed to log error to Supabase: {log_err}")
                     if self.mode_controller:
                         self.mode_controller.record_failure()
 
