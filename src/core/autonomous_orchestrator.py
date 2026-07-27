@@ -274,8 +274,6 @@ class AutonomousOrchestrator:
             logger.info(f"🚀 Starting modularized autonomous research: {request[:50]}...")
             initial_state = {
                 "user_request": request,
-                )
-                self.liveness_watchdog.record_heartbeat()
                 "context": context or {},
                 "autopilot_mode": _autopilot_mode_enabled(context),
                 "objective_id": objective_id,
