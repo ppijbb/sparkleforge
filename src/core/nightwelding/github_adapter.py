@@ -17,7 +17,9 @@ branch prefixes.
 from __future__ import annotations
 
 import json
+import json
 import subprocess
+import secrets
 import shutil
 import sys
 import time
@@ -134,10 +136,12 @@ def create_worktree(repo_root: Path, branch: str, base_branch: str) -> Path:
     """Create a git worktree for `branch` and return its path.
 
     The worktree directory lives under ~/.sparkleforge/nightwelding-worktrees,
-    outside repo_root, so caller's working tree is never touched.
+    outside repo_root, so caller's working tree is never touched. A random
+    suffix prevents concurrent runs handling the same branch slug from
+    colliding on the same filesystem path.
     """
     slug = branch.replace("/", "-")
-    worktree_dir = Path.home() / ".sparkleforge" / "nightwelding-worktrees" / slug
+    worktree_dir = Path.home() / ".sparkleforge" / "nightwelding-worktrees" / f"{slug}-{secrets.token_hex(2)}"
     worktree_dir.parent.mkdir(parents=True, exist_ok=True)
     _run(["git", "fetch", "origin", base_branch, "--depth=1"], cwd=repo_root)
     _run(["git", "worktree", "add", "-B", branch, str(worktree_dir), f"origin/{base_branch}"], cwd=repo_root)
