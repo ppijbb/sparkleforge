@@ -8,6 +8,7 @@ from src.core.observe.package_inventory import PackageInventory
 from src.core.observe.snapshot_api import SnapshotAPI
 from src.core.observe.system_collector import SystemCollector
 from src.core.observe.window_tracker import WindowTracker
+from src.core.observe.ebpf_watchdog import eBPFWatchdog
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class ObservationPlane:
         self.snapshot = SnapshotAPI()
         self.packages = PackageInventory()
         self.windows = WindowTracker()
+        self.ebpf = eBPFWatchdog()
         self._initialized = True
         logger.info("✅ Observation Plane successfully initialized")
 
@@ -43,9 +45,10 @@ class ObservationPlane:
             snapshot_task = self.snapshot.get_system_snapshot()
             packages_task = self.packages.get_unified_inventory()
             window_task = self.windows.get_active_window()
+            ebpf_task = self.ebpf.get_recent_events()
 
-            metrics, snapshot, packages, active_window = await asyncio.gather(
-                metrics_task, snapshot_task, packages_task, window_task
+            metrics, snapshot, packages, active_window, ebpf_events = await asyncio.gather(
+                metrics_task, snapshot_task, packages_task, window_task, ebpf_task
             )
 
             resource_warnings = self.system.check_thresholds(metrics)
@@ -60,6 +63,7 @@ class ObservationPlane:
                 },
                 "active_window": active_window,
                 "resource_warnings": resource_warnings,
+                "ebpf_events": ebpf_events,
             }
         except Exception as e:
             logger.error(f"ObservationPlane: Failed to compile integrated system state: {e}")
