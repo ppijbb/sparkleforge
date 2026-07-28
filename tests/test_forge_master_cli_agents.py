@@ -63,3 +63,49 @@ async def test_hermes_agent_instantiation_and_parse():
     assert parsed["success"] is True
     assert parsed["response"] == "Workflow completed successfully"
     assert parsed["confidence"] == 0.85
+
+
+def test_codex_parse_output_malformed_no_attribute_error(caplog):
+    """Malformed output must not raise AttributeError (issue #1124)."""
+    agent = CodexCLIAgent(api_key="test-key")
+
+    mock_result = type(
+        "Result",
+        (),
+        {
+            "success": True,
+            "output": object(),
+            "error": "",
+            "exit_code": 0,
+            "execution_time": 0.5,
+        },
+    )()
+
+    with caplog.at_level("ERROR"):
+        parsed = agent.parse_output(mock_result)
+
+    assert parsed["success"] is False
+    assert "Parsing failed" in parsed["error"]
+
+
+def test_hermes_parse_output_malformed_no_attribute_error(caplog):
+    """Malformed output must not raise AttributeError (issue #1124)."""
+    agent = HermesCLIAgent(api_key="test-key")
+
+    mock_result = type(
+        "Result",
+        (),
+        {
+            "success": True,
+            "output": object(),
+            "error": "",
+            "exit_code": 0,
+            "execution_time": 1.2,
+        },
+    )()
+
+    with caplog.at_level("ERROR"):
+        parsed = agent.parse_output(mock_result)
+
+    assert parsed["success"] is False
+    assert "Parsing failed" in parsed["error"]
