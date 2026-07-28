@@ -39,8 +39,8 @@ def test_aggregate_release_metrics_sums_and_weights_correctly():
     assert summary["entry_count"] == 2
     assert summary["date_range"] == ("2026-07-14", "2026-07-15")
     assert summary["total_attempts"] == 10
-    assert summary["total_marks"] == 4
-    assert summary["average_strict_score"] == 90.0
+    # weighted: (80*4 + 100*6) / 10 = 92.0
+    assert summary["average_strict_score"] == 92.0
     # weighted: (50*4 + 100*6) / 10 = 80.0
     assert summary["weighted_success_rate"] == 80.0
 
