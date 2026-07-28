@@ -3,6 +3,7 @@
 Hermes 자율 에이전트 CLI 도구를 위한 어댑터
 """
 
+import logging
 import json
 import re
 from typing import Any, Dict
@@ -29,6 +30,7 @@ class HermesCLIAgent(BaseCLIAgent):
             output_format="json",
         )
         super().__init__(config)
+        self.logger = logging.getLogger(__name__)
 
     async def execute_query(self, query: str, **kwargs) -> Dict[str, Any]:
         """Hermes CLI에 쿼리를 실행
