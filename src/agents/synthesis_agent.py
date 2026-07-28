@@ -428,6 +428,10 @@ Provide a review with:
         """인사이트 생성 (Multi-Model Orchestration)."""
         insights = []
 
+        # Dual-perspective analogical reasoning (issue #924)
+        analogical_insights = await self._generate_analogical_insights(integrated_data)
+        insights.extend(analogical_insights)
+
         # 패턴 분석
         pattern_insights = await self._analyze_patterns(integrated_data)
         insights.extend(pattern_insights)
@@ -583,6 +587,81 @@ Provide a review with:
                 "timestamp": datetime.now().isoformat(),
             }
         ]
+
+    async def _generate_analogical_insights(
+        self, integrated_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Dual-perspective analogical reasoning synthesizer (issue #924).
+
+        Queries historical physical, chemical, and computational system principles
+        (e.g., TRIZ axioms, fluid dynamics, feedback loops) to generate dual
+        technical recommendations: one from a physical/chemical perspective and
+        one from a computational/systems perspective.
+        """
+        analysis_prompt = f"""
+        Apply dual-perspective analogical reasoning to the following research data.
+
+        Data: {json.dumps(integrated_data, ensure_ascii=False, indent=2)}
+
+        Query historical physical, chemical, and computational system principles
+        (e.g., TRIZ axioms, fluid dynamics, feedback loops) and generate two
+        complementary technical recommendations:
+
+        Perspective A (Physical/Chemical):
+        1. Identify a relevant physical or chemical principle (e.g., TRIZ axiom,
+           fluid dynamics, thermodynamics, reaction equilibrium)
+        2. Map the principle onto the current problem
+        3. Derive a concrete technical recommendation
+
+        Perspective B (Computational/Systems):
+        1. Identify a relevant computational or systems principle (e.g., feedback
+           loops, caching, load balancing, control theory)
+        2. Map the principle onto the current problem
+        3. Derive a concrete technical recommendation
+
+        Return both perspectives and explain how they complement each other.
+        """
+
+        try:
+            result = await execute_llm_task(
+                prompt=analysis_prompt,
+                task_type=TaskType.SYNTHESIS,
+                system_message=self.config.prompts["strategic_advice"]["system_message"],
+            )
+
+            return [
+                {
+                    "type": "analogical_reasoning",
+                    "perspective": "dual",
+                    "content": result.content,
+                    "model_used": result.model_used,
+                    "confidence": result.confidence,
+                    "principles_queried": [
+                        "triz_axioms",
+                        "fluid_dynamics",
+                        "feedback_loops",
+                    ],
+                    "timestamp": datetime.now().isoformat(),
+                }
+            ]
+        except Exception as e:
+            logger.warning(f"Analogical reasoning synthesis failed: {e}")
+            return [
+                {
+                    "type": "analogical_reasoning",
+                    "perspective": "dual",
+                    "content": "",
+                    "model_used": "unknown",
+                    "confidence": 0.0,
+                    "principles_queried": [
+                        "triz_axioms",
+                        "fluid_dynamics",
+                        "feedback_loops",
+                    ],
+                    "timestamp": datetime.now().isoformat(),
+                    "error": str(e),
+                }
+            ]
 
     async def _synthesize_content(
         self,
