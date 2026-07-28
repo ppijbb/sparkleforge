@@ -108,6 +108,20 @@ async def _delegate_document_organizer_agent(task: Dict[str, Any], context: Dict
     )
 
 
+async def _delegate_forge_master(task: Dict[str, Any], context: Dict[str, Any]) -> Any:
+    from src.core.forge_master import ForgeMasterController
+
+    controller = ForgeMasterController()
+    query = task.get("description") or task.get("query") or str(task)
+    return await controller.execute_task_with_master_control(
+        task_query=query,
+        context=context.get("user_request") or context.get("context_str"),
+        required_capabilities=task.get("required_capabilities"),
+        preferred_agent=task.get("preferred_agent"),
+        is_persistent_session=bool(context.get("is_persistent_session", False)),
+    )
+
+
 # Roles reachable via runtime delegation even though the static graph has no
 # edge to them. Each adapter normalizes the generic (task, context) call into
 # that agent's real signature and returns its native result unchanged.
@@ -118,6 +132,7 @@ DELEGATION_REGISTRY: Dict[str, DelegationAdapter] = {
     "evaluation_agent": _delegate_evaluation_agent,
     "codebase_agent": _delegate_codebase_agent,
     "document_organizer_agent": _delegate_document_organizer_agent,
+    "forge_master": _delegate_forge_master,
 }
 
 

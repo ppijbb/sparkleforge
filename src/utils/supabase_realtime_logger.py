@@ -143,6 +143,7 @@ def _supabase_logger_worker_loop():
 
     while not _stop_event.is_set():
         batch = []
+        deadline = time.monotonic() + _BATCH_MAX_WAIT_S
 
         while len(batch) < _BATCH_MAX_SIZE:
             now = time.monotonic()
@@ -267,6 +268,11 @@ class SupabaseRealtimeLogger:
         self.thread.join(timeout=timeout)
 
 
+_stdout_lock = threading.Lock()
+_global_original_stdout: Optional[Any] = None
+_active_redirect_count = 0
+
+
 class SessionStdoutRedirector:
     """Context manager that routes stdout to a specific session logger."""
 
@@ -275,13 +281,24 @@ class SessionStdoutRedirector:
         self._original_stdout: Optional[Any] = None
 
     def __enter__(self):
-        self._original_stdout = sys.stdout
-        sys.stdout = self
+        global _global_original_stdout, _active_redirect_count
+        with _stdout_lock:
+            if _active_redirect_count == 0:
+                _global_original_stdout = sys.stdout
+            _active_redirect_count += 1
+            self._original_stdout = _global_original_stdout
+            sys.stdout = self
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._original_stdout is not None:
-            sys.stdout = self._original_stdout
+        global _global_original_stdout, _active_redirect_count
+        with _stdout_lock:
+            _active_redirect_count -= 1
+            if _active_redirect_count == 0:
+                sys.stdout = _global_original_stdout
+                _global_original_stdout = None
+            elif self._original_stdout is not None:
+                sys.stdout = self._original_stdout
         return False
 
     def write(self, text):
