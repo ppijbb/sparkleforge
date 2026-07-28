@@ -51,6 +51,14 @@ jobs:
             echo "No report file found" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Upload agent report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-metric-report
+          path: results/agent_reports/
+          if-no-files-found: ignore
+
       - name: Commit report changes and open a PR
         env:
           GH_TOKEN: ${{ secrets.PAT }}
@@ -58,21 +66,9 @@ jobs:
         run: |
           git config --global user.name "ppijbb"
           git config --global user.email "45420008+ppijbb@users.noreply.github.com"
-          git add -f results/agent_reports/
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
+          echo "Agent reports are now published as workflow artifacts instead of committed to the repository."
           if [ "$HAS_PAT" != "true" ]; then
-            echo "::warning::PAT repository secret not set; skipping report PR (main is a protected branch and cannot be pushed to directly)."
+            echo "::warning::PAT repository secret not set; skipping report PR."
             exit 0
           fi
-
-          BRANCH="chore/agent-report-$(date -u +%Y%m%d)"
-          git checkout -b "$BRANCH"
-          git commit -m "docs: auto-generate daily agent metric report and critique"
-          git push origin "$BRANCH"
-          gh pr create --repo "${{ github.repository }}" \
-            --title "docs: auto-generate daily agent metric report and critique" \
-            --body "Auto-generated daily agent metric report. Auto-merges via the existing fix/chore auto-merge automation once checks pass." \
-            --base main --head "$BRANCH"
+          echo "Report artifacts uploaded; no repository commit required."
