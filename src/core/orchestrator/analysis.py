@@ -117,6 +117,7 @@ class AnalysisNode(BaseNode):
             # Multi-Model Orchestration으로 분석 (JSON 파싱 실패 시 재시도)
             analysis_data = None
             last_error = None
+            result = None
 
             for attempt in range(3):
                 try:
