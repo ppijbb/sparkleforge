@@ -112,6 +112,7 @@ class REPLCLI:
             context_reload_command,
             context_show_command,
         )
+        from src.cli.commands.forge_master import forge_master_command
         from src.cli.commands.help import help_command
         from src.cli.commands.research import research_command
         from src.cli.commands.schedule import (
@@ -150,6 +151,7 @@ class REPLCLI:
 
         self.command_handlers = {
             "research": research_command,
+            "forge-master": forge_master_command,
             "work": work_command,
             "actions": actions_command,
             "approve": approve_command,
