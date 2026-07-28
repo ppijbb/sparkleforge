@@ -91,6 +91,14 @@ class CreativityAgent:
     - 지속적인 창의적 사고 프로세스
     """
 
+    # Orthogonal persona catalog: each persona evaluates ideation candidates
+    # from a contrasting technical angle (issue #939).
+    PERSONA_PERSPECTIVES: Dict[str, str] = {
+        "compiler_architect": "compiler architect",
+        "theoretical_physicist": "theoretical physicist",
+        "security_analyst": "security analyst",
+    }
+
     def __init__(self):
         """창의성 에이전트 초기화."""
         self.creativity_patterns = self._initialize_creativity_patterns()
@@ -804,3 +812,48 @@ class CreativityAgent:
             "analogical_mappings": len(self.analogical_mappings),
             "config": self.config,
         }
+
+    async def evaluate_with_persona_perspectives(
+        self, candidates: List[str], context: str = ""
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Evaluate ideation candidates from orthogonal persona perspectives.
+
+        Implements the Novelty Orthogonal Persona Perspective-Shift Orchestrator
+        (issue #939): a dynamic persona switching manager that reviews each
+        candidate from contrasting technical angles (compiler architect,
+        theoretical physicist, security analyst).
+        """
+        if not candidates:
+            return {}
+
+        results: Dict[str, List[Dict[str, Any]]] = {}
+        for persona_key, persona_name in self.PERSONA_PERSPECTIVES.items():
+            persona_reviews: List[Dict[str, Any]] = []
+            for candidate in candidates:
+                try:
+                    prompt = (
+                        f"You are a {persona_name}. Review the following ideation "
+                        f"candidate from your orthogonal technical perspective.\n\n"
+                        f"Context: {context}\n"
+                        f"Candidate: {candidate}\n\n"
+                        "Return JSON with keys: perspective, strengths (list), "
+                        "risks (list), feasibility (0.0-1.0), and recommendation."
+                    )
+                    result = await execute_llm_task(
+                        prompt=prompt,
+                        task_type=TaskType.CREATIVE,
+                        system_message=(
+                            f"You are a {persona_name} providing an orthogonal "
+                            "perspective-shift review of ideation candidates."
+                        ),
+                    )
+                    analysis = json.loads(result.content)
+                    analysis.setdefault("persona", persona_key)
+                    persona_reviews.append(analysis)
+                except Exception as exc:
+                    logger.debug(
+                        f"Failed to evaluate candidate as {persona_name}: {exc}"
+                    )
+            results[persona_key] = persona_reviews
+
+        return results
