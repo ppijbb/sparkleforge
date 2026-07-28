@@ -1,3 +1,4 @@
+placeholder
 #!/usr/bin/env python3
 """진단 결과를 바탕으로 리포트 생성"""
 
