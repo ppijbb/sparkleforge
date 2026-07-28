@@ -160,6 +160,7 @@ class ExecutionNode(BaseNode):
     async def _execute_task_with_hermes(
         self, task: Dict[str, Any], state: ResearchState, max_iterations: int
     ) -> Dict[str, Any]:
+        """Execute a task using the Hermes agent loop, with multi-tool MCP composition."""
         await self._enforce_session_quotas(state)
         from src.core.agent_loop import AgentLoop
         from src.core.llm_manager import TaskType
@@ -171,6 +172,13 @@ class ExecutionNode(BaseNode):
         loop = AgentLoop()
 
         try:
+            # Inject multi-tool capability context for empirical validation
+            tool_context = (
+                "You have access to a multi-tool MCP environment (web search, python sandbox, "
+                "document parser). Use these tools to run live empirical experiments. "
+                "If a hypothesis is generated, write and execute a python script in the sandbox "
+                "to validate it before synthesizing the final result."
+            )
             result = await loop.run_conversation(
                 messages=[{"role": "user", "content": prompt}],
                 task_type=TaskType.RESEARCH,
@@ -178,7 +186,7 @@ class ExecutionNode(BaseNode):
                 system_message=get_system_prompt(
                     "researcher",
                     (
-                        "Use available tools aggressively when useful. Do not ask the user for "
+                        f"{tool_context} Use available tools aggressively when useful. Do not ask the user for "
                         "clarification; make conservative assumptions, solve the task, and return "
                         "a concise result with evidence, assumptions, and limitations."
                     ),
