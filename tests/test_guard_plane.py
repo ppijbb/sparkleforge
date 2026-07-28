@@ -190,7 +190,19 @@ def test_sandbox_executor_real_command():
     executor = SandboxExecutor(timeout_seconds=5.0)
     result = executor.execute("echo anvil_guard_test")
     assert result.ok
-    assert "anvil_guard_test" in result.stdout
+    assert "anvil_guard_test" in result.stdout.strip()
+
+
+def test_sandbox_executor_env_strategy_subprocess():
+    os.environ["SPARKLEFORGE_SANDBOX_STRATEGY"] = "subprocess"
+    try:
+        executor = SandboxExecutor(timeout_seconds=5.0)
+        result = executor.execute("echo env_subprocess_test")
+        assert result.ok
+        assert result.sandbox_type == "subprocess"
+        assert "env_subprocess_test" in result.stdout.strip()
+    finally:
+        os.environ.pop("SPARKLEFORGE_SANDBOX_STRATEGY", None)
 
 
 @pytest.mark.asyncio
