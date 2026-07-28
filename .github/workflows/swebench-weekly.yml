@@ -112,7 +112,7 @@ jobs:
             echo "::warning::PAT repository secret not set; skipping SWE-bench report recording."
             exit 0
           fi
-          REPORT_FILE=$(ls swebench-results/sparkleforge-nightwelding.*.json 2>/dev/null | head -1)
+          REPORT_FILE=$(find swebench-results -name 'sparkleforge-nightwelding.*.json' | head -n 1)
           if [ -z "$REPORT_FILE" ]; then
             echo "No SWE-bench evaluation report artifact found; nothing to record."
             exit 0
