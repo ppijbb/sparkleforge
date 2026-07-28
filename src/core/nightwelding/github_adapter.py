@@ -21,7 +21,6 @@ import subprocess
 import shutil
 import sys
 import time
-import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -134,17 +133,14 @@ def create_branch(repo_root: Path, branch: str, base_branch: str) -> None:
 def create_worktree(repo_root: Path, branch: str, base_branch: str) -> Path:
     """Create a git worktree for `branch` and return its path.
 
-    The worktree directory is derived from the branch name (with slashes
-    replaced by dashes) plus a short random suffix, so concurrent runs for
-    the same issue within the same second do not collide on the same path.
+    The worktree directory lives under ~/.sparkleforge/nightwelding-worktrees,
+    outside repo_root, so caller's working tree is never touched.
     """
     slug = branch.replace("/", "-")
-    suffix = secrets.token_hex(2)
-    worktree_dir = repo_root / ".worktrees" / f"{slug}-{suffix}"
+    worktree_dir = Path.home() / ".sparkleforge" / "nightwelding-worktrees" / slug
     worktree_dir.parent.mkdir(parents=True, exist_ok=True)
     _run(["git", "fetch", "origin", base_branch, "--depth=1"], cwd=repo_root)
-    _run(["git", "worktree", "add", "--no-checkout", str(worktree_dir), f"origin/{base_branch}"], cwd=repo_root)
-    _run(["git", "checkout", "-B", branch], cwd=worktree_dir)
+    _run(["git", "worktree", "add", "-B", branch, str(worktree_dir), f"origin/{base_branch}"], cwd=repo_root)
     return worktree_dir
 
 
