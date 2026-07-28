@@ -22,6 +22,9 @@ _FIREJAIL_AVAILABLE = bool(subprocess.run(
 _DOCKER_AVAILABLE = bool(subprocess.run(
     ["which", "docker"], capture_output=True
 ).returncode == 0)
+_GVISOR_AVAILABLE = bool(subprocess.run(
+    ["which", "runsc"], capture_output=True
+).returncode == 0)
 
 
 @dataclass
@@ -42,7 +45,7 @@ class SandboxResult:
 class SandboxExecutor:
     """
     Executes commands in an isolated environment.
-    Strategy: firejail > docker > restrictive subprocess (fallback).
+    Strategy: gvisor > firejail > docker > restrictive subprocess (fallback).
     """
 
     def __init__(
@@ -54,6 +57,14 @@ class SandboxExecutor:
         self.timeout = timeout_seconds
         self.allowed_paths = allowed_paths or []
         self.network_access = network_access
+
+    def _build_gvisor_cmd(self, cmd: str) -> List[str]:
+        """Wrap command with gVisor (runsc) restrictions."""
+        parts = ["runsc", "do", "--"]
+        if not self.network_access:
+            parts.append("--net=none")
+        parts.extend(["bash", "-c", cmd])
+        return parts
 
     def _build_firejail_cmd(self, cmd: str) -> List[str]:
         """Wrap command with firejail restrictions."""
@@ -92,7 +103,10 @@ class SandboxExecutor:
             )
 
         # Choose sandbox strategy
-        if _FIREJAIL_AVAILABLE:
+        if _GVISOR_AVAILABLE:
+            sandbox_type = "gvisor"
+            exec_cmd = self._build_gvisor_cmd(command)
+        elif _FIREJAIL_AVAILABLE:
             sandbox_type = "firejail"
             exec_cmd = self._build_firejail_cmd(command)
         elif _DOCKER_AVAILABLE:
