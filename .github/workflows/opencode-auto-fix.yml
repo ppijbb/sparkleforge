@@ -263,6 +263,7 @@ jobs:
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
           OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
           OPENCODE_VERIFY_COMMAND: ${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall -q src scripts' }}
+          OPENCODE_SELF_VERIFY_COMMAND: ${{ vars.OPENCODE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}
         run: |
           MAX_ITERATIONS="${{ github.event.inputs.max_iterations || '3' }}"
           case "$MAX_ITERATIONS" in
@@ -334,6 +335,16 @@ jobs:
             else
               echo "::error::Repository changes were detected but no non-ignored files were staged."
               exit 1
+            fi
+
+            if [ -n "$OPENCODE_SELF_VERIFY_COMMAND" ]; then
+              echo "Running self-verification: $OPENCODE_SELF_VERIFY_COMMAND"
+              if ! bash -lc "$OPENCODE_SELF_VERIFY_COMMAND" > opencode-self-verify.log 2>&1; then
+                echo "Self-verification failed."
+                cat opencode-self-verify.log
+                # If self-verification fails, we treat it as a failed attempt to trigger refinement
+                exit 1
+              fi
             fi
 
             if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
