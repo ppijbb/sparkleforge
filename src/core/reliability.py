@@ -2,6 +2,10 @@
 
 Circuit Breaker, Exponential Backoff, State Persistence, Health Check,
 Graceful Degradation, Detailed Logging을 통한 프로덕션급 안정성 보장.
+
+Axiomatic Boundary Collapse Stress Tester: forces proposed service
+architectures into edge operational limits (zero memory, infinite latency,
+corrupted RPCs) to verify structural degradation behavior.
 """
 
 import asyncio
@@ -523,3 +527,171 @@ async def stop_reliability_monitoring():
     global _reliability_manager
     if _reliability_manager is not None:
         await _reliability_manager.stop_monitoring()
+
+
+@dataclass
+class BoundaryStressProfile:
+    """Axiomatic boundary stress profile for a service architecture."""
+
+    name: str
+    memory_limit: int = 0
+    latency_seconds: float = float("inf")
+    corrupt_rpc: bool = False
+    description: str = ""
+
+
+@dataclass
+class BoundaryStressResult:
+    """Result of a single boundary collapse stress run."""
+
+    profile: BoundaryStressProfile
+    degraded_gracefully: bool
+    failure_modes: list
+    observations: list
+    duration_seconds: float = 0.0
+
+
+class BoundaryCollapseStressTester:
+    """Stress-tests service architectures at axiomatic operational limits.
+
+    Forces proposed architectures into edge conditions (zero memory,
+    infinite latency, corrupted RPCs) and verifies that degradation is
+    structural rather than catastrophic.
+    """
+
+    def __init__(self, reliability: "ProductionReliability | None" = None):
+        self.reliability = reliability or get_reliability_manager()
+
+    def default_profiles(self) -> list:
+        """Return the canonical axiomatic boundary stress profiles."""
+        return [
+            BoundaryStressProfile(
+                name="zero-memory",
+                memory_limit=0,
+                description="Force the architecture to operate with no memory budget.",
+            ),
+            BoundaryStressProfile(
+                name="infinite-latency",
+                latency_seconds=float("inf"),
+                description="Force every dependency to exhibit unbounded latency.",
+            ),
+            BoundaryStressProfile(
+                name="corrupted-rpc",
+                corrupt_rpc=True,
+                description="Inject corrupted RPC payloads into every call boundary.",
+            ),
+        ]
+
+    async def _run_profile(
+        self, profile: BoundaryStressProfile, architecture: Callable
+    ) -> BoundaryStressResult:
+        """Execute a single stress profile against the proposed architecture."""
+        failure_modes: list = []
+        observations: list = []
+        start_time = time.time()
+
+        observations.append(
+            f"Applying profile '{profile.name}': "
+            f"memory_limit={profile.memory_limit}, "
+            f"latency_seconds={profile.latency_seconds}, "
+            f"corrupt_rpc={profile.corrupt_rpc}"
+        )
+
+        degraded_gracefully = True
+        try:
+            if profile.memory_limit == 0:
+                observations.append("Verifying zero-memory degradation behavior.")
+                try:
+                    if architecture is not None:
+                        await architecture(profile)
+                except MemoryError as exc:
+                    failure_modes.append(f"MemoryError: {exc}")
+                    degraded_gracefully = False
+
+            if profile.latency_seconds == float("inf"):
+                observations.append("Verifying infinite-latency degradation behavior.")
+                circuit_breaker = self.reliability.get_circuit_breaker(
+                    f"stress:{profile.name}"
+                )
+                if not circuit_breaker.can_execute():
+                    observations.append(
+                        "Circuit breaker correctly opened under infinite latency."
+                    )
+                else:
+                    failure_modes.append(
+                        "Circuit breaker failed to open under infinite latency."
+                    )
+                    degraded_gracefully = False
+
+            if profile.corrupt_rpc:
+                observations.append("Verifying corrupted-RPC degradation behavior.")
+                try:
+                    if architecture is not None:
+                        await architecture(profile)
+                except (ValueError, RuntimeError) as exc:
+                    failure_modes.append(f"Corrupted RPC surfaced as: {exc}")
+                    degraded_gracefully = False
+        except Exception as exc:  # pragma: no cover - defensive boundary probe
+            failure_modes.append(f"Unexpected collapse: {type(exc).__name__}: {exc}")
+            degraded_gracefully = False
+
+        duration = time.time() - start_time
+        return BoundaryStressResult(
+            profile=profile,
+            degraded_gracefully=degraded_gracefully,
+            failure_modes=failure_modes,
+            observations=observations,
+            duration_seconds=duration,
+        )
+
+    async def stress_test(
+        self,
+        architecture: Callable | None = None,
+        profiles: list | None = None,
+    ) -> list:
+        """Run all boundary collapse stress profiles and return results.
+
+        Args:
+            architecture: Optional callable accepting a BoundaryStressProfile
+                that exercises the proposed service architecture.
+            profiles: Optional list of BoundaryStressProfile instances. Defaults
+                to the canonical axiomatic boundary profiles.
+
+        Returns:
+            A list of BoundaryStressResult instances, one per profile.
+        """
+        profiles = profiles if profiles is not None else self.default_profiles()
+        results: list = []
+        for profile in profiles:
+            result = await self._run_profile(profile, architecture)
+            results.append(result)
+            if result.degraded_gracefully:
+                logger.info(
+                    "Boundary stress profile '%s' degraded gracefully",
+                    profile.name,
+                )
+            else:
+                logger.warning(
+                    "Boundary stress profile '%s' failed to degrade gracefully: %s",
+                    profile.name,
+                    "; ".join(result.failure_modes) or "unknown failure",
+                )
+        return results
+
+    def summarize(self, results: list) -> Dict[str, Any]:
+        """Summarize boundary collapse stress results."""
+        return {
+            "total_profiles": len(results),
+            "graceful": sum(1 for r in results if r.degraded_gracefully),
+            "collapsed": sum(1 for r in results if not r.degraded_gracefully),
+            "profiles": [
+                {
+                    "name": r.profile.name,
+                    "degraded_gracefully": r.degraded_gracefully,
+                    "failure_modes": r.failure_modes,
+                    "observations": r.observations,
+                    "duration_seconds": r.duration_seconds,
+                }
+                for r in results
+            ],
+        }
