@@ -75,15 +75,36 @@ DROP POLICY IF EXISTS "Authenticated users can update forge jobs" ON public.forg
 CREATE POLICY "Authenticated users can update forge jobs"
     ON public.forge_jobs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
--- agent_logs policies: public read, authenticated-only writes.
-DROP POLICY IF EXISTS "Public can read agent logs" ON public.agent_logs;
-CREATE POLICY "Public can read agent logs"
-    ON public.agent_logs FOR SELECT TO anon, authenticated USING (true);
+-- 4. Create a table for historical agent error contexts & failure analysis (Root Cause Engine)
+CREATE TABLE IF NOT EXISTS public.agent_error_contexts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    session_id TEXT,                         -- objective_id or run_id
+    scenario_name TEXT,                      -- e.g., scheduled_summary, security_scan, swebench
+    error_type TEXT NOT NULL,                -- e.g., ToolBindingGap, LoopStagnation, ModelTimeout, TestFailure
+    user_query TEXT,                         -- initial goal / query
+    failed_tool_name TEXT,                   -- name of tool that failed
+    error_message TEXT NOT NULL,             -- raw error message
+    stack_trace TEXT,                        -- full un-truncated traceback
+    execution_context JSONB DEFAULT '{}'::jsonb, -- active context, parameters, workspace state
+    root_cause_analysis TEXT,                -- system architect / LLM diagnostic analysis
+    remediation_status TEXT DEFAULT 'pending', -- pending, analyzing, resolved, ignored
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
 
-DROP POLICY IF EXISTS "Authenticated users can insert agent logs" ON public.agent_logs;
-CREATE POLICY "Authenticated users can insert agent logs"
-    ON public.agent_logs FOR INSERT TO authenticated WITH CHECK (true);
+-- Enable RLS on agent_error_contexts
+ALTER TABLE public.agent_error_contexts ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Authenticated users can update agent logs" ON public.agent_logs;
-CREATE POLICY "Authenticated users can update agent logs"
-    ON public.agent_logs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public can read agent error contexts" ON public.agent_error_contexts;
+CREATE POLICY "Public can read agent error contexts"
+    ON public.agent_error_contexts FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert agent error contexts" ON public.agent_error_contexts;
+CREATE POLICY "Authenticated users can insert agent error contexts"
+    ON public.agent_error_contexts FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated users can update agent error contexts" ON public.agent_error_contexts;
+CREATE POLICY "Authenticated users can update agent error contexts"
+    ON public.agent_error_contexts FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
