@@ -2,6 +2,7 @@
 
 경직된 순차 실행 흐름 대신, 의존성 기반 토폴로지 정렬과
 병렬 실행을 지원하는 동적 태스크 그래프 엔진.
+Riemannian manifold geodesic explorer for optimal design pathfinding.
 """
 
 import asyncio
@@ -11,6 +12,128 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ManifoldPoint:
+    """A point in the Riemannian manifold solution space."""
+
+    coordinates: List[float]
+    design_id: str
+    cost: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class RiemannianManifoldExplorer:
+    """Maps high-dimensional architecture requirements onto a Riemannian
+    manifold and finds shortest geodesic paths toward optimal system designs.
+
+    The manifold is modelled as a weighted graph where each node is a design
+    configuration (a point on the manifold) and edge weights approximate the
+    Riemannian distance metric. Geodesics are discovered via Dijkstra's
+    algorithm, which yields the locally shortest path on the discretised
+    manifold.
+    """
+
+    def __init__(self, dimension: int = 8) -> None:
+        self.dimension = dimension
+        self.points: Dict[str, ManifoldPoint] = {}
+        # adjacency: design_id -> {neighbour_id -> distance}
+        self.adjacency: Dict[str, Dict[str, float]] = {}
+        logger.info(
+            f"[ManifoldExplorer] Initialized {dimension}-dimensional manifold"
+        )
+
+    def add_point(self, point: ManifoldPoint) -> None:
+        """Insert a design point into the manifold."""
+        self.points[point.design_id] = point
+        self.adjacency.setdefault(point.design_id, {})
+        logger.debug(f"[ManifoldExplorer] Point added: {point.design_id}")
+
+    def connect(self, source_id: str, target_id: str) -> None:
+        """Connect two design points with a Riemannian distance edge."""
+        if source_id not in self.points or target_id not in self.points:
+            raise ValueError("Both points must exist on the manifold before connecting")
+        distance = self._riemannian_distance(
+            self.points[source_id], self.points[target_id]
+        )
+        self.adjacency[source_id][target_id] = distance
+        self.adjacency[target_id][source_id] = distance
+
+    def _riemannian_distance(self, a: ManifoldPoint, b: ManifoldPoint) -> float:
+        """Approximate Riemannian distance between two points.
+
+        Uses the Euclidean metric scaled by a diagonal metric tensor derived
+        from the per-coordinate cost sensitivity stored in point metadata.
+        """
+        if len(a.coordinates) != len(b.coordinates):
+            raise ValueError("Manifold points must share dimensionality")
+        metric = [
+            max((a.metadata.get("metric") or {}).get(i, 1.0), 1e-6)
+            for i in range(len(a.coordinates))
+        ]
+        total = 0.0
+        for i, (x, y) in enumerate(zip(a.coordinates, b.coordinates)):
+            delta = x - y
+            total += metric[i] * delta * delta
+        return total ** 0.5
+
+    def shortest_geodesic(
+        self, start_id: str, goal_id: str
+    ) -> tuple[List[str], float]:
+        """Find the shortest geodesic path between two design points.
+
+        Returns:
+            A (path, distance) tuple where path is the list of design_ids
+            from start to goal and distance is the accumulated Riemannian
+            length of the geodesic.
+
+        Raises:
+            ValueError: if either endpoint is unknown or no path exists.
+        """
+        if start_id not in self.points:
+            raise ValueError(f"Start point {start_id} not on manifold")
+        if goal_id not in self.points:
+            raise ValueError(f"Goal point {goal_id} not on manifold")
+
+        # Dijkstra over the discretised manifold graph.
+        import heapq
+
+        dist: Dict[str, float] = {pid: float("inf") for pid in self.points}
+        prev: Dict[str, Optional[str]] = {pid: None for pid in self.points}
+        dist[start_id] = 0.0
+        heap: list[tuple[float, str]] = [(0.0, start_id)]
+
+        while heap:
+            current_dist, current = heapq.heappop(heap)
+            if current == goal_id:
+                break
+            if current_dist > dist[current]:
+                continue
+            for neighbour, weight in self.adjacency.get(current, {}).items():
+                candidate = current_dist + weight
+                if candidate < dist[neighbour]:
+                    dist[neighbour] = candidate
+                    prev[neighbour] = current
+                    heapq.heappush(heap, (candidate, neighbour))
+
+        if dist[goal_id] == float("inf"):
+            raise ValueError(
+                f"No geodesic path exists from {start_id} to {goal_id}"
+            )
+
+        path: List[str] = []
+        node: Optional[str] = goal_id
+        while node is not None:
+            path.append(node)
+            node = prev[node]
+        path.reverse()
+
+        logger.info(
+            f"[ManifoldExplorer] Geodesic {start_id}->{goal_id}: "
+            f"{len(path)} hops, distance={dist[goal_id]:.4f}"
+        )
+        return path, dist[goal_id]
 
 
 @dataclass
