@@ -421,6 +421,7 @@ class SkillRetriever:
         self._hybrid_alpha = hybrid_alpha
         self._skill_vectors: Dict[str, Any] = {}
         self._vectors_built = False
+        self._mechanism_db = UniversalMechanismDatabase()
 
     def _build_keyword_map(self) -> Dict[str, List[str]]:
         return {
@@ -568,6 +569,10 @@ class SkillRetriever:
         overlap = len(words & text_words)
         return overlap / max(len(words), 1)
 
+    def _mechanism_boost(self, query: str, metadata: Any) -> tuple[float, List[str]]:
+        score, reasons = self._mechanism_db.match(query, metadata)
+        return score, reasons
+
     async def retrieve(
         self,
         query: str,
@@ -598,6 +603,15 @@ class SkillRetriever:
             score = self._bm25_style_score(query, meta)
             vscore = vector_scores.get(meta.skill_id, 0.0)
             hybrid = self._hybrid_alpha * score + (1.0 - self._hybrid_alpha) * vscore
+            mech_score, mech_reasons = self._mechanism_boost(query, meta)
+            if mech_score > 0:
+                hybrid += 0.15 * mech_score
+                reasons = ["bm25"] if score > 0 else []
+                if vscore > 0:
+                    reasons.append("vector")
+                reasons.extend(mech_reasons)
+                candidates.append((meta.skill_id, hybrid, meta, reasons))
+                continue
             if hybrid > 0:
                 reasons = ["bm25"] if score > 0 else []
                 if vscore > 0:
@@ -646,6 +660,144 @@ class SkillRetriever:
             sid, score, meta, reasons = item
             result.append(SkillMatch(skill_id=sid, score=score, reasons=reasons, metadata=meta))
         return result
+
+
+@dataclass
+class MechanismPattern:
+    """A universal operational pattern reusable across creative synthesis."""
+
+    pattern_id: str
+    name: str
+    category: str
+    description: str
+    keywords: List[str] = field(default_factory=list)
+    applicability: List[str] = field(default_factory=list)
+
+
+class UniversalMechanismDatabase:
+    """Structured database of universal operational patterns.
+
+    Supports automated pattern retrieval during creative synthesis by matching
+    task/skill descriptions against canonical mechanisms (rate limiters,
+    backpressure, distributed consensus, biological homeostasis, etc.).
+    """
+
+    def __init__(self) -> None:
+        self._patterns: List[MechanismPattern] = self._seed_patterns()
+        self._index: Dict[str, MechanismPattern] = {p.pattern_id: p for p in self._patterns}
+
+    def _seed_patterns(self) -> List[MechanismPattern]:
+        return [
+            MechanismPattern(
+                pattern_id="rate_limiter",
+                name="Rate Limiter",
+                category="flow_control",
+                description="Bound request throughput to protect downstream systems.",
+                keywords=["rate", "limit", "throttle", "quota", "throughput", "backpressure"],
+                applicability=["api", "queue", "scheduler", "ingestion"],
+            ),
+            MechanismPattern(
+                pattern_id="backpressure",
+                name="Backpressure",
+                category="flow_control",
+                description="Signal upstream producers to slow down when consumers are saturated.",
+                keywords=["backpressure", "pressure", "overflow", "buffer", "saturation"],
+                applicability=["stream", "pipeline", "queue", "actor"],
+            ),
+            MechanismPattern(
+                pattern_id="circuit_breaker",
+                name="Circuit Breaker",
+                category="resilience",
+                description="Fail fast and stop calling a failing dependency until it recovers.",
+                keywords=["circuit", "breaker", "fail", "retry", "resilience", "timeout"],
+                applicability=["rpc", "api", "service", "network"],
+            ),
+            MechanismPattern(
+                pattern_id="distributed_consensus",
+                name="Distributed Consensus",
+                category="coordination",
+                description="Agree on shared state across unreliable participants.",
+                keywords=["consensus", "raft", "paxos", "quorum", "vote", "agreement"],
+                applicability=["cluster", "replication", "leader", "election"],
+            ),
+            MechanismPattern(
+                pattern_id="homeostasis",
+                name="Biological Homeostasis",
+                category="control",
+                description="Negative feedback loops maintain internal equilibrium against perturbations.",
+                keywords=["homeostasis", "feedback", "equilibrium", "regulate", "balance", "steady"],
+                applicability=["control", "regulation", "adaptive", "thermostat"],
+            ),
+            MechanismPattern(
+                pattern_id="exponential_backoff",
+                name="Exponential Backoff",
+                category="resilience",
+                description="Increase wait time between retries to avoid overload storms.",
+                keywords=["backoff", "retry", "jitter", "exponential", "wait"],
+                applicability=["retry", "network", "rpc", "queue"],
+            ),
+            MechanismPattern(
+                pattern_id="bulkhead",
+                name="Bulkhead Isolation",
+                category="resilience",
+                description="Partition resources so a failure in one compartment does not sink the whole system.",
+                keywords=["bulkhead", "isolation", "partition", "compartment", "pool"],
+                applicability=["pool", "thread", "resource", "tenant"],
+            ),
+            MechanismPattern(
+                pattern_id="lease_renewal",
+                name="Lease Renewal",
+                category="coordination",
+                description="Time-bound ownership that must be renewed or it expires.",
+                keywords=["lease", "renew", "ttl", "expire", "lock", "heartbeat"],
+                applicability=["lock", "session", "leader", "coordination"],
+            ),
+        ]
+
+    def list_patterns(self) -> List[MechanismPattern]:
+        return list(self._patterns)
+
+    def get(self, pattern_id: str) -> MechanismPattern | None:
+        return self._index.get(pattern_id)
+
+    def search(self, query: str, top_k: int = 5) -> List[tuple[MechanismPattern, float]]:
+        query_lower = query.lower()
+        query_words = set(re.findall(r"\b\w+\b", query_lower))
+        scored: List[tuple[MechanismPattern, float]] = []
+        for pattern in self._patterns:
+            corpus = " ".join(
+                [pattern.name, pattern.category, pattern.description]
+                + pattern.keywords
+                + pattern.applicability
+            ).lower()
+            corpus_words = set(re.findall(r"\b\w+\b", corpus))
+            overlap = len(query_words & corpus_words)
+            keyword_hits = sum(1 for kw in pattern.keywords if kw in query_lower)
+            score = overlap / max(len(query_words), 1) + 0.25 * keyword_hits
+            if score > 0:
+                scored.append((pattern, score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
+    def match(self, query: str, metadata: Any) -> tuple[float, List[str]]:
+        """Return (boost_score, reasons) for a skill against universal mechanisms."""
+        results = self.search(query, top_k=3)
+        if not results:
+            return 0.0, []
+        desc = (getattr(metadata, "description", "") or "").lower()
+        tags = [t.lower() for t in (getattr(metadata, "tags", []) or [])]
+        caps = [c.lower() for c in (getattr(metadata, "capabilities", []) or [])]
+        skill_corpus = " ".join([desc] + tags + caps)
+        matched: List[str] = []
+        total = 0.0
+        for pattern, score in results:
+            applicability_hits = sum(
+                1 for a in pattern.applicability if a in skill_corpus
+            )
+            if applicability_hits > 0 or pattern.category in skill_corpus:
+                total += min(score, 1.0)
+                matched.append(f"mechanism:{pattern.pattern_id}")
+        return min(total, 1.0), matched
 
 
 def get_skill_performance_tracker(store_path: Path | None = None) -> SkillPerformanceTracker:
