@@ -2,6 +2,10 @@
 
 대화 상태 저장, 파일 스냅샷 저장, 체크포인트 복원, 체크포인트 목록 관리 기능 제공.
 gemini-cli의 checkpointing 기능을 참고하여 구현.
+
+OS-level dynamic memory heap compaction manager that captures execution
+snapshots of long-running research agents and hibernates them to disk when
+waiting on external I/O (issue #1004).
 """
 
 import hashlib
@@ -13,6 +17,17 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class HeapSnapshot:
+    """Compacted execution-heap snapshot for a hibernated agent."""
+
+    agent_id: str
+    checkpoint_id: str
+    status: str  # "active" | "hibernated" | "resumed"
+    hibernated_at: str | None
+    resumed_at: str | None
 
 
 @dataclass
@@ -261,6 +276,118 @@ class CheckpointManager:
                         deleted_count += 1
             except Exception as e:
                 logger.warning(f"Failed to process checkpoint {checkpoint_file}: {e}")
+    async def hibernate(
+        self,
+        agent_id: str,
+        state: Dict[str, Any],
+        file_snapshots: Dict[str, str] | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> HeapSnapshot:
+        """Hibernate a long-running agent's execution heap to disk.
+
+        Captures a compacted snapshot of the agent's in-memory state and
+        persists it so the heap can be released while waiting on external I/O.
+
+        Args:
+            agent_id: 식별자 of the agent to hibernate.
+            state: 직렬화 가능한 실행 상태 딕셔너리.
+            file_snapshots: 파일 스냅샷 (file_path -> content).
+            metadata: 추가 메타데이터.
+
+        Returns:
+            HeapSnapshot describing the hibernated heap.
+        """
+        enriched_metadata = dict(metadata or {})
+        enriched_metadata.setdefault("agent_id", agent_id)
+        enriched_metadata.setdefault("hibernation_reason", "waiting_on_external_io")
+
+        checkpoint_id = await self.save_checkpoint(
+            state=state,
+            file_snapshots=file_snapshots,
+            metadata=enriched_metadata,
+        )
+
+        snapshot = HeapSnapshot(
+            agent_id=agent_id,
+            checkpoint_id=checkpoint_id,
+            status="hibernated",
+            hibernated_at=datetime.now().isoformat(),
+            resumed_at=None,
+        )
+        await self._record_heap_snapshot(snapshot)
+        logger.info(f"Agent {agent_id} hibernated to checkpoint {checkpoint_id}")
+        return snapshot
+
+    async def resume(self, agent_id: str) -> Dict[str, Any] | None:
+        """Resume a previously hibernated agent heap from disk.
+
+        Args:
+            agent_id: 식별자 of the agent to resume.
+
+        Returns:
+            복원된 상태 딕셔너리 또는 None.
+        """
+        snapshot = await self._load_heap_snapshot(agent_id)
+        if snapshot is None or snapshot.checkpoint_id is None:
+            logger.warning(f"No hibernated heap found for agent {agent_id}")
+            return None
+
+        state = await self.restore_checkpoint(snapshot.checkpoint_id, restore_files=True)
+        if state is None:
+            return None
+
+        snapshot.status = "resumed"
+        snapshot.resumed_at = datetime.now().isoformat()
+        await self._record_heap_snapshot(snapshot)
+        logger.info(f"Agent {agent_id} resumed from checkpoint {snapshot.checkpoint_id}")
+        return state
+
+    async def _record_heap_snapshot(self, snapshot: HeapSnapshot) -> None:
+        """Persist heap-snapshot metadata alongside the checkpoint."""
+        heap_file = self.checkpoint_dir / f"heap_{snapshot.agent_id}.json"
+        heap_file.write_text(
+            json.dumps(asdict(snapshot), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    async def _load_heap_snapshot(self, agent_id: str) -> HeapSnapshot | None:
+        """Load heap-snapshot metadata for an agent, if present."""
+        heap_file = self.checkpoint_dir / f"heap_{agent_id}.json"
+        if not heap_file.exists():
+            return None
+        try:
+            data = json.loads(heap_file.read_text(encoding="utf-8"))
+            return HeapSnapshot(**data)
+        except Exception as e:
+            logger.error(f"Failed to load heap snapshot for agent {agent_id}: {e}")
+            return None
+
+    async def compact_heap(
+        self,
+        agent_id: str,
+        state: Dict[str, Any],
+        metadata: Dict[str, Any] | None = None,
+    ) -> HeapSnapshot:
+        """Compact an agent's execution heap and hibernate it to disk.
+
+        This is the OS-level entry point used by long-running research agents
+        before yielding on external I/O. The returned snapshot can be passed
+        to ``resume`` to thaw the heap back into memory.
+
+        Args:
+            agent_id: 식별자 of the agent whose heap should be compacted.
+            state: 직렬화 가능한 실행 상태 딕셔너리.
+            metadata: 추가 메타데이터.
+
+        Returns:
+            HeapSnapshot describing the compacted/hibernated heap.
+        """
+        return await self.hibernate(
+            agent_id=agent_id,
+            state=state,
+            file_snapshots=None,
+            metadata=metadata,
+        )
 
         logger.info(f"Cleaned up {deleted_count} old checkpoints")
         return deleted_count
