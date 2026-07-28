@@ -73,34 +73,26 @@ class GeminiCLIAgent(BaseCLIAgent):
         args.extend(["--temperature", str(temperature)])
         args.extend(["--max-tokens", str(max_tokens)])
 
-        # 설정 업데이트
-        original_args = self.config.args.copy()
-        self.config.args = args
+        # 명령 실행 (공유 상태 self.config.args를 수정하지 않음)
+        full_args = (self.config.args or []) + args
+        result = await self._execute_command([self.config.command] + full_args)
 
-        try:
-            # 명령 실행
-            result = await self._execute_command(self.config.command)
+        # 결과 파싱
+        parsed_result = self.parse_output(result)
 
-            # 결과 파싱
-            parsed_result = self.parse_output(result)
-
-            return {
-                "success": result.success and parsed_result.get("success", True),
-                "response": parsed_result.get("response", ""),
-                "confidence": parsed_result.get("confidence", 0.8),
-                "metadata": {
-                    "agent": "gemini_cli",
-                    "model": model,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "execution_time": result.execution_time,
-                },
-                "usage": parsed_result.get("usage", {}),
-            }
-
-        finally:
-            # 설정 복원
-            self.config.args = original_args
+        return {
+            "success": result.success and parsed_result.get("success", True),
+            "response": parsed_result.get("response", ""),
+            "confidence": parsed_result.get("confidence", 0.8),
+            "metadata": {
+                "agent": "gemini_cli",
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "execution_time": result.execution_time,
+            },
+            "usage": parsed_result.get("usage", {}),
+        }
 
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
         """Gemini CLI 출력을 파싱
