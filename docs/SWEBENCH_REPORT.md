@@ -12,3 +12,11 @@ corresponds to a public GitHub Actions run log.
 
 _No runs recorded yet -- the first scheduled run appends its section below
 automatically via a `chore/swebench-lite-report-*` PR._
+
+## 2026-07-26 — run `ci-20260726-722d5607fb00`
+
+- Resolved: **0 / 6** submitted (6 instances in the sampled subset)
+- Unresolved: 2
+- Empty patch (no fix attempt produced): 3
+- Errored during evaluation: 1
+
