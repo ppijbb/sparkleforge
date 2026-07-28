@@ -191,7 +191,7 @@ def update_trend_gap_history(
         "delta": delta,
     }
     history.append(entry)
-    history_file.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    history_file.write_text(json.dumps(history, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return entry
 
 
@@ -333,7 +333,7 @@ async def generate_daily_report(project_root: Path) -> Dict[str, Any]:
         },
         "critique": critique
     }
-    latest_critique_file.write_text(json.dumps(latest_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    latest_critique_file.write_text(json.dumps(latest_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     
     # Write daily markdown report
     report_file = reports_dir / f"report_{datetime.now().strftime('%Y%m%d')}.md"
@@ -385,6 +385,6 @@ async def generate_daily_report(project_root: Path) -> Dict[str, Any]:
     })
     latest_data["trend_gap"] = trend_gap_entry
     
-    history_file.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    history_file.write_text(json.dumps(history, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     
     return latest_data

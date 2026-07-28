@@ -57,6 +57,7 @@ Anvil은 "리눅스 같은 진짜 OS"가 아니라 **에이전트를 위한 OS �
 | Τ | syscall 경계 공식화 — 에이전트 간 호출 단일 진입점 | 🔲 계획됨 | 마일스톤 #568 |
 | Λ | 스킬 마켓플레이스 — 인스턴스 간 스킬 공유 | 🔲 계획됨 | 마일스톤 #569 |
 | Φ | Surface 통합 — CLI/웹 UI/자연어 셸 단일화 | 🔲 계획됨 | 마일스톤 #570 |
+| Ω-FM | Forge Master — 에이전트 OS 메타 오케스트레이션 (외부 CLI 제어, 적대적 평가, 24/7 멀티세션, 토큰 최소화) | 🔄 진행중 | `src/core/forge_master/`, `src/core/cli_agents/` |
 
 **현재 위치**: Σ는 2026-07-12에 닫혔고, Σ-1이 남긴 모놀리스 분할 잔여
 결함(circular import / missing return / signature mismatch, #539)도
