@@ -602,6 +602,271 @@ class FusionAgent:
 """
 
 
+class GeneticCrossoverConfig(BaseModel):
+    """Genetic algorithm configuration for candidate solution spaces."""
+
+    population_size: int = Field(default=20, ge=1, description="Population size")
+    generations: int = Field(default=10, ge=1, description="Number of generations")
+    crossover_rate: float = Field(default=0.7, ge=0.0, le=1.0, description="Crossover probability")
+    mutation_rate: float = Field(default=0.1, ge=0.0, le=1.0, description="Per-gene mutation probability")
+    elite_fraction: float = Field(default=0.1, ge=0.0, le=1.0, description="Elite selection fraction")
+    tournament_size: int = Field(default=3, ge=1, description="Tournament selection size")
+    seed: int | None = Field(default=None, description="Random seed")
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class GeneticIndividual(BaseModel):
+    """A single candidate solution in the genetic population."""
+
+    individual_id: str = Field(description="Unique individual ID")
+    genes: List[Any] = Field(default_factory=list, description="Candidate solution genes")
+    fitness: float = Field(default=0.0, description="Fitness score")
+    generation: int = Field(default=0, ge=0, description="Generation index")
+    parent_ids: List[str] = Field(default_factory=list, description="Parent individual IDs")
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class GeneticGenerationResult(BaseModel):
+    """Result of a single genetic generation."""
+
+    generation: int = Field(description="Generation index")
+    population: List[GeneticIndividual] = Field(default_factory=list)
+    best_fitness: float = Field(default=0.0)
+    average_fitness: float = Field(default=0.0)
+    diversity_score: float = Field(default=0.0)
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class GeneticCrossoverSearch:
+    """Multi-generational genetic algorithm operator.
+
+    Applies crossover, point mutation, and selection pressure to a population
+    of candidate solutions for exploratory optimization.
+    """
+
+    def __init__(
+        self,
+        config: GeneticCrossoverConfig | None = None,
+        fitness_fn: Callable[[List[Any]], float] | None = None,
+    ):
+        self.config = config or GeneticCrossoverConfig()
+        self.fitness_fn = fitness_fn
+        self._rng = random.Random(self.config.seed)
+        logger.info(
+            f"GeneticCrossoverSearch initialized: "
+            f"population={self.config.population_size}, "
+            f"generations={self.config.generations}"
+        )
+
+    def _evaluate(self, individual: GeneticIndividual) -> float:
+        """Evaluate fitness for an individual."""
+        if self.fitness_fn is None:
+            # Default fitness: sum of gene magnitudes (exploratory placeholder).
+            try:
+                return float(sum(abs(g) for g in individual.genes if isinstance(g, (int, float))))
+            except Exception:
+                return 0.0
+        try:
+            return float(self.fitness_fn(individual.genes))
+        except Exception as e:
+            logger.warning(f"Fitness evaluation failed for {individual.individual_id}: {e}")
+            return 0.0
+
+    def _random_genes(self, gene_length: int, gene_pool: List[Any] | None = None) -> List[Any]:
+        """Generate random genes for an individual."""
+        if gene_pool:
+            return [self._rng.choice(gene_pool) for _ in range(gene_length)]
+        return [self._rng.random() for _ in range(gene_length)]
+
+    def initialize_population(
+        self,
+        gene_length: int = 5,
+        gene_pool: List[Any] | None = None,
+        seed_genes: List[List[Any]] | None = None,
+    ) -> List[GeneticIndividual]:
+        """Initialize the starting population."""
+        population: List[GeneticIndividual] = []
+        for i in range(self.config.population_size):
+            if seed_genes and i < len(seed_genes):
+                genes = list(seed_genes[i])
+            else:
+                genes = self._random_genes(gene_length, gene_pool)
+            individual = GeneticIndividual(
+                individual_id=f"gen0-ind{i}",
+                genes=genes,
+                generation=0,
+            )
+            individual.fitness = self._evaluate(individual)
+            population.append(individual)
+        return population
+
+    def tournament_select(self, population: List[GeneticIndividual]) -> GeneticIndividual:
+        """Tournament selection with selection pressure."""
+        k = min(self.config.tournament_size, len(population))
+        contenders = self._rng.sample(population, k)
+        return max(contenders, key=lambda ind: ind.fitness)
+
+    def crossover(
+        self,
+        parent_a: GeneticIndividual,
+        parent_b: GeneticIndividual,
+    ) -> Tuple[GeneticIndividual, GeneticIndividual]:
+        """Single-point crossover between two parents."""
+        if self._rng.random() > self.config.crossover_rate:
+            # No crossover: pass parents through (cloned with new ids).
+            return self._clone(parent_a), self._clone(parent_b)
+
+        if not parent_a.genes or not parent_b.genes:
+            return self._clone(parent_a), self._clone(parent_b)
+
+        gene_len = min(len(parent_a.genes), len(parent_b.genes))
+        if gene_len <= 1:
+            point = 1
+        else:
+            point = self._rng.randint(1, gene_len - 1)
+
+        child_a_genes = list(parent_a.genes[:point]) + list(parent_b.genes[point:])
+        child_b_genes = list(parent_b.genes[:point]) + list(parent_a.genes[point:])
+
+        gen = max(parent_a.generation, parent_b.generation) + 1
+        child_a = GeneticIndividual(
+            individual_id=f"gen{gen}-child-{self._rng.randint(0, 10**9)}",
+            genes=child_a_genes,
+            generation=gen,
+            parent_ids=[parent_a.individual_id, parent_b.individual_id],
+        )
+        child_b = GeneticIndividual(
+            individual_id=f"gen{gen}-child-{self._rng.randint(0, 10**9)}",
+            genes=child_b_genes,
+            generation=gen,
+            parent_ids=[parent_a.individual_id, parent_b.individual_id],
+        )
+        child_a.fitness = self._evaluate(child_a)
+        child_b.fitness = self._evaluate(child_b)
+        return child_a, child_b
+
+    def point_mutation(
+        self,
+        individual: GeneticIndividual,
+        gene_pool: List[Any] | None = None,
+    ) -> GeneticIndividual:
+        """Point mutation: randomly perturb individual genes."""
+        mutated_genes = list(individual.genes)
+        for i in range(len(mutated_genes)):
+            if self._rng.random() < self.config.mutation_rate:
+                if gene_pool:
+                    mutated_genes[i] = self._rng.choice(gene_pool)
+                elif isinstance(mutated_genes[i], (int, float)):
+                    # Gaussian perturbation for numeric genes.
+                    mutated_genes[i] = type(mutated_genes[i])(
+                        mutated_genes[i] + self._rng.gauss(0, 0.1)
+                    )
+                else:
+                    mutated_genes[i] = self._rng.random()
+        mutant = GeneticIndividual(
+            individual_id=f"gen{individual.generation}-mut-{self._rng.randint(0, 10**9)}",
+            genes=mutated_genes,
+            generation=individual.generation,
+            parent_ids=[individual.individual_id],
+        )
+        mutant.fitness = self._evaluate(mutant)
+        return mutant
+
+    def _clone(self, individual: GeneticIndividual) -> GeneticIndividual:
+        """Clone an individual with a new id."""
+        clone = GeneticIndividual(
+            individual_id=f"gen{individual.generation}-clone-{self._rng.randint(0, 10**9)}",
+            genes=list(individual.genes),
+            generation=individual.generation,
+            parent_ids=[individual.individual_id],
+        )
+        clone.fitness = individual.fitness
+        return clone
+
+    def _diversity(self, population: List[GeneticIndividual]) -> float:
+        """Estimate population diversity via unique gene signatures."""
+        if not population:
+            return 0.0
+        signatures = set()
+        for ind in population:
+            signatures.add(tuple(str(g) for g in ind.genes))
+        return len(signatures) / len(population)
+
+    def evolve_generation(
+        self,
+        population: List[GeneticIndividual],
+        gene_pool: List[Any] | None = None,
+    ) -> GeneticGenerationResult:
+        """Evolve a single generation with elitism, crossover, and mutation."""
+        sorted_pop = sorted(population, key=lambda ind: ind.fitness, reverse=True)
+        elite_count = max(1, int(self.config.elite_fraction * self.config.population_size))
+        elite_count = min(elite_count, len(sorted_pop))
+        elites = [self._clone(ind) for ind in sorted_pop[:elite_count]]
+
+        children: List[GeneticIndividual] = list(elites)
+        generation = max(ind.generation for ind in population) + 1
+
+        while len(children) < self.config.population_size:
+            parent_a = self.tournament_select(population)
+            parent_b = self.tournament_select(population)
+            child_a, child_b = self.crossover(parent_a, parent_b)
+            child_a = self.point_mutation(child_a, gene_pool)
+            child_b = self.point_mutation(child_b, gene_pool)
+            children.append(child_a)
+            if len(children) < self.config.population_size:
+                children.append(child_b)
+
+        children = children[: self.config.population_size]
+        for child in children:
+            child.generation = generation
+
+        best_fitness = max((c.fitness for c in children), default=0.0)
+        avg_fitness = (
+            sum(c.fitness for c in children) / len(children) if children else 0.0
+        )
+        diversity = self._diversity(children)
+
+        return GeneticGenerationResult(
+            generation=generation,
+            population=children,
+            best_fitness=best_fitness,
+            average_fitness=avg_fitness,
+            diversity_score=diversity,
+        )
+
+    def search(
+        self,
+        gene_length: int = 5,
+        gene_pool: List[Any] | None = None,
+        seed_genes: List[List[Any]] | None = None,
+    ) -> Tuple[GeneticIndividual, List[GeneticGenerationResult]]:
+        """Run the full multi-generational genetic search.
+
+        Returns the best individual found and the per-generation history.
+        """
+        population = self.initialize_population(
+            gene_length=gene_length, gene_pool=gene_pool, seed_genes=seed_genes
+        )
+        history: List[GeneticGenerationResult] = []
+        best_individual = max(population, key=lambda ind: ind.fitness)
+
+        for _ in range(self.config.generations):
+            result = self.evolve_generation(population, gene_pool=gene_pool)
+            history.append(result)
+            population = result.population
+            gen_best = max(population, key=lambda ind: ind.fitness)
+            if gen_best.fitness > best_individual.fitness:
+                best_individual = self._clone(gen_best)
+
+        return best_individual, history
+
+
 class TestTimeScaler:
     """High-level test-time scaling coordinator."""
 
