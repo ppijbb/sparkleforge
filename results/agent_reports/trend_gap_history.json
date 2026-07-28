@@ -9,5 +9,16 @@
       "newly_missing": [],
       "resolved_gaps": []
     }
+  },
+  {
+    "date": "2026-07-27",
+    "signal_count": 0,
+    "covered": [],
+    "missing": [],
+    "delta": {
+      "newly_covered": [],
+      "newly_missing": [],
+      "resolved_gaps": []
+    }
   }
 ]
