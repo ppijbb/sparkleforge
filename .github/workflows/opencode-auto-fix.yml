@@ -152,7 +152,6 @@ jobs:
             esac
             NORMALIZED_TITLE="${CONVENTIONAL_TYPE}: ${REST}"
           fi
-          CONVENTIONAL_TYPE="fix"
           case "$NORMALIZED_TITLE" in
             "🔧 fix:"*)
               RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
