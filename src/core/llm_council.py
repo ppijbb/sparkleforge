@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple
 
 import httpx
 
+from src.core.adversarial_council import run_red_team_council
 from src.core.researcher_config import get_council_config
 
 logger = logging.getLogger(__name__)
@@ -460,6 +461,7 @@ async def run_full_council(
     metadata = {
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
+        "red_team_critique": red_team_critique,
     }
 
     logger.info("Full council process completed successfully")
