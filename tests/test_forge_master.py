@@ -8,7 +8,9 @@ from src.core.forge_master import (
     ForgeMasterRouter,
     ForgeMasterSessionManager,
 )
+from src.core.forge_master.tools import register_forge_master_dispatch_tool
 from src.core.orchestrator.delegation import DELEGATION_REGISTRY, delegate_to_agent
+from src.core.tools.registry import registry
 
 
 def test_forge_master_router_capability_matching():
@@ -59,69 +61,6 @@ def test_router_fallbacks_are_relevance_gated_not_the_whole_pool():
     assert refactor_assignment.fallback_agents == []
 
 
-@pytest.mark.asyncio
-async def test_router_async_uses_llm_decision_when_available():
-    """route_task_async must let the LLM actually decide, not just run the
-    keyword heuristic under a new name."""
-    router = ForgeMasterRouter()
-
-    mock_result = type(
-        "Result",
-        (),
-        {
-            "content": '{"agent": "gemini_cli", "fallback_agents": [], "reason": "best fit for doc search"}'
-        },
-    )()
-    mock_orchestrator = type("Orch", (), {})()
-    mock_orchestrator.execute_with_model = AsyncMock(return_value=mock_result)
-
-    with patch("src.core.llm_manager.get_llm_orchestrator", return_value=mock_orchestrator):
-        assignment = await router.route_task_async("Some deliberately ambiguous task text")
-
-    assert assignment.agent_name == "gemini_cli"
-    assert assignment.fallback_agents == []
-    assert "LLM routing" in assignment.capability_reason
-    mock_orchestrator.execute_with_model.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_router_async_falls_back_to_heuristic_when_llm_fails():
-    """LLM routing failure (all retries) must fall back to the deterministic
-    heuristic, not raise or return a bad assignment."""
-    router = ForgeMasterRouter()
-
-    mock_orchestrator = type("Orch", (), {})()
-    mock_orchestrator.execute_with_model = AsyncMock(side_effect=RuntimeError("network down"))
-
-    with patch("src.core.llm_manager.get_llm_orchestrator", return_value=mock_orchestrator), \
-         patch("src.core.forge_master.router.asyncio.sleep", new=AsyncMock()):
-        assignment = await router.route_task_async(
-            "Perform architectural refactoring of backend modules"
-        )
-
-    assert assignment.agent_name == "claude_code"
-    assert "Heuristic fallback" in assignment.capability_reason
-    assert mock_orchestrator.execute_with_model.await_count == ForgeMasterRouter.MAX_ROUTE_RETRIES
-
-
-@pytest.mark.asyncio
-async def test_router_async_respects_preferred_agent_without_llm_call():
-    """An explicit preferred_agent is the caller's own judgment call - honor it
-    without spending an LLM call on a decision that's already been made."""
-    router = ForgeMasterRouter()
-
-    mock_orchestrator = type("Orch", (), {})()
-    mock_orchestrator.execute_with_model = AsyncMock()
-
-    with patch("src.core.llm_manager.get_llm_orchestrator", return_value=mock_orchestrator):
-        assignment = await router.route_task_async(
-            "Some task", preferred_agent="gemini_cli"
-        )
-
-    assert assignment.agent_name == "gemini_cli"
-    mock_orchestrator.execute_with_model.assert_not_awaited()
-
-
 def test_session_manager_lifecycle():
     mgr = ForgeMasterSessionManager()
 
@@ -160,6 +99,86 @@ async def test_controller_execution_with_mocked_cli():
         assert result["master_verdict"] == "PASSED"
         assert result["agent_used"] == "codex"
         assert result["adversarial_audit"]["passed"] is True
+
+
+@pytest.mark.asyncio
+async def test_controller_does_not_auto_switch_agents_on_critical_failure():
+    """A crash (ESCALATE_TO_FALLBACK) must not make the controller silently
+    call a different CLI agent - which agent to use next is a decision for
+    whoever calls execute_task_with_master_control (e.g. the dispatch_to_cli_agent
+    tool), not something this code should do on its own."""
+    controller = ForgeMasterController()
+
+    crash_result = {"success": False, "error": "boom", "response": ""}
+
+    with patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(return_value=crash_result),
+    ) as mock_execute:
+        result = await controller.execute_task_with_master_control(
+            task_query="Perform architectural refactoring of backend modules",
+            preferred_agent="gemini_cli",
+        )
+
+    assert result["success"] is False
+    assert result["last_agent_used"] == "gemini_cli"
+    assert result["attempts"] == 1
+
+    # Every attempted call must target the one explicitly chosen agent - no
+    # silent switch to claude_code/codex even though this refactor-shaped
+    # query would score them as relevant fallback_candidates.
+    assert mock_execute.await_count == 1
+    called_agent = mock_execute.await_args.kwargs.get("agent_name")
+    assert called_agent == "gemini_cli"
+    assert "claude_code" in result["fallback_candidates"]
+
+
+def test_dispatch_to_cli_agent_tool_is_registered():
+    """The agent's own reasoning loop must be able to discover and call this
+    tool to pick a CLI agent itself - it must not only exist as internal
+    Python code nobody outside forge_master can reach."""
+    register_forge_master_dispatch_tool()
+
+    assert "dispatch_to_cli_agent" in registry.get_all_tool_names()
+    assert registry.tool_sources["dispatch_to_cli_agent"] == "local"
+
+    schema = registry.tools["dispatch_to_cli_agent"].parameters
+    assert schema["required"] == ["agent_name", "task_query"]
+    assert set(ForgeMasterRouter.CAPABILITY_MATRIX.keys()) == set(
+        schema["properties"]["agent_name"]["enum"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_cli_agent_tool_executes_with_the_chosen_agent():
+    """Calling the tool must actually run the agent_name the caller picked,
+    with no routing/ranking substituted in behind it."""
+    register_forge_master_dispatch_tool()
+
+    controller = ForgeMasterController()
+    mock_cli_result = {
+        "success": True,
+        "response": "def add(a, b): return a + b",
+        "confidence": 0.9,
+    }
+
+    with patch(
+        "src.core.forge_master.tools.ForgeMasterController",
+        return_value=controller,
+    ), patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(return_value=mock_cli_result),
+    ) as mock_execute:
+        result = await registry.execute(
+            "dispatch_to_cli_agent",
+            {"agent_name": "codex", "task_query": "Write an add function"},
+        )
+
+    assert result["success"] is True
+    assert result["agent_used"] == "codex"
+    assert mock_execute.await_args.kwargs.get("agent_name") == "codex"
 
 
 @pytest.mark.asyncio

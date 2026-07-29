@@ -17,6 +17,7 @@ from src.core.anvil.intent_guardrail import IntentGuardrail
 from src.core.anvil.method_resolver import MethodResolver
 from src.core.anvil.mode_controller import ExecutionMode, ModeController
 from src.core.surface.task_dashboard import TaskDashboard
+from src.core.forge_master.tools import register_forge_master_dispatch_tool
 from src.core.guard.guard_plane import register_iot_guard_tools
 from src.core.guard.security_tools import register_security_tools
 from src.core.harness_state import HarnessState, create_initial_harness_state
@@ -73,6 +74,12 @@ class AgentHarness:
             logger.info("[Harness] Registered control_iot_device tool")
         except Exception as e:
             logger.warning(f"[Harness] Failed to register IoT guard tool: {e}")
+
+        try:
+            register_forge_master_dispatch_tool()
+            logger.info("[Harness] Registered dispatch_to_cli_agent tool")
+        except Exception as e:
+            logger.warning(f"[Harness] Failed to register dispatch_to_cli_agent tool: {e}")
 
     def _build_graph(self):
         """LangGraph 상태 머신 구축"""
