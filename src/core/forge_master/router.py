@@ -3,13 +3,39 @@
 SparkleForge 중앙 하네스가 작업의 특성과 토큰 예산을 평가하여
 최적의 외부 CLI 도구(Claude Code, Codex, Gemini CLI, Hermes 등)를 선택하고
 도구별 맞춤 Goal을 부여하는 동적 라우팅 시스템
+
+핵심 원칙 (src/core/task_router.py와 동일): 하드코딩된 키워드 매핑에 최종 결정을
+맡기지 않는다. `route_task_async`가 실제 판단 경로이며, LLM이 태스크를 분석해
+에이전트와 폴백 목록을 직접 고른다. 키워드/역량 매트릭스 기반 `route_task`는
+LLM 호출이 모두 실패했을 때만 쓰는 결정론적 안전망이다.
 """
 
+import asyncio
+import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+_FORGE_ROUTE_PROMPT = """You are the dispatcher for SparkleForge's ForgeMaster orchestration layer, deciding which external AI CLI coding agent should handle a task.
+
+Available agents and their strengths:
+{agent_descriptions}
+
+Task: "{task_description}"
+Required capabilities (if any): {required_capabilities}
+
+Pick the single best-suited agent for THIS task. Only include other agents in
+fallback_agents if they are genuinely also plausible for this specific task -
+do not pad the list with agents that have no relevant strength here. An empty
+fallback_agents list is the correct answer when nothing else fits; escalating
+a failure to an unrelated agent wastes a real, billed call.
+
+Respond with ONLY a JSON object:
+{{"agent": "<agent_name>", "fallback_agents": ["<agent_name>", "..."], "reason": "<one sentence>"}}"""
 
 
 @dataclass
@@ -61,6 +87,121 @@ class ForgeMasterRouter:
         },
     }
 
+    MAX_ROUTE_RETRIES = 2
+    ROUTE_BACKOFF_BASE = 1.0
+
+    async def route_task_async(
+        self,
+        task_description: str,
+        required_capabilities: Optional[List[str]] = None,
+        preferred_agent: Optional[str] = None,
+        available_agents: Optional[List[str]] = None,
+    ) -> ToolGoalAssignment:
+        """LLM이 실제로 태스크를 분석해 에이전트와 폴백을 판단하는 라우팅 경로.
+
+        preferred_agent가 명시된 경우는 호출자가 이미 판단을 내린 것이므로
+        LLM 호출 없이 그대로 존중하고, 폴백만 결정론적 관련성 점수로 구성한다.
+        그 외의 경우엔 LLM에게 직접 물어보고, LLM 호출이 재시도 후에도 실패할
+        때만 `route_task`의 키워드/역량 휴리스틱으로 폴백한다.
+        """
+        required_caps = [c.lower() for c in (required_capabilities or [])]
+        pool = available_agents or list(self.CAPABILITY_MATRIX.keys())
+
+        if preferred_agent and preferred_agent in pool:
+            relevance = self._score_relevance(task_description, required_caps, pool)
+            return ToolGoalAssignment(
+                agent_name=preferred_agent,
+                assigned_goal=self._build_tool_specific_goal(preferred_agent, task_description),
+                capability_reason=f"Explicitly preferred agent: {preferred_agent}",
+                fallback_agents=self._relevant_fallbacks(preferred_agent, relevance),
+            )
+
+        llm_decision = await self._llm_route_decision(task_description, required_caps, pool)
+        if llm_decision is not None:
+            selected, fallbacks, reason = llm_decision
+        else:
+            relevance = self._score_relevance(task_description, required_caps, pool)
+            selected, heuristic_reason = self._pick_best_agent(relevance, pool)
+            reason = f"[Heuristic fallback after LLM routing failure] {heuristic_reason}"
+            fallbacks = self._relevant_fallbacks(selected, relevance)
+
+        return ToolGoalAssignment(
+            agent_name=selected,
+            assigned_goal=self._build_tool_specific_goal(selected, task_description),
+            capability_reason=reason,
+            fallback_agents=fallbacks,
+        )
+
+    async def _llm_route_decision(
+        self, task_description: str, required_caps: List[str], pool: List[str]
+    ) -> Optional[tuple[str, List[str], str]]:
+        """LLM에게 에이전트 선택을 맡긴다. 모든 재시도가 실패하면 None을 반환."""
+        from src.core.llm_manager import TaskType, get_llm_orchestrator
+
+        agent_descriptions = "\n".join(
+            f"- {agent}: {', '.join(self.CAPABILITY_MATRIX.get(agent, {}).get('strengths', []))}"
+            for agent in pool
+        )
+        prompt = _FORGE_ROUTE_PROMPT.format(
+            agent_descriptions=agent_descriptions,
+            task_description=task_description,
+            required_capabilities=", ".join(required_caps) or "none",
+        )
+
+        last_error = None
+        for attempt in range(self.MAX_ROUTE_RETRIES):
+            try:
+                orchestrator = get_llm_orchestrator()
+                result = await orchestrator.execute_with_model(
+                    prompt=prompt,
+                    task_type=TaskType.ANALYSIS,
+                    use_cascade=False,
+                )
+                parsed = self._extract_json(result.content)
+                agent = str(parsed.get("agent", "")).strip()
+                reason = parsed.get("reason", "")
+
+                if agent in pool:
+                    raw_fallbacks = parsed.get("fallback_agents", []) or []
+                    fallbacks = [
+                        a for a in raw_fallbacks if isinstance(a, str) and a in pool and a != agent
+                    ]
+                    logger.info(
+                        f"ForgeMasterRouter [LLM]: agent={agent} fallbacks={fallbacks} reason={reason}"
+                    )
+                    return agent, fallbacks, f"[LLM routing] {reason}" if reason else "[LLM routing decision]"
+
+                last_error = f"Unrecognized agent in LLM response: '{agent}'"
+                logger.warning(
+                    f"ForgeMasterRouter: routing attempt {attempt + 1}/{self.MAX_ROUTE_RETRIES} - {last_error}"
+                )
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    f"ForgeMasterRouter: routing attempt {attempt + 1}/{self.MAX_ROUTE_RETRIES} failed - {e}"
+                )
+
+            if attempt < self.MAX_ROUTE_RETRIES - 1:
+                await asyncio.sleep(self.ROUTE_BACKOFF_BASE * (2**attempt))
+
+        logger.warning(
+            f"ForgeMasterRouter: LLM routing failed after {self.MAX_ROUTE_RETRIES} attempts "
+            f"({last_error}); falling back to keyword/capability heuristic"
+        )
+        return None
+
+    def _extract_json(self, text: str) -> dict:
+        """LLM 응답에서 JSON 객체 추출 (src/core/task_router.py와 동일한 방식)"""
+        text = re.sub(r"```json\s*", "", text)
+        text = re.sub(r"```\s*", "", text)
+        match = re.search(r"\{.*?\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+        return {}
+
     def route_task(
         self,
         task_description: str,
@@ -68,7 +209,10 @@ class ForgeMasterRouter:
         preferred_agent: Optional[str] = None,
         available_agents: Optional[List[str]] = None,
     ) -> ToolGoalAssignment:
-        """작업 요구사항에 따라 최적의 외부 CLI 에이전트 선택 및 Goal 부여
+        """[결정론적 안전망] 키워드/역량 매트릭스 기반 휴리스틱 라우팅.
+
+        `route_task_async`가 LLM 호출에 모두 실패했을 때만 사용하는 폴백 경로.
+        새 호출자는 `route_task_async`를 사용해야 한다.
 
         Args:
             task_description: 작업 내용

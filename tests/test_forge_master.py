@@ -59,6 +59,69 @@ def test_router_fallbacks_are_relevance_gated_not_the_whole_pool():
     assert refactor_assignment.fallback_agents == []
 
 
+@pytest.mark.asyncio
+async def test_router_async_uses_llm_decision_when_available():
+    """route_task_async must let the LLM actually decide, not just run the
+    keyword heuristic under a new name."""
+    router = ForgeMasterRouter()
+
+    mock_result = type(
+        "Result",
+        (),
+        {
+            "content": '{"agent": "gemini_cli", "fallback_agents": [], "reason": "best fit for doc search"}'
+        },
+    )()
+    mock_orchestrator = type("Orch", (), {})()
+    mock_orchestrator.execute_with_model = AsyncMock(return_value=mock_result)
+
+    with patch("src.core.llm_manager.get_llm_orchestrator", return_value=mock_orchestrator):
+        assignment = await router.route_task_async("Some deliberately ambiguous task text")
+
+    assert assignment.agent_name == "gemini_cli"
+    assert assignment.fallback_agents == []
+    assert "LLM routing" in assignment.capability_reason
+    mock_orchestrator.execute_with_model.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_router_async_falls_back_to_heuristic_when_llm_fails():
+    """LLM routing failure (all retries) must fall back to the deterministic
+    heuristic, not raise or return a bad assignment."""
+    router = ForgeMasterRouter()
+
+    mock_orchestrator = type("Orch", (), {})()
+    mock_orchestrator.execute_with_model = AsyncMock(side_effect=RuntimeError("network down"))
+
+    with patch("src.core.llm_manager.get_llm_orchestrator", return_value=mock_orchestrator), \
+         patch("src.core.forge_master.router.asyncio.sleep", new=AsyncMock()):
+        assignment = await router.route_task_async(
+            "Perform architectural refactoring of backend modules"
+        )
+
+    assert assignment.agent_name == "claude_code"
+    assert "Heuristic fallback" in assignment.capability_reason
+    assert mock_orchestrator.execute_with_model.await_count == ForgeMasterRouter.MAX_ROUTE_RETRIES
+
+
+@pytest.mark.asyncio
+async def test_router_async_respects_preferred_agent_without_llm_call():
+    """An explicit preferred_agent is the caller's own judgment call - honor it
+    without spending an LLM call on a decision that's already been made."""
+    router = ForgeMasterRouter()
+
+    mock_orchestrator = type("Orch", (), {})()
+    mock_orchestrator.execute_with_model = AsyncMock()
+
+    with patch("src.core.llm_manager.get_llm_orchestrator", return_value=mock_orchestrator):
+        assignment = await router.route_task_async(
+            "Some task", preferred_agent="gemini_cli"
+        )
+
+    assert assignment.agent_name == "gemini_cli"
+    mock_orchestrator.execute_with_model.assert_not_awaited()
+
+
 def test_session_manager_lifecycle():
     mgr = ForgeMasterSessionManager()
 

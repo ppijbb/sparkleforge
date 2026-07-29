@@ -65,8 +65,8 @@ class ForgeMasterController:
         """
         logger.info(f"ForgeMaster Controller starting task: '{task_query[:60]}...'")
 
-        # 1. 라우팅 및 도구 맞춤 Goal 부여
-        assignment = self.router.route_task(
+        # 1. 라우팅 및 도구 맞춤 Goal 부여 (LLM이 직접 에이전트/폴백을 판단)
+        assignment = await self.router.route_task_async(
             task_description=task_query,
             required_capabilities=required_capabilities,
             preferred_agent=preferred_agent,
