@@ -28,6 +28,37 @@ def test_forge_master_router_capability_matching():
     assert assignment3.agent_name == "gemini_cli"
 
 
+def test_router_fallbacks_are_relevance_gated_not_the_whole_pool():
+    """Fallback allocation must reflect actual task fit, not just static baseline
+    score, or every failure ends up cascading into claude_code/codex regardless
+    of whether the task ever needed them."""
+    router = ForgeMasterRouter()
+
+    # A gemini-shaped task shouldn't fall back to claude_code/codex just because
+    # they happen to have the highest static capability scores in the matrix.
+    search_assignment = router.route_task(
+        "Search large context documentation and explain setup"
+    )
+    assert search_assignment.agent_name == "gemini_cli"
+    assert "claude_code" not in search_assignment.fallback_agents
+    assert "codex" not in search_assignment.fallback_agents
+
+    # Same when the agent is pinned explicitly rather than auto-selected.
+    pinned_assignment = router.route_task(
+        "In one short paragraph, explain what a binary search algorithm does.",
+        preferred_agent="gemini_cli",
+    )
+    assert pinned_assignment.agent_name == "gemini_cli"
+    assert pinned_assignment.fallback_agents == []
+
+    # A refactor-shaped task shouldn't get codex/gemini as noise fallbacks either.
+    refactor_assignment = router.route_task(
+        "Perform architectural refactoring of backend modules"
+    )
+    assert refactor_assignment.agent_name == "claude_code"
+    assert refactor_assignment.fallback_agents == []
+
+
 def test_session_manager_lifecycle():
     mgr = ForgeMasterSessionManager()
 
