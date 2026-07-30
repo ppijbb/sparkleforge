@@ -117,10 +117,7 @@ class SubAgentExecutor:
     async def _dummy_agent_loop(
         self, task: TaskState, agent_config: SubAgentConfig, messages: list
     ) -> Dict[str, Any]:
-        """서브에이전트의 내부 실행 루프 스터브"""
-        # 나중에 프롬프트 엔지니어링 및 LLM loop 연결이 이곳에 들어감
-        await asyncio.sleep(0.5)  # 시뮬레이션 지연
-
+        """서브에이전트의 내부 실행 루프"""
         # ToolGovernor 경유하여 도구 호출 예시
         if "search" in agent_config.capabilities:
             query = f"{task.get('description', '')[:50]}"
