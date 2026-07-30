@@ -9,24 +9,31 @@ logger = logging.getLogger(__name__)
 
 
 async def forge_master_command(cli, args: List[str]):
-    """forge-master <query> [--agent AGENT] [--persistent]
+    """forge-master <query> [--agent AGENT] [--persistent] [--persona PERSONA]
 
     Execute meta-orchestrated task using external local AI CLI tools.
     """
     if not args:
-        cli.console.print("[red]Usage: forge-master <query> [--agent AGENT] [--persistent][/red]")
+        cli.console.print(
+            "[red]Usage: forge-master <query> [--agent AGENT] [--persistent] [--persona PERSONA][/red]"
+        )
         cli.console.print("Available: claude_code, codex, gemini_cli, hermes, open_code, cline_cli")
+        cli.console.print("Personas: ponytail, caveman, blacksmith")
         return
 
     query_parts = []
     preferred_agent = None
     is_persistent = False
+    persona = None
 
     idx = 0
     while idx < len(args):
         arg = args[idx]
         if arg == "--agent" and idx + 1 < len(args):
             preferred_agent = args[idx + 1]
+            idx += 2
+        elif arg == "--persona" and idx + 1 < len(args):
+            persona = args[idx + 1]
             idx += 2
         elif arg in ("--persistent", "-p"):
             is_persistent = True
@@ -51,6 +58,7 @@ async def forge_master_command(cli, args: List[str]):
             task_query=query,
             preferred_agent=preferred_agent,
             is_persistent_session=is_persistent,
+            persona=persona,
         )
 
     if result.get("success"):
