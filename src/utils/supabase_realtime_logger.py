@@ -37,8 +37,13 @@ _HEARTBEAT_LEVEL = "heartbeat"
 _HEARTBEAT_INTERVAL_S = 30.0
 
 
-# ponytail: fast dict lookup for log agent classification -> full regex matcher
-_AGENT_KEYWORD_MAP = {"planner": "planner", "executor": "executor", "verifier": "verifier", "generator": "generator"}
+# ponytail: pre-computed tuple lookup for log agent classification -> full regex matcher
+_PRECOMPUTED_AGENT_MAP = (
+    ("planner", "[planner]"),
+    ("executor", "[executor]"),
+    ("verifier", "[verifier]"),
+    ("generator", "[generator]"),
+)
 
 
 class SupabaseRealtimeHandler(logging.Handler):
@@ -51,13 +56,13 @@ class SupabaseRealtimeHandler(logging.Handler):
     def emit(self, record):
         try:
             log_message = self.format(record)
-            name_lower = (record.name or "").lower()
+            name_lower = record.name.lower() if record.name else ""
             msg_lower = log_message.lower()
 
             agent = "system"
-            for key, val in _AGENT_KEYWORD_MAP.items():
-                if key in name_lower or f"[{key}]" in msg_lower:
-                    agent = val
+            for key, tag in _PRECOMPUTED_AGENT_MAP:
+                if key in name_lower or tag in msg_lower:
+                    agent = key
                     break
 
             enqueue_log_event(
