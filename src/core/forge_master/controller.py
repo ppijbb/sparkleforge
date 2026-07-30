@@ -17,6 +17,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .adversarial_evaluator import AdversarialEvaluator
+from .personas import apply_persona
 from .router import ForgeMasterRouter
 from .session_manager import ForgeMasterSessionManager
 from .token_minimizer import TokenMinimizer
@@ -48,6 +49,7 @@ class ForgeMasterController:
         is_persistent_session: bool = False,
         session_id: Optional[str] = None,
         max_retries: int = 2,
+        persona: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """Forge Master 실행 파이프라인

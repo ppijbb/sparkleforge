@@ -6,6 +6,7 @@
 
 from .adversarial_evaluator import AdversarialEvaluationResult, AdversarialEvaluator
 from .controller import ForgeMasterController
+from .personas import EXECUTION_PERSONAS, apply_persona
 from .router import ForgeMasterRouter, ToolGoalAssignment
 from .session_manager import AgentSession, ForgeMasterSessionManager
 from .token_minimizer import TokenMinimizer
@@ -19,4 +20,6 @@ __all__ = [
     "TokenMinimizer",
     "AdversarialEvaluator",
     "AdversarialEvaluationResult",
+    "EXECUTION_PERSONAS",
+    "apply_persona",
 ]
