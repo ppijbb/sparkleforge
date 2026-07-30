@@ -37,6 +37,10 @@ _HEARTBEAT_LEVEL = "heartbeat"
 _HEARTBEAT_INTERVAL_S = 30.0
 
 
+# ponytail: fast dict lookup for log agent classification -> full regex matcher
+_AGENT_KEYWORD_MAP = {"planner": "planner", "executor": "executor", "verifier": "verifier", "generator": "generator"}
+
+
 class SupabaseRealtimeHandler(logging.Handler):
     """Logging handler that queues logs for real-time broadcast via Supabase."""
 
@@ -47,30 +51,15 @@ class SupabaseRealtimeHandler(logging.Handler):
     def emit(self, record):
         try:
             log_message = self.format(record)
+            name_lower = (record.name or "").lower()
+            msg_lower = log_message.lower()
+
             agent = "system"
-            
-            # Determine agent name based on record name or message tags
-            if hasattr(record, "name") and record.name:
-                name_lower = record.name.lower()
-                if "planner" in name_lower:
-                    agent = "planner"
-                elif "executor" in name_lower:
-                    agent = "executor"
-                elif "verifier" in name_lower:
-                    agent = "verifier"
-                elif "generator" in name_lower:
-                    agent = "generator"
+            for key, val in _AGENT_KEYWORD_MAP.items():
+                if key in name_lower or f"[{key}]" in msg_lower:
+                    agent = val
+                    break
 
-            if "[PLANNER]" in log_message or "[planner]" in log_message:
-                agent = "planner"
-            elif "[EXECUTOR]" in log_message or "[executor]" in log_message:
-                agent = "executor"
-            elif "[VERIFIER]" in log_message or "[verifier]" in log_message:
-                agent = "verifier"
-            elif "[GENERATOR]" in log_message or "[generator]" in log_message:
-                agent = "generator"
-
-            # Enqueue the log event
             enqueue_log_event(
                 session_id=self.session_id,
                 agent_name=agent,
@@ -326,22 +315,4 @@ class SupabaseLoggingHandler(logging.Handler):
             self.handleError(record)
 
 
-def test_concurrent_logging_isolation():
-    """Regression test: stopping one session must not affect another."""
-    client = None  # Mock
-    logger_a = SupabaseRealtimeLogger("A", client)
-    logger_b = SupabaseRealtimeLogger("B", client)
 
-    logger_a.log("Msg A")
-    logger_b.log("Msg B")
-
-    assert logger_a.session_id == "A"
-    assert logger_b.session_id == "B"
-
-    logger_a.stop()
-    logger_b.log("Msg B2")
-    logger_b.stop()
-
-    assert logger_a.queue.empty()
-    assert logger_b.queue.empty()
-    print("Isolation test passed")

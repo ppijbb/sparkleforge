@@ -177,22 +177,15 @@ class AgentOrchestrator:
 
         # main.py 호환을 위한 필드 추가
         final_report = harness_result.get("results", "")
+        # ponytail: stream return payload -> redundant nested detailed_results dict
         return {
             "success": harness_result.get("success", False),
             "plan": harness_result.get("plan", ""),
             "tasks": harness_result.get("tasks", []),
             "results": final_report,
-            "final_report": final_report,  # results를 final_report로 매핑
+            "final_report": final_report,
             "content": final_report,
             "metadata": harness_result.get("metadata", {}),
-            "detailed_results": {
-                "plan": harness_result.get("plan", ""),
-                "tasks": harness_result.get("tasks", []),
-                "results": final_report,
-                "final_report": final_report,
-                "success": harness_result.get("success", False),
-                "error": harness_result.get("error"),
-            },
             "session_id": session_id,
             "research_failed": not harness_result.get("success", False),
             "error": harness_result.get("error"),
@@ -205,15 +198,3 @@ def get_orchestrator(config=None) -> AgentOrchestrator:
     if _orchestrator is None:
         _orchestrator = AgentOrchestrator(config=config)
     return _orchestrator
-
-
-def agent_workflow_result_to_public_dict(
-    result: Dict[str, Any], context: Dict[str, Any] | None = None
-) -> Dict[str, Any]:
-    """이전 버전의 API 호환성을 위한 포맷터"""
-    return {
-        "plan": result.get("plan", ""),
-        "tasks": result.get("tasks", []),
-        "results": result.get("results", ""),
-        "success": result.get("success", False),
-    }
