@@ -1,6 +1,7 @@
 """Smoke tests for AgentOrchestrator isomorphism wiring (issue #922)."""
 
 import asyncio
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from src.core.agent_orchestrator import AgentOrchestrator
@@ -10,7 +11,8 @@ def _run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
 
 
-def test_orchestrator_attaches_isomorphisms_to_metadata():
+@pytest.mark.asyncio
+async def test_orchestrator_attaches_isomorphisms_to_metadata():
     orchestrator = AgentOrchestrator()
     fake_result = {
         "success": True,
@@ -22,11 +24,9 @@ def test_orchestrator_attaches_isomorphisms_to_metadata():
     with patch.object(
         orchestrator.harness, "execute", new=AsyncMock(return_value=fake_result)
     ):
-        result = _run(
-            orchestrator.execute(
-                request="Build a security threat detector with anomaly memory.",
-                session_id="test-iso",
-            )
+        result = await orchestrator.execute(
+            request="Build a security threat detector with anomaly memory.",
+            session_id="test-iso",
         )
     metadata = result["metadata"]
     assert "isomorphisms" in metadata
@@ -35,7 +35,8 @@ def test_orchestrator_attaches_isomorphisms_to_metadata():
     assert isomorphisms[0].source_domain == "immune_system"
 
 
-def test_orchestrator_has_isomorphism_extractor():
+@pytest.mark.asyncio
+async def test_orchestrator_has_isomorphism_extractor():
     orchestrator = AgentOrchestrator()
     assert orchestrator.isomorphism_extractor is not None
 """

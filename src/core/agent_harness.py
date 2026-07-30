@@ -56,30 +56,20 @@ class AgentHarness:
 
     def _register_tools(self) -> None:
         """Register agent-callable tools into the shared tool pool."""
-        try:
-            register_scheduler_tools()
-            register_semantic_file_search_tool()
-            logger.info("[Harness] Registered semantic_file_search tool")
-        except Exception as e:
-            logger.warning(f"[Harness] Failed to register semantic_file_search tool: {e}")
-
-        try:
-            register_security_tools()
-            logger.info("[Harness] Registered quarantine_file/revoke_capability security tools")
-        except Exception as e:
-            logger.warning(f"[Harness] Failed to register security tools: {e}")
-
-        try:
-            register_iot_guard_tools()
-            logger.info("[Harness] Registered control_iot_device tool")
-        except Exception as e:
-            logger.warning(f"[Harness] Failed to register IoT guard tool: {e}")
-
-        try:
-            register_forge_master_dispatch_tool()
-            logger.info("[Harness] Registered dispatch_to_cli_agent tool")
-        except Exception as e:
-            logger.warning(f"[Harness] Failed to register dispatch_to_cli_agent tool: {e}")
+        # ponytail: loop over tool registrars -> individual try/except blocks
+        registrars = [
+            (register_scheduler_tools, "scheduler"),
+            (register_semantic_file_search_tool, "semantic_file_search"),
+            (register_security_tools, "security"),
+            (register_iot_guard_tools, "iot_guard"),
+            (register_forge_master_dispatch_tool, "dispatch_to_cli_agent"),
+        ]
+        for func, name in registrars:
+            try:
+                func()
+                logger.info(f"[Harness] Registered {name} tools")
+            except Exception as e:
+                logger.warning(f"[Harness] Failed to register {name} tool: {e}")
 
     def _build_graph(self):
         """LangGraph 상태 머신 구축"""
