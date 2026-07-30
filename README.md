@@ -56,7 +56,7 @@ On macOS, `./install.sh` automatically detects the OS, skips Linux-specific
 container dependencies, verifies `uv` installation, runs `uv sync`, and
 initializes the environment.
 
-### Basic Usage
+### Basic Usage (PC-first; web + mobile cross-platform access tracked in #1136)
 
 ```bash
 # Start the forge web interface
@@ -86,6 +86,27 @@ python main.py --request "Comprehensive systematic review of quantum machine lea
 ### 4. **Polishing & Finishing** (Final Output)
 - Findings are compiled into an executive summary with verified citations.
 - SparkleForge flags uncertainty or remaining gaps with explicit notes.
+
+## 📱 Web + Mobile Cross-Platform Access (#1136)
+
+SparkleForge is currently a single-surface tool: `streamlit run
+src/web/streamlit_app.py` owns both UI rendering and orchestration, and there is
+no mobile client. Issue [#1136](https://github.com/ppijbb/sparkleforge/issues/1136)
+proposes making web + mobile access a deliberate, co-equal design goal —
+"모두 연동되고 모두 서비스 가능한" (everything interconnected, everything
+serviceable) — rather than retrofitting mobile later.
+
+The agreed direction (before any implementation) is to **decouple a thin API
+layer** behind which run-trigger, status, and report-read operations live, with
+Streamlit becoming one API consumer. A responsive web client (and later a mobile
+client) consumes the same API, so forge state (runs, reports, agent status) has
+a single source of truth shared consistently across clients instead of each
+client reimplementing its own view.
+
+Non-goals for #1136: no implementation yet, and no native mobile app work should
+start until the API/service boundary is resolved, since every other candidate
+approach (responsive PWA, mobile-as-monitor-only, read-only status page) depends
+on it. See the issue for the full candidate-approaches discussion.
 
 ## ✨ Core Innovations
 
