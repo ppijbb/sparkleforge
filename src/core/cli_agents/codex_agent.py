@@ -58,27 +58,22 @@ class CodexCLIAgent(BaseCLIAgent):
         if max_tokens:
             args.extend(["--max-tokens", str(max_tokens)])
 
-        original_args = self.config.args.copy()
-        self.config.args.extend(args)
+        # 명령 실행 (공유 상태 self.config.args를 수정하지 않음)
+        full_args = (self.config.args or []) + args
+        result = await self._execute_command([self.config.command] + full_args)
+        parsed_result = self.parse_output(result)
 
-        try:
-            result = await self._execute_command(self.config.command)
-            parsed_result = self.parse_output(result)
-
-            return {
-                "success": result.success and parsed_result.get("success", True),
-                "response": parsed_result.get("response", ""),
-                "confidence": parsed_result.get("confidence", 0.85),
-                "metadata": {
-                    "agent": "codex",
-                    "language": language,
-                    "execution_time": result.execution_time,
-                },
-                "usage": parsed_result.get("usage", {}),
-            }
-
-        finally:
-            self.config.args = original_args
+        return {
+            "success": result.success and parsed_result.get("success", True),
+            "response": parsed_result.get("response", ""),
+            "confidence": parsed_result.get("confidence", 0.85),
+            "metadata": {
+                "agent": "codex",
+                "language": language,
+                "execution_time": result.execution_time,
+            },
+            "usage": parsed_result.get("usage", {}),
+        }
 
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
         """Codex CLI 출력 파싱"""
