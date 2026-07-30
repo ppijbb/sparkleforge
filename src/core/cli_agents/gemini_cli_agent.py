@@ -23,7 +23,7 @@ class GeminiCLIAgent(BaseCLIAgent):
         config = CLIAgentConfig(
             name="gemini_cli",
             command="gemini",
-            args=["--format", "json"],
+            args=["--output-format", "json"],
             env=(
                 {"GEMINI_API_KEY": api_key, "GEMINI_MODEL": model}
                 if api_key
@@ -41,41 +41,21 @@ class GeminiCLIAgent(BaseCLIAgent):
             query: 실행할 쿼리
             **kwargs: 추가 옵션들
                 - model: 사용할 모델
-                - temperature: 온도 설정
-                - max_tokens: 최대 토큰 수
-                - mode: "chat", "complete", "analyze"
 
         Returns:
             표준화된 결과
         """
         model = kwargs.get("model", "gemini-pro")
-        temperature = kwargs.get("temperature", 0.7)
-        max_tokens = kwargs.get("max_tokens", 1000)
-        mode = kwargs.get("mode", "chat")
 
-        # Gemini CLI 명령 구성
+        # Gemini CLI는 서브커맨드 없이 프롬프트를 위치 인자로만 받음
         args = []
-
-        if mode == "chat":
-            args.extend(["chat", "--message", query])
-        elif mode == "complete":
-            args.extend(["complete", query])
-        elif mode == "analyze":
-            args.extend(["analyze", "--input", query])
-        else:
-            args.extend([mode, query])
-
-        # 모델 지정
         if model != "gemini-pro":
             args.extend(["--model", model])
+        args.append(query)
 
-        # 파라미터 설정
-        args.extend(["--temperature", str(temperature)])
-        args.extend(["--max-tokens", str(max_tokens)])
-
-        # 명령 실행 (공유 상태 self.config.args를 수정하지 않음)
-        full_args = (self.config.args or []) + args
-        result = await self._execute_command([self.config.command] + full_args)
+        # 명령 실행: self.config.args는 _execute_command가 자동으로 덧붙이므로
+        # 여기서 다시 합치면 중복 인자가 생겨 CLI가 거부한다 (공유 상태는 그대로 둠)
+        result = await self._execute_command([self.config.command] + args)
 
         # 결과 파싱
         parsed_result = self.parse_output(result)
@@ -87,8 +67,6 @@ class GeminiCLIAgent(BaseCLIAgent):
             "metadata": {
                 "agent": "gemini_cli",
                 "model": model,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
                 "execution_time": result.execution_time,
             },
             "usage": parsed_result.get("usage", {}),

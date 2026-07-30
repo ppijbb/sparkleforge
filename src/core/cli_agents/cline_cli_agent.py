@@ -23,7 +23,7 @@ class ClineCLIAgent(BaseCLIAgent):
         config = CLIAgentConfig(
             name="cline_cli",
             command="cline",
-            args=["--json-output"],
+            args=["--json"],
             env={"CLINE_CONFIG": config_path} if config_path else {},
             timeout=600,  # 코드 수정 작업은 시간이 오래 걸릴 수 있음
             output_format="json",
@@ -37,40 +37,30 @@ class ClineCLIAgent(BaseCLIAgent):
             query: 코드 수정/리팩토링 요청
             **kwargs: 추가 옵션들
                 - files: 대상 파일 목록
-                - operation: "edit", "refactor", "generate", "analyze"
                 - context: 추가 컨텍스트
-                - dry_run: 변경 미리보기만
+                - dry_run: True면 계획만 세우고 실행하지 않음(-p/--plan), False면 즉시 실행(-a/--act)
 
         Returns:
             표준화된 결과
         """
         files = kwargs.get("files", [])
-        operation = kwargs.get("operation", "edit")
         context = kwargs.get("context", "")
         dry_run = kwargs.get("dry_run", False)
 
-        # Cline 명령 구성
-        args = [operation]
-
-        # 파일 지정
-        if files:
-            for file in files:
-                args.extend(["--file", file])
-
-        # 컨텍스트 추가
+        # Cline CLI는 서브커맨드/--file/--context/--dry-run이 없고
+        # 프롬프트는 위치 인자, 실행 모드는 -a(act)/-p(plan) 플래그로만 제어됨
+        prompt_parts = [query]
         if context:
-            args.extend(["--context", context])
+            prompt_parts.append(f"[Context]\n{context}")
+        if files:
+            prompt_parts.append(f"[Target files]: {', '.join(files)}")
+        full_prompt = "\n\n".join(prompt_parts)
 
-        # dry run 모드
-        if dry_run:
-            args.append("--dry-run")
+        args = ["--plan" if dry_run else "--act", full_prompt]
 
-        # 쿼리 추가
-        args.append(query)
-
-        # 명령 실행 (공유 상태 self.config.args를 수정하지 않음)
-        full_args = (self.config.args or []) + args
-        result = await self._execute_command([self.config.command] + full_args)
+        # 명령 실행: self.config.args는 _execute_command가 자동으로 덧붙이므로
+        # 여기서 다시 합치면 중복 인자가 생겨 CLI가 거부한다 (공유 상태는 그대로 둠)
+        result = await self._execute_command([self.config.command] + args)
 
         # 결과 파싱
         parsed_result = self.parse_output(result)
@@ -81,7 +71,6 @@ class ClineCLIAgent(BaseCLIAgent):
             "confidence": parsed_result.get("confidence", 0.8),
             "metadata": {
                 "agent": "cline_cli",
-                "operation": operation,
                 "files": files,
                 "dry_run": dry_run,
                 "execution_time": result.execution_time,

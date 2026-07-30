@@ -22,8 +22,9 @@ class ClaudeCodeAgent(BaseCLIAgent):
     def __init__(self, api_key: str | None = None):
         config = CLIAgentConfig(
             name="claude_code",
+            # -p/--print: non-interactive one-shot mode (required for --output-format to apply)
+            args=["-p", "--output-format", "json"],
             command="claude",
-            args=["--output-format", "json"],
             env={"ANTHROPIC_API_KEY": api_key} if api_key else {},
             timeout=600,  # Claude Code는 복잡한 작업에 시간이 걸릴 수 있음
             output_format="json",
@@ -38,35 +39,24 @@ class ClaudeCodeAgent(BaseCLIAgent):
             **kwargs: 추가 옵션들
                 - files: 관련 파일 목록
                 - context: 추가 컨텍스트
-                - mode: "code" 또는 "chat"
 
         Returns:
             표준화된 결과
         """
-        mode = kwargs.get("mode", "code")
         files = kwargs.get("files", [])
         context = kwargs.get("context", "")
 
-        # Claude Code 명령 구성
-        args = []
-
-        if mode == "code":
-            args.extend(["code", "--query", query])
-        else:
-            args.extend(["chat", query])
-
-        # 파일 지정
-        if files:
-            for file in files:
-                args.extend(["--file", file])
-
-        # 컨텍스트 추가
+        # Claude Code CLI는 서브커맨드 없이 프롬프트를 위치 인자로만 받음
+        prompt_parts = [query]
         if context:
-            args.extend(["--context", context])
+            prompt_parts.append(f"[Context]\n{context}")
+        if files:
+            prompt_parts.append(f"[Relevant files]: {', '.join(files)}")
+        full_prompt = "\n\n".join(prompt_parts)
 
-        # 명령 실행 (공유 상태 self.config.args를 수정하지 않음)
-        full_args = (self.config.args or []) + args
-        result = await self._execute_command([self.config.command] + full_args)
+        # 명령 실행: self.config.args는 _execute_command가 자동으로 덧붙이므로
+        # 여기서 다시 합치면 중복 인자가 생겨 CLI가 거부한다 (공유 상태는 그대로 둠)
+        result = await self._execute_command([self.config.command, full_prompt])
 
         # 결과 파싱
         parsed_result = self.parse_output(result)
@@ -77,7 +67,6 @@ class ClaudeCodeAgent(BaseCLIAgent):
             "confidence": parsed_result.get("confidence", 0.8),
             "metadata": {
                 "agent": "claude_code",
-                "mode": mode,
                 "files": files,
                 "execution_time": result.execution_time,
             },
@@ -87,12 +76,13 @@ class ClaudeCodeAgent(BaseCLIAgent):
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
         """Claude Code 출력을 파싱
 
-        Claude Code의 출력 형식:
+        `claude -p --output-format json`의 실제 출력 형식:
         {
-            "response": "생성된 코드 또는 응답",
-            "confidence": 0.85,
+            "type": "result",
+            "subtype": "success",
+            "result": "생성된 코드 또는 응답",
             "usage": {"input_tokens": 150, "output_tokens": 200},
-            "files_modified": ["file1.py", "file2.py"]
+            "total_cost_usd": 0.03
         }
         """
         if not result.success:
@@ -108,8 +98,8 @@ class ClaudeCodeAgent(BaseCLIAgent):
             if self.config.output_format == "json":
                 data = json.loads(result.output.strip())
                 return {
-                    "success": True,
-                    "response": data.get("response", ""),
+                    "success": data.get("subtype", "success") == "success" and not data.get("is_error", False),
+                    "response": data.get("result", data.get("response", "")),
                     "confidence": data.get("confidence", 0.8),
                     "usage": data.get("usage", {}),
                     "files_modified": data.get("files_modified", []),

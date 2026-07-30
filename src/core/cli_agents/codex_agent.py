@@ -24,7 +24,9 @@ class CodexCLIAgent(BaseCLIAgent):
         config = CLIAgentConfig(
             name="codex",
             command=command,
-            args=["--json"],
+            # --json is an `exec`-subcommand option, not a top-level codex flag;
+            # it is appended after "exec" in execute_query, not here.
+            args=[],
             env={"OPENAI_API_KEY": api_key} if api_key else {},
             timeout=300,
             output_format="json",
@@ -40,23 +42,22 @@ class CodexCLIAgent(BaseCLIAgent):
             **kwargs:
                 - language: 프로그래밍 언어 (python, typescript 등)
                 - context: 추가 문맥
-                - max_tokens: 최대 출력 토큰 수
 
         Returns:
             표준화된 결과
         """
         language = kwargs.get("language", "python")
         context = kwargs.get("context", "")
-        max_tokens = kwargs.get("max_tokens")
 
-        args = ["exec", "--prompt", query]
-
-        if language:
-            args.extend(["--lang", language])
+        # `codex exec`는 프롬프트를 위치 인자로만 받음 (--prompt/--lang/--context 없음)
+        prompt_parts = [query]
+        if language and language != "python":
+            prompt_parts.append(f"[Language]: {language}")
         if context:
-            args.extend(["--context", context])
-        if max_tokens:
-            args.extend(["--max-tokens", str(max_tokens)])
+            prompt_parts.append(f"[Context]\n{context}")
+        full_prompt = "\n\n".join(prompt_parts)
+
+        args = ["exec", "--json", full_prompt]
 
         # 명령 실행 (공유 상태 self.config.args를 수정하지 않음)
         full_args = (self.config.args or []) + args
