@@ -15,9 +15,13 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-_FIREJAIL_AVAILABLE = bool(subprocess.run(
-    ["which", "firejail"], capture_output=True
-).returncode == 0)
+def _is_firejail_available() -> bool:
+    try:
+        return subprocess.run(
+            ["which", "firejail"], capture_output=True
+        ).returncode == 0
+    except Exception:
+        return False
 
 _DOCKER_AVAILABLE = bool(subprocess.run(
     ["which", "docker"], capture_output=True
@@ -109,7 +113,7 @@ class SandboxExecutor:
         elif _FIREJAIL_AVAILABLE:
             sandbox_type = "firejail"
             exec_cmd = self._build_firejail_cmd(command)
-        elif _DOCKER_AVAILABLE:
+        elif env_strategy == "docker" or (not env_strategy and _is_docker_available()):
             sandbox_type = "docker"
             exec_cmd = self._build_docker_cmd(command)
         else:
@@ -117,7 +121,7 @@ class SandboxExecutor:
             sandbox_type = "subprocess"
             exec_cmd = ["bash", "-c", command]
             logger.warning(
-                "No sandboxing available (firejail/docker missing). "
+                "No sandboxing available (firejail/docker missing or unavailable). "
                 "Running restricted subprocess for: %s", command
             )
 
@@ -147,6 +151,35 @@ class SandboxExecutor:
             logger.error("Sandbox execution error: %s", e)
 
         duration_ms = (time.monotonic() - start) * 1000
+
+        # If containerized sandbox (docker/firejail) failed or timed out, attempt subprocess fallback
+        if sandbox_type in ("firejail", "docker") and (timed_out or returncode != 0):
+            logger.warning(
+                "Sandbox[%s] failed or timed out for '%s'. Falling back to restricted subprocess execution.",
+                sandbox_type, command
+            )
+            fb_start = time.monotonic()
+            try:
+                fb_result = subprocess.run(
+                    ["bash", "-c", command],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                    env={**os.environ, "HOME": tempfile.mkdtemp()},
+                )
+                return SandboxResult(
+                    command=command,
+                    returncode=fb_result.returncode,
+                    stdout=fb_result.stdout,
+                    stderr=fb_result.stderr,
+                    duration_ms=(time.monotonic() - fb_start) * 1000,
+                    sandbox_type="subprocess-fallback",
+                    timed_out=False,
+                )
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception as fb_err:
+                logger.error("Sandbox fallback execution error: %s", fb_err)
 
         res = SandboxResult(
             command=command,
