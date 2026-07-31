@@ -313,7 +313,10 @@ async def generate_daily_report(project_root: Path) -> Dict[str, Any]:
     # Trend gap analysis (accumulating section)
     trend_signals = load_trend_signals(project_root)
     trend_gap_section = build_trend_gap_section(project_root, trend_signals, today_str)
-    covered_lines = [line for line in trend_gap_section.splitlines() if line.startswith("- ") and "(근거:" in line]
+    covered_lines = [
+        line for line in trend_gap_section.splitlines()
+        if line.startswith("- ") and "(근거:" in line
+    ]
     missing_lines = []  # Extracted within build for history; recompute simply from signals
     trend_gap_entry = update_trend_gap_history(
         reports_dir, today_str, trend_signals, covered_lines, missing_lines
@@ -369,9 +372,13 @@ async def generate_daily_report(project_root: Path) -> Dict[str, Any]:
     history = []
     if history_file.exists():
         try:
-            history = json.loads(history_file.read_text(encoding="utf-8"))
+            loaded = json.loads(history_file.read_text(encoding="utf-8"))
+            if isinstance(loaded, list):
+                history = [e for e in loaded if isinstance(e, dict)]
+            else:
+                history = []
         except Exception:
-            pass
+            history = []
             
     # Remove existing entry for today if runs multiple times
     history = [entry for entry in history if entry.get("date") != today_str]
