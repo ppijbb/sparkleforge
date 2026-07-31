@@ -237,3 +237,6 @@ class TaskDashboard:
     def reset(self) -> None:
         with self._lock_data:
             self._tasks.clear()
+            self._update_callbacks = []
+            TaskDashboard._instance = None
+            self._initialized = False
