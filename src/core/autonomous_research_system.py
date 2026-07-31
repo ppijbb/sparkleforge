@@ -207,6 +207,12 @@ class AutonomousResearchSystem:
             # Use new multi-agent orchestrator (no fallback - fail clearly)
             AgentOrchestrator, _ = _load_agent_orchestrator()
             self.orchestrator = AgentOrchestrator()
+
+            # Initialize TaskAnalyzerAgent
+            from src.agents.task_analyzer import TaskAnalyzerAgent
+            self.task_analyzer = TaskAnalyzerAgent()
+            logger.info("✅ Task Analyzer Agent initialized")
+
             logger.info("✅ Multi-Agent Orchestrator initialized (no fallback mode)")
             logger.info("✅ Autonomous Orchestrator initialized")
         except Exception as e:
@@ -535,6 +541,14 @@ class AutonomousResearchSystem:
             if streaming:
                 result = await self._run_streaming_research(request)
             else:
+                # Perform task analysis before orchestration
+                try:
+                    analysis = await self.task_analyzer.analyze_objective(request)
+                    logger.info(f"✅ Task analysis completed: {len(analysis.get('objectives', []))} objectives identified")
+                    # Optionally inject analysis into state or context if needed
+                except Exception as e:
+                    logger.warning(f"⚠️ Task analysis failed, continuing with raw request: {e}")
+
                 # Guardrails Input 검증 (선택적)
                 if hasattr(self, "guardrails_validator") and self.guardrails_validator:
                     try:
