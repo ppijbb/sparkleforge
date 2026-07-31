@@ -6,6 +6,7 @@
 
 import logging
 import time
+import asyncio
 from typing import Any, Dict, List
 
 from src.core.adaptive_memory import get_adaptive_memory
@@ -204,7 +205,10 @@ class RealtimeMemoryProcessor:
             # AdaptiveMemory에서 사용자별 메모리 조회
             # 현재는 인메모리이므로 간단히 처리
             # 나중에 데이터베이스 저장소로 마이그레이션 시 트랜잭션 사용
-            return self.adaptive_memory.get_memories_for_user(user_id)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None, self.adaptive_memory.get_memories_for_user, user_id
+            )
         except Exception as e:
             logger.debug(f"Failed to load existing memories: {e}")
             return []
