@@ -17,9 +17,9 @@ class ResearchState(TypedDict):
     """LangGraph 연구 워크플로우 상태 정의 (8대 혁신 통합)."""
 
     # Input
-    user_request: Final[str]
-    context: Final[Dict[str, Any] | None]
-    objective_id: Final[str]
+    user_request: str
+    context: Dict[str, Any] | None
+    objective_id: str
 
     # Adaptive Supervisor (혁신 1)
     complexity_score: float
