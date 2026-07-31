@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 try:
     import psutil
@@ -19,10 +20,12 @@ DEFAULT_RESOURCE_THRESHOLDS = {
 class SystemCollector:
     """Collects hardware and OS resource metrics using psutil."""
 
-    def __init__(self, thresholds: Dict[str, float] | None = None):
+    def __init__(self, thresholds: Dict[str, float] | None = None, telemetry_callback: Optional[callable] = None):
         if not PSUTIL_AVAILABLE:
             logger.warning("psutil is not installed. SystemCollector will return mock metrics.")
         self.thresholds = {**DEFAULT_RESOURCE_THRESHOLDS, **(thresholds or {})}
+        self.telemetry_callback = telemetry_callback
+        self._loop_task = None
 
     async def get_cpu_info(self) -> Dict[str, Any]:
         """Fetch CPU usage and frequency metrics."""
@@ -142,6 +145,22 @@ class SystemCollector:
             "battery": await self.get_battery_info(),
             "temperature": await self.get_temperature_info(),
         }
+
+    async def start_telemetry_loop(self, interval: float = 60.0):
+        """Starts a background loop to push telemetry to the ideation engine."""
+        if not self.telemetry_callback:
+            return
+
+        async def _loop():
+            while True:
+                metrics = await self.get_all_metrics()
+                try:
+                    await self.telemetry_callback(metrics)
+                except Exception as e:
+                    logger.error(f"SystemCollector: Telemetry callback failed: {e}")
+                await asyncio.sleep(interval)
+
+        self._loop_task = asyncio.create_task(_loop())
 
     def check_thresholds(self, metrics: Dict[str, Any]) -> List[str]:
         """Compare a get_all_metrics() snapshot against configured thresholds.
