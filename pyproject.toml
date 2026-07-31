@@ -94,6 +94,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",
     "black>=23.12.0",
     "isort>=5.13.0",
     "flake8>=6.1.0",
@@ -187,7 +188,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = '-m "not slow"'
+addopts = '-m "not slow" --dist=loadgroup'
 testpaths = ["tests"]
 markers = [
     "slow: exercises real network/LLM calls and can hang without API credentials; excluded by default, run with -m slow",
