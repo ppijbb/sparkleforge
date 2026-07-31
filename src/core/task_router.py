@@ -26,6 +26,7 @@ class RoutePath(Enum):
     SINGLE_AGENT = "single_agent"
     PLANNER_PARALLEL = "planner_parallel"
     FINANCIAL_PIPELINE = "financial_pipeline"
+    QUANTUM_SOLVER = "quantum_solver"
     CODEBASE_AGENT = "codebase_agent"
     CREATIVITY_AGENT = "creativity_agent"
     DOCUMENT_PIPELINE = "document_pipeline"
@@ -39,6 +40,7 @@ Available pipelines:
 - "codebase_agent": Software development tasks — writing code, building systems, implementing applications, debugging, architecture design, APIs, services, tools. Use this when the user wants to BUILD or CREATE software.
 - "financial_pipeline": Financial/economic research — stock analysis, market data, investment strategies, economic indicators.
 - "creativity_agent": Creative writing, story generation, design ideation, brainstorming.
+- "quantum_solver": Combinatorial optimization over multi-agent task distribution and resource allocation across microservices, formulated as a QUBO and solved with quantum annealing-inspired methods.
 - "document_pipeline": Document reading and extraction — specifically for PDF, DOCX, PPTX, XLSX files or URLs. Use this when the user wants to READ, ANALYZE, or EXTRACT info from a document.
 - "planner_parallel": Complex multi-step research requiring synthesis across multiple sources — scientific research, technical deep-dives, comparative analysis.
 - "single_agent": Simple, direct questions that require a single focused answer.
@@ -109,6 +111,7 @@ class TaskRouter:
         route_map = {
             "codebase_agent": RoutePath.CODEBASE_AGENT,
             "financial_pipeline": RoutePath.FINANCIAL_PIPELINE,
+            "quantum_solver": RoutePath.QUANTUM_SOLVER,
             "creativity_agent": RoutePath.CREATIVITY_AGENT,
             "document_pipeline": RoutePath.DOCUMENT_PIPELINE,
             "planner_parallel": RoutePath.PLANNER_PARALLEL,
@@ -212,5 +215,7 @@ class TaskRouter:
         """결정된 라우트에 따라 파이프라인의 초기 상태 플래그를 설정합니다."""
         if route == RoutePath.FINANCIAL_PIPELINE:
             state["governance"]["is_economic_request"] = True
+        if route == RoutePath.QUANTUM_SOLVER:
+            state["workflow"]["is_qubo_optimization"] = True
         state["workflow"]["phase"] = "classify"
         return state
