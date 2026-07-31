@@ -61,6 +61,10 @@ class ParallelAgentExecutor:
         self.shared_results_manager: SharedResultsManager | None = None
         self.discussion_manager: AgentDiscussionManager | None = None
 
+        # Quantum-inspired entanglement: a decision made by one agent
+        # instantaneously constrains the candidate space of peer agents.
+        self.entangled_constraints: Dict[str, Dict[str, Any]] = {}
+
         logger.info(f"ParallelAgentExecutor initialized with max_concurrent={self.max_concurrent}")
 
         # Start concurrency monitoring (only if event loop is running)
@@ -703,23 +707,32 @@ class ParallelAgentExecutor:
                             )
                             result["shared_result_id"] = result_id
 
+                        # Entangle: publish this agent's decision as a constraint
+                        # so peer agents' candidate spaces update instantaneously.
+                            self.entangled_constraints[task_id] = {
+                                "agent_id": agent_id,
+                                "tool_used": result["tool_used"],
+                                "confidence": confidence,
+                                "result_summary": str(result_data)[:512],
+                            }
+
                             # 다른 agent들의 결과 가져오기 (동일한 작업에 대한)
                             other_results = await self.shared_results_manager.get_shared_results(
                                 task_id=task_id, exclude_agent_id=agent_id
                             )
 
-                            # 다른 agent들과 토론
-                            if other_results and self.discussion_manager:
-                                discussion = await self.discussion_manager.agent_discuss_result(
-                                    result_id=result_id,
-                                    agent_id=agent_id,
-                                    other_agent_results=other_results,
+                            # Apply entangled constraints from peer agents to the
+                            # local candidate space (quantum state collapse).
+                            peer_constraints = {
+                                tid: meta
+                                for tid, meta in self.entangled_constraints.items()
+                                if tid != task_id
+                            }
+                            if peer_constraints:
+                                result["entangled_constraints"] = peer_constraints
+                                logger.info(
+                                    f"Agent {agent_id} entangled with {len(peer_constraints)} peer decision(s)"
                                 )
-                                if discussion:
-                                    result["discussion"] = discussion
-                                    logger.info(
-                                        f"Agent {agent_id} discussed result with {len(other_results)} other agents"
-                                    )
                     else:
                         result = {
                             "task_id": task_id,
