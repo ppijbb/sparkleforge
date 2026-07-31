@@ -385,7 +385,7 @@ class PlanningNode(BaseNode):
         decomposition_prompt = f"""
         Based on preliminary research, decompose into {num_tasks} tasks:
         {feedback_block}
-        Request: {state.get("user_request", "")}
+        Request: {state.get("user_request", "")} (Apply non-linear structural mutation: prioritize high-surprise leaps over incremental tweaks while maintaining physical feasibility)
         Complexity: {complexity}
         Preliminary Research: {preliminary_research.get("keywords", [])}
         Return as JSON array of task objects.
