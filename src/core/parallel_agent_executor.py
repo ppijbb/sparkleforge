@@ -216,6 +216,12 @@ class ParallelAgentExecutor:
         """의존성 그래프 기반 스마트 병렬 실행."""
         results = []
 
+        # Get dynamic concurrency, honoring any rate-limit throttling applied by
+        # the reliability circuit breaker so sub-agent concurrency is reduced
+        # during OpenRouter/Gemini 429 events instead of failing research tasks.
+        current_concurrency = self.concurrency_manager.get_current_concurrency()
+        semaphore = asyncio.Semaphore(current_concurrency)
+
         # Get dynamic concurrency
         current_concurrency = self.concurrency_manager.get_current_concurrency()
         semaphore = asyncio.Semaphore(current_concurrency)
