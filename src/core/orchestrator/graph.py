@@ -124,6 +124,12 @@ def create_orchestrator_graph(
     workflow.add_edge("validate_results", "synthesize_deliverable")
     workflow.add_edge("synthesize_deliverable", END)
 
+    # Add categorical dual-space mapping node for symmetry optimization
+    # (Placeholder for future integration with category-theoretic mapping tool)
+    # workflow.add_node("categorical_dual_space_mapping", ...)
+    # workflow.add_edge("analyze_objectives", "categorical_dual_space_mapping")
+    # workflow.add_edge("categorical_dual_space_mapping", "planning_agent")
+
     return workflow.compile(
         checkpointer=checkpointer or build_sqlite_checkpointer(DEFAULT_CHECKPOINT_DB_PATH)
     )
