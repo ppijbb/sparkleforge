@@ -14,6 +14,7 @@ import aiohttp
 
 from src.core.anvil.dynamic_checklist_generator import Checklist, ChecklistItem
 from src.core.anvil.request_analyzer import RequestAnalyzer
+from src.core.intervention_telemetry import InterventionTelemetryDaemon
 from src.core.surface.notification_channel import NotificationChannel, Notification, NotificationLevel
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,8 @@ class HITLProviderError(Exception):
 class HITLCheckpointManager:
     """HITL 체크포인트 관리자."""
 
+    _telemetry: InterventionTelemetryDaemon | None = None
+
     def __init__(
         self,
         feedback_provider: FeedbackProvider | None = None,
@@ -79,6 +82,29 @@ class HITLCheckpointManager:
         self.checkpoint_dir = checkpoint_dir
         self.timeout_seconds = timeout_seconds
         os.makedirs(self.checkpoint_dir, exist_ok=True)
+        try:
+            self._telemetry = InterventionTelemetryDaemon.default()
+        except Exception as ex:  # pragma: no cover - best-effort telemetry
+            logger.warning("Intervention telemetry daemon unavailable: %s", ex)
+            self._telemetry = None
+
+    @classmethod
+    def set_default_telemetry(cls, daemon: InterventionTelemetryDaemon | None) -> None:
+        """Inject a shared telemetry daemon (e.g. for tests or orchestration)."""
+        cls._telemetry = daemon
+
+    def _record_telemetry(self, result: CheckpointResult, context: Dict[str, Any]) -> None:
+        if self._telemetry is None:
+            return
+        try:
+            self._telemetry.record(
+                stage=result.stage.value,
+                decision=result.decision.value,
+                auto_resolved=result.auto_resolved,
+                context=context,
+            )
+        except Exception as ex:  # pragma: no cover - telemetry must never break HITL
+            logger.warning("Failed to record intervention telemetry: %s", ex)
 
     @staticmethod
     def _write_state_file(state_file: str, data: Dict[str, Any]) -> None:
@@ -123,6 +149,7 @@ class HITLCheckpointManager:
             )
             logger.info("Checkpoint %s auto-approved (headless mode)", stage.value)
             self.history.append(result)
+            self._record_telemetry(result, context)
             return result
 
         try:
@@ -167,6 +194,7 @@ class HITLCheckpointManager:
                     checkpoint_id=checkpoint_id,
                 )
                 self.history.append(result)
+                self._record_telemetry(result, context)
                 return result
 
             logger.info("Checkpoint %s suspended at %s", stage.value, state_file)
@@ -197,6 +225,7 @@ class HITLCheckpointManager:
 
             result = CheckpointResult(stage=stage, decision=CheckpointDecision.ABORT, checkpoint_id=checkpoint_id)
             self.history.append(result)
+            self._record_telemetry(result, context)
             return result
         except HITLProviderError:
             # Malformed provider response must never be silently treated as approval.
@@ -211,6 +240,7 @@ class HITLCheckpointManager:
 
         result = CheckpointResult(stage=stage, decision=decision, feedback=feedback)
         self.history.append(result)
+        self._record_telemetry(result, context)
         logger.info(
             "Checkpoint %s resolved: decision=%s feedback_len=%d",
             stage.value,
