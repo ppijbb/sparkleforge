@@ -23,6 +23,7 @@ def _is_firejail_available() -> bool:
     except Exception:
         return False
 
+_FIREJAIL_AVAILABLE = _is_firejail_available()
 _DOCKER_AVAILABLE = bool(subprocess.run(
     ["which", "docker"], capture_output=True
 ).returncode == 0)
@@ -106,14 +107,19 @@ class SandboxExecutor:
                 duration_ms=0.0, sandbox_type="dry-run",
             )
 
+        env_strategy = os.getenv("SPARKLEFORGE_SANDBOX_STRATEGY", "").lower()
+
         # Choose sandbox strategy
-        if _GVISOR_AVAILABLE:
+        if env_strategy == "subprocess":
+            sandbox_type = "subprocess"
+            exec_cmd = ["bash", "-c", command]
+        elif _GVISOR_AVAILABLE:
             sandbox_type = "gvisor"
             exec_cmd = self._build_gvisor_cmd(command)
         elif _FIREJAIL_AVAILABLE:
             sandbox_type = "firejail"
             exec_cmd = self._build_firejail_cmd(command)
-        elif env_strategy == "docker" or (not env_strategy and _is_docker_available()):
+        elif env_strategy == "docker" or (not env_strategy and _DOCKER_AVAILABLE):
             sandbox_type = "docker"
             exec_cmd = self._build_docker_cmd(command)
         else:
