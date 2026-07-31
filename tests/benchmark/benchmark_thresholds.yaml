@@ -48,8 +48,8 @@ thresholds:
 
 # Weighted scoring for overall benchmark score
 scoring_weights:
-  research_quality: 0.3
-  performance: 0.2
+  research_quality: 0.25
+  performance: 0.15
   source_validation: 0.15
   creative_insights: 0.15
   memory_learning: 0.1
