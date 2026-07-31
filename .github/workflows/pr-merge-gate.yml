@@ -10,6 +10,7 @@ permissions:
   contents: read
 
 jobs:
+  # Required Status Check 1: Commit message policy (Layer 5)
   commit-message-policy:
     name: Commit message policy
     runs-on: ubuntu-latest
@@ -44,6 +45,7 @@ jobs:
       - name: Validate commit subjects
         run: python scripts/validate_commit_messages.py --range "${{ steps.commit-range.outputs.range }}"
 
+  # Required Status Check 2: Python syntax (Layer 1)
   syntax:
     name: Python syntax
     runs-on: ubuntu-latest
@@ -63,6 +65,7 @@ jobs:
       - name: Check InvocationGateway wiring is intact
         run: python scripts/check_invocation_gateway_wiring.py
 
+  # Required Status Check 3: Import smoke test & Security Audit (Layer 2 & 3)
   import-smoke:
     name: Import smoke test
     runs-on: ubuntu-latest
@@ -80,9 +83,16 @@ jobs:
       - name: Install SparkleForge
         run: uv sync
 
+      - name: Audit security policies & secret leakage
+        run: python scripts/check_security_policies.py
+
       - name: Import core entrypoints
         run: uv run python scripts/check_import_smoke.py
 
+      - name: Verify MCP Server wiring
+        run: python scripts/verify_mcp_servers.py || python scripts/check_mcp_servers.py
+
+  # Required Status Check 4: Pytest (fast subset) (Layer 4)
   pytest:
     name: Pytest (fast subset)
     runs-on: ubuntu-latest
@@ -117,6 +127,7 @@ jobs:
             tests/test_session_concurrency_limit.py \
             tests/test_session_quota.py
 
+  # Required Status Check 5: GitHub Actions syntax (Layer 5)
   workflow-lint:
     name: GitHub Actions syntax
     runs-on: ubuntu-latest
