@@ -17,7 +17,6 @@ branch prefixes.
 from __future__ import annotations
 
 import json
-import json
 import subprocess
 import secrets
 import shutil
