@@ -42,6 +42,13 @@ class CLIExecutor:
         self.timeout = timeout
         self.logger = logging.getLogger(__name__)
 
+        # Resolve tools_config.json relative to the project root so the
+        # benchmark runner works when invoked outside the working root
+        # (issues #913, #914).
+        os.environ.setdefault(
+            "TOOLS_CONFIG_PATH", str(self.project_root / "tools_config.json")
+        )
+
         # Ensure we're in the right directory
         if not (self.project_root / "main.py").exists():
             raise ValueError(f"main.py not found in {self.project_root}")
