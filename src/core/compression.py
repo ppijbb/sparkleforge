@@ -7,6 +7,7 @@
 import json
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Tuple, Union
@@ -117,6 +118,7 @@ class ImportanceAnalyzer:
         important_info.sort(key=lambda x: x.importance_score, reverse=True)
         return important_info
 
+    @lru_cache(maxsize=1024)
     def _calculate_keyword_score(self, sentence: str) -> float:
         """키워드 기반 점수 계산."""
         sentence_lower = sentence.lower()
@@ -128,6 +130,7 @@ class ImportanceAnalyzer:
 
         return min(score, 1.0)
 
+    @lru_cache(maxsize=1024)
     def _calculate_category_score(self, sentence: str) -> float:
         """카테고리 기반 점수 계산."""
         sentence_lower = sentence.lower()
@@ -138,6 +141,7 @@ class ImportanceAnalyzer:
 
         return 0.5  # 기본 점수
 
+    @lru_cache(maxsize=1024)
     def _calculate_position_score(self, position: int, total: int) -> float:
         """위치 기반 점수 계산."""
         if total <= 1:
@@ -152,6 +156,7 @@ class ImportanceAnalyzer:
         else:
             return 0.6
 
+    @lru_cache(maxsize=1024)
     def _categorize_sentence(self, sentence: str) -> str:
         """문장 카테고리 분류."""
         sentence_lower = sentence.lower()
@@ -217,6 +222,7 @@ class CompressionValidator:
 
         return is_valid, validation_score, validation_issues
 
+    @lru_cache(maxsize=1024)
     def _is_similar_content(self, original: str, compressed: str) -> bool:
         """유사한 내용인지 확인."""
         # 간단한 유사도 검사 (실제로는 더 정교한 방법 사용)

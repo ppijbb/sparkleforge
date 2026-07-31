@@ -7,6 +7,7 @@
 import hashlib
 import json
 import logging
+from functools import lru_cache
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -249,8 +250,8 @@ class ContextCache:
             ),
         }
 
+    @lru_cache(maxsize=1024)
     def _generate_query_signature(self, query: str) -> str:
-        """쿼리 시그니처 생성 (유사 쿼리 감지용)."""
         # 간단한 해싱 (실제로는 더 정교한 유사도 계산 가능)
         normalized = query.lower().strip()
         # 주요 키워드 추출 (간단한 버전)
