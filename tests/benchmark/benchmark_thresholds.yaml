@@ -34,6 +34,12 @@ thresholds:
   scalability_score: 0.8  # 80% scalability performance
   reliability_score: 0.9  # 90% system reliability
   
+  # Loop Engineering Metrics
+  loop_stagnation_rate: 0.2  # Max 20% stagnation
+  iteration_budget_efficiency: 0.7  # Min 70% efficiency
+  circular_call_detection_rate: 0.8  # Min 80% detection
+  strategy_reset_success_rate: 0.8  # Min 80% success
+  
   # Task-Specific Thresholds
   min_sources: 5  # minimum sources per task
   max_execution_time: 300  # maximum execution time (seconds)
@@ -42,11 +48,12 @@ thresholds:
 
 # Weighted scoring for overall benchmark score
 scoring_weights:
-  research_quality: 0.3
-  performance: 0.2
+  research_quality: 0.25
+  performance: 0.15
   source_validation: 0.15
   creative_insights: 0.15
   memory_learning: 0.1
+  loop_engineering: 0.1
   collaboration: 0.1
 
 # Regression detection thresholds
