@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Anvil acceptance-scenario eval harness (Ω-1, issue #330).
+"""Anvil acceptance-scenario eval harness (Ω-1, issue #330, #1107).
 
 Drives the 5 "Anvil v1.0 acceptance scenarios" (#267) end-to-end through the
 real natural-language entry point (`python main.py work "<goal>"`), then
@@ -17,6 +17,7 @@ Usage:
 """
 
 from __future__ import annotations
+import enum
 
 import argparse
 import asyncio
@@ -37,6 +38,24 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # as well as via `python -m tests.benchmark.run_scenarios` — both need the repo
 # root on sys.path for the `tests.benchmark.*` and `src.*` imports to resolve.
 sys.path.insert(0, str(REPO_ROOT))
+
+class FailureTaxonomy(enum.Enum):
+    # OS & Tool Layer
+    ToolBindingGap = "ToolBindingGap"
+    PermissionDenied = "PermissionDenied"
+    SchedulerTimeout = "SchedulerTimeout"
+    # Control-Flow Layer
+    LoopStagnation = "LoopStagnation"
+    AgentPassivity = "AgentPassivity"
+    PrematureExit = "PrematureExit"
+    # Memory & Context Layer
+    ContextBloat = "ContextBloat"
+    FactDistortion = "FactDistortion"
+    DecoyLeak = "DecoyLeak"
+    # Model & Verification Layer
+    SpecViolation = "SpecViolation"
+    ToolHallucination = "ToolHallucination"
+    UnresolvedBug = "UnresolvedBug"
 
 import yaml
 
@@ -80,6 +99,28 @@ def load_scenarios(only_id: str | None = None) -> List[Dict[str, Any]]:
             continue
         specs.append(spec)
     return specs
+
+
+def classify_error(stderr: str) -> str:
+    """Classify error into Supabase 12-Taxonomy."""
+    if "ToolBindingGap" in stderr: return FailureTaxonomy.ToolBindingGap.value
+    if "PermissionDenied" in stderr: return FailureTaxonomy.PermissionDenied.value
+    if "timeout" in stderr.lower(): return FailureTaxonomy.SchedulerTimeout.value
+    if "LoopStagnation" in stderr: return FailureTaxonomy.LoopStagnation.value
+    if "AgentPassivity" in stderr: return FailureTaxonomy.AgentPassivity.value
+    if "PrematureExit" in stderr: return FailureTaxonomy.PrematureExit.value
+    if "ContextBloat" in stderr: return FailureTaxonomy.ContextBloat.value
+    if "FactDistortion" in stderr: return FailureTaxonomy.FactDistortion.value
+    if "DecoyLeak" in stderr: return FailureTaxonomy.DecoyLeak.value
+    if "SpecViolation" in stderr: return FailureTaxonomy.SpecViolation.value
+    if "ToolHallucination" in stderr: return FailureTaxonomy.ToolHallucination.value
+    return FailureTaxonomy.UnresolvedBug.value
+
+
+def run_ablation_matrix(specs: List[Dict[str, Any]]):
+    """Run 6-Feature Ablation Suite."""
+    # Implementation would iterate through feature flags and run_scenario()
+    pass
 
 
 def run_agent(user_query: str, workspace: Path, timeout_s: int) -> Dict[str, Any]:
@@ -178,6 +219,7 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             "timed_out": exec_result["timed_out"],
             "duration_s": round(exec_result["duration_s"], 2),
             "stdout_excerpt": exec_result["stdout"][:1500],
+            "error_taxonomy": classify_error(exec_result["stderr"]) if exec_result["returncode"] != 0 else None,
             "stderr_excerpt": exec_result["stderr"][:1500],
         }
     finally:
