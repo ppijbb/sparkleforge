@@ -102,7 +102,9 @@ def test_create_worktree_checks_out_branch_outside_repo_root(monkeypatch, tmp_pa
     # and two concurrent runs would stomp on each other's checkout. It must
     # instead create an isolated `git worktree` whose path lives outside
     # `repo_root` (under ~/.sparkleforge/nightwelding-worktrees), so the
-    # caller's own working tree is never touched.
+    # caller's own working tree is never touched. The path also carries a
+    # random suffix so concurrent runs handling the same branch slug resolve
+    # to distinct directories instead of colliding (#1091).
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     calls = []
 
@@ -117,7 +119,8 @@ def test_create_worktree_checks_out_branch_outside_repo_root(monkeypatch, tmp_pa
     worktree_dir = github_adapter.create_worktree(repo_root, "nightwelding/1-123", "main")
 
     assert repo_root not in worktree_dir.parents
-    assert worktree_dir == tmp_path / ".sparkleforge" / "nightwelding-worktrees" / "nightwelding-1-123"
+    assert worktree_dir.parent == tmp_path / ".sparkleforge" / "nightwelding-worktrees"
+    assert worktree_dir.name.startswith("nightwelding-1-123-")
     worktree_add_calls = [cmd for cmd, _ in calls if cmd[:3] == ["git", "worktree", "add"]]
     assert worktree_add_calls == [
         ["git", "worktree", "add", "-B", "nightwelding/1-123", str(worktree_dir), "origin/main"]
