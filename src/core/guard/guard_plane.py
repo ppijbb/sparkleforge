@@ -11,6 +11,7 @@ from src.core.guard.capability_manager import CapabilityManager
 from src.core.guard.sandbox_executor import SandboxExecutor
 from src.core.guard.action_journal import ActionJournal
 from src.core.guard.anomaly_detector import AnomalyDetector
+from src.core.guard.anomaly_detector import AnomalyDetector
 from src.core.guard.credential_vault import CredentialVault
 
 logger = logging.getLogger(__name__)
