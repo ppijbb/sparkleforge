@@ -944,6 +944,93 @@ async def handle_setup_command(args):
     return 0
 
 
+async def handle_dwell_command(args):
+    """Environmental Self-Dwell & Auto-Install Engine (issue #1108).
+
+    Detects the target OS/architecture/runtime, auto-installs missing
+    dependencies/MCP servers, installs itself as a background resident
+    service, and verifies cross-platform readiness so a single
+    `python main.py dwell` is sufficient on a clean Linux/macOS host.
+    """
+    import platform
+    import shutil
+    import subprocess
+
+    from src.core.env_configurator import EnvironmentConfigurator
+
+    logger.info("🏠 SparkleForge Self-Dwell: detecting environment...")
+
+    env_configurator = EnvironmentConfigurator()
+    env_summary = env_configurator.detect_environment()
+    logger.info(
+        "🖥️  OS=%s arch=%s python=%s uv=%s docker=%s",
+        env_summary.get("os"),
+        env_summary.get("architecture"),
+        env_summary.get("python_version"),
+        "yes" if env_summary.get("uv_available") else "no",
+        "yes" if env_summary.get("docker_available") else "no",
+    )
+
+    missing = env_summary.get("missing_dependencies", [])
+    if missing:
+        logger.info("📦 Auto-installing missing dependencies: %s", ", ".join(missing))
+        install_ok, install_message = env_configurator.auto_install(missing)
+        if not install_ok:
+            logger.error("❌ Auto-install failed: %s", install_message)
+            return 1
+        logger.info("✅ Auto-install complete: %s", install_message)
+    else:
+        logger.info("✅ All required dependencies already present")
+
+    missing_mcp = env_summary.get("missing_mcp_servers", [])
+    if missing_mcp:
+        logger.info("🔌 Provisioning missing MCP servers: %s", ", ".join(missing_mcp))
+        mcp_ok, mcp_message = env_configurator.provision_mcp_servers(missing_mcp)
+        if not mcp_ok:
+            logger.warning("⚠️  MCP provisioning incomplete: %s", mcp_message)
+        else:
+            logger.info("✅ MCP servers provisioned: %s", mcp_message)
+
+    install_service = getattr(args, "install_service", True)
+    if install_service:
+        logger.info("🛠️  Installing background resident service...")
+        service_ok, service_message = env_configurator.install_resident_service()
+        if service_ok:
+            logger.info("✅ Resident service installed: %s", service_message)
+        else:
+            logger.warning("⚠️  Resident service install skipped: %s", service_message)
+
+    verify = getattr(args, "verify", True)
+    if verify:
+        logger.info("🔍 Verifying cross-platform readiness...")
+        verify_script = project_root / "scripts" / "verify_environment.py"
+        if not verify_script.exists():
+            logger.warning("⚠️  scripts/verify_environment.py not found; skipping verification")
+        else:
+            python_bin = sys.executable or "python3"
+            try:
+                result = subprocess.run(
+                    [python_bin, str(verify_script)],
+                    cwd=str(project_root),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                print(result.stdout)
+                if result.returncode != 0:
+                    logger.error("❌ Environment verification failed (exit %s)", result.returncode)
+                    if result.stderr:
+                        logger.error(result.stderr)
+                    return 1
+                logger.info("✅ Environment verification passed")
+            except Exception as e:
+                logger.error("❌ Environment verification raised: %s", e)
+                return 1
+
+    logger.info("🏠 SparkleForge is now dwelling in this environment 🎉")
+    return 0
+
+
 async def handle_nightwelding_command(args):
     """Nightwelding(재현-우선 자율 이슈 수정 파이프라인) 커맨드 처리."""
     from src.core.nightwelding.models import NightweldingQueue

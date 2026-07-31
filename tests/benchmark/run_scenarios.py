@@ -213,6 +213,7 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             "total": graded["total"],
             "adjusted_total": graded["adjusted_total"],
             "breakdown": graded["breakdown"],
+            "loop_engineering_metrics": ctx.get("loop_stats", {}),
             "inconclusive": critical_failure,
             "critical_failure": critical_failure,
             "returncode": recorded_returncode,
@@ -421,6 +422,9 @@ def print_summary(report: Dict[str, Any]) -> None:
         adjusted_str = f"{adjusted:.3f}" if adjusted is not None else "n/a (all checks inconclusive)"
         print(f"\n[{scenario_id}] {r['name']} — total={r['total']:.3f} adjusted={adjusted_str} ({r['duration_s']}s)")
         for check_name, check in r["breakdown"].items():
+            if check_name == "loop_engineering_metrics":
+                print(f"    Loop Engineering: {r.get('loop_engineering_metrics', {})}")
+                continue
             flag = " [INCONCLUSIVE]" if check["inconclusive"] else ""
             print(f"    {check_name:<28} {check['score']:.2f} x {check['weight']:.2f} — {check['reason']}{flag}")
 
