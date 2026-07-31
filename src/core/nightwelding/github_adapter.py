@@ -1,5 +1,4 @@
 """Thin `gh`/`git` subprocess adapter for Nightwelding.
-import json
 
 Consistent with the rest of this project: no GitHub API client is built here,
 just subprocess calls to the `gh` CLI and `git`, exactly like the existing
@@ -24,7 +23,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 NIGHTWELDING_DRAFT_LABEL = ("nightwelding-draft-opened", "5319E7", "Nightwelding opened a Draft PR; human must review and mark it ready before it can merge.")
 NIGHTWELDING_FAILED_LABEL = ("nightwelding-failed", "B60205", "Nightwelding could not reproduce the issue, or could not make the reproduction test pass.")
@@ -215,6 +214,36 @@ def find_open_pr(repo: str, branch: str, base_branch: str) -> str | None:
     return items[0]["url"] if items else None
 
 
+def _validate_issue_metadata_schema(meta: Dict[str, Any]) -> None:
+    """Validate the shape of issue metadata returned by `gh issue view`.
+
+    Nightwelding's auto-fix pipeline (issue #917) was failing because callers
+    assumed `labels`, `milestone`, and `projectItems` always had the expected
+    nested shape. This guard rejects malformed payloads early with a clear
+    error instead of letting a downstream KeyError/TypeError abort the run.
+    """
+    if not isinstance(meta, dict):
+        raise GitHubAdapterError("Issue metadata payload must be a JSON object.")
+
+    labels = meta.get("labels", [])
+    if labels is not None and not isinstance(labels, list):
+        raise GitHubAdapterError("Issue metadata 'labels' must be a list.")
+    for label in labels or []:
+        if not isinstance(label, dict) or "name" not in label:
+            raise GitHubAdapterError("Issue metadata label entries must be objects with a 'name' field.")
+
+    milestone = meta.get("milestone")
+    if milestone is not None and not isinstance(milestone, dict):
+        raise GitHubAdapterError("Issue metadata 'milestone' must be an object or null.")
+
+    project_items = meta.get("projectItems", [])
+    if project_items is not None and not isinstance(project_items, list):
+        raise GitHubAdapterError("Issue metadata 'projectItems' must be a list.")
+    for item in project_items or []:
+        if not isinstance(item, dict):
+            raise GitHubAdapterError("Issue metadata projectItems entries must be objects.")
+
+
 def fetch_issue_metadata(repo: str, issue_number: int) -> Dict[str, Any]:
     """Fetch labels, milestone, and projectItems for an issue."""
     try:
@@ -223,7 +252,9 @@ def fetch_issue_metadata(repo: str, issue_number: int) -> Dict[str, Any]:
             "--repo", repo,
             "--json", "labels,milestone,projectItems"
         ])
-        return json.loads(proc.stdout or "{}")
+        meta = json.loads(proc.stdout or "{}")
+        _validate_issue_metadata_schema(meta)
+        return meta
     except Exception:
         try:
             # Fallback if projectItems triggers permission/scope errors
@@ -232,7 +263,9 @@ def fetch_issue_metadata(repo: str, issue_number: int) -> Dict[str, Any]:
                 "--repo", repo,
                 "--json", "labels,milestone"
             ])
-            return json.loads(proc.stdout or "{}")
+            meta = json.loads(proc.stdout or "{}")
+            _validate_issue_metadata_schema(meta)
+            return meta
         except Exception as ex:
             import logging
             logging.getLogger(__name__).warning(f"Failed to fetch issue metadata: {ex}")

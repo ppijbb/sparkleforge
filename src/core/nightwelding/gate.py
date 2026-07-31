@@ -105,6 +105,25 @@ def _touched_test_files(repo_root: Path) -> tuple[bool, List[str]]:
     return all_ok, touched
 
 
+def _validate_repro_diff_schema(diff: str) -> tuple[bool, str]:
+    """Validate the synthetic schema of a reproduction-test diff (issue #917).
+
+    Nightwelding's auto-fix pipeline was aborting on malformed LLM output that
+    looked like a diff but was missing the `a/`/`b/` prefixes or the
+    `--- `/`+++ ` headers. Reject those early with a clear reason instead of
+    letting `git apply` produce an opaque failure deep in patch_ops.
+    """
+    if not diff or not diff.strip():
+        return False, "Reproduction diff is empty."
+    if "diff --git" not in diff:
+        return False, "Reproduction diff is missing the 'diff --git' header."
+    if "--- " not in diff or "+++ " not in diff:
+        return False, "Reproduction diff is missing '--- '/'+++ ' file headers."
+    if "a/" not in diff or "b/" not in diff:
+        return False, "Reproduction diff must use 'a/'/'b/' path prefixes."
+    return True, ""
+
+
 def is_reproducible_bug_eligible(issue_context: str) -> tuple[bool, str]:
     """Cheap pre-qualification check (issue #579).
 
@@ -176,6 +195,11 @@ async def write_reproduction_test(
         diff = patch_ops.extract_diff(result.get("response", ""))
         if not diff.strip():
             extra_context = "Previous response did not contain an applicable diff. Regenerate a minimal diff that only adds/modifies tests/test_*.py files."
+            continue
+
+        schema_ok, schema_reason = _validate_repro_diff_schema(diff)
+        if not schema_ok:
+            extra_context = f"Previous diff failed schema validation: {schema_reason}\n\nRegenerate a minimal diff that only adds/modifies tests/test_*.py files."
             continue
 
         patch_path = repo_root / "opencode.patch"
