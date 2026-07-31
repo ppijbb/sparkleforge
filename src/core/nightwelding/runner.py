@@ -136,7 +136,7 @@ async def run_nightwelding_issue(
         item.status = NightweldingStatus.DRAFT_OPENED
         queue.upsert(item)
 
-        github_adapter.ensure_label(repo, *github_adapter.NIGHTWELDING_DRAFT_LABEL)
+        github_adapter.ensure_label(repo, github_adapter.NIGHTWELDING_DRAFT_LABEL[0], github_adapter.NIGHTWELDING_DRAFT_LABEL[1])
         github_adapter.add_labels(repo, issue_number, [github_adapter.NIGHTWELDING_DRAFT_LABEL[0]])
         github_adapter.remove_labels(repo, issue_number, [github_adapter.NIGHTWELDING_QUEUE_LABEL[0]])
         github_adapter.comment_on_issue(
@@ -164,7 +164,7 @@ def _fail(
     item.failure_reason = reason
     queue.upsert(item)
     try:
-        github_adapter.ensure_label(repo, *github_adapter.NIGHTWELDING_FAILED_LABEL)
+        github_adapter.ensure_label(repo, github_adapter.NIGHTWELDING_FAILED_LABEL[0], github_adapter.NIGHTWELDING_FAILED_LABEL[1])
         github_adapter.add_labels(repo, issue_number, [github_adapter.NIGHTWELDING_FAILED_LABEL[0]])
         github_adapter.remove_labels(repo, issue_number, [github_adapter.NIGHTWELDING_QUEUE_LABEL[0]])
         comment = (
