@@ -400,12 +400,12 @@ class CouncilConfig(BaseModel):
     enabled: bool = True  # 기본 활성화
     auto_activate: bool = True  # 자동 활성화 기본값
 
-    # Council models - Optional with defaults (gemini-2.5-flash 계열 우선)
+    # Council models - Optional with defaults (2026-08 기준 각 provider lite/mini 계열)
     council_models: List[str] = Field(
         default_factory=lambda: [
             "google/gemini-3.1-flash-lite-preview",
-            "openai/gpt-4o-mini",
-            "anthropic/claude-3-haiku",
+            "openai/gpt-5-mini",
+            "anthropic/claude-haiku-4.5",
         ]
     )
     chairman_model: str = "google/gemini-3.1-flash-lite-preview"
@@ -427,23 +427,23 @@ class CouncilConfig(BaseModel):
 
     @field_validator("council_models")
     def validate_council_models(cls, v):
-        """Validate council models - must use gemini-2.5-flash 계열."""
+        """Validate council models - lite/mini-tier only, no flagship gpt-4."""
         if not v:
             raise ValueError("council_models cannot be empty")
-        # gpt-4 사용 금지 검증
+        # gpt-4 사용 금지 검증 (gpt-4o-mini는 저비용 변종이라 예외)
         for model in v:
             if "gpt-4" in model.lower() and "gpt-4o-mini" not in model.lower():
                 raise ValueError(
-                    f"gpt-4 models are not allowed. Use gemini-2.5-flash 계열 instead. Found: {model}"
+                    f"gpt-4 flagship models are not allowed. Use a lite/mini-tier model instead. Found: {model}"
                 )
         return v
 
     @field_validator("chairman_model")
     def validate_chairman_model(cls, v):
-        """Validate chairman model - must use gemini-2.5-flash 계열."""
+        """Validate chairman model - lite/mini-tier only, no flagship gpt-4."""
         if "gpt-4" in v.lower() and "gpt-4o-mini" not in v.lower():
             raise ValueError(
-                f"gpt-4 models are not allowed. Use gemini-2.5-flash 계열 instead. Found: {v}"
+                f"gpt-4 flagship models are not allowed. Use a lite/mini-tier model instead. Found: {v}"
             )
         return v
 
@@ -1336,8 +1336,8 @@ def load_config_from_env() -> ResearcherSystemConfig:
             "COUNCIL_MODELS",
             [
                 "google/gemini-3.1-flash-lite-preview",
-                "openai/gpt-4o-mini",
-                "anthropic/claude-3-haiku",
+                "openai/gpt-5-mini",
+                "anthropic/claude-haiku-4.5",
             ],
         ),
         chairman_model=get_optional_env(
