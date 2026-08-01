@@ -268,19 +268,23 @@ class PlanningNode(BaseNode):
 
         search_results = []
         search_tools = ["g-search", "tavily", "exa"]
+        # Single decontextualized keywords ("project", "identify") return near-zero
+        # results from real search engines; a joined phrase carries the intent.
+        search_query = " ".join(keywords[:4])
 
-        for i, keyword in enumerate(keywords[:3]):
-            tool_name = search_tools[i % len(search_tools)]
+        for tool_name in search_tools:
+            if not search_query:
+                break
             try:
                 result = await execute_tool(
-                    tool_name=tool_name, parameters={"query": keyword, "max_results": 5}
+                    tool_name=tool_name, parameters={"query": search_query, "max_results": 5}
                 )
                 if result.get("success", False):
                     result_data = result.get("data", {})
                     data_list = _extract_tool_result_items(result_data)
                     search_results.append(
                         {
-                            "keyword": keyword,
+                            "keyword": search_query,
                             "tool": tool_name,
                             "data": data_list,
                             "sources_count": len(data_list),
@@ -385,7 +389,7 @@ class PlanningNode(BaseNode):
         decomposition_prompt = f"""
         Based on preliminary research, decompose into {num_tasks} tasks:
         {feedback_block}
-        Request: {state.get("user_request", "")} (Apply non-linear structural mutation: prioritize high-surprise leaps over incremental tweaks while maintaining physical feasibility)
+        Request: {state.get("user_request", "")}
         Complexity: {complexity}
         Preliminary Research: {preliminary_research.get("keywords", [])}
         Return as JSON array of task objects.
