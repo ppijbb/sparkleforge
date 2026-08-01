@@ -114,6 +114,11 @@ class REPLCLI:
         )
         from src.cli.commands.forge_master import forge_master_command
         from src.cli.commands.help import help_command
+        from src.cli.commands.nightwelding import (
+            nightwelding_list_command,
+            nightwelding_run_command,
+            nightwelding_status_command,
+        )
         from src.cli.commands.research import research_command
         from src.cli.commands.schedule import (
             schedule_add_command,
@@ -197,6 +202,11 @@ class REPLCLI:
                 "show": config_show_command,
                 "set": config_set_command,
                 "get": config_get_command,
+            },
+            "nightwelding": {
+                "run": nightwelding_run_command,
+                "status": nightwelding_status_command,
+                "list": nightwelding_list_command,
             },
             "help": help_command,
             "exit": self._handle_exit,
@@ -383,6 +393,12 @@ Generate the greeting:"""
         commands_text.append("  ", style="dim")
         commands_text.append("context show", style="cyan")
         commands_text.append("     - Show project context\n", style="dim")
+        commands_text.append("  ", style="dim")
+        commands_text.append("schedule list", style="cyan")
+        commands_text.append("     - Manage cron-style schedules\n", style="dim")
+        commands_text.append("  ", style="dim")
+        commands_text.append("nightwelding status", style="cyan")
+        commands_text.append(" - Autonomous issue-fixer queue\n", style="dim")
         commands_text.append("  ", style="dim")
         commands_text.append("help", style="cyan")
         commands_text.append("             - Show help message\n", style="dim")
