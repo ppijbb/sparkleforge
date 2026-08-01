@@ -113,6 +113,9 @@ class CreativityAgent:
         "security_analyst": "security analyst",
     }
 
+    # Lazily-initialized shared singleton, set on first CreativityAgent() (issue #942).
+    bottleneck_engine: "BottleneckIdeationEngine | None" = None
+
     def __init__(self):
         """창의성 에이전트 초기화."""
         self.creativity_patterns = self._initialize_creativity_patterns()
