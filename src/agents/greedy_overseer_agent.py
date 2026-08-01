@@ -313,7 +313,9 @@ class GreedyOverseerAgent:
             state["overseer_evaluations"] = state.get("overseer_evaluations", []) + [
                 evaluation.__dict__
             ]
-            state["completeness_scores"][f"iteration_{current_iteration}"] = completeness_score
+            state.setdefault("completeness_scores", {})[
+                f"iteration_{current_iteration}"
+            ] = completeness_score
             state["overseer_decision"] = decision
 
             # Add requirements if retrying
