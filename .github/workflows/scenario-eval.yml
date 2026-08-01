@@ -49,7 +49,7 @@ jobs:
         run: |
           timeout 25m uv run python tests/benchmark/run_scenarios.py \
             --compare-to tests/benchmark/baselines/scenario_baseline.json \
-            --history tests/benchmark/baselines/scenario_history.jsonl \
+            --compare-to-history tests/benchmark/baselines/scenario_history.jsonl \
             --json-out tests/benchmark/reports/scenario_report_ci.json
           
           # Gate: Reject inconclusive/failed baselines
