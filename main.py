@@ -134,9 +134,11 @@ file_handler.setFormatter(
 )
 root_logger.addHandler(file_handler)
 
-# Console handler
+# Console handler (WARNING+ only; full INFO detail still goes to the log file above.
+# Prevents import-time init noise (DB driver, tool registry, plugin discovery, ...)
+# from spamming stdout before --verbose/REPL suppression logic below has a chance to run.)
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
+console_handler.setLevel(logging.WARNING)
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
@@ -771,6 +773,7 @@ EXAMPLES:
         # Set logging level
         if args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
+            console_handler.setLevel(logging.DEBUG)
         else:
             logging.getLogger().setLevel(logging.INFO)
 
