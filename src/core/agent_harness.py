@@ -62,7 +62,7 @@ class AgentHarness:
             (register_semantic_file_search_tool, "semantic_file_search"),
             (register_security_tools, "security"),
             (register_iot_guard_tools, "iot_guard"),
-            (register_forge_master_dispatch_tool, "dispatch_to_cli_agent"),
+            (register_forge_master_dispatch_tool, "dispatch_batch_to_forge_master"),
         ]
         for func, name in registrars:
             try:

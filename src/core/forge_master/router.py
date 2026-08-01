@@ -5,8 +5,8 @@ SparkleForge 중앙 하네스가 작업의 특성과 토큰 예산을 평가하�
 도구별 맞춤 Goal을 부여하는 동적 라우팅 시스템
 
 이 라우터는 최종 결정권자가 아니다. 어떤 CLI 에이전트를 쓸지는 실제로 태스크를
-수행하는 에이전트(agent_loop의 tool-call 턴)가 `dispatch_to_cli_agent` 도구
-호출로 직접 골라야 한다 (src/core/forge_master/tools.py 참고). 여기 있는
+수행하는 에이전트(agent_loop의 tool-call 턴)가 `dispatch_batch_to_forge_master`
+도구 호출로 직접 골라야 한다 (src/core/forge_master/tools.py 참고). 여기 있는
 `route_task` 키워드/역량 매트릭스 휴리스틱은 명시적 agent_name 없이 호출되는
 비-에이전트 경로(사람이 직접 치는 CLI, LangGraph 자동 위임 등)를 위한
 결정론적 기본값일 뿐, 코드나 숨겨진 LLM 호출이 에이전트 대신 "판단"하는
@@ -81,7 +81,7 @@ class ForgeMasterRouter:
         agent_loop의 tool-call 턴에서 에이전트가 직접 판단하는 경로가 아니라,
         사람이 직접 치는 CLI나 LangGraph 자동 위임처럼 명시적 agent_name이 없는
         호출을 위한 결정론적 기본값이다. 실제 에이전트 판단이 필요한 경우엔
-        `dispatch_to_cli_agent` 도구(src/core/forge_master/tools.py)를 통해
+        `dispatch_batch_to_forge_master` 도구(src/core/forge_master/tools.py)를 통해
         agent_name을 직접 골라 호출해야 한다.
 
         Args:

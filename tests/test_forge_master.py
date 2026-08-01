@@ -107,8 +107,9 @@ async def test_controller_execution_with_mocked_cli():
 async def test_controller_does_not_auto_switch_agents_on_critical_failure():
     """A crash (ESCALATE_TO_FALLBACK) must not make the controller silently
     call a different CLI agent - which agent to use next is a decision for
-    whoever calls execute_task_with_master_control (e.g. the dispatch_to_cli_agent
-    tool), not something this code should do on its own."""
+    whoever calls execute_task_with_master_control (e.g. the
+    dispatch_batch_to_forge_master tool), not something this code should do
+    on its own."""
     controller = ForgeMasterController()
 
     crash_result = {"success": False, "error": "boom", "response": ""}
@@ -136,34 +137,40 @@ async def test_controller_does_not_auto_switch_agents_on_critical_failure():
     assert "claude_code" in result["fallback_candidates"]
 
 
-def test_dispatch_to_cli_agent_tool_is_registered():
+def test_dispatch_batch_to_forge_master_tool_is_registered():
     """The agent's own reasoning loop must be able to discover and call this
-    tool to pick a CLI agent itself - it must not only exist as internal
-    Python code nobody outside forge_master can reach."""
+    tool to pick CLI agents itself - it must not only exist as internal
+    Python code nobody outside forge_master can reach. Only the batch tool
+    should be exposed; individual CLI agents stay hidden behind forge_master."""
     register_forge_master_dispatch_tool()
 
-    assert "dispatch_to_cli_agent" in registry.get_all_tool_names()
-    assert registry.tool_sources["dispatch_to_cli_agent"] == "local"
+    assert "dispatch_batch_to_forge_master" in registry.get_all_tool_names()
+    assert "dispatch_to_cli_agent" not in registry.get_all_tool_names()
+    assert registry.tool_sources["dispatch_batch_to_forge_master"] == "local"
 
-    schema = registry.tools["dispatch_to_cli_agent"].parameters
-    assert schema["required"] == ["agent_name", "task_query"]
+    schema = registry.tools["dispatch_batch_to_forge_master"].parameters
+    assert schema["required"] == ["tasks"]
+    task_schema = schema["properties"]["tasks"]["items"]
+    assert task_schema["required"] == ["agent_name", "task_query"]
     assert set(ForgeMasterRouter.CAPABILITY_MATRIX.keys()) == set(
-        schema["properties"]["agent_name"]["enum"]
+        task_schema["properties"]["agent_name"]["enum"]
     )
 
 
 @pytest.mark.asyncio
-async def test_dispatch_to_cli_agent_tool_executes_with_the_chosen_agent():
-    """Calling the tool must actually run the agent_name the caller picked,
-    with no routing/ranking substituted in behind it."""
+async def test_dispatch_batch_to_forge_master_executes_each_task_with_its_chosen_agent():
+    """Calling the tool must run every task's own agent_name, with no
+    routing/ranking substituted in behind it, and no cross-task mixing."""
     register_forge_master_dispatch_tool()
 
     controller = ForgeMasterController()
-    mock_cli_result = {
-        "success": True,
-        "response": "def add(a, b): return a + b",
-        "confidence": 0.9,
-    }
+
+    async def fake_execute_with_agent(agent_name, query, **kwargs):
+        return {
+            "success": True,
+            "response": f"{agent_name} handled: {query}",
+            "confidence": 0.9,
+        }
 
     with patch(
         "src.core.forge_master.tools.ForgeMasterController",
@@ -171,16 +178,25 @@ async def test_dispatch_to_cli_agent_tool_executes_with_the_chosen_agent():
     ), patch.object(
         controller.session_manager.cli_manager,
         "execute_with_agent",
-        new=AsyncMock(return_value=mock_cli_result),
+        new=AsyncMock(side_effect=fake_execute_with_agent),
     ) as mock_execute:
         result = await registry.execute(
-            "dispatch_to_cli_agent",
-            {"agent_name": "codex", "task_query": "Write an add function"},
+            "dispatch_batch_to_forge_master",
+            {
+                "tasks": [
+                    {"agent_name": "codex", "task_query": "Write an add function"},
+                    {"agent_name": "gemini_cli", "task_query": "Summarize the README"},
+                ]
+            },
         )
 
     assert result["success"] is True
-    assert result["agent_used"] == "codex"
-    assert mock_execute.await_args.kwargs.get("agent_name") == "codex"
+    assert result["total"] == 2
+    assert result["succeeded"] == 2
+    assert {r["agent_used"] for r in result["results"]} == {"codex", "gemini_cli"}
+    assert mock_execute.await_count == 2
+    called_agents = {c.kwargs.get("agent_name") for c in mock_execute.await_args_list}
+    assert called_agents == {"codex", "gemini_cli"}
 
 
 @pytest.mark.asyncio
