@@ -454,13 +454,27 @@ class AgentHarness:
         from src.core.forge_master.tools import _dispatch_batch_to_forge_master_tool
 
         router = ForgeMasterRouter()
-        fm_tasks = [
-            {
+        # Planner-assigned dependencies reference other tasks by task_id;
+        # the batch API addresses them by position in this same list. Deps
+        # pointing outside this batch (e.g. an already-completed anvil task)
+        # have no index and are dropped - already satisfied by definition.
+        id_to_index = {
+            task.get("task_id"): i for i, task in enumerate(tasks) if task.get("task_id")
+        }
+        fm_tasks = []
+        for task in tasks:
+            fm_task: Dict[str, Any] = {
                 "agent_name": router.route_task(task.get("description", "")).agent_name,
                 "task_query": task.get("description", ""),
             }
-            for task in tasks
-        ]
+            dep_indices = [
+                id_to_index[dep_id]
+                for dep_id in (task.get("dependencies") or [])
+                if dep_id in id_to_index
+            ]
+            if dep_indices:
+                fm_task["dependencies"] = dep_indices
+            fm_tasks.append(fm_task)
 
         try:
             batch_result = await _dispatch_batch_to_forge_master_tool(fm_tasks)
