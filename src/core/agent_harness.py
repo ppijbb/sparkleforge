@@ -97,6 +97,7 @@ class AgentHarness:
                 "financial_pipeline": "planner",
                 "codebase_agent": "planner",
                 "creativity_agent": "planner",
+                "quantum_solver": "planner",
                 "document_pipeline": "document_processor",
             },
         )
@@ -145,13 +146,22 @@ class AgentHarness:
         return updated_state
 
     async def _node_single_agent(self, state: HarnessState) -> Dict[str, Any]:
-        """[Node] 단일 에이전트로 단순 태스크 해결"""
+        """[Node] 단일 에이전트로 단순 태스크 해결 (TaskRouter가 SINGLE_AGENT로 분류한 경우)"""
         logger.info("[Harness] Single Agent Node")
-        # Agent Orchestrator 내부의 agent 클래스를 활용하거나 여기서 직접 호출
-        # 지금은 스켈레톤, 이후 실제 agent 연결
+        from src.core.agent_loop import AgentLoop
+
+        query = state["workflow"]["user_query"]
+        identity = state["meta"].get("current_agent") or "researcher"
+        loop = AgentLoop(self.orchestrator)
+        result = await loop.run_conversation(
+            messages=[{"role": "user", "content": query}],
+            task_type=TaskType.RESEARCH,
+            max_iterations=5,
+            system_message=get_system_prompt(identity),
+        )
+
         state["workflow"]["phase"] = "execute"
-        # 더미 결과 추가
-        # state["workflow"]["final_output"] = f"Result for {state['workflow']['user_query']}"
+        state["workflow"]["final_output"] = result.get("content", "")
         return state
 
     async def _node_planner(self, state: HarnessState) -> Dict[str, Any]:
@@ -640,6 +650,7 @@ class AgentHarness:
             RoutePath.FINANCIAL_PIPELINE.value: "financial_pipeline",
             RoutePath.CODEBASE_AGENT.value: "codebase_agent",
             RoutePath.CREATIVITY_AGENT.value: "creativity_agent",
+            RoutePath.QUANTUM_SOLVER.value: "quantum_solver",
             RoutePath.DOCUMENT_PIPELINE.value: "document_pipeline",
         }
 
@@ -773,7 +784,9 @@ class AgentHarness:
 
         # Original LangGraph Research Mode
         # 1. 초기 상태 생성
-        initial_state = create_initial_harness_state(session_id, request, max_iterations)
+        initial_state = create_initial_harness_state(
+            session_id, request, max_iterations, identity=identity
+        )
 
         # 2. 실행 설정 (LangGraph 스레드)
         config = {"configurable": {"thread_id": session_id}}

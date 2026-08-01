@@ -39,6 +39,40 @@ async def test_orchestrator_attaches_isomorphisms_to_metadata():
 async def test_orchestrator_has_isomorphism_extractor():
     orchestrator = AgentOrchestrator()
     assert orchestrator.isomorphism_extractor is not None
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_defaults_to_classify_graph_without_heat_budget():
+    """No --heat budget -> route through the classify/TaskRouter LangGraph (mode='research')."""
+    orchestrator = AgentOrchestrator()
+    fake_result = {"success": True, "results": "done", "metadata": {}}
+    harness_execute = AsyncMock(return_value=fake_result)
+    with patch.object(orchestrator.harness, "execute", new=harness_execute):
+        await orchestrator.execute(request="do something", session_id="test-mode")
+    assert harness_execute.call_args.kwargs["mode"] == "research"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_uses_autonomous_loop_when_heat_budget_set():
+    """--heat wrap-up reporting only exists on the autonomous loop, so heat-bounded
+    runs must stay on mode='autonomous' rather than the classify graph."""
+    orchestrator = AgentOrchestrator()
+    fake_result = {"success": True, "results": "done", "metadata": {}}
+    harness_execute = AsyncMock(return_value=fake_result)
+    with patch.object(orchestrator.harness, "execute", new=harness_execute):
+        await orchestrator.execute(
+            request="do something with a budget", session_id="test-mode-heat", heat_seconds=60.0
+        )
+    assert harness_execute.call_args.kwargs["mode"] == "autonomous"
+
+
+def test_route_after_classify_handles_quantum_solver():
+    """TaskRouter's LLM prompt offers 'quantum_solver' as a pipeline choice (task_router.py);
+    the graph edge must handle it or classify() raises ValueError on an unknown phase."""
+    from src.core.agent_harness import AgentHarness
+
+    state = {"workflow": {"phase": "quantum_solver"}}
+    assert AgentHarness._route_after_classify(None, state) == "quantum_solver"
 """
 Integration test for Multi-Agent Orchestration System
 

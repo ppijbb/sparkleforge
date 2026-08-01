@@ -11,8 +11,8 @@ import locale
 import logging
 import shlex
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
-import pytz
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import ANSI
 from rich.console import Console
@@ -269,7 +269,7 @@ class REPLCLI:
         try:
             # 시간대 감지
             try:
-                local_tz = pytz.timezone("Asia/Seoul")  # 기본값
+                local_tz = ZoneInfo("Asia/Seoul")  # 기본값
                 # 시스템 시간대 가져오기
                 import time
 
@@ -286,10 +286,10 @@ class REPLCLI:
                 }
                 for tz_abbr, tz_name in tz_mapping.items():
                     if tz_abbr in local_tz_name:
-                        local_tz = pytz.timezone(tz_name)
+                        local_tz = ZoneInfo(tz_name)
                         break
             except:
-                local_tz = pytz.UTC
+                local_tz = ZoneInfo("UTC")
 
             # 현재 시간
             now = datetime.now(local_tz)
@@ -470,9 +470,11 @@ Generate the greeting:"""
                 routed = await self._try_route_command(text)
                 if routed:
                     return
-                # 연구 요청으로 처리 (명령어가 없으면)
-                # 중복 출력 방지: research_command에서 이미 출력하므로 여기서는 호출만
-                await self.command_handlers["research"](self, [text])
+                # 등록된 커맨드에 매칭되지 않으면 work 경로(AgentHarness)로 보내
+                # classify/planner 노드가 research vs 실제 작업 여부를 직접 판단하게 한다.
+                # research_command는 도구가 전혀 붙어있지 않은 별도 파이프라인이라
+                # 여기서 고정 호출하면 AI가 작업 여부를 판단할 기회 자체가 없다.
+                await self.command_handlers["work"](self, [text])
 
         except EOFError:
             # exit 명령어에서 발생한 EOFError는 다시 raise하여 run()에서 처리
