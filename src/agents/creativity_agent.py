@@ -18,7 +18,7 @@ import random
 
 # MCP integration
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
