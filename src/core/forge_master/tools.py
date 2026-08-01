@@ -54,13 +54,26 @@ DISPATCH_BATCH_TO_FORGE_MASTER_PARAMETERS = {
                         "description": "Optional extra context (e.g. relevant diff, prior findings).",
                         "default": "",
                     },
+                    "dependencies": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": (
+                            "0-based indices of other tasks IN THIS SAME BATCH that must "
+                            "finish first (e.g. a task that fixes review feedback on an "
+                            "earlier task's output). Omit for tasks with no ordering "
+                            "requirement - most tasks don't need this."
+                        ),
+                        "default": [],
+                    },
                 },
                 "required": ["agent_name", "task_query"],
             },
             "description": (
                 "Batch of tasks. Each task is routed, executed, and adversarially "
                 "audited independently (own session, own retries), all running "
-                "concurrently up to max_concurrency."
+                "concurrently up to max_concurrency. Tasks with no 'dependencies' "
+                "all run at once (gated only by max_concurrency); tasks that declare "
+                "dependencies run in dependency-ordered waves instead."
             ),
         },
         "max_concurrency": {
@@ -73,6 +86,51 @@ DISPATCH_BATCH_TO_FORGE_MASTER_PARAMETERS = {
 }
 
 
+async def _run_batch_in_waves(
+    tasks: List[Dict[str, Any]], run_one
+) -> List[Any]:
+    """Execute tasks in dependency-ordered waves via the existing TaskQueue.
+
+    Only called when at least one task declares `dependencies` - reuses
+    TaskQueue's dependency graph / parallel-group logic instead of
+    reinventing wave scheduling. Each wave still runs through `run_one`,
+    which holds the same concurrency semaphore as the no-dependency path.
+    """
+    from src.core.task_queue import TaskQueue
+
+    queue = TaskQueue()
+    queue.add_tasks(
+        [
+            {
+                "task_id": str(i),
+                "dependencies": [str(d) for d in (task.get("dependencies") or [])],
+            }
+            for i, task in enumerate(tasks)
+        ]
+    )
+
+    results: List[Any] = [None] * len(tasks)
+    while queue.has_pending_tasks():
+        wave = queue.get_next_task_group()
+        if not wave:
+            # Circular or out-of-range dependency - nothing left is resolvable.
+            for i in range(len(tasks)):
+                if results[i] is None:
+                    results[i] = RuntimeError(
+                        "unresolved dependency in batch (cycle or bad index)"
+                    )
+            break
+
+        wave_results = await asyncio.gather(
+            *(run_one(tasks[int(task_id)]) for task_id in wave), return_exceptions=True
+        )
+        for task_id, result in zip(wave, wave_results):
+            results[int(task_id)] = result
+            queue.mark_completed(task_id)
+
+    return results
+
+
 async def _dispatch_batch_to_forge_master_tool(
     tasks: List[Dict[str, Any]],
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
@@ -81,7 +139,8 @@ async def _dispatch_batch_to_forge_master_tool(
 
     No cross-task coordination or cross-agent fallback happens here - each
     task keeps the same "no auto-switch on failure" contract as a single
-    dispatch; only concurrency is new.
+    dispatch; only concurrency (and, when declared, dependency ordering)
+    is new.
     """
     controller = ForgeMasterController()
     semaphore = asyncio.Semaphore(max(1, max_concurrency))
@@ -94,9 +153,12 @@ async def _dispatch_batch_to_forge_master_tool(
                 preferred_agent=task.get("agent_name"),
             )
 
-    raw_results = await asyncio.gather(
-        *(_run_one(task) for task in tasks), return_exceptions=True
-    )
+    if any(task.get("dependencies") for task in tasks):
+        raw_results = await _run_batch_in_waves(tasks, _run_one)
+    else:
+        raw_results = await asyncio.gather(
+            *(_run_one(task) for task in tasks), return_exceptions=True
+        )
 
     results = []
     for task, result in zip(tasks, raw_results):

@@ -200,6 +200,49 @@ async def test_dispatch_batch_to_forge_master_executes_each_task_with_its_chosen
 
 
 @pytest.mark.asyncio
+async def test_dispatch_batch_to_forge_master_runs_dependent_task_after_its_dependency():
+    """A task declaring `dependencies` on another task in the same batch must
+    not start until that task has completed - verified via call order, since
+    both tasks resolve to the same agent_name and would otherwise race."""
+    register_forge_master_dispatch_tool()
+
+    controller = ForgeMasterController()
+    call_order: list[str] = []
+
+    async def fake_execute_with_agent(agent_name, query, **kwargs):
+        call_order.append(query)
+        return {"success": True, "response": f"done: {query}", "confidence": 0.9}
+
+    with patch(
+        "src.core.forge_master.tools.ForgeMasterController",
+        return_value=controller,
+    ), patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(side_effect=fake_execute_with_agent),
+    ):
+        result = await registry.execute(
+            "dispatch_batch_to_forge_master",
+            {
+                "tasks": [
+                    {"agent_name": "codex", "task_query": "task-0 base implementation"},
+                    {
+                        "agent_name": "codex",
+                        "task_query": "task-1 fix review feedback",
+                        "dependencies": [0],
+                    },
+                ]
+            },
+        )
+
+    assert result["success"] is True
+    assert result["total"] == 2
+    assert len(call_order) == 2
+    assert "task-0 base implementation" in call_order[0]
+    assert "task-1 fix review feedback" in call_order[1]
+
+
+@pytest.mark.asyncio
 async def test_delegation_registry_contains_forge_master():
     assert "forge_master" in DELEGATION_REGISTRY
 
