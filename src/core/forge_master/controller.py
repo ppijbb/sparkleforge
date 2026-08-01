@@ -8,7 +8,7 @@ SparkleForge 중앙 에이전트 OS의 주 제어 장치.
 갈아타지 않는다 (ESCALATE_TO_FALLBACK이어도 자동 전환 없음). 어떤 에이전트를
 쓸지, 실패 후 다른 에이전트로 다시 시도할지는 실제 판단 주체
 (agent_loop의 tool-call 턴 - src/core/forge_master/tools.py의
-`dispatch_to_cli_agent` 참고, 또는 명시적 preferred_agent를 넘기는 호출자)의
+`dispatch_batch_to_forge_master` 참고, 또는 명시적 preferred_agent를 넘기는 호출자)의
 몫이며, 여기서는 그 판단 결과(agent_name)를 실행하고 실패 시 후보 목록만
 정보로 돌려줄 뿐이다.
 """

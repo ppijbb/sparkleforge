@@ -62,7 +62,7 @@ class AgentHarness:
             (register_semantic_file_search_tool, "semantic_file_search"),
             (register_security_tools, "security"),
             (register_iot_guard_tools, "iot_guard"),
-            (register_forge_master_dispatch_tool, "dispatch_to_cli_agent"),
+            (register_forge_master_dispatch_tool, "dispatch_batch_to_forge_master"),
         ]
         for func, name in registrars:
             try:
@@ -142,6 +142,9 @@ class AgentHarness:
 
         # 내부 라우팅 저장을 위해 workflow phase를 변경하여 전달
         updated_state["workflow"]["phase"] = route.value
+        # phase는 이후 노드에서 덮어써지므로, 원래 라우트는 route 필드에 별도 보존
+        # (executor 노드가 codebase_agent 라우트인지 나중에도 판별할 수 있도록)
+        updated_state["workflow"]["route"] = route.value
 
         return updated_state
 
@@ -370,6 +373,16 @@ class AgentHarness:
                     td["status"] = at.status
                     self.dashboard.complete(tid, result=at.result)
 
+        # --- ForgeMaster 경로: codebase_agent 라우트는 프론티어 LLM 전에
+        # 로컬 CLI 에이전트 함대(ForgeMaster)로 먼저 시도한다. 성공한 태스크는
+        # 여기서 끝나고, 실패한 태스크만 기존 ParallelAgentExecutor(프론티어
+        # LLM 기반)로 넘어간다 - 프론티어 API는 최후 수단이라는 원칙 ---
+        forge_master_handled: list[Dict[str, Any]] = []
+        if legacy_tasks and state["workflow"].get("route") == RoutePath.CODEBASE_AGENT.value:
+            legacy_tasks, forge_master_handled = await self._dispatch_codebase_tasks_via_forge_master(
+                legacy_tasks, session_id
+            )
+
         # --- 레거시 경로: 기존 ParallelAgentExecutor로 나머지 태스크 처리 ---
         if legacy_tasks:
             # 에이전트 동적 할당 (TaskRouter 활용)
@@ -412,6 +425,7 @@ class AgentHarness:
                 self._update_session_tasks(state, legacy_tasks)
 
         # 태스크 목록 재합성
+        legacy_tasks = forge_master_handled + legacy_tasks
         all_tasks = anvil_tasks + legacy_tasks
         state["workflow"]["tasks"] = all_tasks
         if unresolved_capabilities:
@@ -424,6 +438,59 @@ class AgentHarness:
         state["meta"]["observation_snapshot"] = await self._capture_observation_snapshot()
         self._update_token_budget(state, all_tasks)
         return state
+
+    async def _dispatch_codebase_tasks_via_forge_master(
+        self, tasks: list[Dict[str, Any]], session_id: str
+    ) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
+        """Try the local CLI-agent fleet (ForgeMaster) before frontier LLM execution.
+
+        Returns (still_unhandled_tasks, forge_master_handled_tasks). Tasks
+        ForgeMaster's own adversarial audit rejects fall straight back into
+        `tasks` unchanged, so the existing ParallelAgentExecutor (frontier
+        LLM) path handles them exactly as it did before this existed - this
+        only ever narrows what reaches that path, never changes its behavior.
+        """
+        from src.core.forge_master.router import ForgeMasterRouter
+        from src.core.forge_master.tools import _dispatch_batch_to_forge_master_tool
+
+        router = ForgeMasterRouter()
+        fm_tasks = [
+            {
+                "agent_name": router.route_task(task.get("description", "")).agent_name,
+                "task_query": task.get("description", ""),
+            }
+            for task in tasks
+        ]
+
+        try:
+            batch_result = await _dispatch_batch_to_forge_master_tool(fm_tasks)
+        except Exception as e:
+            logger.warning(f"[Harness] ForgeMaster batch dispatch failed, falling back to frontier: {e}")
+            return tasks, []
+
+        handled: list[Dict[str, Any]] = []
+        unhandled: list[Dict[str, Any]] = []
+        for task, result in zip(tasks, batch_result["results"]):
+            task_id = task.get("task_id", "")
+            if result.get("success"):
+                task["result"] = result.get("response")
+                task["status"] = "completed"
+                self.dashboard.submit(
+                    name=task.get("description", "CodeBase Task"),
+                    description=task.get("description", ""),
+                    agent_id=result.get("agent_used", "forge_master"),
+                    metadata={"session_id": session_id, "task_id": task_id},
+                )
+                self.dashboard.complete(task_id, result=task["result"])
+                handled.append(task)
+            else:
+                unhandled.append(task)
+
+        logger.info(
+            f"[Harness] ForgeMaster handled {len(handled)}/{len(tasks)} codebase tasks "
+            f"locally; {len(unhandled)} escalate to frontier LLM executor"
+        )
+        return unhandled, handled
 
     def _update_token_budget(self, state: HarnessState, tasks: list[Dict[str, Any]]) -> None:
         """Accumulate token usage from this execution pass and warn on budget overrun."""
