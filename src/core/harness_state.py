@@ -145,7 +145,8 @@ def _detect_interaction_mode() -> str:
 
 
 def create_initial_harness_state(
-    session_id: str | None, user_query: str, max_iterations: int = 10
+    session_id: str | None, user_query: str, max_iterations: int = 10,
+    identity: str = "researcher",
 ) -> HarnessState:
     """초기 HarnessState 객체를 생성합니다."""
     import time
@@ -187,7 +188,7 @@ def create_initial_harness_state(
             "start_time": time.time(),
             "total_tokens_used": 0,
             "warnings": [],
-            "current_agent": "system",
+            "current_agent": identity,
             "output_dir": f"output/{time.strftime('%Y%m%d_%H%M%S')}_{safe_session_id[:8]}",
             "observation_snapshot": {},
         },

@@ -151,11 +151,15 @@ class AgentOrchestrator:
             f"gemini_cache={'on' if self.gemini_cache else 'off'})"
         )
 
-        # Harness 실행
+        # classify -> TaskRouter(LLM) -> planner/single_agent 그래프를 기본 실행 경로로 사용해
+        # 실제로 라우팅 판단이 이루어지게 한다. heat_seconds(--heat 시간 예산, issue #585)는
+        # wrap-up 리포트 기능이 autonomous 루프에만 구현되어 있으므로 그 경우만 예외로 둔다.
+        mode = "autonomous" if heat_seconds else "research"
         harness_result = await self.harness.execute(
             session_id=session_id,
             request=request,
             max_iterations=max_iterations,
+            mode=mode,
             identity=identity,
             heat_seconds=heat_seconds,
         )
