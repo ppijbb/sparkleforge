@@ -74,10 +74,12 @@ DISPATCH_BATCH_TO_FORGE_MASTER_PARAMETERS = {
             },
             "description": (
                 "Batch of tasks. Each task is routed, executed, and adversarially "
-                "audited independently (own session, own retries), all running "
-                "concurrently up to max_concurrency. Tasks with no 'dependencies' "
-                "all run at once (gated only by max_concurrency); tasks that declare "
-                "dependencies run in dependency-ordered waves instead."
+                "audited independently (own retries), all running concurrently up "
+                "to max_concurrency. Tasks sharing the same agent_name share one "
+                "session for the batch (context continuity), closed when the batch "
+                "finishes. Tasks with no 'dependencies' all run at once (gated only "
+                "by max_concurrency); tasks that declare dependencies run in "
+                "dependency-ordered waves instead."
             ),
         },
         "max_concurrency": {
@@ -149,20 +151,38 @@ async def _dispatch_batch_to_forge_master_tool(
     controller = ForgeMasterController()
     semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
+    # Batch-scoped session grouping: tasks sharing an agent_name reuse one
+    # session instead of each spinning up its own, so same-agent tasks in a
+    # batch keep context continuity. Persistent for the batch's duration
+    # only - closed in the finally below, not left to leak past this call.
+    session_ids_by_agent: Dict[str, str] = {}
+    for task in tasks:
+        agent_name = task.get("agent_name")
+        if agent_name and agent_name not in session_ids_by_agent:
+            session = controller.session_manager.create_session(
+                agent_name=agent_name, is_persistent=True
+            )
+            session_ids_by_agent[agent_name] = session.session_id
+
     async def _run_one(task: Dict[str, Any]) -> Dict[str, Any]:
         async with semaphore:
             return await controller.execute_task_with_master_control(
                 task_query=task["task_query"],
                 context=task.get("context") or None,
                 preferred_agent=task.get("agent_name"),
+                session_id=session_ids_by_agent.get(task.get("agent_name")),
             )
 
-    if any(task.get("dependencies") for task in tasks):
-        raw_results = await _run_batch_in_waves(tasks, _run_one)
-    else:
-        raw_results = await asyncio.gather(
-            *(_run_one(task) for task in tasks), return_exceptions=True
-        )
+    try:
+        if any(task.get("dependencies") for task in tasks):
+            raw_results = await _run_batch_in_waves(tasks, _run_one)
+        else:
+            raw_results = await asyncio.gather(
+                *(_run_one(task) for task in tasks), return_exceptions=True
+            )
+    finally:
+        for session_id in session_ids_by_agent.values():
+            controller.session_manager.close_session(session_id)
 
     results = []
     for task, result in zip(tasks, raw_results):

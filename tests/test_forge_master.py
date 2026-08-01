@@ -200,6 +200,64 @@ async def test_dispatch_batch_to_forge_master_executes_each_task_with_its_chosen
 
 
 @pytest.mark.asyncio
+async def test_dispatch_batch_to_forge_master_reuses_session_per_agent_and_closes_after():
+    """Two tasks for the same agent must share one session (not one each),
+    and every session the batch creates must be closed once it finishes -
+    otherwise persistent batch sessions leak forever (cleanup_expired_sessions
+    skips is_persistent sessions)."""
+    register_forge_master_dispatch_tool()
+    controller = ForgeMasterController()
+
+    created_for_agents: list[str] = []
+    closed_ids: list[str] = []
+
+    real_create_session = controller.session_manager.create_session
+
+    def spy_create_session(agent_name, is_persistent=False, metadata=None):
+        created_for_agents.append(agent_name)
+        return real_create_session(agent_name, is_persistent=is_persistent, metadata=metadata)
+
+    real_close_session = controller.session_manager.close_session
+
+    def spy_close_session(session_id):
+        closed_ids.append(session_id)
+        return real_close_session(session_id)
+
+    async def fake_execute_with_agent(agent_name, query, **kwargs):
+        return {"success": True, "response": f"{agent_name} handled: {query}", "confidence": 0.9}
+
+    with patch(
+        "src.core.forge_master.tools.ForgeMasterController",
+        return_value=controller,
+    ), patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(side_effect=fake_execute_with_agent),
+    ), patch.object(
+        controller.session_manager, "create_session", side_effect=spy_create_session
+    ), patch.object(
+        controller.session_manager, "close_session", side_effect=spy_close_session
+    ):
+        result = await registry.execute(
+            "dispatch_batch_to_forge_master",
+            {
+                "tasks": [
+                    {"agent_name": "codex", "task_query": "task A"},
+                    {"agent_name": "codex", "task_query": "task B"},
+                    {"agent_name": "gemini_cli", "task_query": "task C"},
+                ]
+            },
+        )
+
+    assert result["success"] is True
+    # One session created per distinct agent_name in the batch, not per task.
+    assert sorted(created_for_agents) == ["codex", "gemini_cli"]
+    # Every session the batch created got closed once it finished.
+    assert len(closed_ids) == 2
+    assert controller.session_manager.sessions == {}
+
+
+@pytest.mark.asyncio
 async def test_dispatch_batch_to_forge_master_runs_dependent_task_after_its_dependency():
     """A task declaring `dependencies` on another task in the same batch must
     not start until that task has completed - verified via call order, since
