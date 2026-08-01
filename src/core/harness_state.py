@@ -29,6 +29,7 @@ class WorkflowState(TypedDict):
     session_id: str
     user_query: str
     phase: str  # start | classify | plan | execute | verify | synthesize | output
+    route: str  # RoutePath.value chosen at classify - survives phase being overwritten
     plan: str
     tasks: List[TaskState]
     completed_task_ids: Set[str]
@@ -160,6 +161,7 @@ def create_initial_harness_state(
             "session_id": safe_session_id,
             "user_query": user_query,
             "phase": "start",
+            "route": "",
             "plan": "",
             "tasks": [],
             "completed_task_ids": set(),
