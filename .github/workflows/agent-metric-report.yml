@@ -44,7 +44,7 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
         run: |
           uv run python main.py report generate || EXIT=$?
-          exit ${EXIT:-0}
+          exit "${EXIT:-0}"
 
       - name: Expose Report to Job Summary
         run: |
