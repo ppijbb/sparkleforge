@@ -8,9 +8,12 @@ got a chance to decide the task actually needed file edits / tool calls.
 
 from unittest.mock import AsyncMock
 
+import pytest
+
 from src.cli.repl_cli import REPLCLI
 
 
+@pytest.mark.asyncio
 async def test_unmatched_text_dispatches_to_work_not_research():
     repl = REPLCLI.__new__(REPLCLI)
     repl.console = type("_C", (), {"print": lambda self, *a, **k: None})()

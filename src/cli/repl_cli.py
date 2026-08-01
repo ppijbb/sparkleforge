@@ -288,7 +288,7 @@ class REPLCLI:
                     if tz_abbr in local_tz_name:
                         local_tz = ZoneInfo(tz_name)
                         break
-            except:
+            except Exception:
                 local_tz = ZoneInfo("UTC")
 
             # 현재 시간
