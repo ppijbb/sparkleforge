@@ -21,8 +21,13 @@ import logging.handlers
 import signal
 import sys
 import time
+import warnings
 from datetime import datetime
 from pathlib import Path
+
+# Must run before anything transitively imports `requests`, since the warning
+# fires at requests/__init__.py import time (filters added later can't retract it).
+warnings.filterwarnings("ignore", message=r".*urllib3.*or.*chardet.*doesn't match.*")
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -169,6 +174,14 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 
 # asyncio 관련 로거
 logging.getLogger("asyncio").setLevel(logging.WARNING)
+
+# HuggingFace/transformers weight-loading progress bars ("Loading weights: 100%|...")
+try:
+    from huggingface_hub.utils import disable_progress_bars as _hf_disable_progress_bars
+
+    _hf_disable_progress_bars()
+except ImportError:
+    pass
 
 
 def _install_graceful_sigterm(task: "asyncio.Task") -> None:
