@@ -34,3 +34,8 @@ When asked to fix an issue:
 - Avoid destructive git operations.
 - Do not force push or delete branches.
 - Do not change generated artifacts unless the task specifically requires it.
+- CLI UX matters — treat noisy/confusing terminal output as an actionable bug, not
+  a side effect. Before adding a log call, ask who it's for: internal debugging
+  belongs in the log file (or DEBUG level), not stdout. Don't add module-level
+  logging side effects that fire before argparse/mode dispatch has decided what
+  the user actually asked for.
