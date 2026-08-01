@@ -184,6 +184,28 @@ except ImportError:
     pass
 
 
+async def _boot_repl():
+    """Import and construct the REPL behind a single spinner line.
+
+    REPLCLI's import chain pulls in the MCP hub, tool registry, embedding
+    model, scheduler, etc. -- real work that used to either print raw init
+    logs or just leave the terminal blank for a few seconds. One spinner
+    line (Claude Code / Codex style) replaces both.
+    """
+    from rich.console import Console
+
+    from src.core.scheduler import configure_scheduler_execution, get_scheduler
+
+    with Console().status("[bold cyan]Starting SparkleForge...", spinner="dots"):
+        from src.cli.repl_cli import REPLCLI
+
+        scheduler = configure_scheduler_execution(get_scheduler())
+        await scheduler.start()
+        cli = REPLCLI()
+
+    return cli, scheduler
+
+
 def _install_graceful_sigterm(task: "asyncio.Task") -> None:
     """Cancel `task` on SIGTERM so its existing finally-block cleanup runs.
 
@@ -936,16 +958,8 @@ EXAMPLES:
         if is_repl_mode:
             scheduler = None
             try:
-                from src.cli.repl_cli import REPLCLI
-                from src.core.scheduler import (
-                    configure_scheduler_execution,
-                    get_scheduler,
-                )
-
-                scheduler = configure_scheduler_execution(get_scheduler())
-                await scheduler.start()
+                cli, scheduler = await _boot_repl()
                 _install_graceful_sigterm(asyncio.current_task())
-                cli = REPLCLI()
                 await cli.run()
             except (EOFError, KeyboardInterrupt, SystemExit, asyncio.CancelledError):
                 # 정상 종료 (Ctrl+C, EOF, or SIGTERM-triggered cancellation)
@@ -960,18 +974,8 @@ EXAMPLES:
 
         # Interactive 모드 (기존)
         if args.interactive:
-            from src.cli.repl_cli import REPLCLI
-            from src.core.scheduler import (
-                configure_scheduler_execution,
-                get_scheduler,
-            )
-
-            # 스케줄러 초기화 및 시작
-            scheduler = configure_scheduler_execution(get_scheduler())
-            await scheduler.start()
+            cli, scheduler = await _boot_repl()
             _install_graceful_sigterm(asyncio.current_task())
-
-            cli = REPLCLI()
             try:
                 await cli.run()
             except asyncio.CancelledError:
