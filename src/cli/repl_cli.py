@@ -112,7 +112,10 @@ class REPLCLI:
             context_reload_command,
             context_show_command,
         )
-        from src.cli.commands.forge_master import forge_master_command
+        from src.cli.commands.forge_master import (
+            forge_master_batch_command,
+            forge_master_command,
+        )
         from src.cli.commands.help import help_command
         from src.cli.commands.nightwelding import (
             nightwelding_list_command,
@@ -157,6 +160,7 @@ class REPLCLI:
         self.command_handlers = {
             "research": research_command,
             "forge-master": forge_master_command,
+            "forge-batch": forge_master_batch_command,
             "work": work_command,
             "actions": actions_command,
             "approve": approve_command,

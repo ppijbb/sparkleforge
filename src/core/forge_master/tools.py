@@ -11,10 +11,14 @@
 """
 
 import asyncio
+import json
+import logging
 from typing import Any, Dict, List
 
 from .controller import ForgeMasterController
 from .router import ForgeMasterRouter
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_CONCURRENCY = 5
 
@@ -174,12 +178,34 @@ async def _dispatch_batch_to_forge_master_tool(
         else:
             results.append(result)
 
+    _log_batch_manifest(results)
+
     return {
         "success": all(r.get("success") for r in results),
         "total": len(results),
         "succeeded": sum(1 for r in results if r.get("success")),
         "results": results,
     }
+
+
+def _log_batch_manifest(results: List[Dict[str, Any]]) -> None:
+    """One structured summary line per batch call, to the log file only.
+
+    Without this, a batch's outcome is scattered across interleaved
+    per-task retry/audit log lines from controller.py - nothing surfaces
+    a single "what happened in this batch" view. Never printed to stdout;
+    callers (REPL, agent loop) decide what the user actually sees.
+    """
+    manifest = [
+        {
+            "agent_used": r.get("agent_used") or r.get("last_agent_used"),
+            "success": r.get("success", False),
+            "master_verdict": r.get("master_verdict"),
+            "skepticism_score": (r.get("adversarial_audit") or {}).get("skepticism_score"),
+        }
+        for r in results
+    ]
+    logger.info("forge_master batch manifest: %s", json.dumps(manifest, ensure_ascii=False))
 
 
 def register_forge_master_dispatch_tool() -> None:
