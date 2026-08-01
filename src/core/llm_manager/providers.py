@@ -361,9 +361,10 @@ class ProviderAdaptersMixin:
                     await asyncio.sleep(wait_time)
                     continue  # 재시도
                 else:
-                    # 재시도 불가능한 에러 (401, 403, 404 등) 또는 최대 재시도 횟수 초과
-                    # 429 (Rate limit) 또는 400 (Invalid model ID) 에러 발생 시 fallback 모델 시도
-                    if response.status_code in (429, 400):
+                    # 재시도 불가능한 에러 (401, 403 등) 또는 최대 재시도 횟수 초과
+                    # 429 (Rate limit), 400 (Invalid model ID), 404 (model doesn't support the
+                    # request, e.g. tool use) 에러 발생 시 fallback 모델 시도
+                    if response.status_code in (429, 400, 404):
                         logger.warning(
                             f"Model {model_id} returned HTTP {response.status_code} in OpenRouter, trying fallback models..."
                         )
