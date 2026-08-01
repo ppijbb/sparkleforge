@@ -473,7 +473,15 @@ class AgentHarness:
         for task, result in zip(tasks, batch_result["results"]):
             task_id = task.get("task_id", "")
             if result.get("success"):
-                task["result"] = result.get("response")
+                # dict (not bare string) so generator_agent's synthesis
+                # ("content" key) and _update_token_budget ("tokens_used"
+                # key) both pick this up the same way legacy results do -
+                # a bare string is invisible to _update_token_budget's
+                # isinstance(result, dict) check.
+                task["result"] = {
+                    "content": result.get("response"),
+                    "tokens_used": result.get("tokens_used", 0),
+                }
                 task["status"] = "completed"
                 self.dashboard.submit(
                     name=task.get("description", "CodeBase Task"),
