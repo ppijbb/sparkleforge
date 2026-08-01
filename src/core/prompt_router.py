@@ -38,7 +38,7 @@ class PromptRouter:
     """Route natural-language prompts to the best matching runtime target."""
 
     def _tokenize(self, text: str) -> tuple[str, ...]:
-        return tuple(re.findall(r"[a-z0-9_:+.-]+", (text or "").lower()))
+        return tuple(re.findall(r"[\w:+.-]+", (text or "").lower(), re.UNICODE))
 
     def _score_tokens(
         self,
