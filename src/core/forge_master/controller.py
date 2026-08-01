@@ -25,6 +25,19 @@ from .token_minimizer import TokenMinimizer
 logger = logging.getLogger(__name__)
 
 
+def _normalize_tokens_used(usage: Dict[str, Any]) -> int:
+    """CLI adapters report usage under different keys (tokens / input_tokens
+    +output_tokens / tokens_used) - collapse them to one integer so callers
+    (e.g. the harness's session token budget) have one field to read."""
+    if not usage:
+        return 0
+    if "tokens_used" in usage:
+        return int(usage.get("tokens_used") or 0)
+    if "tokens" in usage:
+        return int(usage.get("tokens") or 0)
+    return int(usage.get("input_tokens", 0) or 0) + int(usage.get("output_tokens", 0) or 0)
+
+
 class ForgeMasterController:
     """Forge Master 중앙 컨트롤러"""
 
@@ -145,6 +158,8 @@ class ForgeMasterController:
                         "feedback": adv_audit.adversarial_feedback,
                     },
                     "token_metrics": reduction_metrics,
+                    "usage": exec_result.get("usage", {}),
+                    "tokens_used": _normalize_tokens_used(exec_result.get("usage", {})),
                     "attempts": attempt,
                 }
 

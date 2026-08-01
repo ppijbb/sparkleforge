@@ -127,8 +127,28 @@ async def _run_batch_in_waves(
                     )
             break
 
+        # Waiting for a prerequisite only orders execution - a dependent task
+        # also needs the prerequisite's actual output (e.g. "fix review
+        # feedback on task 0") in its own context, since session reuse alone
+        # only tracks a turn count, not the prior response text.
+        wave_tasks = []
+        for task_id in wave:
+            idx = int(task_id)
+            task = tasks[idx]
+            dep_indices = [int(d) for d in (task.get("dependencies") or [])]
+            prior_outputs = [
+                f"[Output of task {dep_idx}]\n{results[dep_idx].get('response', '')}"
+                for dep_idx in dep_indices
+                if isinstance(results[dep_idx], dict) and results[dep_idx].get("success")
+            ]
+            if prior_outputs:
+                prior_context = "\n\n".join(prior_outputs)
+                existing_context = task.get("context") or ""
+                task = {**task, "context": f"{prior_context}\n\n{existing_context}".strip()}
+            wave_tasks.append(task)
+
         wave_results = await asyncio.gather(
-            *(run_one(tasks[int(task_id)]) for task_id in wave), return_exceptions=True
+            *(run_one(task) for task in wave_tasks), return_exceptions=True
         )
         for task_id, result in zip(wave, wave_results):
             results[int(task_id)] = result
@@ -247,7 +267,13 @@ def register_forge_master_dispatch_tool() -> None:
                 "agent_name."
             ),
             parameters=DISPATCH_BATCH_TO_FORGE_MASTER_PARAMETERS,
-            category=ToolCategory.CODE,
+            # UTILITY (not CODE): the hub's local-tool dispatcher special-cases
+            # CODE to always run through the generic _execute_code_tool sandbox
+            # (expects code/language params), never through this tool's own
+            # registered executor. UTILITY is the category scheduler/security's
+            # local pass-through tools already use to get routed straight to
+            # registry.execute() instead.
+            category=ToolCategory.UTILITY,
             tags=["forge_master", "cli_agent", "dispatch", "batch"],
             source="local",
         ),

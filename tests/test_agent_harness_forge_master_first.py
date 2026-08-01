@@ -16,6 +16,10 @@ def _harness() -> AgentHarness:
     return harness
 
 
+def _state(tasks):
+    return {"workflow": {"session_id": "s1", "tasks": tasks}}
+
+
 def test_forge_master_success_removes_task_from_frontier_queue():
     async def run_test():
         harness = _harness()
@@ -25,7 +29,14 @@ def test_forge_master_success_removes_task_from_frontier_queue():
             "success": True,
             "total": 1,
             "succeeded": 1,
-            "results": [{"success": True, "response": "def add(a,b): return a+b", "agent_used": "codex"}],
+            "results": [
+                {
+                    "success": True,
+                    "response": "def add(a,b): return a+b",
+                    "agent_used": "codex",
+                    "tokens_used": 42,
+                }
+            ],
         }
 
         with patch(
@@ -33,13 +44,18 @@ def test_forge_master_success_removes_task_from_frontier_queue():
             new=AsyncMock(return_value=fake_batch_result),
         ):
             unhandled, handled = await harness._dispatch_codebase_tasks_via_forge_master(
-                tasks, session_id="s1"
+                _state(tasks), tasks
             )
 
         assert unhandled == []
         assert len(handled) == 1
         assert handled[0]["status"] == "completed"
-        assert handled[0]["result"] == "def add(a,b): return a+b"
+        # dict, not a bare string - generator_agent's synthesis reads "content",
+        # _update_token_budget reads "tokens_used"; both must see this result.
+        assert handled[0]["result"] == {
+            "content": "def add(a,b): return a+b",
+            "tokens_used": 42,
+        }
 
     asyncio.run(run_test())
 
@@ -61,7 +77,7 @@ def test_forge_master_failure_falls_through_to_frontier_queue():
             new=AsyncMock(return_value=fake_batch_result),
         ):
             unhandled, handled = await harness._dispatch_codebase_tasks_via_forge_master(
-                tasks, session_id="s1"
+                _state(tasks), tasks
             )
 
         assert handled == []
@@ -80,10 +96,49 @@ def test_forge_master_dispatch_exception_falls_back_to_frontier_queue_untouched(
             new=AsyncMock(side_effect=RuntimeError("cli fleet unavailable")),
         ):
             unhandled, handled = await harness._dispatch_codebase_tasks_via_forge_master(
-                tasks, session_id="s1"
+                _state(tasks), tasks
             )
 
         assert handled == []
         assert unhandled == tasks
+
+    asyncio.run(run_test())
+
+
+def test_forge_master_translates_task_id_dependencies_to_batch_indices():
+    """Planner-assigned dependencies use task_id references; the batch API
+    addresses tasks by position. A dropped translation would let ForgeMaster
+    run a dependent task concurrently with its prerequisite instead of
+    waiting on it."""
+    async def run_test():
+        harness = _harness()
+        tasks = [
+            {"task_id": "t1", "description": "implement the function"},
+            {"task_id": "t2", "description": "fix review feedback", "dependencies": ["t1"]},
+        ]
+
+        captured_tasks = {}
+
+        async def fake_dispatch(fm_tasks, **kwargs):
+            captured_tasks["fm_tasks"] = fm_tasks
+            return {
+                "success": True,
+                "total": 2,
+                "succeeded": 2,
+                "results": [
+                    {"success": True, "response": "impl done", "agent_used": "codex"},
+                    {"success": True, "response": "fixed", "agent_used": "codex"},
+                ],
+            }
+
+        with patch(
+            "src.core.forge_master.tools._dispatch_batch_to_forge_master_tool",
+            new=AsyncMock(side_effect=fake_dispatch),
+        ):
+            await harness._dispatch_codebase_tasks_via_forge_master(_state(tasks), tasks)
+
+        # task_id "t1" is task index 0, so t2's dependency must translate to [0].
+        assert captured_tasks["fm_tasks"][0].get("dependencies") is None
+        assert captured_tasks["fm_tasks"][1]["dependencies"] == [0]
 
     asyncio.run(run_test())
