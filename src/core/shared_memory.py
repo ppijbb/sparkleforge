@@ -182,8 +182,18 @@ class SharedMemory:
         if self.enable_chromadb:
             try:
                 import chromadb
+                from chromadb.config import Settings
 
-                self.chroma_client = chromadb.Client()
+                # The installed chromadb/posthog pair crashes on its own startup
+                # telemetry call ("capture() takes 1 positional argument but 3
+                # were given") on every client init -- non-fatal (chromadb catches
+                # it) but logs a spurious ERROR every run. anonymized_telemetry
+                # alone doesn't suppress this specific event (library bug), so
+                # also silence the logger directly.
+                logging.getLogger("chromadb.telemetry.product.posthog").setLevel(
+                    logging.CRITICAL
+                )
+                self.chroma_client = chromadb.Client(Settings(anonymized_telemetry=False))
                 logger.info("✅ ChromaDB initialized for vector search")
             except ImportError:
                 logger.warning("⚠️ ChromaDB not available - using file-based storage only")
