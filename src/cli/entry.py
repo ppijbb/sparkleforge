@@ -48,6 +48,7 @@ def _inject_stdin_query_for_run() -> None:
 
 def main_entry() -> None:
     """Run the repository-level CLI entry point from an installed script."""
+    os.environ.setdefault("SPARKLEFORGE_ENV", "development")
     project_root = Path(__file__).resolve().parent.parent.parent
     os.chdir(project_root)
     if str(project_root) not in sys.path:

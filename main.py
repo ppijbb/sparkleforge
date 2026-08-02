@@ -196,7 +196,7 @@ async def _boot_repl():
 
     from src.core.scheduler import configure_scheduler_execution, get_scheduler
 
-    with Console().status("[bold cyan]Starting SparkleForge...", spinner="dots"):
+    with Console(force_terminal=True).status("[bold cyan]Starting SparkleForge...", spinner="dots"):
         from src.cli.repl_cli import REPLCLI
 
         scheduler = configure_scheduler_execution(get_scheduler())

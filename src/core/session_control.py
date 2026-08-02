@@ -131,6 +131,7 @@ class SessionControl:
         )  # session_id -> {task_id -> TaskInfo}
         self.session_controls: Dict[str, asyncio.Event] = {}  # session_id -> control event
         self._session_quotas: Dict[str, Dict[str, Any]] = {}  # session_id -> quota state
+        self.current_session_id: str | None = None
 
         logger.info("SessionControl initialized")
         self.default_quota = SessionQuota.from_env()
@@ -435,6 +436,7 @@ class SessionControl:
             self.session_controls[session_id] = asyncio.Event()
             self.session_controls[session_id].set()  # 기본적으로 활성
 
+        self.current_session_id = session_id
         logger.info(f"Session restored: {session_id}")
         return session_state.agent_state
 
@@ -499,6 +501,7 @@ class SessionControl:
         if session_id not in self.session_tasks:
             self.session_tasks[session_id] = {}
 
+        self.current_session_id = session_id
         logger.info(f"Active session registered: {session_id}")
 
     def release_active_session(self, session_id: str, status: SessionStatus = SessionStatus.COMPLETED) -> None:

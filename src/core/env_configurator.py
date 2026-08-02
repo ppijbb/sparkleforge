@@ -26,6 +26,7 @@ def verify_environment(required_vars: List[str] = None) -> bool:
         ConfigurationError: If any required environment variable is missing.
     """
     if required_vars is None:
+        os.environ.setdefault("SPARKLEFORGE_ENV", "development")
         required_vars = ["SPARKLEFORGE_ENV"]
 
     missing = [var for var in required_vars if var not in os.environ]

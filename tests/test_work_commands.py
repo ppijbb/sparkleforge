@@ -161,3 +161,20 @@ async def test_approve_command_no_matching_action_skips_orchestrator(monkeypatch
 
     orchestrator.execute.assert_not_awaited()
     assert any("No matching pending action" in m for m in cli.console.messages)
+
+
+@pytest.mark.asyncio
+async def test_work_command_with_real_session_control(monkeypatch):
+    from src.core.session_control import SessionControl
+
+    orchestrator = make_orchestrator({})
+    monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+
+    session_control = SessionControl()
+    cli = SimpleNamespace(console=FakeConsole(), session_control=session_control)
+
+    await work.work_command(cli, ["test", "goal"])
+
+    orchestrator.execute.assert_awaited_once()
+    assert session_control.current_session_id is None
+
