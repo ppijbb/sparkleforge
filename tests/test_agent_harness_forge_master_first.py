@@ -29,7 +29,14 @@ def test_forge_master_success_removes_task_from_frontier_queue():
             "success": True,
             "total": 1,
             "succeeded": 1,
-            "results": [{"success": True, "response": "def add(a,b): return a+b", "agent_used": "codex"}],
+            "results": [
+                {
+                    "success": True,
+                    "response": "def add(a,b): return a+b",
+                    "agent_used": "codex",
+                    "tokens_used": 42,
+                }
+            ],
         }
 
         with patch(
@@ -43,7 +50,12 @@ def test_forge_master_success_removes_task_from_frontier_queue():
         assert unhandled == []
         assert len(handled) == 1
         assert handled[0]["status"] == "completed"
-        assert handled[0]["result"] == "def add(a,b): return a+b"
+        # dict, not a bare string - generator_agent's synthesis reads "content",
+        # _update_token_budget reads "tokens_used"; both must see this result.
+        assert handled[0]["result"] == {
+            "content": "def add(a,b): return a+b",
+            "tokens_used": 42,
+        }
 
     asyncio.run(run_test())
 

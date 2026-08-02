@@ -103,6 +103,45 @@ async def test_controller_execution_with_mocked_cli():
         assert result["adversarial_audit"]["passed"] is True
 
 
+@pytest.mark.parametrize(
+    "usage,expected_tokens",
+    [
+        ({"tokens_used": 77}, 77),
+        ({"tokens": 55}, 55),
+        ({"input_tokens": 30, "output_tokens": 20}, 50),
+        ({}, 0),
+    ],
+)
+@pytest.mark.asyncio
+async def test_controller_normalizes_cli_usage_into_tokens_used(usage, expected_tokens):
+    """CLI adapters report usage under different keys depending on the agent
+    (codex/gemini use tokens_used or input/output_tokens, cline uses
+    tokens). The controller must collapse them to one tokens_used int, or
+    downstream token-budget tracking silently sees nothing for most agents."""
+    controller = ForgeMasterController()
+
+    mock_cli_result = {
+        "success": True,
+        "response": "A sufficiently long response to pass the adversarial audit check.",
+        "confidence": 0.9,
+        "usage": usage,
+    }
+
+    with patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(return_value=mock_cli_result),
+    ):
+        result = await controller.execute_task_with_master_control(
+            task_query="Write calculate function",
+            preferred_agent="codex",
+        )
+
+    assert result["success"] is True
+    assert result["tokens_used"] == expected_tokens
+    assert result["usage"] == usage
+
+
 @pytest.mark.asyncio
 async def test_controller_does_not_auto_switch_agents_on_critical_failure():
     """A crash (ESCALATE_TO_FALLBACK) must not make the controller silently
