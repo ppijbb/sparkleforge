@@ -95,6 +95,7 @@ def get_langfuse_run_config(
             if val is not None and isinstance(val, str) and len(val) <= 200:
                 meta[f"trace_{key}"] = val
         # Langfuse tag strategy: low-cardinality ops tags (env, entrypoint, source_type)
+        trace_tags = []
         entrypoint = ctx.get(TRACE_ENTRYPOINT)
         source_type = ctx.get(TRACE_SOURCE_TYPE)
         if entrypoint:

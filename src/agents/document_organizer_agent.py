@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 from src.core.adaptive_memory import get_adaptive_memory
+from src.core.memory_types import create_memory_from_dict
 
 logger = logging.getLogger(__name__)
 

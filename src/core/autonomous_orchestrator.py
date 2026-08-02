@@ -308,7 +308,6 @@ class AutonomousOrchestrator:
                     logger.debug(f"Unregistered SupabaseRealtimeHandler for session '{objective_id}'")
                 except Exception as cleanup_err:
                     logger.debug(f"Failed to clean up Supabase logging: {cleanup_err}")
-            return final_state
 
     async def run_research(
         self,
