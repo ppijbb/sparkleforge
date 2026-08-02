@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 from typing import List
 
 from src.core.agent_orchestrator import get_orchestrator
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def work_command(cli, args: List[str]):
     """Work <goal> - Start or continue a coworker session."""
+    os.environ.setdefault("SPARKLEFORGE_ENV", "development")
     # Security check before execution
     try:
         environment_ok = verify_environment()
