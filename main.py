@@ -713,6 +713,12 @@ EXAMPLES:
     if args.debug_bootstrap and args.command == "repl" and not getattr(args, "prompt", None):
         return 0
 
+    if getattr(args, "verbose", False):
+        logging.getLogger().setLevel(logging.DEBUG)
+        console_handler.setLevel(logging.DEBUG)
+    else:
+        console_handler.setLevel(logging.INFO)
+
     # 서브커맨드 처리 (반환 코드는 프로세스 종료까지 전달)
     cli_rc: int | None = None
     cmd = getattr(args, "command", None)

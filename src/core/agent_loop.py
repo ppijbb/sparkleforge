@@ -129,7 +129,7 @@ Autonomous problem-solving contract:
         try:
             from src.agents.greedy_overseer_agent import GreedyOverseerAgent
 
-            self.greedy_overseer = GreedyOverseerAgent(max_iterations=max(1, max_iterations // 4))
+            self.greedy_overseer = GreedyOverseerAgent(max_iterations=15)
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent unavailable: %s", e)
             self.greedy_overseer = None
@@ -211,9 +211,7 @@ Autonomous problem-solving contract:
             await self._oversee_iteration(budget, history, tool_results, errors)
 
             # Monitor token budgets and step limits via GreedyOverseerAgent
-            if budget.current_iteration > 1:
-                # Pass current state to overseer for budget/limit monitoring
-                # This integrates the orphaned agent into the loop lifecycle
+            if budget.current_iteration > 1 and self.overseer:
                 await self.overseer.evaluate_execution_results({"overseer_iterations": budget.current_iteration})
 
             # Phase 3: Compress context if needed

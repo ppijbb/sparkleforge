@@ -461,7 +461,7 @@ async def run_full_council(
     metadata = {
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
-        "red_team_critique": red_team_critique,
+        "red_team_critique": locals().get("red_team_critique", None),
     }
 
     logger.info("Full council process completed successfully")

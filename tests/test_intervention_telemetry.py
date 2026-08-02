@@ -56,4 +56,6 @@ def test_threshold_clamped(daemon):
 def test_persistence_round_trip(tmp_path):
     path = str(tmp_path / "telemetry.json")
     d1 = InterventionTelemetryDaemon(store_path=path, smoothing=0.5)
-    d
+    d1.record("after_planning", "approve")
+    d2 = InterventionTelemetryDaemon(store_path=path, smoothing=0.5)
+    assert d2.stats("after_planning")["after_planning"].approvals == 1
