@@ -1,5 +1,8 @@
 """Unit tests for Codex and Hermes CLI Agent adapters in SparkleForge."""
 
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from src.core.cli_agents.cli_agent_manager import get_cli_agent_manager
 from src.core.cli_agents.codex_agent import CodexCLIAgent
@@ -86,6 +89,43 @@ def test_codex_parse_output_malformed_no_attribute_error(caplog):
 
     assert parsed["success"] is False
     assert "Parsing failed" in parsed["error"]
+
+
+@pytest.mark.asyncio
+async def test_hermes_concurrent_calls_on_shared_instance_do_not_mix_args():
+    """CLIAgentManager caches one HermesCLIAgent instance per name and batch
+    dispatch can run two hermes tasks concurrently against it. If
+    execute_query mutated self.config.args in place, one task's command
+    could leak into the other's (or get wiped by the other's restore)."""
+    agent = HermesCLIAgent(api_key="test-key")
+    captured_commands = []
+
+    async def fake_execute_command(command, input_text=None):
+        captured_commands.append(list(command))
+        # Yield control so a truly concurrent second call can interleave here
+        # if execute_query still mutated shared state before awaiting.
+        await asyncio.sleep(0.01)
+        return type(
+            "Result",
+            (),
+            {"success": True, "output": '{"output": "ok", "confidence": 0.8}', "error": "",
+             "exit_code": 0, "execution_time": 0.1},
+        )()
+
+    with patch.object(agent, "_execute_command", new=AsyncMock(side_effect=fake_execute_command)):
+        await asyncio.gather(
+            agent.execute_query("query-A", task_type="agentic"),
+            agent.execute_query("query-B", task_type="agentic"),
+        )
+
+    assert len(captured_commands) == 2
+    cmd_a = next(c for c in captured_commands if "query-A" in c)
+    cmd_b = next(c for c in captured_commands if "query-B" in c)
+    # Each command must carry only its own query, never the other's.
+    assert "query-B" not in cmd_a
+    assert "query-A" not in cmd_b
+    # Shared config.args must be untouched after both calls finish.
+    assert agent.config.args == ["--format", "json"]
 
 
 def test_hermes_parse_output_malformed_no_attribute_error(caplog):
