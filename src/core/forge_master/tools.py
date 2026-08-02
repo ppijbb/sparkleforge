@@ -127,8 +127,28 @@ async def _run_batch_in_waves(
                     )
             break
 
+        # Waiting for a prerequisite only orders execution - a dependent task
+        # also needs the prerequisite's actual output (e.g. "fix review
+        # feedback on task 0") in its own context, since session reuse alone
+        # only tracks a turn count, not the prior response text.
+        wave_tasks = []
+        for task_id in wave:
+            idx = int(task_id)
+            task = tasks[idx]
+            dep_indices = [int(d) for d in (task.get("dependencies") or [])]
+            prior_outputs = [
+                f"[Output of task {dep_idx}]\n{results[dep_idx].get('response', '')}"
+                for dep_idx in dep_indices
+                if isinstance(results[dep_idx], dict) and results[dep_idx].get("success")
+            ]
+            if prior_outputs:
+                prior_context = "\n\n".join(prior_outputs)
+                existing_context = task.get("context") or ""
+                task = {**task, "context": f"{prior_context}\n\n{existing_context}".strip()}
+            wave_tasks.append(task)
+
         wave_results = await asyncio.gather(
-            *(run_one(tasks[int(task_id)]) for task_id in wave), return_exceptions=True
+            *(run_one(task) for task in wave_tasks), return_exceptions=True
         )
         for task_id, result in zip(wave, wave_results):
             results[int(task_id)] = result
