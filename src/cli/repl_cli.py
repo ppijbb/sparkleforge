@@ -237,29 +237,29 @@ class REPLCLI:
                     logger.debug(f"Failed to load context: {e}")
 
         # REPL 루프
-        while True:
-            try:
-                # ANSI 색상 코드를 사용하여 프롬프트 색상 적용
-                prompt_text = ANSI("\033[1;36msparkleforge\033[0m> ")
-                with patch_stdout():
+        with patch_stdout():
+            while True:
+                try:
+                    # ANSI 색상 코드를 사용하여 프롬프트 색상 적용
+                    prompt_text = ANSI("\033[1;36msparkleforge\033[0m> ")
                     text = await self.session.prompt_async(prompt_text)
 
-                if not text.strip():
+                    if not text.strip():
+                        continue
+
+                    await self.handle_command(text)
+
+                except KeyboardInterrupt:
+                    self.console.print("\n[yellow]Interrupted. Type 'exit' to quit.[/yellow]")
                     continue
-
-                await self.handle_command(text)
-
-            except KeyboardInterrupt:
-                self.console.print("\n[yellow]Interrupted. Type 'exit' to quit.[/yellow]")
-                continue
-            except EOFError:
-                # exit 명령어 또는 Ctrl+D로 종료
-                # _handle_exit에서 이미 "Goodbye!" 메시지를 출력했으므로 여기서는 중복 출력하지 않음
-                # 단, Ctrl+D로 직접 종료한 경우를 위해 확인
-                break
-            except Exception as e:
-                logger.error(f"Error in REPL CLI: {e}", exc_info=True)
-                self.console.print(f"[red]❌ Error: {e}[/red]")
+                except EOFError:
+                    # exit 명령어 또는 Ctrl+D로 종료
+                    # _handle_exit에서 이미 "Goodbye!" 메시지를 출력했으므로 여기서는 중복 출력하지 않음
+                    # 단, Ctrl+D로 직접 종료한 경우를 위해 확인
+                    break
+                except Exception as e:
+                    logger.error(f"Error in REPL CLI: {e}", exc_info=True)
+                    self.console.print(f"[red]❌ Error: {e}[/red]")
 
         # 루프 종료 후 정리 작업
         try:
