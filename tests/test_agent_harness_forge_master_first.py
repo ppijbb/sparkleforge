@@ -93,6 +93,75 @@ def test_forge_master_dispatch_exception_falls_back_to_frontier_queue_untouched(
     asyncio.run(run_test())
 
 
+def test_forge_master_translates_task_id_dependencies_to_batch_indices():
+    """Planner-assigned dependencies use task_id references; the batch API
+    addresses tasks by position. A dropped translation would let ForgeMaster
+    run a dependent task concurrently with its prerequisite instead of
+    waiting on it."""
+    async def run_test():
+        harness = _harness()
+        tasks = [
+            {"task_id": "t1", "description": "implement the function"},
+            {"task_id": "t2", "description": "fix review feedback", "dependencies": ["t1"]},
+        ]
+
+        captured_tasks = {}
+
+        async def fake_dispatch(fm_tasks, **kwargs):
+            captured_tasks["fm_tasks"] = fm_tasks
+            return {
+                "success": True,
+                "total": 2,
+                "succeeded": 2,
+                "results": [
+                    {"success": True, "response": "impl done", "agent_used": "codex"},
+                    {"success": True, "response": "fixed", "agent_used": "codex"},
+                ],
+            }
+
+        with patch(
+            "src.core.forge_master.tools._dispatch_batch_to_forge_master_tool",
+            new=AsyncMock(side_effect=fake_dispatch),
+        ):
+            await harness._dispatch_codebase_tasks_via_forge_master(_state(tasks), tasks)
+
+        # task_id "t1" is task index 0, so t2's dependency must translate to [0].
+        assert captured_tasks["fm_tasks"][0].get("dependencies") is None
+        assert captured_tasks["fm_tasks"][1]["dependencies"] == [0]
+
+    asyncio.run(run_test())
+
+
+def test_forge_master_drops_dependency_pointing_outside_the_batch():
+    """A dependency on a task_id not present in this batch (e.g. it was
+    already resolved by the Anvil engine) has no index to translate to and
+    must be dropped rather than crash the lookup."""
+    async def run_test():
+        harness = _harness()
+        tasks = [{"task_id": "t2", "description": "fix feedback", "dependencies": ["t_not_in_batch"]}]
+
+        captured_tasks = {}
+
+        async def fake_dispatch(fm_tasks, **kwargs):
+            captured_tasks["fm_tasks"] = fm_tasks
+            return {
+                "success": True,
+                "total": 1,
+                "succeeded": 1,
+                "results": [{"success": True, "response": "fixed", "agent_used": "codex"}],
+            }
+
+        with patch(
+            "src.core.forge_master.tools._dispatch_batch_to_forge_master_tool",
+            new=AsyncMock(side_effect=fake_dispatch),
+        ):
+            await harness._dispatch_codebase_tasks_via_forge_master(_state(tasks), tasks)
+
+        assert captured_tasks["fm_tasks"][0].get("dependencies") is None
+
+    asyncio.run(run_test())
+
+
 def test_forge_master_handled_tasks_get_marked_completed_in_session_control():
     """The legacy ParallelAgentExecutor path reflects per-task completion into
     SessionControl via _update_session_tasks; ForgeMaster-handled tasks must
