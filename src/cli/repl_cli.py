@@ -61,7 +61,7 @@ class REPLCLI:
             # warnings도 완전히 억제
             warnings.filterwarnings("ignore")
 
-        self.console = Console()
+        self.console = Console(force_terminal=True)
 
         # 히스토리 초기화
         self.history_manager = SparkleForgeHistory()

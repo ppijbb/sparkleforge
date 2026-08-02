@@ -432,7 +432,7 @@ async def handle_session_command(args):
     class _SessionCliShim:
         def __init__(self):
             self.session_control = SessionControl()
-            self.console = Console()
+            self.console = Console(force_terminal=True)
 
     shim = _SessionCliShim()
     sub = getattr(args, "session_command", None)
@@ -1286,7 +1286,7 @@ async def handle_report_command(args):
 
     class CliShim:
         def __init__(self):
-            self.console = Console()
+            self.console = Console(force_terminal=True)
 
     cli = CliShim()
     report_args = []
