@@ -380,7 +380,7 @@ class AgentHarness:
         forge_master_handled: list[Dict[str, Any]] = []
         if legacy_tasks and state["workflow"].get("route") == RoutePath.CODEBASE_AGENT.value:
             legacy_tasks, forge_master_handled = await self._dispatch_codebase_tasks_via_forge_master(
-                legacy_tasks, session_id
+                state, legacy_tasks
             )
 
         # --- 레거시 경로: 기존 ParallelAgentExecutor로 나머지 태스크 처리 ---
@@ -440,7 +440,7 @@ class AgentHarness:
         return state
 
     async def _dispatch_codebase_tasks_via_forge_master(
-        self, tasks: list[Dict[str, Any]], session_id: str
+        self, state: HarnessState, tasks: list[Dict[str, Any]]
     ) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
         """Try the local CLI-agent fleet (ForgeMaster) before frontier LLM execution.
 
@@ -454,13 +454,27 @@ class AgentHarness:
         from src.core.forge_master.tools import _dispatch_batch_to_forge_master_tool
 
         router = ForgeMasterRouter()
-        fm_tasks = [
-            {
+        # Planner-assigned dependencies reference other tasks by task_id;
+        # the batch API addresses them by position in this same list. Deps
+        # pointing outside this batch (e.g. an already-completed anvil task)
+        # have no index and are dropped - already satisfied by definition.
+        id_to_index = {
+            task.get("task_id"): i for i, task in enumerate(tasks) if task.get("task_id")
+        }
+        fm_tasks = []
+        for task in tasks:
+            fm_task: Dict[str, Any] = {
                 "agent_name": router.route_task(task.get("description", "")).agent_name,
                 "task_query": task.get("description", ""),
             }
-            for task in tasks
-        ]
+            dep_indices = [
+                id_to_index[dep_id]
+                for dep_id in (task.get("dependencies") or [])
+                if dep_id in id_to_index
+            ]
+            if dep_indices:
+                fm_task["dependencies"] = dep_indices
+            fm_tasks.append(fm_task)
 
         try:
             batch_result = await _dispatch_batch_to_forge_master_tool(fm_tasks)
@@ -468,6 +482,7 @@ class AgentHarness:
             logger.warning(f"[Harness] ForgeMaster batch dispatch failed, falling back to frontier: {e}")
             return tasks, []
 
+        session_id = state["workflow"].get("session_id")
         handled: list[Dict[str, Any]] = []
         unhandled: list[Dict[str, Any]] = []
         for task, result in zip(tasks, batch_result["results"]):
@@ -493,6 +508,12 @@ class AgentHarness:
                 handled.append(task)
             else:
                 unhandled.append(task)
+
+        # The legacy ParallelAgentExecutor path reflects per-task completion
+        # into SessionControl via _update_session_tasks; without this, tasks
+        # ForgeMaster completed locally kept showing as pending there.
+        if handled:
+            self._update_session_tasks(state, handled, status="completed")
 
         logger.info(
             f"[Harness] ForgeMaster handled {len(handled)}/{len(tasks)} codebase tasks "
