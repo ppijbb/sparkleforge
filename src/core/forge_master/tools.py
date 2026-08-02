@@ -267,7 +267,13 @@ def register_forge_master_dispatch_tool() -> None:
                 "agent_name."
             ),
             parameters=DISPATCH_BATCH_TO_FORGE_MASTER_PARAMETERS,
-            category=ToolCategory.CODE,
+            # UTILITY (not CODE): the hub's local-tool dispatcher special-cases
+            # CODE to always run through the generic _execute_code_tool sandbox
+            # (expects code/language params), never through this tool's own
+            # registered executor. UTILITY is the category scheduler/security's
+            # local pass-through tools already use to get routed straight to
+            # registry.execute() instead.
+            category=ToolCategory.UTILITY,
             tags=["forge_master", "cli_agent", "dispatch", "batch"],
             source="local",
         ),
