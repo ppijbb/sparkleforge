@@ -271,111 +271,36 @@ class REPLCLI:
             logger.debug(f"Final cleanup error (ignored): {e}")
 
     async def _get_greeting_message(self) -> str:
-        """현재 시간과 지역에 맞는 인사 메시지를 LLM으로 생성."""
+        """현재 시간과 지역에 맞는 인사 메시지 반환 (즉시 반환)."""
         try:
-            # 시간대 감지
-            try:
-                local_tz = ZoneInfo("Asia/Seoul")  # 기본값
-                # 시스템 시간대 가져오기
-                import time
-
-                local_tz_name = time.tzname[0] if time.tzname else "UTC"
-                # 주요 시간대 매핑
-                tz_mapping = {
-                    "KST": "Asia/Seoul",
-                    "JST": "Asia/Tokyo",
-                    "CST": "Asia/Shanghai",
-                    "PST": "America/Los_Angeles",
-                    "EST": "America/New_York",
-                    "GMT": "Europe/London",
-                    "CET": "Europe/Paris",
-                }
-                for tz_abbr, tz_name in tz_mapping.items():
-                    if tz_abbr in local_tz_name:
-                        local_tz = ZoneInfo(tz_name)
-                        break
-            except Exception:
-                local_tz = ZoneInfo("UTC")
-
-            # 현재 시간
-            now = datetime.now(local_tz)
-            hour = now.hour
-            date_str = now.strftime("%Y-%m-%d %H:%M")
-
-            # 언어 감지
-            try:
-                lang_code = locale.getlocale()[0] or "en_US"
-                if lang_code.startswith("ko"):
-                    language = "Korean"
-                elif lang_code.startswith("ja"):
-                    language = "Japanese"
-                elif lang_code.startswith("zh"):
-                    language = "Chinese"
-                elif lang_code.startswith("es"):
-                    language = "Spanish"
-                elif lang_code.startswith("fr"):
-                    language = "French"
-                elif lang_code.startswith("de"):
-                    language = "German"
-                else:
-                    language = "English"
-            except:
-                language = "English"
-
-            # 시간대 이름
-            tz_name = str(local_tz)
-
-            # LLM 호출
-            from src.core.llm_manager import TaskType, execute_llm_task
-
-            prompt = f"""Generate a brief, friendly greeting message for SparkleForge (an autonomous multi-agent research system).
-
-Current time: {date_str} ({tz_name})
-Time of day: {"Morning" if 5 <= hour < 12 else "Afternoon" if 12 <= hour < 18 else "Evening" if 18 <= hour < 22 else "Night"}
-Language: {language}
-
-Requirements:
-- Keep it very brief (maximum 10 words)
-- Use the appropriate language ({language})
-- Match the time of day (morning/afternoon/evening/night)
-- Be professional but friendly
-- Do NOT include "REPL Mode" or "SparkleForge" in the message
-- Return ONLY the greeting message, nothing else
-
-Example outputs:
-- Morning in Korean: "좋은 아침입니다"
-- Afternoon in English: "Good afternoon"
-- Evening in Japanese: "こんばんは"
-
-Generate the greeting:"""
-
-            result = await execute_llm_task(
-                prompt=prompt,
-                task_type=TaskType.CREATIVE,
-                system_message="You are a helpful assistant that generates brief, culturally appropriate greetings.",
-            )
-
-            greeting = result.content.strip()
-            # 따옴표 제거
-            greeting = greeting.strip("\"'")
-            # 첫 줄만 사용
-            if "\n" in greeting:
-                greeting = greeting.split("\n")[0].strip()
-
-            return greeting if greeting else "Welcome"
-
-        except Exception as e:
-            logger.debug(f"Failed to generate greeting: {e}")
-            # 기본 인사 메시지
             hour = datetime.now().hour
-            if 5 <= hour < 12:
-                return "Good morning"
-            elif 12 <= hour < 18:
-                return "Good afternoon"
-            elif 18 <= hour < 22:
-                return "Good evening"
+            is_korean = False
+            try:
+                lang = (locale.getlocale()[0] or "").lower()
+                is_korean = lang.startswith("ko")
+            except Exception:
+                pass
+
+            if is_korean:
+                if 5 <= hour < 12:
+                    return "좋은 아침입니다"
+                elif 12 <= hour < 18:
+                    return "좋은 오후입니다"
+                elif 18 <= hour < 22:
+                    return "좋은 저녁입니다"
+                else:
+                    return "편안한 밤 되세요"
             else:
-                return "Good night"
+                if 5 <= hour < 12:
+                    return "Good morning"
+                elif 12 <= hour < 18:
+                    return "Good afternoon"
+                elif 18 <= hour < 22:
+                    return "Good evening"
+                else:
+                    return "Good night"
+        except Exception:
+            return "Welcome"
 
     async def _show_banner(self):
         """시작 배너 표시."""
