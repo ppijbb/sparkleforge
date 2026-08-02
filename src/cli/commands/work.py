@@ -30,9 +30,7 @@ async def work_command(cli, args: List[str]):
         return
 
     goal = " ".join(args)
-    session_id = None
-    if cli.session_control and cli.session_control.current_session_id:
-        session_id = cli.session_control.current_session_id
+    session_id = getattr(cli.session_control, "current_session_id", None) if cli.session_control else None
 
     cli.console.print(f"[cyan]🤝 Starting coworker session for: {goal}[/cyan]")
 
@@ -49,7 +47,7 @@ async def work_command(cli, args: List[str]):
 
 async def actions_command(cli, args: List[str]):
     """Actions - List pending action proposals."""
-    session_id = cli.session_control.current_session_id if cli.session_control else None
+    session_id = getattr(cli.session_control, "current_session_id", None) if cli.session_control else None
     if not session_id:
         cli.console.print("[yellow]No active session.[/yellow]")
         return
@@ -73,7 +71,7 @@ async def approve_command(cli, args: List[str]):
         return
 
     action_id = args[0]
-    session_id = cli.session_control.current_session_id if cli.session_control else None
+    session_id = getattr(cli.session_control, "current_session_id", None) if cli.session_control else None
     if not session_id:
         cli.console.print("[yellow]No active session.[/yellow]")
         return
@@ -120,7 +118,7 @@ async def deny_command(cli, args: List[str]):
     action_id = args[0]
     reason = " ".join(args[1:]) if len(args) > 1 else "Denied by user"
 
-    session_id = cli.session_control.current_session_id if cli.session_control else None
+    session_id = getattr(cli.session_control, "current_session_id", None) if cli.session_control else None
     if not session_id:
         cli.console.print("[yellow]No active session.[/yellow]")
         return
