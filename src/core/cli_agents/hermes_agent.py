@@ -56,27 +56,24 @@ class HermesCLIAgent(BaseCLIAgent):
         if tools:
             args.extend(["--tools", ",".join(tools)])
 
-        original_args = self.config.args.copy()
-        self.config.args.extend(args)
+        # 명령 실행: self.config.args(--format json)는 _execute_command가 자동으로
+        # 덧붙이므로 여기서 합치지 않음 (공유 상태를 건드리지 않아야 동시 배치
+        # 실행 시 캐시된 인스턴스를 공유하는 두 hermes 태스크가 서로의 args를
+        # 밟지 않는다 - claude_code/gemini_cli/cline_cli와 동일한 패턴)
+        result = await self._execute_command([self.config.command] + args)
+        parsed_result = self.parse_output(result)
 
-        try:
-            result = await self._execute_command(self.config.command)
-            parsed_result = self.parse_output(result)
-
-            return {
-                "success": result.success and parsed_result.get("success", True),
-                "response": parsed_result.get("response", ""),
-                "confidence": parsed_result.get("confidence", 0.80),
-                "metadata": {
-                    "agent": "hermes",
-                    "task_type": task_type,
-                    "execution_time": result.execution_time,
-                },
-                "usage": parsed_result.get("usage", {}),
-            }
-
-        finally:
-            self.config.args = original_args
+        return {
+            "success": result.success and parsed_result.get("success", True),
+            "response": parsed_result.get("response", ""),
+            "confidence": parsed_result.get("confidence", 0.80),
+            "metadata": {
+                "agent": "hermes",
+                "task_type": task_type,
+                "execution_time": result.execution_time,
+            },
+            "usage": parsed_result.get("usage", {}),
+        }
 
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
         """Hermes CLI 출력 파싱"""
