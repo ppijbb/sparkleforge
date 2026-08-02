@@ -823,7 +823,7 @@ class AgentHarness:
                 # 대화 형식으로 변환 (시스템 메시지 포함 가능)
                 messages = [{"role": "user", "content": request}]
 
-                # Phase 5: Standardized system prompt (coworker 세션은 coder 페르소나)
+                # Phase 5: Standardized system prompt (coworker 세션은 다목적 범용 페르소나)
                 import os as _os
 
                 workspace_note = (
@@ -831,8 +831,10 @@ class AgentHarness:
                     f"{_os.getcwd()}. File tools (read_file/write_file/edit_file/list_files) "
                     f"operate on this repository directly. Do not search the web for the "
                     f"repository or issue context; inspect local files instead."
+                    f"\nGreeting Policy: When greeted, respond concisely and warmly as a versatile AI partner. "
+                    f"Do NOT restrict your identity to software engineering or recite a narrow list of developer tasks."
                 )
-                sys_prompt = get_system_prompt(identity, extras=workspace_note)
+                sys_prompt = get_system_prompt("general", extras=workspace_note)
 
                 result = await loop.run_conversation(
                     messages=messages,

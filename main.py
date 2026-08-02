@@ -119,6 +119,7 @@ from src.cli.main_commands import (
     handle_web_command,
     handle_work_command,
     handle_report_command,
+    handle_update_command,
 )
 
 
@@ -249,35 +250,43 @@ async def main():
         loop.call_exception_handler(context)
         loop.set_exception_handler(ignore_async_gen_errors)
 
-    # asyncio exception handler 설정
-    loop = asyncio.get_running_loop()
-    loop.set_exception_handler(ignore_async_gen_errors)
+    # If positional query is passed directly without explicit subcommand, default to 'run'
+    _KNOWN_SUBCOMMANDS = {
+        "run", "work", "session", "actions", "approve", "deny", "query",
+        "web", "mcp", "health", "tools", "docker", "setup", "settings", "update", "cli", "nightwelding", "report", "interactive", "repl"
+    }
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        if sys.argv[1] not in _KNOWN_SUBCOMMANDS:
+            sys.argv.insert(1, "run")
+
+    prog_cmd = Path(sys.argv[0]).name if (sys.argv and sys.argv[0]) else "sparkleforge"
 
     # Suna-style 서브커맨드 구조로 개선
     parser = argparse.ArgumentParser(
+        prog=prog_cmd,
         description="SparkleForge - Autonomous Multi-Agent Research System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
 SparkleForge: Where Ideas Sparkle and Get Forged ⚒️✨
 
 EXAMPLES:
   # 연구 실행
-  python main.py run "인공지능의 미래 전망"
+  {prog_cmd} run "인공지능의 미래 전망"
 
   # 웹 대시보드 시작
-  python main.py web
+  {prog_cmd} web
 
   # 시스템 헬스체크
-  python main.py health
+  {prog_cmd} health
 
   # MCP 서버 상태 확인
-  python main.py mcp status
+  {prog_cmd} mcp status
 
   # 도구 목록 확인
-  python main.py tools list
+  {prog_cmd} tools list
 
   # Docker 서비스 관리
-  python main.py docker up
+  {prog_cmd} docker up
         """,
     )
 
@@ -328,14 +337,14 @@ EXAMPLES:
         )
         command_parser.add_argument(
             "--mode",
-            choices=["research", "work"],
-            default="research",
-            help="Execution mode: 'research' (default, one-shot research query) or "
-            "'work' (coworker/tool-use goal execution, same path as the 'work' command)",
+            choices=["work", "research"],
+            default="work",
+            help="Execution mode: 'work' (default, interactive/coworker execution) or "
+            "'research' (optional deep research pipeline)",
         )
 
     # run 커맨드
-    run_parser = subparsers.add_parser("run", help="Execute research request")
+    run_parser = subparsers.add_parser("run", help="Execute request")
     add_research_command_options(run_parser)
 
     # work 커맨드
@@ -491,6 +500,8 @@ EXAMPLES:
     setup_parser.add_argument(
         "--force", action="store_true", help="Force reinstallation"
     )
+    subparsers.add_parser("settings", help="System setup and configuration")
+    subparsers.add_parser("update", help="Auto-update SparkleForge to latest version")
 
     # cli 커맨드 (CLI 에이전트 관리)
     cli_parser = subparsers.add_parser("cli", help="CLI agent management")
@@ -740,8 +751,10 @@ EXAMPLES:
         cli_rc = await handle_tools_command(args)
     elif cmd == "docker":
         cli_rc = await handle_docker_command(args)
-    elif cmd == "setup":
+    elif cmd in ("setup", "settings"):
         cli_rc = await handle_setup_command(args)
+    elif cmd == "update":
+        cli_rc = await handle_update_command(args)
     elif cmd == "cli":
         cli_rc = await handle_cli_command(args)
     elif cmd == "nightwelding":
@@ -766,7 +779,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report"}
+        {"health", "mcp", "tools", "docker", "setup", "settings", "update", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)
@@ -987,35 +1000,39 @@ EXAMPLES:
 
         request_arg = getattr(args, "request", None)
         if request_arg:
-            # CLI Research Mode with 8 innovations
-            logger.info("🚀 Starting Local Researcher with enhanced systems...")
+            if getattr(args, "mode", "work") == "research":
+                # CLI Research Mode with 8 innovations
+                logger.info("🚀 Starting Local Researcher with enhanced systems...")
 
-            # 진행 상황 추적 시작
-            await progress_tracker.start_tracking()
+                # 진행 상황 추적 시작
+                await progress_tracker.start_tracking()
 
-            # 초기화 단계 명시적으로 설정
-            from src.core.progress_tracker import WorkflowStage
+                # 초기화 단계 명시적으로 설정
+                from src.core.progress_tracker import WorkflowStage
 
-            progress_tracker.set_workflow_stage(
-                WorkflowStage.INITIALIZING, {"message": "시스템 초기화 중..."}
-            )
+                progress_tracker.set_workflow_stage(
+                    WorkflowStage.INITIALIZING, {"message": "시스템 초기화 중..."}
+                )
 
-            # 워크플로우 시작 알림
-            await output_manager.output(
-                f"🔬 연구 주제: {request_arg}", level=OutputLevel.USER
-            )
-            await output_manager.output(
-                "실시간 진행 상황 추적 및 향상된 에러 처리가 활성화되었습니다.",
-                level=OutputLevel.SERVICE,
-            )
+                # 워크플로우 시작 알림
+                await output_manager.output(
+                    f"🔬 연구 주제: {request_arg}", level=OutputLevel.USER
+                )
+                await output_manager.output(
+                    "실시간 진행 상황 추적 및 향상된 에러 처리가 활성화되었습니다.",
+                    level=OutputLevel.SERVICE,
+                )
 
-            # 연구 실행
-            await system.run_research(
-                request_arg,
-                args.output,
-                streaming=args.streaming,
-                output_format=args.format,
-            )
+                # 연구 실행
+                await system.run_research(
+                    request_arg,
+                    args.output,
+                    streaming=args.streaming,
+                    output_format=args.format,
+                )
+            else:
+                args.query = request_arg
+                await handle_work_command_from_query(args)
 
         elif getattr(args, "web", False):
             # Web Application Mode with Streaming Pipeline

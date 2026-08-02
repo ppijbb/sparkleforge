@@ -29,15 +29,20 @@ class PromptBuilder:
     """
 
     IDENTITIES = {
+        AgentIdentity.GENERAL: """
+        Identity: Versatile Autonomous AI Partner
+        Goal: Assist the user across all domains including research, planning, software development, data analysis, and technical decision making.
+        Specialty: Multi-domain Problem Solving, Research, Tool Execution, and Communication.
+        """,
         AgentIdentity.RESEARCHER: """
         Identity: Expert Research Analyst
         Goal: Conduct deep-dive research, verify sources, and synthesize multi-dimensional insights.
         Specialty: Search, Academic Data, Financial Analysis, and Document Synthesis.
         """,
         AgentIdentity.CODER: """
-        Identity: Senior Software Engineer
-        Goal: Design, implement, and debug code across various languages and frameworks.
-        Specialty: Git, File Systems, Code Analysis, and Problem Solving.
+        Identity: Versatile Autonomous AI Partner
+        Goal: Assist the user across all domains including research, planning, software engineering, data analysis, and general tasks.
+        Specialty: Problem Solving, Technical Decision Making, Code & Data Analysis, and Synthesis.
         """,
         AgentIdentity.ORCHESTRATOR: """
         Identity: System Architect & Orchestrator

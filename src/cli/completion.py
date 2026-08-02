@@ -16,7 +16,13 @@ class SparkleForgeCompleter(Completer):
         """초기화."""
         self.cli = cli_instance
         self.commands = {
+            "work": [],
             "research": [],
+            "settings": [],
+            "setup": [],
+            "update": [],
+            "tools": ["list"],
+            "mcp": ["status", "server"],
             "session": [
                 "list",
                 "show",
@@ -55,21 +61,27 @@ class SparkleForgeCompleter(Completer):
     def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
         """자동완성 제공."""
         text = document.text_before_cursor
-        words = text.split()
+        is_slash = text.startswith("/")
+        clean_text = text[1:] if is_slash else text
+        words = clean_text.split()
 
         if not words:
             # 첫 번째 명령어 자동완성
+            prefix = "/" if is_slash else ""
             for cmd in self.commands.keys():
-                yield Completion(cmd, start_position=0, display=cmd)
+                full_cmd = f"{prefix}{cmd}"
+                yield Completion(full_cmd, start_position=-len(text), display=full_cmd)
             return
 
         first_word = words[0].lower()
 
         if len(words) == 1:
             # 첫 번째 명령어 자동완성
+            prefix = "/" if is_slash else ""
             for cmd in self.commands.keys():
                 if cmd.startswith(first_word):
-                    yield Completion(cmd, start_position=-len(first_word), display=cmd)
+                    full_cmd = f"{prefix}{cmd}"
+                    yield Completion(full_cmd, start_position=-len(text), display=full_cmd)
 
         elif first_word in self.commands:
             # 서브 명령어 자동완성

@@ -2,7 +2,6 @@
 
 import os
 import sys
-import sys
 from pathlib import Path
 
 
@@ -46,13 +45,42 @@ def _inject_stdin_query_for_run() -> None:
         sys.argv.insert(2, query)
 
 
+KNOWN_COMMANDS = {
+    "run",
+    "work",
+    "session",
+    "actions",
+    "approve",
+    "deny",
+    "query",
+    "web",
+    "mcp",
+    "health",
+    "tools",
+    "docker",
+    "setup",
+    "cli",
+    "nightwelding",
+    "report",
+    "interactive",
+    "repl",
+}
+
+
+def _normalize_argv_for_default_command() -> None:
+    """If the first argument is a query string instead of a subcommand or flag, insert 'run'."""
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        if sys.argv[1] not in KNOWN_COMMANDS:
+            sys.argv.insert(1, "run")
+
+
 def main_entry() -> None:
     """Run the repository-level CLI entry point from an installed script."""
     project_root = Path(__file__).resolve().parent.parent.parent
-    os.chdir(project_root)
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
+    _normalize_argv_for_default_command()
     _inject_stdin_query_for_run()
 
     from main import main_entry as repository_main_entry

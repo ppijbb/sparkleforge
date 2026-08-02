@@ -103,8 +103,8 @@ def _persist_run_session(session_id: str, query: str, output_text: str | None) -
 
 
 async def handle_run_command(args, config):
-    """연구 실행 커맨드 처리"""
-    if getattr(args, "mode", "research") == "work":
+    """실행 커맨드 처리 (기본: work/chat 모드, 명시적 지정 시에만 research 모드)"""
+    if getattr(args, "mode", "work") != "research":
         return await handle_work_command_from_query(args)
 
     def _apply_runtime_overrides() -> None:
@@ -1294,6 +1294,51 @@ async def handle_report_command(args):
         report_args.append(args.report_command)
     await report_command(cli, report_args)
     return 0
+
+
+async def handle_update_command(args):
+    """자동 업데이트 및 패키지 갱신 처리."""
+    import subprocess
+    from rich.console import Console
+
+    console = Console()
+    console.print("[bold cyan]🔄 Checking and applying SparkleForge updates...[/bold cyan]")
+
+    project_root = Path(__file__).resolve().parent.parent.parent
+    try:
+        # 1. Git pull 시도 (git repository인 경우)
+        if (project_root / ".git").exists():
+            console.print("[dim]Checking for git repository updates...[/dim]")
+            git_res = subprocess.run(
+                ["git", "pull"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if git_res.returncode == 0:
+                console.print(f"[green]Git Update:[/green] {git_res.stdout.strip()}")
+            else:
+                console.print(f"[yellow]Git status note:[/yellow] {git_res.stderr.strip() or git_res.stdout.strip()}")
+
+        # 2. pip package editable re-install
+        console.print("[dim]Updating package entrypoints and dependencies...[/dim]")
+        pip_res = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-e", ".", "--no-deps"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if pip_res.returncode == 0:
+            console.print("[bold green]✅ SparkleForge has been successfully updated to the latest version![/bold green]")
+            return 0
+        else:
+            console.print(f"[red]❌ Update failed:[/red] {pip_res.stderr}")
+            return 1
+    except Exception as e:
+        console.print(f"[red]❌ Update error occurred:[/red] {e}")
+        return 1
 
 
 

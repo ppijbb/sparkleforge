@@ -213,10 +213,27 @@ class REPLCLI:
                 "list": nightwelding_list_command,
             },
             "help": help_command,
+            "setup": self._handle_setup,
+            "settings": self._handle_setup,
+            "update": self._handle_update,
             "exit": self._handle_exit,
             "quit": self._handle_exit,
             "clear": self._handle_clear,
         }
+
+    async def _handle_setup(self, cli_inst, args=None):
+        """설정/셋업 관리 화면으로 이동."""
+        from src.cli.main_commands import handle_setup_command
+        import argparse
+        dummy_args = argparse.Namespace()
+        await handle_setup_command(dummy_args)
+
+    async def _handle_update(self, cli_inst, args=None):
+        """자동 업데이트 실행."""
+        from src.cli.main_commands import handle_update_command
+        import argparse
+        dummy_args = argparse.Namespace()
+        await handle_update_command(dummy_args)
 
     async def run(self):
         """REPL 루프 실행."""
@@ -431,8 +448,13 @@ Generate the greeting:"""
     async def handle_command(self, text: str):
         """명령어 처리."""
         try:
+            # 슬래시 커맨드 수용 (예: /help, /settings, /setup, /update)
+            clean_text = text.strip()
+            if clean_text.startswith("/"):
+                clean_text = clean_text[1:].strip()
+
             # shlex로 파싱 (따옴표 처리)
-            parts = shlex.split(text)
+            parts = shlex.split(clean_text)
             if not parts:
                 return
 
