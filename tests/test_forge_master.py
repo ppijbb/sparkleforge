@@ -157,6 +157,22 @@ def test_dispatch_batch_to_forge_master_tool_is_registered():
     )
 
 
+def test_dispatch_batch_to_forge_master_is_not_registered_under_code_category():
+    """CODE-category local tools get routed by the MCP hub's dispatcher
+    (src/core/mcp_integration/hub_mixins/execution.py) through the generic
+    _execute_code_tool sandbox (expects code/language params) instead of this
+    tool's own registered executor - so a real agent-loop call would silently
+    turn into an empty code execution. UTILITY is what other local
+    pass-through tools (scheduler, security) use to reach registry.execute()
+    instead."""
+    from src.core.tools.registry import ToolCategory
+
+    register_forge_master_dispatch_tool()
+
+    assert registry.tools["dispatch_batch_to_forge_master"].category != ToolCategory.CODE
+    assert registry.tools["dispatch_batch_to_forge_master"].category == ToolCategory.UTILITY
+
+
 @pytest.mark.asyncio
 async def test_dispatch_batch_to_forge_master_executes_each_task_with_its_chosen_agent():
     """Calling the tool must run every task's own agent_name, with no
