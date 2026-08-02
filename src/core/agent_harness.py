@@ -380,7 +380,7 @@ class AgentHarness:
         forge_master_handled: list[Dict[str, Any]] = []
         if legacy_tasks and state["workflow"].get("route") == RoutePath.CODEBASE_AGENT.value:
             legacy_tasks, forge_master_handled = await self._dispatch_codebase_tasks_via_forge_master(
-                legacy_tasks, session_id
+                state, legacy_tasks
             )
 
         # --- 레거시 경로: 기존 ParallelAgentExecutor로 나머지 태스크 처리 ---
@@ -440,7 +440,7 @@ class AgentHarness:
         return state
 
     async def _dispatch_codebase_tasks_via_forge_master(
-        self, tasks: list[Dict[str, Any]], session_id: str
+        self, state: HarnessState, tasks: list[Dict[str, Any]]
     ) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
         """Try the local CLI-agent fleet (ForgeMaster) before frontier LLM execution.
 
@@ -482,6 +482,7 @@ class AgentHarness:
             logger.warning(f"[Harness] ForgeMaster batch dispatch failed, falling back to frontier: {e}")
             return tasks, []
 
+        session_id = state["workflow"].get("session_id")
         handled: list[Dict[str, Any]] = []
         unhandled: list[Dict[str, Any]] = []
         for task, result in zip(tasks, batch_result["results"]):
@@ -499,6 +500,12 @@ class AgentHarness:
                 handled.append(task)
             else:
                 unhandled.append(task)
+
+        # The legacy ParallelAgentExecutor path reflects per-task completion
+        # into SessionControl via _update_session_tasks; without this, tasks
+        # ForgeMaster completed locally kept showing as pending there.
+        if handled:
+            self._update_session_tasks(state, handled, status="completed")
 
         logger.info(
             f"[Harness] ForgeMaster handled {len(handled)}/{len(tasks)} codebase tasks "
