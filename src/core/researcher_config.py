@@ -1057,6 +1057,8 @@ def load_config_from_env() -> ResearcherSystemConfig:
     if env_file.exists():
         load_dotenv(env_file, override=True)
 
+    os.environ.setdefault("SPARKLEFORGE_ENV", "development")
+
     def get_required_env(key: str, var_type: type = str):
         """Get required environment variable, raise error if missing."""
         value = os.getenv(key)
