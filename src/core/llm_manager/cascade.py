@@ -353,6 +353,7 @@ class CascadeMixin:
             # 첫 번째 사용 가능한 모델 시도
             fallback_model = available_models[0]
             logger.info(f"Trying fallback model: {fallback_model} (provider: {provider})")
+            print(f"→ trying fallback: {fallback_model} ({provider})")
 
             try:
                 if provider == "openrouter":
@@ -399,6 +400,7 @@ class CascadeMixin:
                     continue
 
                 logger.info(f"✅ Fallback successful with {fallback_model}")
+                print(f"✅ fallback succeeded: {fallback_model}")
                 return result, fallback_model
             except Exception as e:
                 # 에러 메시지에서 HTML 필터링 및 중첩 방지
@@ -414,6 +416,7 @@ class CascadeMixin:
                     logger.warning(
                         f"Fallback model {fallback_model} is not available (404/decommissioned), trying next..."
                     )
+                    print(f"⚠ {fallback_model} unavailable (404/decommissioned), trying next...")
                     # Groq 모델이 존재하지 않는 경우 모델 목록에서 제거
                     if provider == "groq" and fallback_model in self.models:
                         logger.warning(
@@ -432,6 +435,7 @@ class CascadeMixin:
                     logger.warning(
                         f"Fallback model {fallback_model} rate limited (429), trying next..."
                     )
+                    print(f"⚠ {fallback_model} rate limited (429), trying next...")
                     continue
 
                 if "<!DOCTYPE html>" in error_str or "<html" in error_str.lower():
@@ -459,9 +463,11 @@ class CascadeMixin:
                 logger.warning(
                     f"Fallback model {fallback_model} failed: {error_msg}, trying next..."
                 )
+                print(f"⚠ {fallback_model} failed: {error_msg}, trying next...")
                 continue
 
         # 모든 폴백 실패
+        print(f"❌ all fallback models exhausted for {task_type.value}")
         raise RuntimeError("All fallback models failed. No available models.")
 
 
