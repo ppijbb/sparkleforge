@@ -200,6 +200,7 @@ class ModelRegistryMixin:
                 TaskType.GENERATION,
                 TaskType.VERIFICATION,
                 TaskType.RESEARCH,
+                TaskType.CREATIVE,
             ],
         )
 
@@ -586,6 +587,7 @@ class ModelRegistryMixin:
                     TaskType.RESEARCH,
                     TaskType.ANALYSIS,
                     TaskType.SYNTHESIS,
+                    TaskType.CREATIVE,
                 ],
             },
         ]
