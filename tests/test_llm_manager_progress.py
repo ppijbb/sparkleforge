@@ -2,6 +2,7 @@
 whether or not it decides to print a ticker."""
 
 import asyncio
+import sys
 from unittest.mock import patch
 
 from src.core.llm_manager.progress import with_progress
@@ -15,6 +16,26 @@ async def _quick_result():
 def test_returns_result_when_not_a_tty():
     with patch("sys.stdout.isatty", return_value=False):
         result = asyncio.run(with_progress(_quick_result(), label="test"))
+    assert result == "ok"
+
+
+def test_returns_result_when_stdout_has_no_isatty():
+    """sys.stdout can be swapped for a wrapper without isatty() at all,
+    e.g. SupabaseStdoutRedirector during a research run -- must not crash."""
+
+    class _NoIsattyStdout:
+        def write(self, text):
+            pass
+
+        def flush(self):
+            pass
+
+    original = sys.stdout
+    sys.stdout = _NoIsattyStdout()
+    try:
+        result = asyncio.run(with_progress(_quick_result(), label="test"))
+    finally:
+        sys.stdout = original
     assert result == "ok"
 
 

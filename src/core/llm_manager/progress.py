@@ -19,7 +19,11 @@ T = TypeVar("T")
 
 async def with_progress(coro: Awaitable[T], label: str) -> T:
     """Await `coro`, printing a live elapsed-time status line while it runs."""
-    if not sys.stdout.isatty():
+    # sys.stdout may be swapped for a wrapper without isatty() (e.g.
+    # SupabaseStdoutRedirector during a research run) -- treat that as
+    # "not a real terminal" rather than crashing the call it's wrapping.
+    isatty = getattr(sys.stdout, "isatty", None)
+    if not callable(isatty) or not isatty():
         return await coro
 
     start = time.time()
