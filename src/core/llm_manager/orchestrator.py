@@ -17,6 +17,7 @@ from src.core.llm_manager.cascade import CascadeMixin
 from src.core.llm_manager.connection_pool import ConnectionPool
 from src.core.llm_manager.model_registry import ModelRegistryMixin
 from src.core.llm_manager.performance_tracker import ModelPerformanceTracker
+from src.core.llm_manager.progress import with_progress
 from src.core.llm_manager.providers import ProviderAdaptersMixin
 from src.core.llm_manager.routing import RoutingMixin
 from src.core.llm_manager.types import ModelConfig, ModelResult, TaskType
@@ -139,8 +140,11 @@ class MultiModelOrchestrator(
                 if model_provider == "openrouter":
                     logger.info(f"Executing with OpenRouter model: {model_name_clean}")
                 try:
-                    result = await self._execute_openrouter_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await with_progress(
+                        self._execute_openrouter_model(
+                            model_name_clean, prompt, system_message, **kwargs
+                        ),
+                        label=f"openrouter/{model_name_clean}",
                     )
                 except Exception as error:
                     error_str = str(error).lower()
@@ -160,8 +164,11 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "groq":
                 logger.info(f"Executing with Groq model: {model_name_clean}")
                 try:
-                    result = await self._execute_groq_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await with_progress(
+                        self._execute_groq_model(
+                            model_name_clean, prompt, system_message, **kwargs
+                        ),
+                        label=f"groq/{model_name_clean}",
                     )
                 except Exception as error:
                     error_str = str(error).lower()
@@ -181,8 +188,11 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "cerebras":
                 logger.info(f"Executing with Cerebras model: {model_name_clean}")
                 try:
-                    result = await self._execute_cerebras_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await with_progress(
+                        self._execute_cerebras_model(
+                            model_name_clean, prompt, system_message, **kwargs
+                        ),
+                        label=f"cerebras/{model_name_clean}",
                     )
                 except Exception as error:
                     error_str = str(error).lower()
@@ -202,12 +212,18 @@ class MultiModelOrchestrator(
                 logger.info(f"Executing with Gemini model: {model_name_clean}")
                 try:
                     if model_name.endswith("_langchain"):
-                        result = await self._execute_langchain_model(
-                            model_name, prompt, system_message, **kwargs
+                        result = await with_progress(
+                            self._execute_langchain_model(
+                                model_name, prompt, system_message, **kwargs
+                            ),
+                            label=f"google/{model_name}",
                         )
                     else:
-                        result = await self._execute_gemini_model(
-                            model_name, prompt, system_message, **kwargs
+                        result = await with_progress(
+                            self._execute_gemini_model(
+                                model_name, prompt, system_message, **kwargs
+                            ),
+                            label=f"google/{model_name}",
                         )
                 except Exception as error:
                     logger.warning(
@@ -223,8 +239,11 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "openai":
                 logger.info(f"Executing with GPT model: {model_name_clean}")
                 try:
-                    result = await self._execute_openai_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await with_progress(
+                        self._execute_openai_model(
+                            model_name_clean, prompt, system_message, **kwargs
+                        ),
+                        label=f"openai/{model_name_clean}",
                     )
                 except Exception as error:
                     logger.warning(
@@ -240,8 +259,11 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "nvidia":
                 logger.info(f"Executing with NVIDIA NIM model: {model_name_clean}")
                 try:
-                    result = await self._execute_nvidia_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await with_progress(
+                        self._execute_nvidia_model(
+                            model_name_clean, prompt, system_message, **kwargs
+                        ),
+                        label=f"nvidia/{model_name_clean}",
                     )
                 except Exception as error:
                     error_str = str(error).lower()
