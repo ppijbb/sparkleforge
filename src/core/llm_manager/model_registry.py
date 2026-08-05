@@ -200,6 +200,7 @@ class ModelRegistryMixin:
                 TaskType.GENERATION,
                 TaskType.VERIFICATION,
                 TaskType.RESEARCH,
+                TaskType.CREATIVE,
             ],
         )
 
@@ -328,6 +329,7 @@ class ModelRegistryMixin:
                 TaskType.GENERATION,
                 TaskType.COMPRESSION,
                 TaskType.RESEARCH,
+                TaskType.CREATIVE,
             ]
 
         return list(set(capabilities))  # 중복 제거
@@ -464,6 +466,7 @@ class ModelRegistryMixin:
                     TaskType.GENERATION,
                     TaskType.RESEARCH,
                     TaskType.ANALYSIS,
+                    TaskType.CREATIVE,
                 ],
             },
             {
@@ -477,6 +480,7 @@ class ModelRegistryMixin:
                     TaskType.ANALYSIS,
                     TaskType.PLANNING,
                     TaskType.DEEP_REASONING,
+                    TaskType.CREATIVE,
                 ],
             },
             {
@@ -490,6 +494,7 @@ class ModelRegistryMixin:
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.RESEARCH,
+                    TaskType.CREATIVE,
                 ],
             },
         ]
@@ -582,6 +587,7 @@ class ModelRegistryMixin:
                     TaskType.RESEARCH,
                     TaskType.ANALYSIS,
                     TaskType.SYNTHESIS,
+                    TaskType.CREATIVE,
                 ],
             },
         ]

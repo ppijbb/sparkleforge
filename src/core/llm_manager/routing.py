@@ -96,8 +96,16 @@ class RoutingMixin:
         if configured in self.models and not self._is_provider_rate_limited(
             self.models[configured].provider
         ):
-            logger.info(f"Selected configured model for {task_type.value}: {configured}")
-            return configured
+            # Respect capability filtering: only use the configured/primary
+            # fast path when the model actually declares this task type,
+            # otherwise fall through to capability-based selection (issue #1223).
+            if task_type in self.models[configured].capabilities:
+                logger.info(f"Selected configured model for {task_type.value}: {configured}")
+                return configured
+            logger.info(
+                f"Configured model {configured} lacks {task_type.value} capability, "
+                f"falling back to capability-based selection"
+            )
 
         # 작업 유형에 적합한 모델 필터링
         suitable_models = [
