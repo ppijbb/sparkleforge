@@ -134,6 +134,7 @@ jobs:
             --json title \
             --jq '.title')
           NORMALIZED_TITLE=$(printf '%s\n' "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+          CONVENTIONAL_TYPE="fix"
           BRACKET_TAG=$(printf '%s' "$NORMALIZED_TITLE" | sed -nE 's/^\[([^]]+)\].*/\1/p')
           if [ -n "$BRACKET_TAG" ]; then
             REST=$(printf '%s' "$NORMALIZED_TITLE" | sed -E 's/^\[[^]]+\][[:space:]]*//')
