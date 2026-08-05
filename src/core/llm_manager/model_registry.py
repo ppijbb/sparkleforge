@@ -214,7 +214,7 @@ class ModelRegistryMixin:
                     model_name = self._generate_model_name(model_data)
                     model_config = self._create_model_config(model_data, model_name)
                     self.models[model_name] = model_config
-                    logger.info(f"Loaded OpenRouter model: {model_name} ({model_data['id']})")
+                    logger.debug(f"Loaded OpenRouter model: {model_name} ({model_data['id']})")
         except Exception as e:
             logger.warning(f"Failed to load OpenRouter models: {e}")
             # 예외를 raise하지 않음 - Gemini만 사용하도록 함
@@ -511,7 +511,7 @@ class ModelRegistryMixin:
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
             )
-            logger.info(f"Loaded Groq model: {model_data['name']} ({model_data['model_id']})")
+            logger.debug(f"Loaded Groq model: {model_data['name']} ({model_data['model_id']})")
 
 
     def _load_openai_models(self):
@@ -565,7 +565,7 @@ class ModelRegistryMixin:
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
             )
-            logger.info(f"Loaded OpenAI/GPT model: {model_data['name']} ({model_data['model_id']})")
+            logger.debug(f"Loaded OpenAI/GPT model: {model_data['name']} ({model_data['model_id']})")
 
 
     def _load_nvidia_models(self):
@@ -605,7 +605,7 @@ class ModelRegistryMixin:
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
             )
-            logger.info(f"Loaded NVIDIA NIM model: {model_data['name']} ({model_data['model_id']})")
+            logger.debug(f"Loaded NVIDIA NIM model: {model_data['name']} ({model_data['model_id']})")
 
 
     def _load_cerebras_models(self):
@@ -646,7 +646,7 @@ class ModelRegistryMixin:
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
             )
-            logger.info(f"Loaded Cerebras model: {model_data['name']} ({model_data['model_id']})")
+            logger.debug(f"Loaded Cerebras model: {model_data['name']} ({model_data['model_id']})")
 
 
     def refresh_openrouter_models(self):
@@ -700,7 +700,7 @@ class ModelRegistryMixin:
                     if not openrouter_api_key:
                         raise ValueError(f"OpenRouter API key not found for {model_name}")
                     # OpenRouter는 HTTP 요청으로 직접 처리하므로 클라이언트 저장하지 않음
-                    logger.info(f"OpenRouter model {model_name} configured for HTTP requests")
+                    logger.debug(f"OpenRouter model {model_name} configured for HTTP requests")
 
                 elif model_config.provider == "groq":
                     # Groq 클라이언트 초기화
@@ -711,7 +711,7 @@ class ModelRegistryMixin:
                         if not groq_api_key:
                             raise ValueError(f"GROQ_API_KEY not found for {model_name}")
                         self.model_clients[model_name] = Groq(api_key=groq_api_key)
-                        logger.info(f"Groq model {model_name} configured")
+                        logger.debug(f"Groq model {model_name} configured")
                     except ImportError:
                         logger.warning("groq library not installed. Install with: pip install groq")
                     except Exception as e:
@@ -726,7 +726,7 @@ class ModelRegistryMixin:
                         if not openai_api_key:
                             raise ValueError(f"OPENAI_API_KEY not found for {model_name}")
                         self.model_clients[model_name] = OpenAI(api_key=openai_api_key)
-                        logger.info(f"OpenAI/GPT model {model_name} configured")
+                        logger.debug(f"OpenAI/GPT model {model_name} configured")
                     except ImportError:
                         logger.warning(
                             "openai library not installed. Install with: pip install openai"
@@ -748,7 +748,7 @@ class ModelRegistryMixin:
                             timeout=180.0,
                             max_retries=1,
                         )
-                        logger.info(f"NVIDIA NIM model {model_name} configured")
+                        logger.debug(f"NVIDIA NIM model {model_name} configured")
                     except ImportError:
                         logger.warning(
                             "openai library not installed. Install with: pip install openai"
@@ -768,7 +768,7 @@ class ModelRegistryMixin:
                             api_key=cerebras_api_key,
                             base_url="https://api.cerebras.ai/v1",
                         )
-                        logger.info(f"Cerebras model {model_name} configured")
+                        logger.debug(f"Cerebras model {model_name} configured")
                     except ImportError:
                         logger.warning(
                             "openai library not installed. Install with: pip install openai"
