@@ -16,8 +16,10 @@ from typing import Awaitable, TypeVar
 
 T = TypeVar("T")
 
+_CLEAR_LINE = "\r\033[K"
 
-async def with_progress(coro: Awaitable[T], label: str) -> T:
+
+async def with_progress(coro: Awaitable[T], label: str, interval: float = 1.0) -> T:
     """Await `coro`, printing a live elapsed-time status line while it runs."""
     # sys.stdout may be swapped for a wrapper without isatty() (e.g.
     # SupabaseStdoutRedirector during a research run) -- treat that as
@@ -27,21 +29,26 @@ async def with_progress(coro: Awaitable[T], label: str) -> T:
         return await coro
 
     start = time.time()
-    done = asyncio.Event()
 
     async def _tick() -> None:
-        while not done.is_set():
+        while True:
             elapsed = time.time() - start
-            print(f"\r⏳ {label}... {elapsed:.0f}s", end="", flush=True)
             try:
-                await asyncio.wait_for(done.wait(), timeout=1.0)
-            except asyncio.TimeoutError:
-                pass
+                print(f"\r⏳ {label}... {elapsed:.0f}s", end="", flush=True)
+            except UnicodeEncodeError:
+                # Terminal encoding can't represent the emoji (e.g. legacy
+                # Windows code pages, LC_ALL=C) -- stop ticking rather than
+                # crash the call this is just decorating.
+                return
+            await asyncio.sleep(interval)
 
     ticker = asyncio.create_task(_tick())
     try:
         return await coro
     finally:
-        done.set()
-        await ticker
-        print("\r" + " " * (len(label) + 20) + "\r", end="", flush=True)
+        ticker.cancel()
+        try:
+            await ticker
+        except asyncio.CancelledError:
+            pass
+        print(_CLEAR_LINE, end="", flush=True)

@@ -2,7 +2,6 @@
 whether or not it decides to print a ticker."""
 
 import asyncio
-import sys
 from unittest.mock import patch
 
 from src.core.llm_manager.progress import with_progress
@@ -30,23 +29,22 @@ def test_returns_result_when_stdout_has_no_isatty():
         def flush(self):
             pass
 
-    original = sys.stdout
-    sys.stdout = _NoIsattyStdout()
-    try:
+    with patch("sys.stdout", _NoIsattyStdout()):
         result = asyncio.run(with_progress(_quick_result(), label="test"))
-    finally:
-        sys.stdout = original
     assert result == "ok"
 
 
-def test_returns_result_and_ticks_when_a_tty():
+def test_returns_result_and_ticks_when_a_tty(capsys):
     async def _slower_result():
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(0.05)
         return "ok"
 
     with patch("sys.stdout.isatty", return_value=True):
-        result = asyncio.run(with_progress(_slower_result(), label="test"))
+        result = asyncio.run(
+            with_progress(_slower_result(), label="test", interval=0.01)
+        )
     assert result == "ok"
+    assert "test..." in capsys.readouterr().out
 
 
 def test_propagates_exceptions():
@@ -60,10 +58,3 @@ def test_propagates_exceptions():
             assert False, "expected ValueError to propagate"
         except ValueError as e:
             assert str(e) == "boom"
-
-
-if __name__ == "__main__":
-    test_returns_result_when_not_a_tty()
-    test_returns_result_and_ticks_when_a_tty()
-    test_propagates_exceptions()
-    print("ok")
