@@ -204,6 +204,7 @@ async def handle_run_command(args, config):
 
         _apply_runtime_overrides()
         logger.info(f"🔬 Starting research: {args.query}")
+        print(f"🔬 Starting research: {args.query}")
 
         _ensure_database_driver_for_cli()
         # Autonomous Orchestrator 초기화
@@ -312,6 +313,7 @@ async def handle_run_command(args, config):
             else:
                 f.write(text)
         logger.info(f"✅ Results saved to {output_path}")
+        print(f"✅ Results saved to {output_path}")
 
         if text:
             print(text)
