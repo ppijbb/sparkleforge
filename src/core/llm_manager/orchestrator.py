@@ -19,6 +19,7 @@ from src.core.llm_manager.cascade import CascadeMixin
 from src.core.llm_manager.connection_pool import ConnectionPool
 from src.core.llm_manager.model_registry import ModelRegistryMixin
 from src.core.llm_manager.performance_tracker import ModelPerformanceTracker
+from src.core.llm_manager.progress import with_progress
 from src.core.llm_manager.providers import ProviderAdaptersMixin
 from src.core.llm_manager.routing import RoutingMixin
 from src.core.llm_manager.types import ModelConfig, ModelResult, TaskType

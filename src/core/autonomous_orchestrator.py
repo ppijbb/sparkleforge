@@ -6,6 +6,7 @@ Delegates core logic to src.core.orchestrator packages.
 
 import logging
 import os
+import sys
 from datetime import datetime
 from typing import Any, Dict
 from pathlib import Path
@@ -233,6 +234,30 @@ class AutonomousOrchestrator:
         if checkpointer is not None and hasattr(checkpointer, "conn"):
             await checkpointer.conn.close()
 
+    async def _invoke_with_stage_updates(
+        self, input_state: Dict[str, Any] | None, config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Like `self.graph.ainvoke()`, but prints each graph node's name as it
+        completes -- the multi-stage pipeline (analyze_objectives, planning_agent,
+        execute_research, synthesize_deliverable, ...) otherwise runs with zero
+        visibility into which of its ~12 nodes is currently active. Skipped when
+        stdout isn't a real terminal to avoid spamming captured/CI logs.
+        """
+        isatty = getattr(sys.stdout, "isatty", None)
+        show_stages = callable(isatty) and isatty()
+
+        final_state = input_state
+        async for mode, chunk in self.graph.astream(
+            input_state, config, stream_mode=["updates", "values"]
+        ):
+            if mode == "updates":
+                if show_stages:
+                    for node_name in chunk:
+                        print(f"→ {node_name}")
+            elif mode == "values":
+                final_state = chunk
+        return final_state
+
     async def execute(
         self, request: str, context: Dict[str, Any] = None, objective_id: str = None
     ) -> Dict[str, Any]:
@@ -266,7 +291,7 @@ class AutonomousOrchestrator:
                 if checkpoint and checkpoint.values:
                     logger.info(f"↩️  Resuming orchestrator run '{objective_id}' from checkpoint")
                     with redirect_stdout_to_supabase(objective_id):
-                        final_state = await self.graph.ainvoke(None, config)
+                        final_state = await self._invoke_with_stage_updates(None, config)
                     return final_state
                 logger.warning(
                     f"No checkpoint found for objective_id='{objective_id}', starting fresh"
@@ -287,7 +312,7 @@ class AutonomousOrchestrator:
             }
             self.liveness_watchdog.record_heartbeat()
             with redirect_stdout_to_supabase(objective_id):
-                final_state = await self.graph.ainvoke(initial_state, config)
+                final_state = await self._invoke_with_stage_updates(initial_state, config)
             self.liveness_watchdog.record_commit()
             return final_state
         except Exception as e:
