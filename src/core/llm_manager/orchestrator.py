@@ -8,7 +8,9 @@ and adds the main execute_with_model dispatcher and weighted_ensemble.
 """
 
 import logging
+import sys
 import time
+import asyncio
 from typing import Any, Dict, List
 
 import requests
@@ -17,6 +19,7 @@ from src.core.llm_manager.cascade import CascadeMixin
 from src.core.llm_manager.connection_pool import ConnectionPool
 from src.core.llm_manager.model_registry import ModelRegistryMixin
 from src.core.llm_manager.performance_tracker import ModelPerformanceTracker
+from src.core.llm_manager.progress import with_progress
 from src.core.llm_manager.providers import ProviderAdaptersMixin
 from src.core.llm_manager.routing import RoutingMixin
 from src.core.llm_manager.types import ModelConfig, ModelResult, TaskType
@@ -59,6 +62,27 @@ class MultiModelOrchestrator(
         self._initialize_models()
         self._initialize_clients()
 
+    async def _run_with_feedback(self, coro, provider: str, model: str):
+        """Run a provider call with a live terminal feedback ticker."""
+        if not sys.stdout.isatty():
+            return await coro
+
+        start_time = time.time()
+        stop_event = asyncio.Event()
+
+        async def ticker():
+            while not stop_event.is_set():
+                elapsed = int(time.time() - start_time)
+                print(f"\r⏳ {provider}/{model}... {elapsed}s", end="", flush=True)
+                await asyncio.sleep(1)
+            print("\r" + " " * 40 + "\r", end="", flush=True)
+
+        task = asyncio.create_task(ticker())
+        try:
+            return await coro
+        finally:
+            stop_event.set()
+            await task
 
     async def execute_with_model(
         self,
@@ -139,8 +163,9 @@ class MultiModelOrchestrator(
                 if model_provider == "openrouter":
                     logger.info(f"Executing with OpenRouter model: {model_name_clean}")
                 try:
-                    result = await self._execute_openrouter_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await self._run_with_feedback(
+                        self._execute_openrouter_model(model_name_clean, prompt, system_message, **kwargs),
+                        "openrouter", model_name_clean
                     )
                 except Exception as error:
                     error_str = str(error).lower()
@@ -160,8 +185,9 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "groq":
                 logger.info(f"Executing with Groq model: {model_name_clean}")
                 try:
-                    result = await self._execute_groq_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await self._run_with_feedback(
+                        self._execute_groq_model(model_name_clean, prompt, system_message, **kwargs),
+                        "groq", model_name_clean
                     )
                 except Exception as error:
                     error_str = str(error).lower()
@@ -181,8 +207,9 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "cerebras":
                 logger.info(f"Executing with Cerebras model: {model_name_clean}")
                 try:
-                    result = await self._execute_cerebras_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await self._run_with_feedback(
+                        self._execute_cerebras_model(model_name_clean, prompt, system_message, **kwargs),
+                        "cerebras", model_name_clean
                     )
                 except Exception as error:
                     error_str = str(error).lower()
@@ -202,12 +229,14 @@ class MultiModelOrchestrator(
                 logger.info(f"Executing with Gemini model: {model_name_clean}")
                 try:
                     if model_name.endswith("_langchain"):
-                        result = await self._execute_langchain_model(
-                            model_name, prompt, system_message, **kwargs
+                        result = await self._run_with_feedback(
+                            self._execute_langchain_model(model_name, prompt, system_message, **kwargs),
+                            "gemini", model_name
                         )
                     else:
-                        result = await self._execute_gemini_model(
-                            model_name, prompt, system_message, **kwargs
+                        result = await self._run_with_feedback(
+                            self._execute_gemini_model(model_name, prompt, system_message, **kwargs),
+                            "gemini", model_name
                         )
                 except Exception as error:
                     logger.warning(
@@ -223,8 +252,9 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "openai":
                 logger.info(f"Executing with GPT model: {model_name_clean}")
                 try:
-                    result = await self._execute_openai_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await self._run_with_feedback(
+                        self._execute_openai_model(model_name_clean, prompt, system_message, **kwargs),
+                        "openai", model_name_clean
                     )
                 except Exception as error:
                     logger.warning(
@@ -240,8 +270,9 @@ class MultiModelOrchestrator(
             elif not use_cascade_for_provider and model_provider == "nvidia":
                 logger.info(f"Executing with NVIDIA NIM model: {model_name_clean}")
                 try:
-                    result = await self._execute_nvidia_model(
-                        model_name_clean, prompt, system_message, **kwargs
+                    result = await self._run_with_feedback(
+                        self._execute_nvidia_model(model_name_clean, prompt, system_message, **kwargs),
+                        "nvidia", model_name_clean
                     )
                 except Exception as error:
                     error_str = str(error).lower()
