@@ -400,6 +400,7 @@ class CascadeMixin:
                     continue
 
                 logger.info(f"✅ Fallback successful with {fallback_model}")
+                print(f"✅ fallback succeeded: {fallback_model}")
                 return result, fallback_model
             except Exception as e:
                 # 에러 메시지에서 HTML 필터링 및 중첩 방지
