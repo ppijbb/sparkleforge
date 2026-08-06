@@ -9,6 +9,7 @@ import os
 import sys
 from datetime import datetime
 from typing import Any, Dict
+import sys
 from pathlib import Path
 
 from src.core.orchestrator import create_orchestrator_graph
@@ -234,27 +235,28 @@ class AutonomousOrchestrator:
         if checkpointer is not None and hasattr(checkpointer, "conn"):
             await checkpointer.conn.close()
 
-    async def _invoke_with_stage_updates(
-        self, input_state: Dict[str, Any] | None, config: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Like `self.graph.ainvoke()`, but prints each graph node's name as it
-        completes -- the multi-stage pipeline (analyze_objectives, planning_agent,
-        execute_research, synthesize_deliverable, ...) otherwise runs with zero
-        visibility into which of its ~12 nodes is currently active. Skipped when
-        stdout isn't a real terminal to avoid spamming captured/CI logs.
-        """
-        isatty = getattr(sys.stdout, "isatty", None)
-        show_stages = callable(isatty) and isatty()
+    def _is_interactive_tty(self) -> bool:
+        """Return True when stdout is a TTY (so live stage progress is useful)."""
+        try:
+            return bool(sys.stdout.isatty())
+        except Exception:
+            return False
 
-        final_state = input_state
-        async for mode, chunk in self.graph.astream(
-            input_state, config, stream_mode=["updates", "values"]
-        ):
-            if mode == "updates":
-                if show_stages:
-                    for node_name in chunk:
-                        print(f"→ {node_name}")
-            elif mode == "values":
+    async def _stream_graph(self, initial_state, config):
+        """Stream the LangGraph run, printing each node name as it completes.
+
+        Uses ``stream_mode="updates"`` to yield ``{node_name: delta}`` per
+        completed node, then ``stream_mode="values"`` to collect the final
+        accumulated state (equivalent to ``ainvoke``'s return value).
+        """
+        final_state: Dict[str, Any] = {}
+        show_progress = self._is_interactive_tty()
+        async for chunk in self.graph.astream(initial_state, config, stream_mode="updates"):
+            if show_progress and isinstance(chunk, dict):
+                for node_name in chunk:
+                    print(f"▶ orchestrator stage completed: {node_name}", flush=True)
+        async for chunk in self.graph.astream(initial_state, config, stream_mode="values"):
+            if isinstance(chunk, dict):
                 final_state = chunk
         return final_state
 
@@ -291,7 +293,7 @@ class AutonomousOrchestrator:
                 if checkpoint and checkpoint.values:
                     logger.info(f"↩️  Resuming orchestrator run '{objective_id}' from checkpoint")
                     with redirect_stdout_to_supabase(objective_id):
-                        final_state = await self._invoke_with_stage_updates(None, config)
+                        final_state = await self._stream_graph(None, config)
                     return final_state
                 logger.warning(
                     f"No checkpoint found for objective_id='{objective_id}', starting fresh"
@@ -312,7 +314,7 @@ class AutonomousOrchestrator:
             }
             self.liveness_watchdog.record_heartbeat()
             with redirect_stdout_to_supabase(objective_id):
-                final_state = await self._invoke_with_stage_updates(initial_state, config)
+                final_state = await self._stream_graph(initial_state, config)
             self.liveness_watchdog.record_commit()
             return final_state
         except Exception as e:
