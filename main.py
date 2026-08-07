@@ -139,10 +139,30 @@ file_handler.setFormatter(
 )
 root_logger.addHandler(file_handler)
 
+class _LiveAwareStderr:
+    """Proxies to the *current* sys.stderr on every write.
+
+    logging.StreamHandler() binds sys.stderr once, at import time -- long
+    before the REPL ever opens a Rich Live/Status spinner. Rich's spinner
+    redirects sys.stderr for its duration, but a handler holding the old
+    reference bypasses that redirect entirely, so ERROR/WARNING logs punch
+    raw escape-sequence garbage straight through the middle of the spinner
+    line instead of being captured and redrawn above it. Looking up
+    sys.stderr on every write instead of once lets Rich's redirect work as
+    intended.
+    """
+
+    def write(self, message):
+        sys.stderr.write(message)
+
+    def flush(self):
+        sys.stderr.flush()
+
+
 # Console handler (WARNING+ only; full INFO detail still goes to the log file above.
 # Prevents import-time init noise (DB driver, tool registry, plugin discovery, ...)
 # from spamming stdout before --verbose/REPL suppression logic below has a chance to run.)
-console_handler = logging.StreamHandler()
+console_handler = logging.StreamHandler(_LiveAwareStderr())
 console_handler.setLevel(logging.WARNING)
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -185,23 +205,13 @@ except ImportError:
 
 
 async def _boot_repl():
-    """Import and construct the REPL behind a single spinner line.
-
-    REPLCLI's import chain pulls in the MCP hub, tool registry, embedding
-    model, scheduler, etc. -- real work that used to either print raw init
-    logs or just leave the terminal blank for a few seconds. One spinner
-    line (Claude Code / Codex style) replaces both.
-    """
-    from rich.console import Console
-
+    """Import and construct the REPL."""
+    from src.cli.repl_cli import REPLCLI
     from src.core.scheduler import configure_scheduler_execution, get_scheduler
 
-    with Console(force_terminal=True).status("[bold cyan]Starting SparkleForge...", spinner="dots"):
-        from src.cli.repl_cli import REPLCLI
-
-        scheduler = configure_scheduler_execution(get_scheduler())
-        await scheduler.start()
-        cli = REPLCLI()
+    scheduler = configure_scheduler_execution(get_scheduler())
+    await scheduler.start()
+    cli = REPLCLI()
 
     return cli, scheduler
 

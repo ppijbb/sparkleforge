@@ -154,7 +154,9 @@ class AgentOrchestrator:
         # classify -> TaskRouter(LLM) -> planner/single_agent 그래프를 기본 실행 경로로 사용해
         # 실제로 라우팅 판단이 이루어지게 한다. heat_seconds(--heat 시간 예산, issue #585)는
         # wrap-up 리포트 기능이 autonomous 루프에만 구현되어 있으므로 그 경우만 예외로 둔다.
-        mode = "autonomous" if heat_seconds else "research"
+        # coworker 세션(identity="coder")은 항상 autonomous Hermes 루프를 써야 한다 --
+        # 그렇지 않으면 로컬 코딩 요청까지 전부 research LangGraph로 강제 라우팅된다.
+        mode = "autonomous" if heat_seconds or identity == "coder" else "research"
         harness_result = await self.harness.execute(
             session_id=session_id,
             request=request,
