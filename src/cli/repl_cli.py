@@ -10,12 +10,11 @@ prompt_toolkit 기반의 완전한 REPL 환경 제공.
 import locale
 import logging
 import shlex
+import sys
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import ANSI
-from prompt_toolkit.patch_stdout import patch_stdout
+from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -61,7 +60,7 @@ class REPLCLI:
             # warnings도 완전히 억제
             warnings.filterwarnings("ignore")
 
-        self.console = Console(force_terminal=True)
+        self.console = Console()
 
         # 히스토리 초기화
         self.history_manager = SparkleForgeHistory()
@@ -72,7 +71,7 @@ class REPLCLI:
             history=self.history,
             completer=SparkleForgeCompleter(self),
             enable_history_search=True,
-            complete_while_typing=True,
+            complete_while_typing=False,
         )
 
         # 명령어 핸들러
@@ -224,25 +223,32 @@ class REPLCLI:
         # 시작 배너
         await self._show_banner()
 
-        # 로딩 표시와 함께 컨텍스트 로드
-        with self.console.status("[bold cyan]Initializing SparkleForge...", spinner="dots"):
-            if self.context_loader:
-                try:
-                    context = await self.context_loader.load_context()
-                    if context:
-                        self.console.print(
-                            "[dim]📄 Project context loaded from SPARKLEFORGE.md[/dim]\n"
-                        )
-                except Exception as e:
-                    logger.debug(f"Failed to load context: {e}")
+        # 컨텍스트 로드
+        if self.context_loader:
+            try:
+                context = await self.context_loader.load_context()
+                if context:
+                    self.console.print(
+                        "[dim]📄 Project context loaded from SPARKLEFORGE.md[/dim]\n"
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to load context: {e}")
 
         # REPL 루프
+        self.console.print(
+            "[bold cyan]💬 Ready to chat![/bold cyan] "
+            "[dim]Type your prompt or command below:[/dim]\n"
+        )
+        # Ensure terminal cursor is visible (unhide cursor ANSI code \033[?25h)
+        sys.stdout.write("\033[?25h")
+        sys.stdout.flush()
+
         while True:
             try:
-                # ANSI 색상 코드를 사용하여 프롬프트 색상 적용
-                prompt_text = ANSI("\033[1;36msparkleforge\033[0m> ")
-                with patch_stdout():
-                    text = await self.session.prompt_async(prompt_text)
+                prompt_text = HTML(
+                    "<b><cyan>sparkleforge</cyan> <brightcyan>❯</brightcyan> </b>"
+                )
+                text = await self.session.prompt_async(prompt_text)
 
                 if not text.strip():
                     continue
@@ -312,15 +318,26 @@ class REPLCLI:
         banner_content.append("⚒️  ", style="bold yellow")
         banner_content.append(greeting, style="bold cyan")
 
-        # Available Commands를 박스 안에 포함
+        # Chat & Available Commands 구성
         commands_text = Text()
-        commands_text.append("Available Commands:\n", style="bold")
+        commands_text.append("💬 Chat & Interactive Agent Mode:\n", style="bold green")
+        commands_text.append("  • ", style="dim")
+        commands_text.append(
+            "Type ANY prompt or request to chat with SparkleForge AI Agent\n",
+            style="bold white",
+        )
+        commands_text.append(
+            '    (e.g., "이 프로젝트 구조 설명해줘", "버그 수정해줘", "연구 수행해줘")\n\n',
+            style="dim",
+        )
+
+        commands_text.append("⚡ Available System Commands:\n", style="bold cyan")
         commands_text.append("  ", style="dim")
         commands_text.append("research <query>", style="cyan")
-        commands_text.append("  - Start a research task\n", style="dim")
+        commands_text.append("  - Start an autonomous research task\n", style="dim")
         commands_text.append("  ", style="dim")
         commands_text.append("session list", style="cyan")
-        commands_text.append("      - List all sessions\n", style="dim")
+        commands_text.append("      - List all active sessions\n", style="dim")
         commands_text.append("  ", style="dim")
         commands_text.append("context show", style="cyan")
         commands_text.append("     - Show project context\n", style="dim")
@@ -332,11 +349,10 @@ class REPLCLI:
         commands_text.append(" - Autonomous issue-fixer queue\n", style="dim")
         commands_text.append("  ", style="dim")
         commands_text.append("help", style="cyan")
-        commands_text.append("             - Show help message\n", style="dim")
+        commands_text.append("             - Show detailed help message\n", style="dim")
         commands_text.append("  ", style="dim")
         commands_text.append("exit", style="cyan")
-        commands_text.append("             - Exit REPL\n", style="dim")
-        commands_text.append("\n", style="dim")
+        commands_text.append("             - Exit REPL\n\n", style="dim")
         commands_text.append("Type 'help' for detailed command information", style="dim")
 
         # 전체 내용 합치기
@@ -349,7 +365,7 @@ class REPLCLI:
             full_content,
             border_style="cyan",
             padding=(1, 2),
-            title="[bold cyan]Autonomous Multi-Agent Research System[/bold cyan]",
+            title="[bold cyan]💬 SparkleForge Interactive Agent & Research System[/bold cyan]",
             subtitle="[dim]Version 1.0.0[/dim]",
         )
         self.console.print(banner)

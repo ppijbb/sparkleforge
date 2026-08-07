@@ -55,12 +55,11 @@ class SparkleForgeCompleter(Completer):
     def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
         """자동완성 제공."""
         text = document.text_before_cursor
-        words = text.split()
+        if not text or not text.strip():
+            return
 
+        words = text.split()
         if not words:
-            # 첫 번째 명령어 자동완성
-            for cmd in self.commands.keys():
-                yield Completion(cmd, start_position=0, display=cmd)
             return
 
         first_word = words[0].lower()

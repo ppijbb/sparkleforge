@@ -1118,6 +1118,25 @@ async def handle_interactive_command(args):
     logger.info("💬 Starting interactive mode...")
     scheduler = None
 
+    async def _shutdown():
+        # REPL work/coworker commands start MCP server subprocesses via the
+        # get_mcp_hub() singleton (stdio transport, inherits this process's
+        # stdin/stdout). Every other command path calls mcp_hub.cleanup() in
+        # a finally block -- this one didn't, so those subprocesses outlived
+        # the REPL and held the terminal open after "exit" (issue: exit
+        # appeared to hang).
+        if scheduler is not None:
+            try:
+                await scheduler.stop()
+            except Exception:
+                logger.debug("Scheduler stop during shutdown raised", exc_info=True)
+        try:
+            from src.core.mcp_integration import get_mcp_hub
+
+            await get_mcp_hub().cleanup()
+        except Exception:
+            logger.debug("MCP Hub cleanup during shutdown raised", exc_info=True)
+
     try:
         from src.cli.repl_cli import REPLCLI
         from src.core.scheduler import (
@@ -1133,30 +1152,19 @@ async def handle_interactive_command(args):
             try:
                 await cli.run()
             finally:
-                if scheduler is not None:
-                    await scheduler.stop()
+                await _shutdown()
         except asyncio.CancelledError:
             logger.info("👋 Interactive mode cancelled; shutting down")
-            if scheduler is not None:
-                await scheduler.stop()
             raise
         return 0
 
     except (EOFError, KeyboardInterrupt, SystemExit):
         logger.info("👋 Goodbye!")
-        if scheduler is not None:
-            try:
-                await scheduler.stop()
-            except Exception:
-                logger.debug("Scheduler stop during shutdown raised", exc_info=True)
+        await _shutdown()
         return 0
     except Exception as e:
         logger.error(f"❌ Interactive mode failed: {e}")
-        if scheduler is not None:
-            try:
-                await scheduler.stop()
-            except Exception:
-                logger.debug("Scheduler stop during failure raised", exc_info=True)
+        await _shutdown()
         return 1
     return 0
 

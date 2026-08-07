@@ -1,12 +1,75 @@
 import argparse
 import logging
 import os
+from contextlib import contextmanager
 from typing import List
 
 from src.core.agent_orchestrator import get_orchestrator
 from src.core.env_configurator import ConfigurationError, verify_environment
 
 logger = logging.getLogger(__name__)
+
+# Maps substrings of AgentHarness's "[Harness] ... Node" log lines (research
+# mode) and AgentLoop's "[AgentLoop] ..." log lines (autonomous/coworker mode)
+# to a human-readable spinner label, so the status text moves as execution
+# actually moves instead of sitting on a static "Working...".
+_STAGE_LABELS = [
+    ("Classify Node", "🔍 Classifying request..."),
+    ("Planner Node", "📋 Planning tasks..."),
+    ("Single Agent Node", "🤖 Running agent..."),
+    ("Executor Node", "⚙️  Executing tasks..."),
+    ("assigned to:", "🧑‍💻 Assigning tasks..."),
+    ("Anvil engine processed", "🔨 Running local tasks..."),
+    ("SubAgent Delegate Node", "🤝 Delegating to sub-agent..."),
+    ("Document Processor Node", "📄 Processing documents..."),
+    ("Synthesize Node", "📝 Synthesizing results..."),
+    ("Retrying in", "⏳ Retrying..."),
+    ("Context limit hit", "🗜️  Compressing context..."),
+]
+
+# AgentLoop's iteration/tool-call lines carry their own useful detail (which
+# tool, which step) so we echo them instead of collapsing to a static label.
+_STAGE_ECHO_NEEDLES = ("[AgentLoop] Executing tool:", "[AgentLoop] Iteration")
+
+
+class _StageStatusHandler(logging.Handler):
+    """Updates a rich Status spinner's label as the harness/loop moves through stages."""
+
+    def __init__(self, status):
+        super().__init__()
+        self.status = status
+
+    def emit(self, record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return
+        for needle in _STAGE_ECHO_NEEDLES:
+            if needle in msg:
+                self.status.update(f"[bold cyan]⚙️  {msg.split(']', 1)[-1].strip()}")
+                return
+        for needle, label in _STAGE_LABELS:
+            if needle in msg:
+                self.status.update(f"[bold cyan]{label}")
+                return
+
+
+@contextmanager
+def _stage_status(cli, initial_label: str):
+    """Like cli.console.status(), but its label tracks execution progress."""
+    with cli.console.status(f"[bold cyan]{initial_label}", spinner="dots") as status:
+        handler = _StageStatusHandler(status)
+        stage_loggers = [
+            logging.getLogger("src.core.agent_harness"),
+            logging.getLogger("src.core.agent_loop"),
+        ]
+        for stage_logger in stage_loggers:
+            stage_logger.addHandler(handler)
+        try:
+            yield status
+        finally:
+            for stage_logger in stage_loggers:
+                stage_logger.removeHandler(handler)
 
 
 async def work_command(cli, args: List[str]):
@@ -37,12 +100,12 @@ async def work_command(cli, args: List[str]):
     orchestrator = get_orchestrator()
     custom_state = {"mode": "coworker", "current_goal": goal}
 
-    with cli.console.status("[bold cyan]Working...", spinner="dots"):
+    with _stage_status(cli, "Working..."):
         result = await orchestrator.execute(
             user_query=goal, session_id=session_id, restore_session=True, custom_state=custom_state
         )
 
-    _display_action_proposals(cli, result.get("detailed_results", {}))
+    _display_action_proposals(cli, result)
 
 
 async def actions_command(cli, args: List[str]):
@@ -98,7 +161,7 @@ async def approve_command(cli, args: List[str]):
         cli.console.print(f"[yellow]No matching pending action '{action_id}'.[/yellow]")
         return
 
-    with cli.console.status("[bold cyan]Executing approved actions...", spinner="dots"):
+    with _stage_status(cli, "Executing approved actions..."):
         result = await orchestrator.execute(
             user_query=state.get("user_query", ""),
             session_id=session_id,
@@ -106,7 +169,7 @@ async def approve_command(cli, args: List[str]):
             custom_state={"user_responses": user_responses},
         )
 
-    _display_action_proposals(cli, result.get("detailed_results", {}))
+    _display_action_proposals(cli, result)
 
 
 async def deny_command(cli, args: List[str]):
@@ -145,7 +208,7 @@ async def deny_command(cli, args: List[str]):
         cli.console.print(f"[yellow]No matching pending action '{action_id}'.[/yellow]")
         return
 
-    with cli.console.status("[bold cyan]Applying denial...", spinner="dots"):
+    with _stage_status(cli, "Applying denial..."):
         result = await orchestrator.execute(
             user_query=state.get("user_query", ""),
             session_id=session_id,
@@ -153,7 +216,7 @@ async def deny_command(cli, args: List[str]):
             custom_state={"user_responses": user_responses},
         )
 
-    _display_action_proposals(cli, result.get("detailed_results", {}))
+    _display_action_proposals(cli, result)
 
 
 def _display_action_proposals(cli, state):
