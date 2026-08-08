@@ -1,4 +1,5 @@
 """Filesystem tool dispatch (ToolCategory.FILE): read/write/list/delete operations."""
+import itertools
 import logging
 import time
 from typing import Any, Dict
@@ -106,10 +107,14 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 parent = path.parent
                 if parent.exists() and parent.is_dir():
                     try:
-                        siblings = [p.name for p in parent.iterdir() if p.is_dir()]
+                        siblings = list(
+                            itertools.islice(
+                                (p.name for p in parent.iterdir() if p.is_dir()), 10
+                            )
+                        )
                     except OSError:
                         siblings = []
-                    hint = f" This path may be a directory; use list_files to inspect {parent} and read the actual files inside (subdirs: {', '.join(siblings[:10])})."
+                    hint = f" This path may be a directory; use list_files to inspect {parent} and read the actual files inside (subdirs: {', '.join(siblings)})."
                 else:
                     hint = " Use list_files to inspect the parent directory and read the actual files inside."
                 raise FileNotFoundError(f"File not found: {file_path}.{hint}")
