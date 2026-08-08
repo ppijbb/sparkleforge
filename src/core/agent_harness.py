@@ -872,6 +872,8 @@ class AgentHarness:
             f"🚀 Harness starting session {session_id} in {mode} mode for request: '{request[:20]}...'"
         )
 
+        custom_state = state.get("custom_state", {}) if isinstance(state, dict) else {}
+
         if mode == "autonomous":
             try:
                 from src.core.agent_loop import AgentLoop
@@ -895,7 +897,7 @@ class AgentHarness:
                 result = await loop.run_conversation(
                     messages=messages,
                     max_iterations=max_iterations,
-                    task_type=TaskType.RESEARCH,
+                    task_type=TaskType.CODE if custom_state.get("mode") == "coworker" else TaskType.RESEARCH,
                     system_message=sys_prompt,
                     heat_seconds=heat_seconds,
                 )

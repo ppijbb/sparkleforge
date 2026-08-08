@@ -859,6 +859,10 @@ Autonomous problem-solving contract:
         overseer = getattr(self, "greedy_overseer", None)
         if overseer is None:
             return
+            # Skip overseer for non-research tasks (e.g., coworker code tasks)
+            if state.get("task_type") not in [TaskType.RESEARCH, TaskType.ANALYSIS]:
+                return
+
         try:
             # Approximate token usage from the pruned history so the overseer
             # has a concrete budget signal without coupling to a tokenizer.
