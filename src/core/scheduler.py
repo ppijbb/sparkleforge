@@ -459,7 +459,6 @@ class Scheduler:
 
         self.is_running = True
         self.scheduler_task = asyncio.create_task(self._scheduler_loop())
-        logger.info("Scheduler started")
 
     async def stop(self):
         """스케줄러 중지."""
