@@ -399,6 +399,50 @@ async def test_dispatch_batch_to_forge_master_passes_prerequisite_output_to_depe
 
 
 @pytest.mark.asyncio
+async def test_dispatch_batch_to_forge_master_missing_dependency_does_not_crash():
+    """A dependent task referencing a dependency that produced no result
+    (failure, skip, or malformed graph) must still execute with empty prior
+    context instead of raising KeyError and crashing the whole wave."""
+    register_forge_master_dispatch_tool()
+
+    controller = ForgeMasterController()
+    seen_contexts: dict[str, str] = {}
+
+    async def fake_execute_with_agent(agent_name, query, **kwargs):
+        seen_contexts[query] = kwargs.get("context", "") or ""
+        if "task-0" in query:
+            return {"success": False, "response": "", "error": "boom"}
+        return {"success": True, "response": "dependent task done", "confidence": 0.9}
+
+    with patch(
+        "src.core.forge_master.tools.ForgeMasterController",
+        return_value=controller,
+    ), patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(side_effect=fake_execute_with_agent),
+    ):
+        result = await registry.execute(
+            "dispatch_batch_to_forge_master",
+            {
+                "tasks": [
+                    {"agent_name": "codex", "task_query": "task-0 base implementation"},
+                    {
+                        "agent_name": "codex",
+                        "task_query": "task-1 fix review feedback",
+                        "dependencies": [0],
+                    },
+                ]
+            },
+        )
+
+    assert result["total"] == 2
+    dependent_context = next(v for k, v in seen_contexts.items() if "task-1" in k)
+    assert "PREREQUISITE_OUTPUT_MARKER" not in dependent_context
+    assert result["results"][1]["success"] is True
+
+
+@pytest.mark.asyncio
 async def test_delegation_registry_contains_forge_master():
     assert "forge_master" in DELEGATION_REGISTRY
 

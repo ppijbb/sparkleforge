@@ -136,10 +136,25 @@ async def _run_batch_in_waves(
             idx = int(task_id)
             task = tasks[idx]
             dep_indices = [int(d) for d in (task.get("dependencies") or [])]
+            missing_indices = [
+                dep_idx
+                for dep_idx in dep_indices
+                if dep_idx < 0 or dep_idx >= len(tasks) or dep_idx not in results
+            ]
+            for dep_idx in missing_indices:
+                logger.warning(
+                    "forge_master batch: task %s references dependency index %s "
+                    "with no available result (failed, skipped, or malformed); "
+                    "continuing with empty prior context",
+                    idx,
+                    dep_idx,
+                )
             prior_outputs = [
                 f"[Output of task {dep_idx}]\n{results[dep_idx].get('response', '')}"
                 for dep_idx in dep_indices
-                if isinstance(results[dep_idx], dict) and results[dep_idx].get("success")
+                if dep_idx in results
+                and isinstance(results[dep_idx], dict)
+                and results[dep_idx].get("success")
             ]
             if prior_outputs:
                 prior_context = "\n\n".join(prior_outputs)
