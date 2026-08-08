@@ -222,9 +222,16 @@ async def deny_command(cli, args: List[str]):
 def _display_action_proposals(cli, state):
     proposals = state.get("action_proposals", [])
     if not proposals:
-        cli.console.print("[green]No pending actions.[/green]")
-        if state.get("final_report"):
-            cli.console.print(f"\n[bold]Result:[/bold]\n{state['final_report']}")
+        # content > final_report > results 순서로 실제 응답 필드를 탐색
+        output = (
+            state.get("content")
+            or state.get("final_report")
+            or state.get("results")
+        )
+        if output:
+            cli.console.print(f"\n[bold]Result:[/bold]\n{output}")
+        else:
+            cli.console.print("[green]No pending actions.[/green]")
         return
 
     cli.console.print("\n[bold]Action Proposals:[/bold]")
