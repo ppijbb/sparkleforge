@@ -122,15 +122,18 @@ class ProviderAdaptersMixin:
         for attempt in range(max_retries):
             try:
                 # 실행
-                response = await asyncio.get_running_loop().run_in_executor(
-                    None,
-                    lambda: client.generate_content(
-                        full_prompt,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=model_config.temperature,
-                            max_output_tokens=model_config.max_tokens,
+                response = await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(
+                        None,
+                        lambda: client.generate_content(
+                            full_prompt,
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=model_config.temperature,
+                                max_output_tokens=model_config.max_tokens,
+                            ),
                         ),
                     ),
+                    timeout=60.0,
                 )
                 break  # 성공 시 루프 종료
             except Exception as e:
