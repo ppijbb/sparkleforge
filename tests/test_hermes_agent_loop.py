@@ -64,7 +64,6 @@ def make_loop(orchestrator, mcp_hub):
     loop.compressor = NoopCompressor()
     loop.memory = NoopMemory()
     loop.overseer = None
-    loop.greedy_overseer = None
     loop.mode_controller = None
     loop.method_resolver = None
     loop.intent_guardrail = None
@@ -75,6 +74,42 @@ def make_loop(orchestrator, mcp_hub):
 async def test_agent_loop_executes_tool_calls_until_final_answer():
     tool_call = {
         "id": "call_1",
+@pytest.mark.asyncio
+async def test_overseer_branch_is_entered_during_loop_iteration():
+    """Regression for issue #1208: the overseer branch in run_conversation must
+    actually fire when an overseer is wired. Previously the loop guarded on
+    ``self.overseer`` while the constructor assigned ``self.greedy_overseer``,
+    so the branch was dead code at runtime."""
+    tool_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "sparkleforge"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [tool_call]}),
+            ModelResult("final answer", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+
+    overseer_calls = []
+
+    class TrackingOverseer:
+        async def evaluate_execution_results(self, state):
+            overseer_calls.append(state)
+            return {"overseer_decision": "proceed"}
+
+    loop.overseer = TrackingOverseer()
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research sparkleforge"}], max_iterations=3
+    )
+
+    assert result["success"] is True
+    assert len(overseer_calls) >= 1
+    assert overseer_calls[0]["overseer_iterations"] >= 2
         "type": "function",
         "function": {"name": "search", "arguments": '{"query": "sparkleforge"}'},
     }
@@ -314,7 +349,7 @@ async def test_oversee_iteration_skips_research_overseer_for_coworker_tasks():
             calls.append(state)
             return {"overseer_decision": "proceed"}
 
-    loop.greedy_overseer = FakeGreedyOverseer()
+    loop.overseer = FakeGreedyOverseer()
     budget = IterationBudget(max_iterations=5)
 
     await loop._oversee_iteration(budget, [], [], [], TaskType.GENERATION)
