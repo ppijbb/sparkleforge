@@ -58,6 +58,7 @@ Anvil은 "리눅스 같은 진짜 OS"가 아니라 **에이전트를 위한 OS �
 | Λ | 스킬 마켓플레이스 — 인스턴스 간 스킬 공유 | 🔲 계획됨 | 마일스톤 #569 |
 | Φ | Surface 통합 — CLI/웹 UI/자연어 셸 단일화 | 🔲 계획됨 | 마일스톤 #570 |
 | Ω-FM | Forge Master — 에이전트 OS 메타 오케스트레이션 (외부 CLI 제어, 적대적 평가, 24/7 멀티세션, 토큰 최소화) | 🔄 진행중 | `src/core/forge_master/`, `src/core/cli_agents/` |
+| Μ | 모멘텀 엔지니어링 — 정량 지표 기반 개선 강제 (Μ-1 판단축 복구, Μ-2 정체 감지 게이트, Μ-3 에이전트 기반 지표 선정, Μ-4 단일 진실 소스, Μ-5 다축 모멘텀) | 🔲 계획됨 | 마일스톤 #1216 (#1217, #1218, #1219, #1220, #1221) |
 
 **현재 위치**: Σ는 2026-07-12에 닫혔고, Σ-1이 남긴 모놀리스 분할 잔여
 결함(circular import / missing return / signature mismatch, #539)도
@@ -132,3 +133,102 @@ CLI가 한다. 결과는 `docs/SWEBENCH_REPORT.md`에 주간 단위로 쌓인다
 
 다음 §4 후보를 새로 발굴할 때까지, 실제 구현 착수는 §2의 우선순위 논의
 결과에 따른다 (이 문서는 아직 Π/Τ/Λ/Φ 간 우선순위를 정하지 않았다).
+
+## 5. Phase Μ — 모멘텀 엔지니어링 (2026-08-05 제안)
+
+### 5.1 배경 (실측 근거)
+
+- `tests/benchmark/baselines/scenario_history.jsonl`의 37개 기록
+  (2026-07-22 ~ 2026-07-31) 대부분 `overall_score` **0.17에 고정**돼
+  있다. 개선도 후퇴도 없다 — 루프는 도는데 모멘텀이 없다.
+- (2026-08-05 적대적 검토로 수정) 위 "완전히 flat"은 부정확했다 — 37개 중
+  2개(07-25, 그리고 가장 최근인 07-31 — 전체 중 최고점인 0.27)는 값이
+  튄다. 하지만 breakdown을 까 보면 그 변동은 전부 `judge_report_quality`
+  같은 judge-API 축이 어쩌다 `inconclusive`를 면했다가 다시 빠졌다 하는
+  코인플립이 원인이고, 결정론적 체크(`junk_removed`/`report_produced`/
+  `recall`/`organized`/`risk_identified`/`risk_mitigated`/`env_setup`)는
+  **37개 기록 전부 0.0 고정**이다 — 즉 "개선처럼 보이는 기록"조차 실제
+  역량 변화가 아니라 judge 노이즈다. 이게 flat 자체보다 더 나쁜 증거다.
+- 원인: `judge_report_quality` 체크가 매 실행 `inconclusive`로 빠진다
+  (`"All fallback models failed. No available models."`) — LLM judge
+  판단축이 죽어 있다. `junk_removed`도 매번 0점 고정이다.
+- `.github/workflows/scenario-eval.yml`의 `compare_to_history`(→
+  `tests/benchmark/run_scenarios.py`의 `compare_to_history`)는 "직전 1개
+  기록 대비 후퇴만 없으면 통과"하는 방식이고, `inconclusive` 체크는
+  비교 대상에서 스킵된다 — 죽은 판단축이 매번 껴 있어도 게이트를 계속
+  통과한다. 정체(flat) 자체를 잡는 로직이 없다. `run_scenarios.py
+  --print-trend`로 delta를 볼 수는 있지만 어떤 게이트에도 걸려 있지
+  않아 아무도 안 본다.
+- `docs/BENCHMARK_REPORT.md`가 내세우는 "Research Pass Rate 100.0%
+  (Score: 0.775)"는 `scenario_history.jsonl` 어디에도 근거가 없다 —
+  `README.md`/`BENCHMARK_REPORT.md`가 서로만 인용하는 손글씨 수치다.
+  실측(0.17)과 대외 공표 수치(0.775)가 완전히 분리돼 있다.
+
+### 5.2 정의
+
+**루프**(반복 실행 자체가 목표)와 **모멘텀**(각 반복이 직전 대비 측정
+가능한 delta를 만들었는가, 못 만들면 그 자체가 액션 트리거가 되는가)을
+구분한다. Phase Μ는 후자를 CI에 강제하는 게 목표다.
+
+### 5.3 핵심 원칙 — 지표는 정량 우선, 선정은 에이전트가
+
+- `judge_report_quality` 같은 LLM-judge 채점은 보조 신호로 격하한다
+  (가중치 상한을 두거나, 나머지 정량 체크가 전부 통과했을 때만 반영).
+  지금처럼 유일한 subjective 축이 죽으면 전체 신호가 죽어버리는
+  단일장애점 구조를 없앤다.
+- 신규 시나리오의 체크(무엇을 잴지) 자체를 사람이 YAML에 손으로 박지
+  않는다. 이미 있는 M3 산출물 `RequestAnalyzer` +
+  `DynamicChecklistGenerator`(`src/core/anvil/request_analyzer.py`,
+  `src/core/anvil/dynamic_checklist_generator.py`)를 재사용해, 요청에서
+  뽑아낸 `ChecklistItem(success_criteria, weight)`를 정량 체크(파일
+  diff/존재/카운트 기반)로 변환하는 건 에이전트가 제안하고, 사람은
+  승인만 한다.
+- (2026-08-05 적대적 검토로 추가) 위 항목은 그 자체로 이해충돌이다 —
+  나중에 그 기준으로 채점받을 에이전트가 자기 시험문제를 직접 낼 수
+  있다. `src/core/forge_master/adversarial_evaluator.py`가 이미
+  "에이전트 결과물을 그 에이전트 자신이 아니라 별도 zero-trust 평가기가
+  검증한다"는 패턴을 갖고 있다 — Μ-3의 제안 채점 기준도 이 패턴을
+  재사용해 `AdversarialEvaluator`(또는 동급 스켑틱 패스)를 통과한 뒤에만
+  사람 승인 단계로 넘긴다. 제안한 에이전트/세션과 나중에 그 기준으로
+  채점받는 에이전트/세션은 반드시 분리한다.
+
+### 5.4 세부 마일스톤 (안)
+
+- **Μ-1 판단축 복구**: judge fallback 실패(OPENROUTER_API_KEY 또는 모델
+  라우팅 설정) 원인 수정. 이게 안 되면 이하 항목이 잴 좌표축 자체가
+  없다 — 선행 조건.
+- **Μ-2 정체 감지 게이트**: `compare_to_history`를 "직전 1개 대비"에서
+  "최근 N=5 대비 누적 delta"로 확장. 단, delta는 raw 값이 아니라 최소
+  효과 크기(예: `overall_score_adjusted` 기준 Δ ≥ 0.03이 N 중 최소 2회
+  이상)로 판정한다 — 안 그러면 judge-API 노이즈만으로 델타가 생겨 게이트를
+  영구히 무력화할 수 있다(§5.1의 실측 사례가 정확히 이 패턴). N회 연속
+  정체/하락 시 (a) Nightwelding 경로로 breakdown 중 최저점 항목을 지목한
+  이슈를 자동 생성하고, (b) `scenario-eval.yml` 잡 자체를 non-zero exit로
+  실패시켜 CI 하드 게이트로 만든다 — 이슈만 쌓이고 아무도 안 보는
+  Nightwelding 이슈들의 전례(예: `docs/BENCHMARK_REPORT.md`의
+  "Issue #843 OPEN, Tracked" 방치)를 반복하지 않기 위함. 이 자동 생성
+  이슈는 `opencode-auto-fix.yml`의 자동 스캔/자동 머지 대상에서 제외되는
+  라벨을 명시적으로 달아야 한다 — CLAUDE.md의 "사람이 세션 내에서 머지를
+  명시하지 않으면 머지 금지" 원칙과 충돌하지 않도록.
+- **Μ-3 에이전트 기반 지표 선정**: `RequestAnalyzer`/
+  `DynamicChecklistGenerator`를 `tests/benchmark/scenario_grading.py`
+  채점 경로에 연결 — 신규 시나리오 추가 시 에이전트가 정량 체크 후보를
+  제안하고, judge 의존 비중을 축소한다. §5.3의 이해충돌 안전장치(별도
+  `AdversarialEvaluator` 통과, 제안 세션과 채점 대상 세션 분리)를 반드시
+  포함한다.
+- **Μ-4 단일 진실 소스**: `docs/BENCHMARK_REPORT.md`의 손글씨 숫자를
+  없애고, `scenario_history.jsonl` + `docs/SWEBENCH_REPORT.md`에서
+  스크립트로 생성하게 바꾼다. 지금처럼 대외 수치(0.775)와 실측(0.17)이
+  어긋나는 상태 재발을 막는다.
+- **Μ-5 다축 모멘텀 (단일 스칼라 금지)**: `overall_score` 하나만 보지
+  않는다. `scenario_history.jsonl`에 이미 기록되는 `duration_s`(비용/지연
+  대리 지표)와, §3에서 이미 구분해 둔 외부 채점축인
+  `docs/SWEBENCH_REPORT.md`(SWE-bench Lite, 업스트림 하네스로 채점)의
+  추세를 함께 추적한다. 내부 자체 채점(`scenario_history.jsonl`)만 계속
+  개선되고 외부 채점(SWE-bench)은 정체/하락하면 — 내부 지표가 목표가
+  되면서 신뢰도를 잃는 Campbell's law 신호로 보고 Μ-4의 리포트 생성기가
+  이 축간 발산(divergence)을 명시적으로 표시하게 한다.
+
+이슈 발행 완료 — 마일스톤 #1216 (Μ-1 #1217, Μ-2 #1218, Μ-3 #1219,
+Μ-4 #1220, Μ-5 #1221). 착수 순서는 §5.4에 적은 대로 Μ-1이 선행 조건이고,
+나머지는 §2의 다른 계획된 phase(Π/Τ/Λ/Φ)와 마찬가지로 우선순위 미확정.
