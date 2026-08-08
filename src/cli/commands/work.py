@@ -221,10 +221,11 @@ async def deny_command(cli, args: List[str]):
 
 def _display_action_proposals(cli, state):
     proposals = state.get("action_proposals", [])
+    content = state.get("content") or state.get("final_report") or state.get("results") or ""
     if not proposals:
         cli.console.print("[green]No pending actions.[/green]")
-        if state.get("final_report"):
-            cli.console.print(f"\n[bold]Result:[/bold]\n{state['final_report']}")
+        if content:
+            cli.console.print(f"\n[bold]Result:[/bold]\n{content}")
         return
 
     cli.console.print("\n[bold]Action Proposals:[/bold]")
