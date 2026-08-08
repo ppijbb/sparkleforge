@@ -22,7 +22,7 @@ This benchmark report presents empirical performance metrics collected from real
 | **GPT-5.5 / o3** *(OpenAI)* | **74.5% (Pro)** / **88.7% (Verified)** | High Cost (Continuous Polling) | None (Transient Run Only) |
 | **Qwen 3.8 Max** *(Alibaba)* | **72.8% (Pro)** / **87.5% (Verified)** | Cloud MoE Cost | None (Transient Run Only) |
 | **Qwen 3.6 (27B / 35B)** | **65.0% (Pro)** / **77.2% (Verified)** | Medium Cost | None |
-| **SparkleForge OS Loop** *(Free-LLM Tier)* | **66.7% (N=3 PR Merge Rate)**<br>**100.0% Research Quality** | **100% Token Efficiency**<br>*(92%+ Cost Reduction)* | **Supabase Historical Context Engine**<br>*(`agent_error_contexts` Table)* |
+| **SparkleForge OS Loop** *(Free-LLM Tier)* | **66.7% (N=3 PR Merge Rate)**<br>**100.0% Research Quality** | **100% Token Efficiency**<br>*(92%+ Cost Reduction)* | Not yet instrumented — see [§2 Agentic Momentum](#2-agentic-momentum-recovery-step-efficiency-context-reuse) |
 
 ---
 
@@ -41,7 +41,27 @@ This benchmark report presents empirical performance metrics collected from real
 
 ---
 
-### 2. Live Repository Operation Benchmarks (July 21, 2026 Log)
+### 2. Agentic Momentum (Recovery, Step Efficiency, Context Reuse)
+
+Resolve rate and token cost say whether a task finished cheaply. They say
+nothing about whether the agent kept making forward progress on the way
+there — recovered from a failed attempt, converged in a reasonable number of
+steps, or reused a diagnosis it already made once. This section is the one
+place those numbers live; each row either has a formula and a data source,
+or is marked as not yet measured. No unsourced numbers.
+
+| Metric | Value | Formula / Data Source |
+| :--- | :--- | :--- |
+| **MTTM** | **141.08 min** (2h 21m) | PR merge timestamp − PR creation timestamp, averaged (see §1 above) |
+| **Recovery Rate** | *Not yet instrumented* | `resolved / (resolved + pending + analyzing)` over `agent_error_contexts.remediation_status` (`supabase_schema.sql:79-94`). Blocked: no code under `src/` currently writes or reads this table. |
+| **Step Efficiency** | *Not yet instrumented* | Orchestrator stage-completions per resolved task vs. per failed task, from the `▶ orchestrator stage completed: {node_name}` log line (`src/core/autonomous_orchestrator.py:257`) against the ~12-stage pipeline ceiling. Logging landed in #1240 (2026-08-06) — too recent for a baseline sample. |
+| **Historical Remediation Reuse Rate** | *Not yet instrumented* | % of resolved errors whose fix matched a prior `agent_error_contexts` row by `(error_type, scenario_name)` instead of being re-diagnosed cold. Same blocker as Recovery Rate. |
+
+Tracked in #1246.
+
+---
+
+### 3. Live Repository Operation Benchmarks (July 21, 2026 Log)
 
 ```
 +-----------------------------------------------------------------------------------------+
