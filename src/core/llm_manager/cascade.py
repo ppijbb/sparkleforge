@@ -334,6 +334,14 @@ class CascadeMixin:
         # 키가 있는 무료 provider 풀 전체를 순서대로 시도
         fallback_order = list(self.provider_rotation_order)
 
+        # Skip providers whose API keys are not configured up front to avoid
+        # spending an LLM round-trip on a guaranteed 401/404. This is a major
+        # source of per-iteration latency when the primary model 404s and the
+        # fallback chain walks providers that cannot possibly succeed.
+        fallback_order = [
+            p for p in fallback_order if self._provider_has_api_key(p)
+        ]
+
         for provider in fallback_order:
             if provider in skip_providers:
                 continue
@@ -402,6 +410,14 @@ class CascadeMixin:
                 logger.info(f"✅ Fallback successful with {fallback_model}")
                 print(f"✅ fallback succeeded: {fallback_model}")
                 return result, fallback_model
+            except asyncio.TimeoutError:
+                # Gemini/primary direct calls without a timeout (#1256) can hang
+                # for the full iteration budget. Treat as a fast-fail so we move
+                # to the next provider instead of burning the whole iteration.
+                logger.warning(
+                    f"Fallback model {fallback_model} timed out, trying next..."
+                )
+                continue
             except Exception as e:
                 # 에러 메시지에서 HTML 필터링 및 중첩 방지
                 error_str = str(e)
@@ -426,6 +442,14 @@ class CascadeMixin:
                             f"Removing unavailable Groq model from available models: {fallback_model}"
                         )
                         del self.models[fallback_model]
+                # Likewise remove NVIDIA NIM models that 404 so subsequent
+                # iterations don't re-attempt the dead primary model every
+                # time (the measured 45s~5min per-iteration stall source).
+                if provider == "nvidia" and fallback_model in self.models:
+                    logger.warning(
+                        f"Removing unavailable NVIDIA NIM model from available models: {fallback_model}"
+                    )
+                    del self.models[fallback_model]
                     continue
 
                 # Rate limit 에러 (429)는 재시도 가능하지만 fallback에서는 다음 모델로
