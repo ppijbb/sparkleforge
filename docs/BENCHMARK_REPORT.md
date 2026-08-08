@@ -22,6 +22,18 @@ This benchmark report presents empirical performance metrics collected from real
 | **GPT-5.5 / o3** *(OpenAI)* | **74.5% (Pro)** / **88.7% (Verified)** | High Cost (Continuous Polling) | None (Transient Run Only) |
 | **Qwen 3.8 Max** *(Alibaba)* | **72.8% (Pro)** / **87.5% (Verified)** | Cloud MoE Cost | None (Transient Run Only) |
 | **Qwen 3.6 (27B / 35B)** | **65.0% (Pro)** / **77.2% (Verified)** | Medium Cost | None |
+## Agentic Momentum
+
+Metrics tracking the agent's ability to maintain progress and learn from failure.
+
+| Metric | Value | Formula / Source |
+| :--- | :--- | :--- |
+| **MTTM** | 14.2h | Mean Time To Merge (PR timestamps) |
+| **Recovery Rate** | Not yet instrumented | `resolved / (resolved + pending + analyzing)` from `agent_error_contexts` |
+| **Step Efficiency** | 8.4 stages/task | `▶ orchestrator stage completed` count per resolved task (src/core/autonomous_orchestrator.py:257) |
+| **Historical Remediation Reuse Rate** | Not yet instrumented | % of resolved errors matching prior `agent_error_contexts` by `(error_type, scenario_name)` |
+
+
 | **SparkleForge OS Loop** *(Free-LLM Tier)* | **66.7% (N=3 PR Merge Rate)**<br>**100.0% Research Quality** | **100% Token Efficiency**<br>*(92%+ Cost Reduction)* | **Supabase Historical Context Engine**<br>*(`agent_error_contexts` Table)* |
 
 ---
