@@ -116,7 +116,6 @@ Autonomous problem-solving contract:
 
         from src.core.anvil.method_resolver import MethodResolver
         from src.core.anvil.mode_controller import ModeController
-        from src.core.anvil.method_resolver import ResolutionStrategy, ResolvedMethod
 
         self.memory = PersistentMemory()
         self.mode_controller = ModeController(plan_first=self._plan_first)
@@ -442,9 +441,17 @@ Autonomous problem-solving contract:
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
                 try:
                     tool_exec_result = await self.mcp_hub.execute_tool(tool_name, arguments)
+                    tool_succeeded = (
+                        tool_exec_result.get("success", True)
+                        if isinstance(tool_exec_result, dict)
+                        else True
+                    )
                     if self.mode_controller:
-                        self.mode_controller.record_success()
-                    await self._record_resolved_capability(tool_name)
+                        if tool_succeeded:
+                            self.mode_controller.record_success()
+                        else:
+                            self.mode_controller.record_failure()
+                    await self._record_resolved_capability(tool_name, success=tool_succeeded)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
                     tool_exec_result = {"success": False, "error": str(e)}
@@ -913,34 +920,18 @@ Autonomous problem-solving contract:
             logger.warning("[AgentLoop] Failed to build method resolver registry: %s", e)
         return registry
 
-    async def _record_resolved_capability(self, capability: str) -> None:
-        """MethodResolver를 통해 도구 capability 해결 시도를 기록."""
-        if self.method_resolver is None:
-            return
-        resolved = await self.method_resolver.resolve(capability)
-        if not resolved.resolved and self.mode_controller:
-            self.mode_controller.on_unresolved_capability(capability)
+    async def _record_resolved_capability(self, capability: str, success: bool = True) -> None:
+        """MethodResolver를 통해 도구 capability 해결 시도를 기록.
 
-    async def _record_resolved_capability(self, capability: str) -> None:
-        """이미 mcp_hub.execute_tool로 성공한 capability는 resolved로 기록.
-
-        issue #1259: 실제 도구 실행이 성공했는데도 별개의 빈
-        MethodResolver를 거치며 '미해결'로 오탐지되어 mode_controller가
-        autonomous -> hitl_collaborative로 계속 전환되는 현상을 막는다.
-        실행 성공 자체가 capability 확보의 증거이므로, resolver 체인을
-        다시 거치지 않고 resolved로 처리한다.
+        issue #1259/#1260: handler_registry가 실제 도구로 채워진 뒤에는
+        resolver 체인 자체가 등록된 도구를 정확히 resolved로 판단하므로
+        결과를 덮어쓸 필요가 없다. success=False(예: 존재하지 않는 도구가
+        예외 없이 {"success": false}를 반환한 경우)에는 resolver가 찾지
+        못한 capability를 억지로 resolved 처리하지 않고 그대로
+        on_unresolved_capability 신호를 보존해 HITL 전환이 계속 동작하게 한다.
         """
         if self.method_resolver is None:
             return
-        try:
-            from src.core.anvil.method_resolver import ResolutionStrategy, ResolvedMethod
-
-            resolved = await self.method_resolver.resolve(capability)
-            if not resolved.resolved:
-                # resolver가 실패해도 실제 실행은 성공했으므로 resolved로 덮어쓴다.
-                self.method_resolver.handler_registry.setdefault(capability, lambda *a, **k: None)
-                if self.mode_controller:
-                    # 실제 실행 성공이므로 미해열 신호를 보내지 않는다.
-                    return
-        except Exception as e:
-            logger.warning("[AgentLoop] _record_resolved_capability failed: %s", e)
+        resolved = await self.method_resolver.resolve(capability)
+        if not (resolved.resolved and success) and self.mode_controller:
+            self.mode_controller.on_unresolved_capability(capability)
