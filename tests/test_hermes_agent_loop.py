@@ -1,7 +1,7 @@
 import pytest
 from types import SimpleNamespace
 
-from src.core.agent_loop import AgentLoop
+from src.core.agent_loop import AgentLoop, IterationBudget
 from src.core.autonomous_orchestrator import _autopilot_mode_enabled
 from src.core.llm_manager import ModelResult, TaskType
 from src.core.orchestrator.execution import ExecutionNode
@@ -258,3 +258,23 @@ def test_agent_loop_adds_autonomous_contract():
     assert "Base" in system_message
     assert "Do not ask the user for clarification" in system_message
     assert "hard blocker" in system_message
+
+
+@pytest.mark.asyncio
+async def test_oversee_iteration_skips_research_overseer_for_coworker_tasks():
+    loop = make_loop(FakeOrchestrator([]), FakeMCPHub())
+    calls = []
+
+    class FakeGreedyOverseer:
+        async def evaluate_execution_results(self, state):
+            calls.append(state)
+            return {"overseer_decision": "proceed"}
+
+    loop.greedy_overseer = FakeGreedyOverseer()
+    budget = IterationBudget(max_iterations=5)
+
+    await loop._oversee_iteration(budget, [], [], [], TaskType.GENERATION)
+    assert calls == []
+
+    await loop._oversee_iteration(budget, [], [], [], TaskType.RESEARCH)
+    assert len(calls) == 1
