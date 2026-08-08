@@ -345,6 +345,10 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         print(f"[scenario-eval] no history found at {history_path}, nothing to compare against.")
         return 0
 
+    # Momentum gate (Anvil Μ-2): compare against the most recent *conclusive*
+    # history entry. Skipping inconclusive records here is what previously let a
+    # dead judge axis keep passing the gate — an inconclusive run carries no
+    # signal about capability change, so it must not be the comparison anchor.
     last_line = None
     with history_path.open(encoding="utf-8") as f:
         for line in f:
@@ -355,8 +359,31 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         print(f"[scenario-eval] history file {history_path} is empty, nothing to compare against.")
         return 0
 
-    prior_report = json.loads(last_line)
-    print(f"[scenario-eval] comparing against history entry from {prior_report.get('generated_at')}")
+    entries = []
+    with history_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entries.append(json.loads(line))
+
+    prior_report = None
+    for entry in reversed(entries):
+        if entry.get("inconclusive_checks", 0) == 0:
+            prior_report = entry
+            break
+
+    if prior_report is None:
+        print(
+            "[scenario-eval] no conclusive history entry found (all recorded runs had "
+            "inconclusive checks); cannot anchor momentum gate, treating as no-op compare.",
+            file=sys.stderr,
+        )
+        return 0
+
+    print(
+        f"[scenario-eval] comparing against conclusive history entry from "
+        f"{prior_report.get('generated_at')} (skipped inconclusive entries)"
+    )
     return _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {}))
 
 
