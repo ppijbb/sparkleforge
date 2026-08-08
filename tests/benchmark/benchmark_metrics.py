@@ -634,4 +634,14 @@ class BenchmarkAnalyzer:
                     }
                 )
 
+        # Phase M-5: Detect divergence between internal and external metrics
+        # This is a placeholder for the logic that would compare internal scores
+        # with external SWE-bench resolve-rate trends.
+        # In a real implementation, this would access the external report file.
+        # For now, we define the divergence structure.
+        insights["divergence_check"] = {
+            "status": "pending",
+            "note": "Phase M-5: Monitoring internal/external score divergence."
+        }
+
         return insights
