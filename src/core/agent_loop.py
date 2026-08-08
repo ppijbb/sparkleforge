@@ -208,10 +208,15 @@ Autonomous problem-solving contract:
             logger.info(f"[AgentLoop] Iteration {budget.current_iteration}/{max_iterations}")
             self._apply_mode_to_messages(history)
             await self._guard_intent(history)
-            await self._oversee_iteration(budget, history, tool_results, errors)
+            await self._oversee_iteration(budget, history, tool_results, errors, task_type)
 
             # Monitor token budgets and step limits via GreedyOverseerAgent
-            if budget.current_iteration > 1 and self.overseer:
+            # (skipped for non-research tasks -- see _oversee_iteration above)
+            if (
+                budget.current_iteration > 1
+                and self.overseer
+                and task_type in (TaskType.RESEARCH, TaskType.ANALYSIS)
+            ):
                 await self.overseer.evaluate_execution_results({"overseer_iterations": budget.current_iteration})
 
             # Phase 3: Compress context if needed
@@ -848,6 +853,7 @@ Autonomous problem-solving contract:
         history: List[Dict[str, Any]],
         tool_results: List[Dict[str, Any]],
         errors: List[Dict[str, Any]],
+        task_type: TaskType,
     ) -> None:
         """GreedyOverseerAgent hook (issue #1038).
 
@@ -859,9 +865,10 @@ Autonomous problem-solving contract:
         overseer = getattr(self, "greedy_overseer", None)
         if overseer is None:
             return
-            # Skip overseer for non-research tasks (e.g., coworker code tasks)
-            if state.get("task_type") not in [TaskType.RESEARCH, TaskType.ANALYSIS]:
-                return
+        # Skip overseer for non-research tasks (e.g., coworker code tasks) --
+        # its academic-sourcing requirements cause those tasks to retry forever.
+        if task_type not in (TaskType.RESEARCH, TaskType.ANALYSIS):
+            return
 
         try:
             # Approximate token usage from the pruned history so the overseer
