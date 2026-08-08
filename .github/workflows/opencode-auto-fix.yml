@@ -125,6 +125,14 @@ jobs:
             exit 0
           fi
 
+          # Written immediately so a later failure in this step (e.g. commit-title
+          # derivation/validation) still lets the "Report auto-fix failure on issue"
+          # step label and comment on the issue. Without this, a failure here leaves
+          # steps.context.outputs.issue_number empty, the issue never gets
+          # auto-fix-failed, and the same issue is re-selected and re-fails on every
+          # subsequent scheduled run forever, blocking every other open issue.
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
           ISSUE_URL=$(gh issue view "$ISSUE_NUMBER" \
             --repo "${{ github.repository }}" \
             --json url \
@@ -231,7 +239,6 @@ jobs:
             ' > issue-context.md
 
           {
-            echo "issue_number=$ISSUE_NUMBER"
             echo "issue_url=$ISSUE_URL"
             echo "pr_title<<EOF"
             echo "$PR_TITLE"
