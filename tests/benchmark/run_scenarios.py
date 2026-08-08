@@ -78,6 +78,49 @@ JUDGE_REGRESSION_TOLERANCE = 0.15
 DETERMINISTIC_REGRESSION_TOLERANCE = 0.0
 
 
+def _truncate_excerpt(text: str, limit: int = 1500) -> str:
+    """Truncate ``text`` to at most ``limit`` characters on a clean boundary.
+
+    A raw character slice cuts mid-token (e.g. ``...model_regist``), corrupting
+    diagnostic excerpts. This trims at the last whitespace boundary before the
+    limit so no partial tokens appear in ``stdout_excerpt``/``stderr_excerpt``.
+    """
+    if not text or len(text) <= limit:
+        return text or ""
+    candidate = text[:limit]
+    boundary = max(candidate.rfind(" "), candidate.rfind("\n"), candidate.rfind("\t"))
+    if boundary > 0:
+        return candidate[:boundary]
+    return candidate
+
+
+def _llm_provider_keys_present() -> tuple[bool, list[str]]:
+    """Return (any_present, present_provider_names) for known LLM API keys."""
+    providers = [
+        ("google", "GOOGLE_API_KEY"),
+        ("google", "GEMINI_API_KEY"),
+        ("groq", "GROQ_API_KEY"),
+        ("openai", "OPENAI_API_KEY"),
+        ("nvidia", "NVIDIA_API_KEY"),
+        ("openrouter", "OPENROUTER_API_KEY"),
+    ]
+    present = [name for name, env_var in providers if os.environ.get(env_var, "").strip()]
+    return (bool(present), present)
+
+
+def preflight_llm_availability() -> tuple[bool, str]:
+    """Fail-fast check: at least one LLM provider API key must be configured."""
+    any_present, present = _llm_provider_keys_present()
+    if not any_present:
+        return False, (
+            "No LLM provider API keys configured (checked GOOGLE_API_KEY, "
+            "GEMINI_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, NVIDIA_API_KEY, "
+            "OPENROUTER_API_KEY). Aborting scenario run to avoid recording "
+            "garbage baselines from trivial rule-based fallbacks."
+        )
+    return True, f"LLM providers available: {', '.join(sorted(set(present)))}"
+
+
 def require_openrouter_api_key() -> bool:
     """Return whether judge-dependent scenario scoring can run."""
     if os.environ.get("OPENROUTER_API_KEY", "").strip():
@@ -236,9 +279,9 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             "returncode": recorded_returncode,
             "timed_out": exec_result["timed_out"],
             "duration_s": round(exec_result["duration_s"], 2),
-            "stdout_excerpt": exec_result["stdout"][:1500],
+            "stdout_excerpt": _truncate_excerpt(exec_result["stdout"]),
             "error_taxonomy": classify_error(exec_result["stderr"]) if exec_result["returncode"] != 0 else None,
-            "stderr_excerpt": exec_result["stderr"][:1500],
+            "stderr_excerpt": _truncate_excerpt(exec_result["stderr"]),
         }
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
@@ -406,6 +449,16 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
 
 def append_history(report: Dict[str, Any], history_path: Path) -> None:
     """Append this run's report as one line to an append-only JSONL history file."""
+    # Guard the history append: never record runs that never executed against an
+    # LLM (total model outage). Such records are pure noise that pollute the
+    # baseline and mask real regressions in future comparisons.
+    if any(r.get("critical_failure") for r in report.get("scenarios", {}).values()):
+        print(
+            "[scenario-eval] skipping history append: one or more scenarios had a "
+            "total LLM infrastructure failure (no model available).",
+            file=sys.stderr,
+        )
+        return
     history_path.parent.mkdir(parents=True, exist_ok=True)
     with history_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(report, ensure_ascii=False) + "\n")
@@ -503,6 +556,12 @@ async def _main() -> int:
         for spec in specs:
             print(f"{spec['id']}: {spec.get('name', '')}")
         return 0
+
+    ok, message = preflight_llm_availability()
+    if not ok:
+        print(f"[scenario-eval] {message}", file=sys.stderr)
+        return 1
+    print(f"[scenario-eval] preflight: {message}")
 
     if not require_openrouter_api_key():
         return 1
