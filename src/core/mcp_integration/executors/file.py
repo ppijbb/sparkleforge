@@ -1,4 +1,5 @@
 """Filesystem tool dispatch (ToolCategory.FILE): read/write/list/delete operations."""
+import itertools
 import logging
 import time
 from typing import Any, Dict
@@ -114,7 +115,30 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
 
             path = Path(file_path)
             if not path.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
+                # 복구 유도: 경로가 디렉토리일 수 있으므로 명확한 안내 제공.
+                # 모델이 다음 턴에서 list_files로 진짜 파일을 찾도록 유도한다.
+                parent = path.parent
+                if parent.exists() and parent.is_dir():
+                    try:
+                        siblings = list(
+                            itertools.islice(
+                                (p.name for p in parent.iterdir() if p.is_dir()), 10
+                            )
+                        )
+                    except OSError:
+                        siblings = []
+                    hint = f" This path may be a directory; use list_files to inspect {parent} and read the actual files inside (subdirs: {', '.join(siblings)})."
+                else:
+                    hint = " Use list_files to inspect the parent directory and read the actual files inside."
+                raise FileNotFoundError(f"File not found: {file_path}.{hint}")
+
+            if path.is_dir():
+                # 디렉토리를 파일로 읽으려 한 경우 자동으로 list_files로 복구한다.
+                logger.info("read_file target is a directory; recovering via list_files: %s", file_path)
+                return await _execute_file_tool(
+                    "list_files",
+                    {**parameters, "directory_path": file_path},
+                )
 
             content = path.read_text(encoding="utf-8")
 
