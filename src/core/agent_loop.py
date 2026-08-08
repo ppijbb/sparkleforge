@@ -115,11 +115,13 @@ Autonomous problem-solving contract:
         from src.core.memory.persistent import PersistentMemory
 
         from src.core.anvil.method_resolver import MethodResolver
-        from src.core.anvil.mode_controller import ExecutionMode, ModeController
+        from src.core.anvil.mode_controller import ModeController
 
         self.memory = PersistentMemory()
         self.mode_controller = ModeController(plan_first=self._plan_first)
-        self.method_resolver = MethodResolver()
+        self.method_resolver = MethodResolver(
+            handler_registry=self._build_method_resolver_registry()
+        )
         self.intent_guardrail = None
 
         # GreedyOverseerAgent wiring (issue #1038): monitor token budgets and
@@ -444,9 +446,17 @@ Autonomous problem-solving contract:
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
                 try:
                     tool_exec_result = await self.mcp_hub.execute_tool(tool_name, arguments)
+                    tool_succeeded = (
+                        tool_exec_result.get("success", True)
+                        if isinstance(tool_exec_result, dict)
+                        else True
+                    )
                     if self.mode_controller:
-                        self.mode_controller.record_success()
-                    await self._record_resolved_capability(tool_name)
+                        if tool_succeeded:
+                            self.mode_controller.record_success()
+                        else:
+                            self.mode_controller.record_failure()
+                    await self._record_resolved_capability(tool_name, success=tool_succeeded)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
                     tool_exec_result = {"success": False, "error": str(e)}
@@ -904,10 +914,35 @@ Autonomous problem-solving contract:
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent evaluation failed: %s", e)
 
-    async def _record_resolved_capability(self, capability: str) -> None:
-        """MethodResolver를 통해 도구 capability 해결 시도를 기록."""
+    def _build_method_resolver_registry(self) -> Dict[str, Any]:
+        """MethodResolver의 handler_registry를 실제 도구 레지스트리로 채운다.
+
+        issue #1259: MethodResolver()를 인자 없이 생성하면 handler_registry가
+        빈 dict가 되어, mcp_hub에 정상 등록된 도구도 항상 '미해결'로 오탐지된다.
+        여기서 mcp_hub.registry에 등록된 도구 이름을 capability 키로 매핑해
+        resolve()가 REGISTERED_HANDLER 단계에서 성공하도록 만든다.
+        """
+        registry: Dict[str, Any] = {}
+        try:
+            registry_tools = getattr(getattr(self.mcp_hub, "registry", None), "tools", {}) or {}
+            for name in registry_tools:
+                registry[name] = lambda *args, _n=name, **kwargs: self.mcp_hub.execute_tool(_n, kwargs)
+        except Exception as e:
+            logger.warning("[AgentLoop] Failed to build method resolver registry: %s", e)
+        return registry
+
+    async def _record_resolved_capability(self, capability: str, success: bool = True) -> None:
+        """MethodResolver를 통해 도구 capability 해결 시도를 기록.
+
+        issue #1259/#1260: handler_registry가 실제 도구로 채워진 뒤에는
+        resolver 체인 자체가 등록된 도구를 정확히 resolved로 판단하므로
+        결과를 덮어쓸 필요가 없다. success=False(예: 존재하지 않는 도구가
+        예외 없이 {"success": false}를 반환한 경우)에는 resolver가 찾지
+        못한 capability를 억지로 resolved 처리하지 않고 그대로
+        on_unresolved_capability 신호를 보존해 HITL 전환이 계속 동작하게 한다.
+        """
         if self.method_resolver is None:
             return
         resolved = await self.method_resolver.resolve(capability)
-        if not resolved.resolved and self.mode_controller:
+        if not (resolved.resolved and success) and self.mode_controller:
             self.mode_controller.on_unresolved_capability(capability)

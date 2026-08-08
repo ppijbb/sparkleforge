@@ -261,6 +261,50 @@ def test_agent_loop_adds_autonomous_contract():
 
 
 @pytest.mark.asyncio
+async def test_record_resolved_capability_gates_on_tool_success():
+    loop = make_loop(FakeOrchestrator([]), FakeMCPHub())
+
+    class FakeResolvedMethod:
+        def __init__(self, resolved):
+            self.resolved = resolved
+
+    class FakeMethodResolver:
+        def __init__(self, resolved):
+            self._resolved = resolved
+
+        async def resolve(self, capability):
+            return FakeResolvedMethod(self._resolved)
+
+    class FakeModeController:
+        def __init__(self):
+            self.unresolved_calls = []
+
+        def on_unresolved_capability(self, capability):
+            self.unresolved_calls.append(capability)
+
+    # Registered tool (resolver finds it) that ran and reported success:
+    # no HITL escalation.
+    loop.method_resolver = FakeMethodResolver(resolved=True)
+    loop.mode_controller = FakeModeController()
+    await loop._record_resolved_capability("search", success=True)
+    assert loop.mode_controller.unresolved_calls == []
+
+    # Unknown tool: execute_tool returned {"success": False} without raising,
+    # and the resolver can't find a handler either -- must still escalate.
+    loop.method_resolver = FakeMethodResolver(resolved=False)
+    loop.mode_controller = FakeModeController()
+    await loop._record_resolved_capability("no_such_tool", success=False)
+    assert loop.mode_controller.unresolved_calls == ["no_such_tool"]
+
+    # Registered tool that failed at runtime (success=False) must not be
+    # silently swallowed just because the resolver can find a handler for it.
+    loop.method_resolver = FakeMethodResolver(resolved=True)
+    loop.mode_controller = FakeModeController()
+    await loop._record_resolved_capability("search", success=False)
+    assert loop.mode_controller.unresolved_calls == ["search"]
+
+
+@pytest.mark.asyncio
 async def test_oversee_iteration_skips_research_overseer_for_coworker_tasks():
     loop = make_loop(FakeOrchestrator([]), FakeMCPHub())
     calls = []
