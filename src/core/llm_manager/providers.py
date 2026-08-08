@@ -62,23 +62,34 @@ class ProviderAdaptersMixin:
             )
 
         client = genai_v2.Client(api_key=api_key)
+        http_options = types.HttpOptions(timeout=60000)  # ms; bounds transport, not just the awaiting coroutine
         config = types.CreateCachedContentConfig(
             display_name=f"sparkleforge_{model_name}",
             system_instruction=system_message,
             ttl="3600s",
+            http_options=http_options,
         )
-        cache = client.caches.create(model=model_id, config=config)
-        response = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: client.models.generate_content(
-                model=model_id,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    cached_content=cache.name,
-                    temperature=getattr(model_config, "temperature", 0.1),
-                    max_output_tokens=getattr(model_config, "max_tokens", 4000),
+        cache = await asyncio.wait_for(
+            asyncio.get_running_loop().run_in_executor(
+                None, lambda: client.caches.create(model=model_id, config=config)
+            ),
+            timeout=60.0,
+        )
+        response = await asyncio.wait_for(
+            asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=model_id,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        cached_content=cache.name,
+                        temperature=getattr(model_config, "temperature", 0.1),
+                        max_output_tokens=getattr(model_config, "max_tokens", 4000),
+                        http_options=http_options,
+                    ),
                 ),
             ),
+            timeout=60.0,
         )
         text = ""
         if response and getattr(response, "candidates", None):
@@ -122,15 +133,19 @@ class ProviderAdaptersMixin:
         for attempt in range(max_retries):
             try:
                 # 실행
-                response = await asyncio.get_running_loop().run_in_executor(
-                    None,
-                    lambda: client.generate_content(
-                        full_prompt,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=model_config.temperature,
-                            max_output_tokens=model_config.max_tokens,
+                response = await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(
+                        None,
+                        lambda: client.generate_content(
+                            full_prompt,
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=model_config.temperature,
+                                max_output_tokens=model_config.max_tokens,
+                            ),
+                            request_options={"timeout": 60},
                         ),
                     ),
+                    timeout=60.0,
                 )
                 break  # 성공 시 루프 종료
             except Exception as e:
