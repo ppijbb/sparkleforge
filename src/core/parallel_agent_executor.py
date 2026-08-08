@@ -226,10 +226,6 @@ class ParallelAgentExecutor:
         current_concurrency = self.concurrency_manager.get_current_concurrency()
         semaphore = asyncio.Semaphore(current_concurrency)
 
-        # Get dynamic concurrency
-        current_concurrency = self.concurrency_manager.get_current_concurrency()
-        semaphore = asyncio.Semaphore(current_concurrency)
-
         # 실행 레벨별로 처리
         execution_levels = dependency_graph.get_execution_levels()
         logger.info(f"📊 Execution levels: {len(execution_levels)} levels")
