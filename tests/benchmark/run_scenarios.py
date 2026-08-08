@@ -200,6 +200,23 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             exec_result["returncode"] != 0
             and "No available models" in exec_result["stderr"]
         )
+        if critical_failure:
+            # Total LLM infrastructure failure: every check must be marked
+            # inconclusive (not conclusive-with-a-score) and zeroed so the
+            # run cannot be mistaken for a genuine low-score conclusive run.
+            # Restores the pre-regression behavior where fallback judge
+            # evaluations propagated inconclusive=True through this path.
+            for check in graded["breakdown"].values():
+                check["score"] = 0.0
+                check["inconclusive"] = True
+                if not check["reason"].startswith("agent execution failed"):
+                    check["reason"] = (
+                        "infrastructure failure: no model available — "
+                        + check["reason"]
+                    )
+            graded["total"] = 0.0
+            graded["adjusted_total"] = 0.0
+
         # Infrastructure failures (model unavailability) must propagate a
         # non-zero returncode so CI gates can distinguish a total model
         # collapse from a genuinely successful run. Use exit code 2 for
