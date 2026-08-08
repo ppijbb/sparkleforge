@@ -1,7 +1,7 @@
 import pytest
 from types import SimpleNamespace
 
-from src.core.agent_loop import AgentLoop
+from src.core.agent_loop import AgentLoop, IterationBudget
 from src.core.autonomous_orchestrator import _autopilot_mode_enabled
 from src.core.llm_manager import ModelResult, TaskType
 from src.core.orchestrator.execution import ExecutionNode
@@ -302,3 +302,23 @@ async def test_record_resolved_capability_gates_on_tool_success():
     loop.mode_controller = FakeModeController()
     await loop._record_resolved_capability("search", success=False)
     assert loop.mode_controller.unresolved_calls == ["search"]
+
+
+@pytest.mark.asyncio
+async def test_oversee_iteration_skips_research_overseer_for_coworker_tasks():
+    loop = make_loop(FakeOrchestrator([]), FakeMCPHub())
+    calls = []
+
+    class FakeGreedyOverseer:
+        async def evaluate_execution_results(self, state):
+            calls.append(state)
+            return {"overseer_decision": "proceed"}
+
+    loop.greedy_overseer = FakeGreedyOverseer()
+    budget = IterationBudget(max_iterations=5)
+
+    await loop._oversee_iteration(budget, [], [], [], TaskType.GENERATION)
+    assert calls == []
+
+    await loop._oversee_iteration(budget, [], [], [], TaskType.RESEARCH)
+    assert len(calls) == 1

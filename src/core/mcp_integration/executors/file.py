@@ -60,8 +60,21 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 raise ValueError(f"Unknown filesystem operation: {operation or '(missing)'}")
             # read 대상이 디렉토리면 목록 조회로 처리
             target = parameters.get("path") or parameters.get("file_path") or ""
-            if mapped == "read_file" and target and Path(target).is_dir():
-                mapped = "list_files"
+            if mapped == "read_file" and target:
+                target_path = Path(target)
+                if target_path.is_dir():
+                    mapped = "list_files"
+                elif (
+                    not target_path.exists()
+                    and target_path.suffix
+                    and target_path.with_suffix("").is_dir()
+                ):
+                    # 모델이 디렉토리 이름에 확장자를 잘못 붙여 추측한 경우
+                    # (예: 실제로는 디렉토리인 "wal/"을 "wal.rs" 파일로 착각) --
+                    # 존재하지 않는 파일 에러 대신 실제 디렉토리 목록을 돌려준다.
+                    target = str(target_path.with_suffix(""))
+                    parameters = {**parameters, "path": target}
+                    mapped = "list_files"
             if "file_path" not in parameters and "path" in parameters:
                 parameters = {**parameters, "file_path": parameters["path"]}
             if mapped == "list_files" and "directory_path" not in parameters:

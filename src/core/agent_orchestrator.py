@@ -164,6 +164,7 @@ class AgentOrchestrator:
             mode=mode,
             identity=identity,
             heat_seconds=heat_seconds,
+            custom_state=custom_state,
         )
 
         # Cross-domain isomorphism extraction (issue #922): map abstract

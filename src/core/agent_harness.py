@@ -857,6 +857,7 @@ class AgentHarness:
         mode: str = "autonomous",
         identity: str = "researcher",
         heat_seconds: float | None = None,
+        custom_state: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """하네스 실행 (오케스트레이터의 주 진입점)
 
@@ -866,11 +867,14 @@ class AgentHarness:
             max_iterations: 최대 루프 반복 횟수
             mode: 'autonomous' (Hermes-style loop) 또는 'research' (Original LangGraph)
             heat_seconds: 선택적 시간 예산("Heat", 이슈 #585) -- autonomous 모드에서만 적용됨
+            custom_state: 호출자(AgentOrchestrator)가 전달하는 세션 부가 상태 (예: coworker 모드 표시)
         """
         start_time = time.time()
         logger.info(
             f"🚀 Harness starting session {session_id} in {mode} mode for request: '{request[:20]}...'"
         )
+
+        custom_state = custom_state or {}
 
         if mode == "autonomous":
             try:
@@ -895,7 +899,7 @@ class AgentHarness:
                 result = await loop.run_conversation(
                     messages=messages,
                     max_iterations=max_iterations,
-                    task_type=TaskType.RESEARCH,
+                    task_type=TaskType.GENERATION if custom_state.get("mode") == "coworker" else TaskType.RESEARCH,
                     system_message=sys_prompt,
                     heat_seconds=heat_seconds,
                 )

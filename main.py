@@ -101,7 +101,6 @@ class HTTPErrorFilter(logging.Filter):
 
 
 from src.cli.cli_result import cli_result_succeeded, extract_cli_result_content
-from src.core.autonomous_research_system import AutonomousResearchSystem
 from src.cli.main_commands import (
     handle_actions_command,
     handle_approve_command,
@@ -112,15 +111,15 @@ from src.cli.main_commands import (
     handle_interactive_command,
     handle_mcp_command,
     handle_nightwelding_command,
+    handle_report_command,
     handle_run_command,
     handle_session_command,
     handle_setup_command,
     handle_tools_command,
     handle_web_command,
     handle_work_command,
-    handle_report_command,
 )
-
+from src.core.autonomous_research_system import AutonomousResearchSystem
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
@@ -794,29 +793,29 @@ EXAMPLES:
         and not getattr(args, "query", None)
     )
 
-    # REPL 모드에서는 모든 로그를 완전히 억제 (ERROR만 표시)
+    # REPL 모드에서는 잡음성 로그를 억제하되 콘솔 핸들러는 INFO 유지
+    # (ERROR만 남기면 work_command 응답 등 INFO 메시지가 모두 사라짐 -- issue #573)
     if is_repl_mode:
         import warnings
 
-        # 모든 로거를 ERROR 레벨로 설정 (WARNING, INFO, DEBUG 모두 억제)
-        logging.getLogger().setLevel(logging.ERROR)
+        # 파일 핸들러용 루트 레벨은 INFO 유지 (로그 파일엔 다 기록)
+        # 콘솔 핸들러는 WARNING 유지: 초기화 잡음 차단
+        # 단, src.cli.* 는 INFO 허용 -- 실제 채팅 결과가 이 네임스페이스에서 나옴
+        logging.getLogger("src.cli").setLevel(logging.INFO)
 
-        # 특정 모듈들의 로거도 ERROR로 설정
+        # 외부 라이브러리 / 시스템 로거 억제 (기존 동작 유지)
         for logger_name in [
             "__main__",
-            "src",
-            "src.core",
             "src.core.agent_orchestrator",
             "src.core.mcp_integration",
             "src.core.shared_memory",
             "src.core.skills_manager",
             "src.core.prompt_refiner_wrapper",
-            "root",
             "streamlit",
             "streamlit.runtime",
             "local_researcher",
         ]:
-            logging.getLogger(logger_name).setLevel(logging.ERROR)
+            logging.getLogger(logger_name).setLevel(logging.WARNING)
 
         # warnings도 완전히 억제
         warnings.filterwarnings("ignore")

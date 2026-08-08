@@ -2,9 +2,7 @@
 
 import os
 import sys
-import sys
 from pathlib import Path
-
 
 _RUN_OPTIONS_WITH_VALUES = {
     "--output",

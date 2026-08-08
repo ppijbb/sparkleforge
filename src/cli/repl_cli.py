@@ -37,25 +37,23 @@ class REPLCLI:
         import warnings
 
         if suppress_logging:
-            # REPL 모드에서는 모든 로그를 완전히 억제 (ERROR만 표시)
-            logging.getLogger().setLevel(logging.ERROR)
-
-            # 모든 주요 모듈의 로거를 ERROR로 설정
+            # 잡음성 리프 로거만 개별로 낮춘다. root/"src"/"src.core"를 통째로
+            # ERROR로 내리면 main.py가 REPL 진입 시 이미 설정해둔 INFO/allowlist를
+            # 이 생성자가 곧바로 덮어써서, agent_loop/agent_harness/llm_manager
+            # 등의 실제 진행(iteration, tool 호출, 재시도) 로그가 콘솔은 물론
+            # 로그 파일에도 전혀 남지 않게 된다 (issue #1255).
             for logger_name in [
                 "__main__",
-                "src",
-                "src.core",
                 "src.core.agent_orchestrator",
                 "src.core.mcp_integration",
                 "src.core.shared_memory",
                 "src.core.skills_manager",
                 "src.core.prompt_refiner_wrapper",
-                "root",
                 "streamlit",
                 "streamlit.runtime",
                 "local_researcher",
             ]:
-                logging.getLogger(logger_name).setLevel(logging.ERROR)
+                logging.getLogger(logger_name).setLevel(logging.WARNING)
 
             # warnings도 완전히 억제
             warnings.filterwarnings("ignore")
