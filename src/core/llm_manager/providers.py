@@ -444,7 +444,7 @@ class ProviderAdaptersMixin:
 
         data = _parse_openrouter_json_response(response, "chat completion")
         message = data["choices"][0]["message"]
-        content = message.get("content", "")
+        content = message.get("content") or ""
         tool_calls = message.get("tool_calls", [])
 
         return {
@@ -455,7 +455,7 @@ class ProviderAdaptersMixin:
                 "model": model_name,
                 "provider": "openrouter",
                 "model_id": model_config.model_id,
-                "tokens_used": len(content.split()),
+                "tokens_used": len(content.split()) if content else 0,
                 "usage": data.get("usage", {}),
                 "tool_calls": tool_calls,
             },
