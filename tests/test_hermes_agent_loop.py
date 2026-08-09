@@ -1,4 +1,5 @@
 import pytest
+import tracemalloc
 from types import SimpleNamespace
 
 from src.core.agent_loop import AgentLoop, IterationBudget
@@ -357,3 +358,43 @@ async def test_oversee_iteration_skips_research_overseer_for_coworker_tasks():
 
     await loop._oversee_iteration(budget, [], [], [], TaskType.RESEARCH)
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_signature_tracking_stays_bounded_across_many_iterations():
+    # Regression for issue #1309: the per-iteration tool-call signature window
+    # must not grow unboundedly as iterations accumulate unique arguments.
+    from collections import deque
+
+    from src.core.agent_loop import SIGNATURE_WINDOW_SIZE
+
+    window: deque[set] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
+    for i in range(10_000):
+        if not window:
+            window.append(set())
+        window[-1].add(("search", f'{{"query": "unique-{i}"}}'))
+        # Simulate iteration rollover by starting a fresh window entry each
+        # iteration; deque(maxlen=...) evicts the oldest automatically.
+        window.append(set())
+
+    total_entries = sum(len(s) for s in window)
+    assert total_entries <= SIGNATURE_WINDOW_SIZE
+
+    tracemalloc.start()
+    snapshot_before = tracemalloc.take_snapshot()
+    window2: deque[set] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
+    for i in range(10_000):
+        window2.append({("search", f'{{"query": "unique-{i}"}}')})
+    snapshot_after = tracemalloc.take_snapshot()
+    tracemalloc.stop()
+
+    stats = snapshot_after.compare_to(snapshot_before, "lineno")
+    window_growth = sum(
+        stat.size_diff
+        for stat in stats
+        if "test_hermes_agent_loop" in stat.traceback[0].filename
+    )
+    # The deque is bounded by SIGNATURE_WINDOW_SIZE entries regardless of how
+    # many iterations ran; memory must not scale with iteration count.
+    assert window_growth < 1_000_000
+    assert len(window2) == SIGNATURE_WINDOW_SIZE

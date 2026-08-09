@@ -3,6 +3,7 @@ import json
 import re
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -19,6 +20,15 @@ HEAT_SOFT_DEADLINE_RATIO = 0.85
 # identical (tool_name, arguments) before the loop terminates with a
 # stuck_loop reason instead of burning the full iteration budget.
 MAX_STUCK_TOOL_REPEATS = 3
+
+# Maximum number of recent iterations whose tool-call signatures are retained
+# for the stagnation/repetition check. Signatures older than this window are
+# evicted, so the tracking structure stays O(window_size) instead of growing
+# monotonically with iteration count (issue #1309: unbounded
+# all_seen_tool_signatures set caused OOM in long-running agent loops).
+SIGNATURE_WINDOW_SIZE = 16
+# Cap serialized tool arguments stored in signatures to bound per-entry memory.
+SIGNATURE_ARGS_MAX_LEN = 2048
 
 
 def _summarize_tool_result(tool_result: Dict[str, Any]) -> str:
@@ -158,6 +168,7 @@ Autonomous problem-solving contract:
         errors: List[Dict[str, Any]] = []
         tool_calls_count = 0
         last_tool_call_signature: tuple[str, str] | None = None
+        recent_tool_signatures: deque[set[tuple[str, str]]] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
         stuck_repeat_count = 0
 
         # Ensure MCP is initialized
@@ -390,12 +401,18 @@ Autonomous problem-solving contract:
                     continue
 
                 normalized_args = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+                if len(normalized_args) > SIGNATURE_ARGS_MAX_LEN:
+                    normalized_args = normalized_args[:SIGNATURE_ARGS_MAX_LEN]
                 call_signature = (tool_name, normalized_args)
-                if call_signature == last_tool_call_signature:
+                current_window = recent_tool_signatures[-1] if recent_tool_signatures else set()
+                if call_signature == last_tool_call_signature or call_signature in current_window:
                     stuck_repeat_count += 1
                 else:
                     stuck_repeat_count = 0
                 last_tool_call_signature = call_signature
+                if not recent_tool_signatures:
+                    recent_tool_signatures.append(set())
+                recent_tool_signatures[-1].add(call_signature)
 
                 if stuck_repeat_count >= MAX_STUCK_TOOL_REPEATS:
                     logger.warning(
