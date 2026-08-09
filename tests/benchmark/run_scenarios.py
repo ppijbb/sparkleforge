@@ -231,7 +231,7 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
 
         if exec_result["timed_out"]:
             scores = {name: (0.0, "scenario timed out") for name in spec["weights"]}
-        elif exec_result["returncode"] != 0 and "No available models" in exec_result["stderr"]:
+        elif "No available models" in (exec_result["stdout"] + exec_result["stderr"]):
             # Consistent policy: agent failure due to model unavailability marks all checks inconclusive
             scores = {name: (0.0, "agent execution failed: no model available") for name in spec["weights"]}
         else:
@@ -240,10 +240,9 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
         graded = weighted_total(scores, spec["weights"])
 
         critical_failure = (
-            exec_result["returncode"] != 0
-            and "No available models" in exec_result["stderr"]
+            "No available models" in (exec_result["stdout"] + exec_result["stderr"])
         ) or (
-            "All fallback models failed" in exec_result["stdout"]
+            "All fallback models failed" in (exec_result["stdout"] + exec_result["stderr"])
         )
         if critical_failure:
             # Total LLM infrastructure failure: every check must be marked
