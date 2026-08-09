@@ -215,7 +215,7 @@ Autonomous problem-solving contract:
             # (skipped for non-research tasks -- see _oversee_iteration above)
             if (
                 budget.current_iteration > 1
-                and self.greedy_overseer
+                and self.overseer
                 and task_type in (TaskType.RESEARCH, TaskType.ANALYSIS)
             ):
                 await self.overseer.evaluate_execution_results({"overseer_iterations": budget.current_iteration})
