@@ -422,39 +422,37 @@ def compare_to_baseline(report: Dict[str, Any], baseline_path: Path) -> int:
 
 
 def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
-    """Compare against the most recent entry in an append-only JSONL history file."""
+    """Compare against the most recent entries in an append-only JSONL history file.
+
+    Stagnation gate (Anvil Μ-2): compare the current run against the most
+    recent N=5 history entries. A run is considered to show meaningful
+    improvement only if `overall_score_adjusted` improved by Δ ≥ 0.03 in at
+    least 2 of the last 5 comparisons. If fewer than 2 qualifying
+    improvements are found across the last 5 entries, the gate fails (exit 1)
+    and flags `stagnation_detected` on the report so the CI workflow can open
+    a follow-up issue naming the lowest-scoring breakdown item.
+    """
     if not history_path.exists():
         print(f"[scenario-eval] no history found at {history_path}, nothing to compare against.")
         return 0
 
-    # Momentum gate (Anvil Μ-2): compare against the most recent *conclusive*
-    # history entry. Skipping inconclusive records here is what previously let a
-    # dead judge axis keep passing the gate — an inconclusive run carries no
-    # signal about capability change, so it must not be the comparison anchor.
-    last_line = None
-    with history_path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                last_line = line
-    if last_line is None:
-        print(f"[scenario-eval] history file {history_path} is empty, nothing to compare against.")
-        return 0
-
-    entries = []
+    entries: List[Dict[str, Any]] = []
     with history_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
                 entries.append(json.loads(line))
+    if not entries:
+        print(f"[scenario-eval] history file {history_path} is empty, nothing to compare against.")
+        return 0
 
-    prior_report = None
-    for entry in reversed(entries):
-        if entry.get("inconclusive_checks", 0) == 0:
-            prior_report = entry
-            break
-
-    if prior_report is None:
+    # Momentum gate (Anvil Μ-2): anchor the comparison window on *conclusive*
+    # history entries only. Skipping inconclusive records here is what
+    # previously let a dead judge axis keep passing the gate — an
+    # inconclusive run carries no signal about capability change, so it must
+    # not be the comparison anchor or count toward the stagnation window.
+    conclusive_entries = [e for e in entries if e.get("inconclusive_checks", 0) == 0]
+    if not conclusive_entries:
         print(
             "[scenario-eval] no conclusive history entry found (all recorded runs had "
             "inconclusive checks); cannot anchor momentum gate, treating as no-op compare.",
@@ -462,11 +460,52 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         )
         return 0
 
+    history_window = conclusive_entries[-5:]
+    prior_report = history_window[-1]
     print(
         f"[scenario-eval] comparing against conclusive history entry from "
         f"{prior_report.get('generated_at')} (skipped inconclusive entries)"
     )
-    return _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {}))
+    regression_exit = _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {}))
+
+    # Stagnation gate: count meaningful improvements (Δ ≥ 0.03) across the
+    # last 5 conclusive history entries. Judge-API noise that moves the raw
+    # score by a few hundredths must not register as "improvement".
+    min_effect = 0.03
+    min_improvements = 2
+    current_adjusted = report.get("overall_score_adjusted")
+    improvements = 0
+    prev_adjusted = None
+    for entry in history_window:
+        adjusted = entry.get("overall_score_adjusted")
+        if adjusted is None or prev_adjusted is None:
+            if adjusted is not None:
+                prev_adjusted = adjusted
+            continue
+        if adjusted - prev_adjusted >= min_effect:
+            improvements += 1
+        prev_adjusted = adjusted
+    if current_adjusted is not None and prev_adjusted is not None:
+        if current_adjusted - prev_adjusted >= min_effect:
+            improvements += 1
+
+    report["stagnation_detected"] = improvements < min_improvements
+    report["stagnation_improvements"] = improvements
+    report["stagnation_window_size"] = len(history_window)
+
+    if report["stagnation_detected"]:
+        print(
+            f"[scenario-eval] STAGNATION DETECTED: only {improvements} meaningful improvement(s) "
+            f"(Δ ≥ {min_effect}) across the last {len(history_window)} history entries "
+            f"(threshold: {min_improvements})."
+        )
+        return 1
+
+    print(
+        f"[scenario-eval] stagnation gate passed: {improvements} meaningful improvement(s) "
+        f"across the last {len(history_window)} history entries."
+    )
+    return regression_exit
 
 
 def append_history(report: Dict[str, Any], history_path: Path) -> None:
