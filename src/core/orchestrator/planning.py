@@ -268,23 +268,32 @@ class PlanningNode(BaseNode):
 
         search_results = []
         search_tools = ["g-search", "tavily", "exa"]
-        # Single decontextualized keywords ("project", "identify") return near-zero
-        # results from real search engines; a joined phrase carries the intent.
-        search_query = " ".join(keywords[:4])
+        # Distribute keywords across search tools via modulo so a single tool
+        # failure or low-relevance return doesn't waste every other tool on the
+        # exact same query. An empty keywords list must not reach any tool.
+        if not keywords or not search_tools:
+            return {
+                "keywords": keywords,
+                "search_results": [],
+                "academic_results": [],
+                "sources_count": 0,
+                "total_results": 0,
+            }
 
-        for tool_name in search_tools:
-            if not search_query:
-                break
+        for i, kw in enumerate(keywords[:4]):
+            if not kw:
+                continue
+            tool_name = search_tools[i % len(search_tools)]
             try:
                 result = await execute_tool(
-                    tool_name=tool_name, parameters={"query": search_query, "max_results": 5}
+                    tool_name=tool_name, parameters={"query": kw, "max_results": 5}
                 )
                 if result.get("success", False):
                     result_data = result.get("data", {})
                     data_list = _extract_tool_result_items(result_data)
                     search_results.append(
                         {
-                            "keyword": search_query,
+                            "keyword": kw,
                             "tool": tool_name,
                             "data": data_list,
                             "sources_count": len(data_list),
@@ -389,6 +398,7 @@ class PlanningNode(BaseNode):
         decomposition_prompt = f"""
         Based on preliminary research, decompose into {num_tasks} tasks:
         {feedback_block}
+        (Apply non-linear structural mutation: prioritize high-surprise leaps over incremental tweaks while maintaining physical feasibility)
         Request: {state.get("user_request", "")}
         Complexity: {complexity}
         Preliminary Research: {preliminary_research.get("keywords", [])}
