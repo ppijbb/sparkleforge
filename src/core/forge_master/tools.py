@@ -166,10 +166,24 @@ async def _run_batch_in_waves(
             *(run_one(task) for task in wave_tasks), return_exceptions=True
         )
         for task_id, result in zip(wave, wave_results):
-            results[int(task_id)] = result
+            results[int(task_id)] = _normalize_wave_result(result)
             queue.mark_completed(task_id)
 
     return results
+
+
+def _normalize_wave_result(result: Any) -> Dict[str, Any]:
+    """Normalize an asyncio.gather(return_exceptions=True) result.
+
+    Failed coroutines are returned as raw Exception instances, which would
+    crash downstream dependency checks that call ``.get()`` on the stored
+    value. Wrap exceptions into a ``{'success': False, ...}`` dict so the
+    rest of the wave/batch degrades gracefully instead of raising
+    ``AttributeError``.
+    """
+    if isinstance(result, Exception):
+        return {"success": False, "response": "", "error": str(result)}
+    return result
 
 
 async def _dispatch_batch_to_forge_master_tool(
