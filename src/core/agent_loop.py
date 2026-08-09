@@ -3,6 +3,7 @@ import json
 import re
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -19,6 +20,15 @@ HEAT_SOFT_DEADLINE_RATIO = 0.85
 # identical (tool_name, arguments) before the loop terminates with a
 # stuck_loop reason instead of burning the full iteration budget.
 MAX_STUCK_TOOL_REPEATS = 3
+
+# Maximum number of recent iterations whose tool-call signatures are retained
+# for the stagnation/repetition check. Signatures older than this window are
+# evicted, so the tracking structure stays O(window_size) instead of growing
+# monotonically with iteration count (issue #1309: unbounded
+# all_seen_tool_signatures set caused OOM in long-running agent loops).
+SIGNATURE_WINDOW_SIZE = 16
+# Cap serialized tool arguments stored in signatures to bound per-entry memory.
+SIGNATURE_ARGS_MAX_LEN = 2048
 
 
 def _summarize_tool_result(tool_result: Dict[str, Any]) -> str:
@@ -158,16 +168,24 @@ Autonomous problem-solving contract:
         errors: List[Dict[str, Any]] = []
         tool_calls_count = 0
         last_tool_call_signature: tuple[str, str] | None = None
+        recent_tool_signatures: deque[set[tuple[str, str]]] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
         stuck_repeat_count = 0
         # Momentum guard (Anvil Phase Mu, #1216): MAX_STUCK_TOOL_REPEATS only
         # catches the *same* call repeated back-to-back. It misses the pattern
         # observed live against lfdb -- re-reading the same handful of files
         # every iteration with slightly different ordering/args, forever,
         # because context compression erases the memory of having already
-        # read them. Track every distinct (tool, args) signature ever seen
-        # in this run; an iteration that contributes zero new signatures is
-        # zero-momentum regardless of whether any single call repeats.
-        all_seen_tool_signatures: set[tuple[str, str]] = set()
+        # read them. Track distinct (tool, args) signatures against the same
+        # bounded recent_tool_signatures window used for stuck-loop detection
+        # (issue #1309: an unbounded all-time set caused OOM in long-running
+        # loops) -- an iteration that contributes zero signatures outside the
+        # recent window is zero-momentum regardless of whether any single
+        # call repeats.
+        # ponytail: window-bounded "seen recently" instead of true "ever seen
+        # this run" -- a signature could resurface after scrolling out of the
+        # window and register as "new" again. Acceptable: the goal is
+        # detecting sustained stagnation, not exact novelty tracking. Widen
+        # SIGNATURE_WINDOW_SIZE if false negatives show up in practice.
         stagnant_iterations = 0
         MOMENTUM_STAGNATION_THRESHOLD = 2
 
@@ -407,15 +425,20 @@ Autonomous problem-solving contract:
                     continue
 
                 normalized_args = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+                if len(normalized_args) > SIGNATURE_ARGS_MAX_LEN:
+                    normalized_args = normalized_args[:SIGNATURE_ARGS_MAX_LEN]
                 call_signature = (tool_name, normalized_args)
-                if call_signature not in all_seen_tool_signatures:
-                    new_signature_this_iteration = True
-                all_seen_tool_signatures.add(call_signature)
-                if call_signature == last_tool_call_signature:
+                current_window = recent_tool_signatures[-1] if recent_tool_signatures else set()
+                if call_signature == last_tool_call_signature or call_signature in current_window:
                     stuck_repeat_count += 1
                 else:
                     stuck_repeat_count = 0
+                if not any(call_signature in w for w in recent_tool_signatures):
+                    new_signature_this_iteration = True
                 last_tool_call_signature = call_signature
+                if not recent_tool_signatures:
+                    recent_tool_signatures.append(set())
+                recent_tool_signatures[-1].add(call_signature)
 
                 if stuck_repeat_count >= MAX_STUCK_TOOL_REPEATS:
                     logger.warning(
