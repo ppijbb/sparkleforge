@@ -5,6 +5,9 @@ timeout_s: 300
 user_query: >-
   이 프로젝트 빌드 환경 세팅해줘. 프로젝트 경로는 {workspace}/project 야. 실행하면
   잘 되는지 확인도 해줘.
+  이 프로젝트는 APP_ENV 환경 변수를 읽어야 동작해. 프로젝트 루트에 .env 파일을
+  만들어서 APP_ENV=development 를 설정하고, 실행할 때 그 값을 불러오도록
+  세팅해줘. .env 파일이 없으면 main.py 실행 시 KeyError: 'APP_ENV' 가 발생해.
 weights:
   verify_runs: 0.45
   packages_declared: 0.2
