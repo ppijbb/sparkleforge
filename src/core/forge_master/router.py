@@ -13,6 +13,7 @@ SparkleForge 중앙 하네스가 작업의 특성과 토큰 예산을 평가하�
 수단이 아니다.
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -229,6 +230,44 @@ class ForgeMasterRouter:
     def _relevant_fallbacks(self, selected: str, relevance: Dict[str, float]) -> List[str]:
         """실제로 이 작업과 관련 있다고 판단된 에이전트만 관련도 순으로 폴백 후보에 남김"""
         candidates = [
+    def _extract_json(self, text: str) -> Optional[dict]:
+        """Extract the first complete JSON object from text, handling nested braces.
+
+        Replaces the previous non-greedy regex (`r"\\{.*?\\}"`) which truncated any
+        JSON payload containing nested braces (e.g. `fallback_agents` arrays with
+        structured objects), causing `json.loads()` to fail and silently forcing
+        heuristic fallback on every nested-JSON LLM routing response.
+        """
+        start = text.find("{")
+        if start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape = False
+
+        for i, char in enumerate(text[start:], start):
+            if escape:
+                escape = False
+                continue
+            if char == "\\" and in_string:
+                escape = True
+                continue
+            if char == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
+                        return None
+        return None
             (agent, score)
             for agent, score in relevance.items()
             if agent != selected and score >= self._RELEVANCE_THRESHOLD
