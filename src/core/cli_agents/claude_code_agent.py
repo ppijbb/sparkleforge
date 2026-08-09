@@ -96,7 +96,22 @@ class ClaudeCodeAgent(BaseCLIAgent):
         try:
             # JSON 출력 파싱 시도
             if self.config.output_format == "json":
-                data = json.loads(result.output.strip())
+                try:
+                    data = json.loads(result.output.strip())
+                except json.JSONDecodeError as e:
+                    self.logger.error(
+                        "Failed to parse Claude CLI output as JSON: %s\nRaw output: %s",
+                        e,
+                        result.output[:500],
+                    )
+                    return {
+                        "success": False,
+                        "error": "invalid_json_output",
+                        "raw_output": result.output,
+                        "response": result.output,
+                        "confidence": 0.0,
+                        "usage": {},
+                    }
                 return {
                     "success": data.get("subtype", "success") == "success" and not data.get("is_error", False),
                     "response": data.get("result", data.get("response", "")),
