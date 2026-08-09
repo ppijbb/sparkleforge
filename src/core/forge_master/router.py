@@ -160,8 +160,6 @@ class ForgeMasterRouter:
             fallback_agents=fallbacks,
         )
 
-    # 관련성 매치가 하나도 없는 에이전트를 동점 처리용 보조 점수만으로
-    # 선택/폴백 후보에 끼워주지 않기 위한 문턱값
     def _build_tool_specific_goal(self, agent_name: str, task_description: str) -> str:
         """각 CLI 에이전트의 강점에 맞춘 맞춤형 Goal 지시문 빌드"""
         if agent_name == "claude_code":
@@ -176,6 +174,9 @@ class ForgeMasterRouter:
             return f"[Frontier API Last-Resort Goal] Local CLI fleet unavailable; use remote frontier model as final fallback: {task_description}"
         else:
             return f"[{agent_name} Dedicated Goal] {task_description}"
+
+    # 관련성 매치가 하나도 없는 에이전트를 동점 처리용 보조 점수만으로
+    # 선택/폴백 후보에 끼워주지 않기 위한 문턱값
     _RELEVANCE_THRESHOLD = 1.0
 
     def _score_relevance(
@@ -234,16 +235,3 @@ class ForgeMasterRouter:
         ]
         candidates.sort(key=lambda x: x[1], reverse=True)
         return [agent for agent, _ in candidates]
-
-    def _build_tool_specific_goal(self, agent_name: str, task_description: str) -> str:
-        """각 CLI 에이전트의 강점에 맞춘 맞춤형 Goal 지시문 빌드"""
-        if agent_name == "claude_code":
-            return f"[Claude Code Dedicated Goal] Focus strictly on code refactoring and diff integrity: {task_description}"
-        elif agent_name == "codex":
-            return f"[Codex Dedicated Goal] Generate clean, concise code with syntax precision: {task_description}"
-        elif agent_name == "gemini_cli":
-            return f"[Gemini CLI Dedicated Goal] Synthesize wide context and document insights efficiently: {task_description}"
-        elif agent_name == "hermes":
-            return f"[Hermes Dedicated Goal] Execute autonomous workflow step-by-step: {task_description}"
-        else:
-            return f"[{agent_name} Dedicated Goal] {task_description}"
