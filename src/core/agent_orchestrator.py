@@ -192,11 +192,17 @@ class AgentOrchestrator:
             "results": final_report,
             "final_report": final_report,
             "content": final_report,
+            "detailed_results": harness_result.get("detailed_results", {}),
             "metadata": harness_result.get("metadata", {}),
             "session_id": session_id,
             "research_failed": not harness_result.get("success", False),
             "error": harness_result.get("error"),
         }
+
+
+def agent_workflow_result_to_public_dict(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Legacy formatter for external API compatibility."""
+    return result
 
 
 def get_orchestrator(config=None) -> AgentOrchestrator:
