@@ -157,6 +157,11 @@ class MultiModelOrchestrator(
                     # Cascade 실패 시 기존 단일 모델 실행 로직으로 fallback
                     use_cascade_for_provider = False
 
+            # Ensure we have a valid model_provider if cascade failed
+            if not use_cascade_for_provider and model_provider is None:
+                model_provider = self.models.get(model_name_clean, {}).get("provider", "openrouter")
+                logger.info(f"Fallback: inferred provider {model_provider} for {model_name_clean}")
+
             if not use_cascade_for_provider and model_provider == "openrouter":
                 # 기존 단일 모델 실행 로직
                 # 우선순위에 따라 모델 실행 및 폴백
