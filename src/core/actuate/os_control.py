@@ -5,15 +5,6 @@ from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
-try:
-    import pyautogui
-    PYAUTOGUI_AVAILABLE = True
-except Exception:
-    # pyautogui may raise KeyError('DISPLAY') or X11-related exceptions in
-    # headless environments (e.g. GitHub Actions) where no X server is
-    # available. Fall back gracefully instead of crashing the bootstrap.
-    pyautogui = None
-    PYAUTOGUI_AVAILABLE = False
 
 
 class OSControl:
@@ -21,10 +12,34 @@ class OSControl:
 
     def __init__(self):
         self.xdotool_available = shutil.which("xdotool") is not None
+        self._pyautogui = None
+        self._pyautogui_checked = False
+
+    def _get_pyautogui(self):
+        """Lazily import pyautogui only when GUI automation is actually needed.
+
+        Importing pyautogui at module load time emits Xlib/SyntaxWarning noise
+        to stderr on every SparkleForge invocation, even for sessions that never
+        use computer-use features. Defer the import to the first GUI call.
+        """
+        if self._pyautogui_checked:
+            return self._pyautogui
+        self._pyautogui_checked = True
+        try:
+            import pyautogui
+            self._pyautogui = pyautogui
+        except Exception:
+            # pyautogui may raise KeyError('DISPLAY') or X11-related
+            # exceptions in headless environments (e.g. GitHub Actions) where
+            # no X server is available. Fall back gracefully instead of
+            # crashing the bootstrap.
+            self._pyautogui = None
+        return self._pyautogui
 
     def get_screen_size(self) -> Tuple[int, int]:
         """Get host primary monitor resolution (width, height)."""
-        if PYAUTOGUI_AVAILABLE:
+        pyautogui = self._get_pyautogui()
+        if pyautogui is not None:
             try:
                 w, h = pyautogui.size()
                 return int(w), int(h)
@@ -52,7 +67,8 @@ class OSControl:
         """Move cursor to coordinate (x, y) and click."""
         logger.info(f"OSControl: Click at ({x}, {y}) requested")
         
-        if PYAUTOGUI_AVAILABLE:
+        pyautogui = self._get_pyautogui()
+        if pyautogui is not None:
             try:
                 pyautogui.click(x, y)
                 return True
@@ -78,7 +94,8 @@ class OSControl:
         """Type a string at the current focus location."""
         logger.info(f"OSControl: Type text: '{text[:20]}...' requested")
         
-        if PYAUTOGUI_AVAILABLE:
+        pyautogui = self._get_pyautogui()
+        if pyautogui is not None:
             try:
                 pyautogui.write(text)
                 return True
@@ -103,7 +120,8 @@ class OSControl:
         """Drag from current position to (x, y)."""
         logger.info(f"OSControl: Drag to ({x}, {y}) requested")
 
-        if PYAUTOGUI_AVAILABLE:
+        pyautogui = self._get_pyautogui()
+        if pyautogui is not None:
             try:
                 pyautogui.dragTo(x, y)
                 return True
