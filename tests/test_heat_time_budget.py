@@ -75,7 +75,6 @@ def make_loop(orchestrator, mcp_hub):
     loop.compressor = NoopCompressor()
     loop.memory = NoopMemory()
     loop.overseer = None
-    loop.greedy_overseer = None
     loop.mode_controller = None
     loop.method_resolver = None
     loop.intent_guardrail = None

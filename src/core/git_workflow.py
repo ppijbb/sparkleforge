@@ -55,8 +55,19 @@ class GitWorkflow:
             stdout, stderr = await process.communicate()
 
             result = {
-                "stdout": stdout.decode("utf-8", errors="replace").strip(),
-                "stderr": stderr.decode("utf-8", errors="replace").strip(),
+                # rstrip (not strip): `git status --porcelain` lines carry
+                # meaningful leading whitespace (" M file" = unstaged-only
+                # change, vs "M  file" = staged). Stripping the left side of
+                # the whole blob eats that leading space off line 1 whenever
+                # the first reported change is unstaged-only, which shifts
+                # git_status()'s line[3:] slicing by one character -- e.g.
+                # "src/config.rs" comes out as "rc/config.rs" and gets
+                # misclassified as staged instead of unstaged (issue #1216
+                # follow-up: this fed git_commit(auto_stage=False) false
+                # "already staged" info, so the commit had nothing to commit
+                # and failed).
+                "stdout": stdout.decode("utf-8", errors="replace").rstrip(),
+                "stderr": stderr.decode("utf-8", errors="replace").rstrip(),
                 "returncode": process.returncode,
             }
 

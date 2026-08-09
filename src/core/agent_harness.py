@@ -158,7 +158,7 @@ class AgentHarness:
         loop = AgentLoop(self.orchestrator)
         result = await loop.run_conversation(
             messages=[{"role": "user", "content": query}],
-            task_type=TaskType.RESEARCH,
+            task_type=TaskType.GENERATION if identity == "coder" else TaskType.RESEARCH,
             max_iterations=5,
             system_message=get_system_prompt(identity),
         )
@@ -352,26 +352,25 @@ class AgentHarness:
                     metadata=td,
                 )
                 self.anvil_engine.add_task(anvil_task)
-                self.dashboard.submit(
+                dashboard_task_id = self.dashboard.submit(
                     name=anvil_task.name,
                     description=anvil_task.handler,
                     agent_id="anvil_engine",
                     metadata={"session_id": session_id, "task_id": anvil_task.task_id}
                 )
 
-            anvil_results = await self.anvil_engine.execute(context=state["context"])
+                anvil_results = await self.anvil_engine.execute(context=state["context"])
             logger.info(
                 f"[Harness] Anvil engine processed {len(anvil_tasks)} tasks: {anvil_results.get('status')}"
             )
 
             # Anvil 결과를 tasks에 반영
             for td in anvil_tasks:
-                tid = td.get("task_id", "")
-                if tid in self.anvil_engine.tasks:
-                    at = self.anvil_engine.tasks[tid]
+                if anvil_task.task_id in self.anvil_engine.tasks:
+                    at = self.anvil_engine.tasks[anvil_task.task_id]
                     td["result"] = at.result
                     td["status"] = at.status
-                    self.dashboard.complete(tid, result=at.result)
+                    self.dashboard.complete(dashboard_task_id, result=at.result)
 
         # --- ForgeMaster 경로: codebase_agent 라우트는 프론티어 LLM 전에
         # 로컬 CLI 에이전트 함대(ForgeMaster)로 먼저 시도한다. 성공한 태스크는
@@ -396,13 +395,13 @@ class AgentHarness:
                 assigned_agent = await self.router.assign_agent_for_task(task)
                 agent_assignments[agent_id] = assigned_agent
                 logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
-                self.dashboard.submit(
+                dashboard_task_id = self.dashboard.submit(
                     name=task.get("description", "Legacy Task"),
                     description=task.get("description", ""),
                     agent_id=assigned_agent,
                     metadata={"session_id": session_id, "task_id": agent_id}
                 )
-                self.dashboard.start(agent_id)
+                self.dashboard.start(dashboard_task_id)
 
             executor = ParallelAgentExecutor()
 
@@ -421,7 +420,7 @@ class AgentHarness:
                     if i < len(legacy_tasks):
                         legacy_tasks[i]["result"] = res.get("result")
                         legacy_tasks[i]["status"] = res.get("status")
-                        self.dashboard.complete(legacy_tasks[i].get("task_id", ""), result=res.get("result"))
+                        self.dashboard.complete(dashboard_task_id, result=res.get("result"))
                 self._update_session_tasks(state, legacy_tasks)
 
         # 태스크 목록 재합성
@@ -504,9 +503,18 @@ class AgentHarness:
                 "agent_name": router.route_task(task.get("description", "")).agent_name,
                 "task_query": task.get("description", ""),
             }
+            declared_deps = task.get("dependencies") or []
+            unknown_deps = [dep_id for dep_id in declared_deps if dep_id not in id_to_index]
+            if unknown_deps:
+                logger.warning(
+                    "[Harness] Task %s declares unknown dependency IDs %s; "
+ "filtering them out of ForgeMaster dispatch",
+                    task.get("task_id", ""),
+                    unknown_deps,
+                )
             dep_indices = [
                 id_to_index[dep_id]
-                for dep_id in (task.get("dependencies") or [])
+                for dep_id in declared_deps
                 if dep_id in id_to_index
             ]
             if dep_indices:
@@ -535,13 +543,13 @@ class AgentHarness:
                     "tokens_used": result.get("tokens_used", 0),
                 }
                 task["status"] = "completed"
-                self.dashboard.submit(
+                dashboard_task_id = self.dashboard.submit(
                     name=task.get("description", "CodeBase Task"),
                     description=task.get("description", ""),
                     agent_id=result.get("agent_used", "forge_master"),
                     metadata={"session_id": session_id, "task_id": task_id},
                 )
-                self.dashboard.complete(task_id, result=task["result"])
+                self.dashboard.complete(dashboard_task_id, result=task["result"])
                 handled.append(task)
             else:
                 unhandled.append(task)
@@ -857,6 +865,7 @@ class AgentHarness:
         mode: str = "autonomous",
         identity: str = "researcher",
         heat_seconds: float | None = None,
+        custom_state: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """하네스 실행 (오케스트레이터의 주 진입점)
 
@@ -866,11 +875,14 @@ class AgentHarness:
             max_iterations: 최대 루프 반복 횟수
             mode: 'autonomous' (Hermes-style loop) 또는 'research' (Original LangGraph)
             heat_seconds: 선택적 시간 예산("Heat", 이슈 #585) -- autonomous 모드에서만 적용됨
+            custom_state: 호출자(AgentOrchestrator)가 전달하는 세션 부가 상태 (예: coworker 모드 표시)
         """
         start_time = time.time()
         logger.info(
             f"🚀 Harness starting session {session_id} in {mode} mode for request: '{request[:20]}...'"
         )
+
+        custom_state = custom_state or {}
 
         if mode == "autonomous":
             try:
@@ -895,7 +907,7 @@ class AgentHarness:
                 result = await loop.run_conversation(
                     messages=messages,
                     max_iterations=max_iterations,
-                    task_type=TaskType.RESEARCH,
+                    task_type=TaskType.GENERATION if custom_state.get("mode") == "coworker" else TaskType.RESEARCH,
                     system_message=sys_prompt,
                     heat_seconds=heat_seconds,
                 )
