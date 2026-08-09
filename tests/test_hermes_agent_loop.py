@@ -72,6 +72,7 @@ def make_loop(orchestrator, mcp_hub):
 
 @pytest.mark.asyncio
 async def test_agent_loop_executes_tool_calls_until_final_answer():
+    """The loop should run tool calls to completion and then return the final answer."""
     tool_call = {
         "id": "call_1",
         "type": "function",
