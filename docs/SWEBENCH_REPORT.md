@@ -27,3 +27,10 @@ automatically via a `chore/swebench-lite-report-*` PR._
 - Empty patch (no fix attempt produced): 3
 - Errored during evaluation: 2
 
+## 2026-08-09 — run `ci-20260809-6140fa6d913c`
+
+- Resolved: **0 / 6** submitted (6 instances in the sampled subset)
+- Unresolved: 1
+- Empty patch (no fix attempt produced): 1
+- Errored during evaluation: 4
+
