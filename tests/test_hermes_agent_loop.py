@@ -228,6 +228,44 @@ async def test_agent_loop_allows_alternating_tool_calls_without_tripping_guard()
     assert len(mcp_hub.calls) == 4
 
 
+class FakeAskUserOverseer:
+    """Overseer stub that always decides ask_user, regardless of state."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def evaluate_execution_results(self, state):
+        self.calls += 1
+        return {
+            "overseer_decision": "ask_user",
+            "overseer_evaluations": [{"reasoning": "quality too low, need guidance"}],
+        }
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_stops_and_surfaces_overseer_ask_user_decision():
+    # Regression for issue #1300: GreedyOverseerAgent deciding "ask_user" used
+    # to be logged into `errors` and then ignored -- the loop kept iterating
+    # and calling the model instead of actually stopping for the human.
+    orchestrator = FakeOrchestrator(
+        [ModelResult("should not be reached", "tool-model", 0.1, 0.8, 0.0, {})]
+    )
+    loop = make_loop(orchestrator, FakeMCPHub())
+    overseer = FakeAskUserOverseer()
+    loop.overseer = overseer
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    assert result["metadata"]["overseer_decision"] == "ask_user"
+    assert result["metadata"]["waiting_for_user"] is True
+    assert "quality too low, need guidance" in result["content"]
+    assert overseer.calls == 1
+    assert orchestrator.calls == []
+
+
 @pytest.mark.asyncio
 async def test_agent_loop_injects_momentum_nudge_when_only_re_reading_old_ground():
     # Regression for the lfdb dogfooding session (issue #1216, Anvil Phase Mu):
@@ -396,10 +434,10 @@ async def test_oversee_iteration_skips_research_overseer_for_coworker_tasks():
     loop.overseer = FakeGreedyOverseer()
     budget = IterationBudget(max_iterations=5)
 
-    await loop._oversee_iteration(budget, [], [], [], TaskType.GENERATION)
+    await loop._oversee_iteration(budget, [], [], [], 0, TaskType.GENERATION)
     assert calls == []
 
-    await loop._oversee_iteration(budget, [], [], [], TaskType.RESEARCH)
+    await loop._oversee_iteration(budget, [], [], [], 0, TaskType.RESEARCH)
     assert len(calls) == 1
 
 
