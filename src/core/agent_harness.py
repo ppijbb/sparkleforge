@@ -158,7 +158,7 @@ class AgentHarness:
         loop = AgentLoop(self.orchestrator)
         result = await loop.run_conversation(
             messages=[{"role": "user", "content": query}],
-            task_type=TaskType.RESEARCH,
+            task_type=TaskType.GENERATION if identity == "coder" else TaskType.RESEARCH,
             max_iterations=5,
             system_message=get_system_prompt(identity),
         )
