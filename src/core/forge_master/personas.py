@@ -25,10 +25,28 @@ BLACKSMITH_DIRECTIVE = (
     "shorter one."
 )
 
+TEACHING_DIRECTIVE = (
+    "Act like a patient mentor: explain the 'why' behind every change, provide context "
+    "for architectural decisions, and include brief educational notes on the patterns used."
+)
+
+SECURITY_HARDENED_DIRECTIVE = (
+    "Act like a security auditor: prioritize input validation, sanitization, and least-privilege "
+    "access. Flag potential vulnerabilities in the code and suggest defensive alternatives."
+)
+
+PERFORMANCE_FIRST_DIRECTIVE = (
+    "Act like a performance engineer: prioritize runtime efficiency, memory usage, and algorithmic "
+    "complexity. Optimize hot paths and avoid unnecessary allocations."
+)
+
 EXECUTION_PERSONAS: Dict[str, str] = {
     "ponytail": PONYTAIL_DIRECTIVE,
     "caveman": CAVEMAN_DIRECTIVE,
     "blacksmith": BLACKSMITH_DIRECTIVE,
+    "teaching": TEACHING_DIRECTIVE,
+    "security": SECURITY_HARDENED_DIRECTIVE,
+    "performance": PERFORMANCE_FIRST_DIRECTIVE,
 }
 
 

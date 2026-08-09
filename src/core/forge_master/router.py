@@ -14,7 +14,7 @@ SparkleForge 중앙 하네스가 작업의 특성과 토큰 예산을 평가하�
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ class ToolGoalAssignment:
     assigned_goal: str
     capability_reason: str
     expected_output_format: str = "json"
+    persona: Optional[str] = None
     fallback_agents: List[str] = field(default_factory=list)
     max_token_budget: int = 4000
 
@@ -95,6 +96,7 @@ class ForgeMasterRouter:
         required_capabilities: Optional[List[str]] = None,
         preferred_agent: Optional[str] = None,
         available_agents: Optional[List[str]] = None,
+        persona: Optional[str] = None,
     ) -> ToolGoalAssignment:
         """[비-에이전트 경로 전용 기본값] 키워드/역량 매트릭스 기반 휴리스틱 라우팅.
 
@@ -153,12 +155,14 @@ class ForgeMasterRouter:
         # 맞춤 Goal 부여 생성
         goal_text = self._build_tool_specific_goal(selected, task_description)
 
-        return ToolGoalAssignment(
+        assignment = ToolGoalAssignment(
             agent_name=selected,
             assigned_goal=goal_text,
             capability_reason=reason,
             fallback_agents=fallbacks,
+            persona=persona,
         )
+        return assignment
 
     def _build_tool_specific_goal(self, agent_name: str, task_description: str) -> str:
         """각 CLI 에이전트의 강점에 맞춘 맞춤형 Goal 지시문 빌드"""
