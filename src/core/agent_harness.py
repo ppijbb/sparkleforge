@@ -352,26 +352,25 @@ class AgentHarness:
                     metadata=td,
                 )
                 self.anvil_engine.add_task(anvil_task)
-                self.dashboard.submit(
+                dashboard_task_id = self.dashboard.submit(
                     name=anvil_task.name,
                     description=anvil_task.handler,
                     agent_id="anvil_engine",
                     metadata={"session_id": session_id, "task_id": anvil_task.task_id}
                 )
 
-            anvil_results = await self.anvil_engine.execute(context=state["context"])
+                anvil_results = await self.anvil_engine.execute(context=state["context"])
             logger.info(
                 f"[Harness] Anvil engine processed {len(anvil_tasks)} tasks: {anvil_results.get('status')}"
             )
 
             # Anvil 결과를 tasks에 반영
             for td in anvil_tasks:
-                tid = td.get("task_id", "")
-                if tid in self.anvil_engine.tasks:
-                    at = self.anvil_engine.tasks[tid]
+                if anvil_task.task_id in self.anvil_engine.tasks:
+                    at = self.anvil_engine.tasks[anvil_task.task_id]
                     td["result"] = at.result
                     td["status"] = at.status
-                    self.dashboard.complete(tid, result=at.result)
+                    self.dashboard.complete(dashboard_task_id, result=at.result)
 
         # --- ForgeMaster 경로: codebase_agent 라우트는 프론티어 LLM 전에
         # 로컬 CLI 에이전트 함대(ForgeMaster)로 먼저 시도한다. 성공한 태스크는
@@ -396,13 +395,13 @@ class AgentHarness:
                 assigned_agent = await self.router.assign_agent_for_task(task)
                 agent_assignments[agent_id] = assigned_agent
                 logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
-                self.dashboard.submit(
+                dashboard_task_id = self.dashboard.submit(
                     name=task.get("description", "Legacy Task"),
                     description=task.get("description", ""),
                     agent_id=assigned_agent,
                     metadata={"session_id": session_id, "task_id": agent_id}
                 )
-                self.dashboard.start(agent_id)
+                self.dashboard.start(dashboard_task_id)
 
             executor = ParallelAgentExecutor()
 
@@ -421,7 +420,7 @@ class AgentHarness:
                     if i < len(legacy_tasks):
                         legacy_tasks[i]["result"] = res.get("result")
                         legacy_tasks[i]["status"] = res.get("status")
-                        self.dashboard.complete(legacy_tasks[i].get("task_id", ""), result=res.get("result"))
+                        self.dashboard.complete(dashboard_task_id, result=res.get("result"))
                 self._update_session_tasks(state, legacy_tasks)
 
         # 태스크 목록 재합성
@@ -535,13 +534,13 @@ class AgentHarness:
                     "tokens_used": result.get("tokens_used", 0),
                 }
                 task["status"] = "completed"
-                self.dashboard.submit(
+                dashboard_task_id = self.dashboard.submit(
                     name=task.get("description", "CodeBase Task"),
                     description=task.get("description", ""),
                     agent_id=result.get("agent_used", "forge_master"),
                     metadata={"session_id": session_id, "task_id": task_id},
                 )
-                self.dashboard.complete(task_id, result=task["result"])
+                self.dashboard.complete(dashboard_task_id, result=task["result"])
                 handled.append(task)
             else:
                 unhandled.append(task)
