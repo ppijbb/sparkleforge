@@ -8,7 +8,6 @@ from typing import Any, Dict, List
 
 from src.core.llm_manager import ModelResult, MultiModelOrchestrator, TaskType
 from src.core.mcp_integration import UniversalMCPHub, get_mcp_hub
-from src.agents.greedy_overseer_agent import get_greedy_overseer_agent
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +103,6 @@ Autonomous problem-solving contract:
         self.orchestrator = orchestrator or MultiModelOrchestrator()
         self._plan_first = False
         self.mcp_hub: UniversalMCPHub = get_mcp_hub()
-        self.overseer = get_greedy_overseer_agent()
 
         # Phase 3: Context Compression
         from src.core.context_compressor import ContextCompressor
@@ -208,11 +206,11 @@ Autonomous problem-solving contract:
             logger.info(f"[AgentLoop] Iteration {budget.current_iteration}/{max_iterations}")
             self._apply_mode_to_messages(history)
             await self._guard_intent(history)
-            await self._oversee_iteration(budget, history, tool_results, errors)
-
-            # Monitor token budgets and step limits via GreedyOverseerAgent
-            if budget.current_iteration > 1 and self.overseer:
-                await self.overseer.evaluate_execution_results({"overseer_iterations": budget.current_iteration})
+            ask_user_result = await self._oversee_iteration(
+                budget, history, tool_results, errors, tool_calls_count
+            )
+            if ask_user_result is not None:
+                return ask_user_result
 
             # Phase 3: Compress context if needed
             history = await self.compressor.compress_if_needed(history)
@@ -848,17 +846,23 @@ Autonomous problem-solving contract:
         history: List[Dict[str, Any]],
         tool_results: List[Dict[str, Any]],
         errors: List[Dict[str, Any]],
-    ) -> None:
+        tool_calls_count: int,
+    ) -> Dict[str, Any] | None:
         """GreedyOverseerAgent hook (issue #1038).
 
         Monitors token budgets and step limits each iteration. The overseer is
         optional: if it was never constructed (or its config is unavailable),
         this is a no-op. Failures are logged and swallowed so the agent loop
         never depends on the overseer for correctness.
+
+        Returns a result dict to end the run early when the overseer decides
+        it needs the human (issue #1300: `ask_user` used to be logged and
+        then ignored, so the loop just kept iterating). Returns None to keep
+        looping.
         """
         overseer = getattr(self, "greedy_overseer", None)
         if overseer is None:
-            return
+            return None
         try:
             # Approximate token usage from the pruned history so the overseer
             # has a concrete budget signal without coupling to a tokenizer.
@@ -882,6 +886,8 @@ Autonomous problem-solving contract:
             updated = await overseer.evaluate_execution_results(state)
             decision = updated.get("overseer_decision")
             if decision and decision != "proceed":
+                evaluations = updated.get("overseer_evaluations") or []
+                reasoning = evaluations[-1].get("reasoning") if evaluations else decision
                 errors.append(
                     {
                         "type": "greedy_overseer_signal",
@@ -890,8 +896,20 @@ Autonomous problem-solving contract:
                         "message": f"GreedyOverseerAgent decision: {decision}",
                     }
                 )
+                if decision == "ask_user":
+                    return self._build_result(
+                        success=True,
+                        content=f"Need human input before continuing: {reasoning}",
+                        iterations=budget.current_iteration,
+                        history=history,
+                        metadata={"overseer_decision": "ask_user", "waiting_for_user": True},
+                        tool_calls_count=tool_calls_count,
+                        tool_results=tool_results,
+                        errors=errors,
+                    )
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent evaluation failed: %s", e)
+        return None
 
     async def _record_resolved_capability(self, capability: str) -> None:
         """MethodResolver를 통해 도구 capability 해결 시도를 기록."""
