@@ -341,6 +341,8 @@ class AutonomousOrchestrator:
         user_request: str,
         context: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
+        if final_state is None:
+            raise RuntimeError("run_research returned None from execute(); expected a state dictionary")
         """Legacy alias for execute()."""
         return await self.execute(user_request, context)
 
