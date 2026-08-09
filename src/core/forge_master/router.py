@@ -230,6 +230,13 @@ class ForgeMasterRouter:
     def _relevant_fallbacks(self, selected: str, relevance: Dict[str, float]) -> List[str]:
         """실제로 이 작업과 관련 있다고 판단된 에이전트만 관련도 순으로 폴백 후보에 남김"""
         candidates = [
+            (agent, score)
+            for agent, score in relevance.items()
+            if agent != selected and score >= self._RELEVANCE_THRESHOLD
+        ]
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return [agent for agent, _ in candidates]
+
     def _extract_json(self, text: str) -> Optional[dict]:
         """Extract the first complete JSON object from text, handling nested braces.
 
@@ -268,9 +275,3 @@ class ForgeMasterRouter:
                     except json.JSONDecodeError:
                         return None
         return None
-            (agent, score)
-            for agent, score in relevance.items()
-            if agent != selected and score >= self._RELEVANCE_THRESHOLD
-        ]
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        return [agent for agent, _ in candidates]

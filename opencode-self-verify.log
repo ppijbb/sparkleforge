@@ -1,0 +1,54 @@
+================================================================================
+테스트 코드 점검
+================================================================================
+
+[1] debug_validator.py 사용 여부 확인...
+✅ debug_validator.py가 없음
+
+[2] src 디렉토리의 테스트 파일 확인...
+⚠️ src 디렉토리에 2개 테스트 파일 발견:
+   - src/core/security_test.py
+   - src/core/test_time_scaling.py
+   → tests/ 디렉토리로 이동 권장
+
+[3] 프로덕션 코드의 테스트 함수 확인...
+⚠️ 1개 테스트 함수가 프로덕션 코드에 발견됨:
+   - src/web/streamlit_app.py:1447 - test_sandbox_execution
+
+[4] async 테스트 함수의 @pytest.mark.asyncio 누락 확인...
+⚠️ 29개 async 테스트 함수에 @pytest.mark.asyncio 누락:
+   - tests/test_smithery_mcp.py:217 - test_http_server
+   - tests/test_smithery_mcp.py:400 - test_stdio_server
+   - tests/test_smithery_mcp.py:632 - test_all_servers
+   - tests/test_smithery_mcp.py:660 - test_http_with_semaphore
+   - tests/test_smithery_mcp.py:664 - test_stdio_with_semaphore
+   - tests/test_enhanced_systems.py:41 - test_output_manager
+   - tests/test_enhanced_systems.py:79 - test_error_handler
+   - tests/test_enhanced_systems.py:107 - test_progress_tracker
+   - tests/test_enhanced_systems.py:141 - test_enhanced_logger
+   - tests/test_enhanced_systems.py:173 - test_integration
+   - tests/test_agent_result_sharing.py:24 - test_shared_results_manager
+   - tests/test_agent_result_sharing.py:88 - test_agent_discussion_manager
+   - tests/test_agent_result_sharing.py:134 - test_integration
+   - tests/test_simple.py:18 - test_basic
+   - tests/test_parallel_with_sharing.py:24 - test_parallel_execution_with_sharing
+   - tests/test_parallel_with_sharing.py:104 - test_result_sharing_workflow
+   - tests/test_os_plane_integrity.py:157 - test_agent_harness_constructs_real_wiring
+   - tests/test_mcp_tools.py:200 - test_essential_tools
+   - tests/test_mcp_tools.py:531 - test_github_mcp_server
+   - tests/test_mcp_tools.py:793 - test_search_tools
+   - tests/test_deepmcp_integration.py:178 - test_async_components
+   - tests/test_parallel_execution.py:29 - test_task_queue
+   - tests/test_parallel_execution.py:98 - test_agent_pool
+   - tests/test_parallel_execution.py:138 - test_parallel_executor_basic
+   - tests/test_parallel_execution.py:171 - test_integration
+   - tests/test_mcp_connection.py:46 - test_mcp_connections
+   - tests/test_nightwelding_scheduler_routing.py:39 - test_nightwelding_sweep_schedule_short_circuits_before_route_task
+   - tests/test_nightwelding_scheduler_routing.py:75 - test_non_nightwelding_schedule_still_routes_normally
+   - tests/test_opencode_github_worker.py:383 - test_code_review_soft_fails_when_all_model_providers_are_unavailable
+
+================================================================================
+점검 결과 요약
+================================================================================
+⚠️ 32개 이슈 발견 - 위의 상세 내용 참조
+================================================================================
