@@ -228,6 +228,47 @@ async def test_agent_loop_allows_alternating_tool_calls_without_tripping_guard()
 
 
 @pytest.mark.asyncio
+async def test_agent_loop_injects_momentum_nudge_when_only_re_reading_old_ground():
+    # Regression for the lfdb dogfooding session (issue #1216, Anvil Phase Mu):
+    # the model kept alternating between two already-read files turn after
+    # turn -- never a single *consecutive* repeat (so MAX_STUCK_TOOL_REPEATS
+    # never fires) but also never gathering anything new. The loop should
+    # notice the run-wide stagnation and push the model toward a real action.
+    call_a = {
+        "id": "call_a",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "a"}'},
+    }
+    call_b = {
+        "id": "call_b",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "b"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_a]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_b]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_a]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_b]}),
+            ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    loop = make_loop(orchestrator, FakeMCPHub())
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    momentum_messages = [
+        m
+        for m in result["history"]
+        if m.get("role") == "system" and "Momentum check:" in str(m.get("content", ""))
+    ]
+    assert len(momentum_messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_execution_node_uses_hermes_results_in_state(monkeypatch):
     agent_config = SimpleNamespace(max_concurrent_research_units=1)
     node = ExecutionNode(
