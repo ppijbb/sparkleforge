@@ -429,6 +429,283 @@ class A2UIGenerator:
         }
 
 
+    def generate_idea_canvas_a2ui(
+        self,
+        ideas: List[Dict[str, Any]],
+        canvas_id: str | None = None,
+    ) -> Dict[str, Any]:
+        """아이디어 노드 캔버스를 A2UI 형식으로 생성
+
+        Args:
+            ideas: 아이디어 노드 리스트. 각 노드는 id, title, summary, status,
+                parent_id, branch_of, merged_from 필드를 가질 수 있습니다.
+            canvas_id: 캔버스 식별자 (선택적)
+
+        Returns:
+            A2UI JSON 메시지 (createSurface, updateComponents, updateDataModel)
+        """
+        surface_id = canvas_id or f"idea-canvas-{int(datetime.now().timestamp())}"
+
+        components = self._build_idea_canvas_components()
+        data_model = self._build_idea_canvas_data_model(ideas)
+
+        return {
+            "createSurface": {"surfaceId": surface_id, "catalogId": self.catalog_id},
+            "updateComponents": {"surfaceId": surface_id, "components": components},
+            "updateDataModel": {
+                "surfaceId": surface_id,
+                "path": "/",
+                "op": "replace",
+                "value": data_model,
+            },
+        }
+
+    def _build_idea_canvas_components(self) -> List[Dict[str, Any]]:
+        """아이디어 캔버스 컴포넌트 트리 구축"""
+        components: List[Dict[str, Any]] = []
+
+        root_column = {
+            "id": "root",
+            "component": "Column",
+            "children": [
+                "canvas-title",
+                "canvas-toolbar",
+                "idea-graph",
+                "idea-detail",
+            ],
+        }
+        components.append(root_column)
+
+        canvas_title = {
+            "id": "canvas-title",
+            "component": "Text",
+            "text": "아이디어 분기 캔버스",
+            "usageHint": "h1",
+        }
+        components.append(canvas_title)
+
+        toolbar = {
+            "id": "canvas-toolbar",
+            "component": "Row",
+            "children": ["branch-button", "merge-button", "resynthesize-button"],
+        }
+        components.append(toolbar)
+
+        branch_button = {
+            "id": "branch-button",
+            "component": "Button",
+            "child": "branch-button-text",
+            "action": {
+                "name": "branch_idea",
+                "context": {"source_node_path": {"path": "selected_node_id"}},
+            },
+        }
+        components.append(branch_button)
+        components.append(
+            {"id": "branch-button-text", "component": "Text", "text": "분기"}
+        )
+
+        merge_button = {
+            "id": "merge-button",
+            "component": "Button",
+            "child": "merge-button-text",
+            "action": {
+                "name": "merge_ideas",
+                "context": {
+                    "source_node_path": {"path": "selected_node_id"},
+                    "target_node_path": {"path": "merge_target_id"},
+                },
+            },
+        }
+        components.append(merge_button)
+        components.append(
+            {"id": "merge-button-text", "component": "Text", "text": "병합"}
+        )
+
+        resynthesize_button = {
+            "id": "resynthesize-button",
+            "component": "Button",
+            "child": "resynthesize-button-text",
+            "action": {
+                "name": "resynthesize_idea",
+                "context": {"source_node_path": {"path": "selected_node_id"}},
+            },
+        }
+        components.append(resynthesize_button)
+        components.append(
+            {
+                "id": "resynthesize-button-text",
+                "component": "Text",
+                "text": "재합성",
+            }
+        )
+
+        idea_graph = {
+            "id": "idea-graph",
+            "component": "List",
+            "direction": "vertical",
+            "children": {"componentId": "idea-node-template", "path": "nodes"},
+        }
+        components.append(idea_graph)
+
+        node_template = {
+            "id": "idea-node-template",
+            "component": "Card",
+            "child": "idea-node-content",
+        }
+        components.append(node_template)
+
+        node_content = {
+            "id": "idea-node-content",
+            "component": "Column",
+            "children": [
+                "idea-node-title",
+                "idea-node-summary",
+                "idea-node-status",
+                "idea-node-relations",
+            ],
+        }
+        components.append(node_content)
+
+        components.append(
+            {
+                "id": "idea-node-title",
+                "component": "Text",
+                "text": {"path": "title"},
+                "usageHint": "h3",
+            }
+        )
+        components.append(
+            {
+                "id": "idea-node-summary",
+                "component": "Text",
+                "text": {"path": "summary"},
+                "usageHint": "body",
+            }
+        )
+        components.append(
+            {
+                "id": "idea-node-status",
+                "component": "Text",
+                "text": {"path": "status"},
+                "usageHint": "caption",
+            }
+        )
+        components.append(
+            {
+                "id": "idea-node-relations",
+                "component": "Text",
+                "text": {"path": "relations"},
+                "usageHint": "caption",
+            }
+        )
+
+        idea_detail = {
+            "id": "idea-detail",
+            "component": "Card",
+            "child": "idea-detail-content",
+        }
+        components.append(idea_detail)
+
+        detail_content = {
+            "id": "idea-detail-content",
+            "component": "Column",
+            "children": ["idea-detail-title", "idea-detail-body"],
+        }
+        components.append(detail_content)
+
+        components.append(
+            {
+                "id": "idea-detail-title",
+                "component": "Text",
+                "text": {"path": "detail.title"},
+                "usageHint": "h2",
+            }
+        )
+        components.append(
+            {
+                "id": "idea-detail-body",
+                "component": "Text",
+                "text": {"path": "detail.body"},
+                "usageHint": "body",
+            }
+        )
+
+        return components
+
+    def _build_idea_canvas_data_model(
+        self, ideas: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """아이디어 캔버스 데이터 모델 구축"""
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
+        detail: Dict[str, Any] = {"title": "", "body": ""}
+
+        for idea in ideas:
+            if not isinstance(idea, dict):
+                continue
+            node_id = idea.get("id") or f"idea-{len(nodes)}"
+            title = idea.get("title", "")
+            summary = idea.get("summary", "")
+            status = idea.get("status", "draft")
+
+            relations: List[str] = []
+            parent_id = idea.get("parent_id")
+            branch_of = idea.get("branch_of")
+            merged_from = idea.get("merged_from")
+
+            if parent_id:
+                edges.append(
+                    {"source": parent_id, "target": node_id, "relation": "parent"}
+                )
+                relations.append(f"parent: {parent_id}")
+            if branch_of:
+                edges.append(
+                    {"source": branch_of, "target": node_id, "relation": "branch"}
+                )
+                relations.append(f"branch of: {branch_of}")
+            if merged_from:
+                if isinstance(merged_from, list):
+                    for src in merged_from:
+                        edges.append(
+                            {"source": src, "target": node_id, "relation": "merge"}
+                        )
+                    relations.append(f"merged from: {', '.join(map(str, merged_from))}")
+                else:
+                    edges.append(
+                        {
+                            "source": merged_from,
+                            "target": node_id,
+                            "relation": "merge",
+                        }
+                    )
+                    relations.append(f"merged from: {merged_from}")
+
+            nodes.append(
+                {
+                    "id": node_id,
+                    "title": title,
+                    "summary": summary,
+                    "status": status,
+                    "relations": "; ".join(relations),
+                }
+            )
+
+            if not detail["title"]:
+                detail = {
+                    "title": title,
+                    "body": summary or idea.get("body", ""),
+                }
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "selected_node_id": nodes[0]["id"] if nodes else "",
+            "merge_target_id": "",
+            "detail": detail,
+        }
+
+
 def get_a2ui_generator() -> A2UIGenerator:
     """A2UIGenerator 싱글톤 인스턴스 반환"""
     global _generator_instance
