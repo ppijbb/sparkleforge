@@ -86,7 +86,7 @@ class AgentLoop:
     mode_controller = None
     method_resolver = None
     intent_guardrail = None
-    greedy_overseer = None
+    overseer = None
 
     AUTONOMOUS_PROBLEM_SOLVING_CONTRACT = """
 Autonomous problem-solving contract:
@@ -104,7 +104,6 @@ Autonomous problem-solving contract:
         self.orchestrator = orchestrator or MultiModelOrchestrator()
         self._plan_first = False
         self.mcp_hub: UniversalMCPHub = get_mcp_hub()
-        self.overseer = get_greedy_overseer_agent()
 
         # Phase 3: Context Compression
         from src.core.context_compressor import ContextCompressor
@@ -125,16 +124,16 @@ Autonomous problem-solving contract:
         self.intent_guardrail = None
 
         # GreedyOverseerAgent wiring (issue #1038): monitor token budgets and
-        # step limits. Construction is best-effort because the overseer pulls
+        # step limits. The single attribute is named ``overseer`` (matching the
         # LLM/shared-memory config that may be unavailable in lightweight test
         # harnesses; a None overseer is treated as a no-op throughout the loop.
         try:
             from src.agents.greedy_overseer_agent import GreedyOverseerAgent
 
-            self.greedy_overseer = GreedyOverseerAgent(max_iterations=15)
+            self.overseer = GreedyOverseerAgent(max_iterations=15)
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent unavailable: %s", e)
-            self.greedy_overseer = None
+            self.overseer = None
 
     async def run_conversation(
         self,
@@ -216,7 +215,7 @@ Autonomous problem-solving contract:
             # (skipped for non-research tasks -- see _oversee_iteration above)
             if (
                 budget.current_iteration > 1
-                and self.overseer
+                and self.greedy_overseer
                 and task_type in (TaskType.RESEARCH, TaskType.ANALYSIS)
             ):
                 await self.overseer.evaluate_execution_results({"overseer_iterations": budget.current_iteration})
@@ -872,7 +871,7 @@ Autonomous problem-solving contract:
         this is a no-op. Failures are logged and swallowed so the agent loop
         never depends on the overseer for correctness.
         """
-        overseer = getattr(self, "greedy_overseer", None)
+        overseer = getattr(self, "overseer", None)
         if overseer is None:
             return
         # Skip overseer for non-research tasks (e.g., coworker code tasks) --

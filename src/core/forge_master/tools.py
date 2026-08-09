@@ -136,10 +136,25 @@ async def _run_batch_in_waves(
             idx = int(task_id)
             task = tasks[idx]
             dep_indices = [int(d) for d in (task.get("dependencies") or [])]
+            missing_indices = [
+                dep_idx
+                for dep_idx in dep_indices
+                if dep_idx < 0 or dep_idx >= len(tasks) or dep_idx not in results
+            ]
+            for dep_idx in missing_indices:
+                logger.warning(
+                    "forge_master batch: task %s references dependency index %s "
+                    "with no available result (failed, skipped, or malformed); "
+                    "continuing with empty prior context",
+                    idx,
+                    dep_idx,
+                )
             prior_outputs = [
                 f"[Output of task {dep_idx}]\n{results[dep_idx].get('response', '')}"
                 for dep_idx in dep_indices
-                if isinstance(results[dep_idx], dict) and results[dep_idx].get("success")
+                if dep_idx in results
+                and isinstance(results[dep_idx], dict)
+                and results[dep_idx].get("success")
             ]
             if prior_outputs:
                 prior_context = "\n\n".join(prior_outputs)
@@ -151,10 +166,24 @@ async def _run_batch_in_waves(
             *(run_one(task) for task in wave_tasks), return_exceptions=True
         )
         for task_id, result in zip(wave, wave_results):
-            results[int(task_id)] = result
+            results[int(task_id)] = _normalize_wave_result(result)
             queue.mark_completed(task_id)
 
     return results
+
+
+def _normalize_wave_result(result: Any) -> Dict[str, Any]:
+    """Normalize an asyncio.gather(return_exceptions=True) result.
+
+    Failed coroutines are returned as raw Exception instances, which would
+    crash downstream dependency checks that call ``.get()`` on the stored
+    value. Wrap exceptions into a ``{'success': False, ...}`` dict so the
+    rest of the wave/batch degrades gracefully instead of raising
+    ``AttributeError``.
+    """
+    if isinstance(result, Exception):
+        return {"success": False, "response": "", "error": str(result)}
+    return result
 
 
 async def _dispatch_batch_to_forge_master_tool(

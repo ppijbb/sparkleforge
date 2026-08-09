@@ -77,3 +77,37 @@ async def test_forge_batch_command_prints_one_summary_line_per_task_not_raw_resp
     # The 5000-char raw responses must never reach the console.
     assert "x" * 5000 not in joined
     assert "y" * 5000 not in joined
+
+
+@pytest.mark.asyncio
+async def test_run_batch_in_waves_normalizes_failed_dependency_result():
+    """Issue #1193: a failed prerequisite must not crash dependent tasks.
+
+    asyncio.gather(return_exceptions=True) returns raw Exception instances
+    for failed coroutines. Storing them directly into ``results`` makes
+    downstream ``results[dep_idx].get(...)`` raise AttributeError. The
+    wave runner must normalize exceptions into ``{'success': False, ...}``
+    so the remaining tasks degrade gracefully.
+    """
+    from src.core.forge_master.tools import _run_batch_in_waves
+
+    async def run_one(task):
+        if task["task_query"] == "fail":
+            raise RuntimeError("boom")
+        return {"success": True, "response": "ok"}
+
+    tasks = [
+        {"task_query": "fail", "agent_name": "codex", "dependencies": []},
+        {"task_query": "dependent", "agent_name": "codex", "dependencies": [0]},
+    ]
+
+    results = await _run_batch_in_waves(tasks, run_one)
+
+    assert isinstance(results[0], dict)
+    assert results[0]["success"] is False
+    assert results[0]["response"] == ""
+    assert "boom" in results[0]["error"]
+    # Dependent task still ran and received a dict, not an AttributeError crash.
+    assert isinstance(results[1], dict)
+    assert results[1]["success"] is True
+    assert results[1]["response"] == "ok"
