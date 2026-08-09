@@ -158,7 +158,7 @@ class AgentHarness:
         loop = AgentLoop(self.orchestrator)
         result = await loop.run_conversation(
             messages=[{"role": "user", "content": query}],
-            task_type=TaskType.RESEARCH,
+            task_type=TaskType.GENERATION if identity == "coder" else TaskType.RESEARCH,
             max_iterations=5,
             system_message=get_system_prompt(identity),
         )
@@ -503,9 +503,18 @@ class AgentHarness:
                 "agent_name": router.route_task(task.get("description", "")).agent_name,
                 "task_query": task.get("description", ""),
             }
+            declared_deps = task.get("dependencies") or []
+            unknown_deps = [dep_id for dep_id in declared_deps if dep_id not in id_to_index]
+            if unknown_deps:
+                logger.warning(
+                    "[Harness] Task %s declares unknown dependency IDs %s; "
+ "filtering them out of ForgeMaster dispatch",
+                    task.get("task_id", ""),
+                    unknown_deps,
+                )
             dep_indices = [
                 id_to_index[dep_id]
-                for dep_id in (task.get("dependencies") or [])
+                for dep_id in declared_deps
                 if dep_id in id_to_index
             ]
             if dep_indices:

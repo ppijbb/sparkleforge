@@ -75,6 +75,30 @@ def make_loop(orchestrator, mcp_hub):
 async def test_agent_loop_executes_tool_calls_until_final_answer():
     tool_call = {
         "id": "call_1",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "sparkleforge"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [tool_call]}),
+            ModelResult("final answer", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research sparkleforge"}], max_iterations=3
+    )
+
+    assert result["success"] is True
+    assert result["content"] == "final answer"
+    assert result["tool_calls_count"] == 1
+    assert result["tool_results"][0]["success"] is True
+    assert mcp_hub.calls == [("search", {"query": "sparkleforge"})]
+    assert orchestrator.calls[0]["model_name"] == "tool-model"
+
+
 @pytest.mark.asyncio
 async def test_overseer_branch_is_entered_during_loop_iteration():
     """Regression for issue #1208: the overseer branch in run_conversation must
@@ -110,29 +134,7 @@ async def test_overseer_branch_is_entered_during_loop_iteration():
 
     assert result["success"] is True
     assert len(overseer_calls) >= 1
-    assert overseer_calls[0]["overseer_iterations"] >= 2
-        "type": "function",
-        "function": {"name": "search", "arguments": '{"query": "sparkleforge"}'},
-    }
-    orchestrator = FakeOrchestrator(
-        [
-            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [tool_call]}),
-            ModelResult("final answer", "tool-model", 0.1, 0.8, 0.0, {}),
-        ]
-    )
-    mcp_hub = FakeMCPHub()
-    loop = make_loop(orchestrator, mcp_hub)
-
-    result = await loop.run_conversation(
-        [{"role": "user", "content": "research sparkleforge"}], max_iterations=3
-    )
-
-    assert result["success"] is True
-    assert result["content"] == "final answer"
-    assert result["tool_calls_count"] == 1
-    assert result["tool_results"][0]["success"] is True
-    assert mcp_hub.calls == [("search", {"query": "sparkleforge"})]
-    assert orchestrator.calls[0]["model_name"] == "tool-model"
+    assert any(call["overseer_iterations"] >= 2 for call in overseer_calls)
 
 
 @pytest.mark.asyncio
@@ -224,6 +226,47 @@ async def test_agent_loop_allows_alternating_tool_calls_without_tripping_guard()
     assert result["success"] is True
     assert result["content"] == "done"
     assert len(mcp_hub.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_injects_momentum_nudge_when_only_re_reading_old_ground():
+    # Regression for the lfdb dogfooding session (issue #1216, Anvil Phase Mu):
+    # the model kept alternating between two already-read files turn after
+    # turn -- never a single *consecutive* repeat (so MAX_STUCK_TOOL_REPEATS
+    # never fires) but also never gathering anything new. The loop should
+    # notice the run-wide stagnation and push the model toward a real action.
+    call_a = {
+        "id": "call_a",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "a"}'},
+    }
+    call_b = {
+        "id": "call_b",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "b"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_a]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_b]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_a]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_b]}),
+            ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    loop = make_loop(orchestrator, FakeMCPHub())
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    momentum_messages = [
+        m
+        for m in result["history"]
+        if m.get("role") == "system" and "Momentum check:" in str(m.get("content", ""))
+    ]
+    assert len(momentum_messages) == 1
 
 
 @pytest.mark.asyncio

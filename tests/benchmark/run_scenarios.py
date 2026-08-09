@@ -242,6 +242,8 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
         critical_failure = (
             exec_result["returncode"] != 0
             and "No available models" in exec_result["stderr"]
+        ) or (
+            "All fallback models failed" in exec_result["stdout"]
         )
         if critical_failure:
             # Total LLM infrastructure failure: every check must be marked
@@ -265,6 +267,11 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
         # collapse from a genuinely successful run. Use exit code 2 for
         # infrastructure failure, distinct from 1 (agent task failure).
         recorded_returncode = 2 if critical_failure else exec_result["returncode"]
+        # The agent subprocess may exit 0 even when every fallback model failed
+        # (the failure surfaces only in stdout). Force a non-zero recorded
+        # returncode so the run cannot be mistaken for a genuine success.
+        if critical_failure and recorded_returncode == 0:
+            recorded_returncode = 2
 
         return {
             "id": spec["id"],
@@ -319,6 +326,21 @@ async def run_all(specs: List[Dict[str, Any]], parallel: bool) -> Dict[str, Any]
             "overall_score excludes them and has reduced confidence."
         )
         print(f"[scenario-eval] WARNING: {warning}", file=sys.stderr)
+    # Post-run sanity check (issue #1290): if every conclusive scenario scored
+    # 0.0, the run is degenerate (almost always a total LLM outage that slipped
+    # past the per-scenario critical_failure detection). Emit a warning and mark
+    # the run critical so the runner exits non-zero and the history append is
+    # skipped, preventing a zero-score run from being recorded as a success.
+    if conclusive and all(r["total"] == 0.0 for r in conclusive):
+        warning = (
+            "degenerate run: every conclusive scenario scored 0.0 — likely a "
+            "total LLM outage that was not caught by the per-scenario gate."
+        )
+        print(f"[scenario-eval] WARNING: {warning}", file=sys.stderr)
+        for r in results:
+            r["critical_failure"] = True
+            r["inconclusive"] = True
+            r["returncode"] = r.get("returncode") or 2
     return {
         "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -592,12 +614,12 @@ async def _main() -> int:
     # Aggregate critical infrastructure failures: if any scenario experienced a
     # total model collapse, the runner must exit non-zero so CI gates catch it.
     if any(r.get("critical_failure") for r in report["scenarios"].values()):
+        exit_code = exit_code or 2
         print(
             "[scenario-eval] CRITICAL: one or more scenarios failed due to model "
             "infrastructure unavailability; exiting non-zero.",
             file=sys.stderr,
         )
-        exit_code = exit_code or 2
 
     return exit_code
 

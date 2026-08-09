@@ -56,11 +56,11 @@ class HermesCLIAgent(BaseCLIAgent):
         if tools:
             args.extend(["--tools", ",".join(tools)])
 
-        # 명령 실행: self.config.args(--format json)는 _execute_command가 자동으로
-        # 덧붙이므로 여기서 합치지 않음 (공유 상태를 건드리지 않아야 동시 배치
-        # 실행 시 캐시된 인스턴스를 공유하는 두 hermes 태스크가 서로의 args를
-        # 밟지 않는다 - claude_code/gemini_cli/cline_cli와 동일한 패턴)
-        result = await self._execute_command([self.config.command] + args)
+        # Merge the default config args (e.g. --format json) with the per-call
+        # args without mutating the shared config instance, so concurrent batch
+        # tasks sharing a cached hermes agent do not trample each other's args.
+        full_args = list(self.config.args) + list(args)
+        result = await self._execute_command(self.config.command, full_args)
         parsed_result = self.parse_output(result)
 
         return {
