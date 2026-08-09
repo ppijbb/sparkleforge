@@ -41,31 +41,51 @@ class ForgeMasterRouter:
             "strengths": ["refactoring", "complex_bugfix", "architecture", "diff_slicing"],
             "score": 0.95,
             "cost_tier": "high",
+            "local": True,
+            "priority": 1,
         },
         "codex": {
             "strengths": ["code_generation", "syntax_repair", "snippet_synthesis", "python"],
             "score": 0.90,
             "cost_tier": "medium",
+            "local": True,
+            "priority": 2,
         },
         "gemini_cli": {
             "strengths": ["large_context", "doc_search", "multimodal", "broad_synthesis"],
             "score": 0.88,
             "cost_tier": "low",
+            "local": True,
+            "priority": 3,
         },
         "hermes": {
             "strengths": ["agentic_workflow", "custom_tools", "domain_task", "reasoning"],
             "score": 0.87,
             "cost_tier": "medium",
+            "local": True,
+            "priority": 4,
         },
         "open_code": {
             "strengths": ["local_llm", "offline", "general_code"],
             "score": 0.75,
             "cost_tier": "minimal",
+            "local": True,
+            "priority": 5,
         },
         "cline_cli": {
             "strengths": ["task_automation", "tool_use"],
             "score": 0.75,
             "cost_tier": "medium",
+            "local": True,
+            "priority": 6,
+        },
+        # 프론티어 API는 로컬 CLI 함대 전원이 실패/미가용일 때만 최후 수단.
+        "frontier_api": {
+            "strengths": ["remote_llm", "broad_synthesis"],
+            "score": 0.50,
+            "cost_tier": "high",
+            "local": False,
+            "priority": 99,
         },
     }
 
@@ -98,16 +118,33 @@ class ForgeMasterRouter:
         # 기본 에이전트 풀
         pool = available_agents or list(self.CAPABILITY_MATRIX.keys())
 
+        # Local-first 정책: 로컬 CLI 에이전트가 하나라도 사용 가능하면
+        # 프론티어 API는 후보에서 제외한다. 프론팅 API 폴백은 로컬 함대가
+        # 전원 미가용일 때만 최후 수단으로 고려된다.
+        local_pool = [
+            agent for agent in pool
+            if self.CAPABILITY_MATRIX.get(agent, {}).get("local", False)
+        ]
+        if local_pool:
+            effective_pool = local_pool
+            logger.debug(
+                "ForgeMaster local-first routing: local CLI agents available (%s); "
+                "frontier API excluded from selection",
+                local_pool,
+            )
+        else:
+            effective_pool = pool
+
         # 실제 역량/키워드 관련성 점수 (기본 score는 동점 처리용 보조 지표일 뿐,
         # 이것만으로는 어떤 에이전트도 선택/폴백 후보가 될 수 없음)
-        relevance = self._score_relevance(task_description, required_caps, pool)
+        relevance = self._score_relevance(task_description, required_caps, effective_pool)
 
         # 선호 에이전트가 존재하고 사용 가능한 경우 1순위 고려
-        if preferred_agent and preferred_agent in pool:
+        if preferred_agent and preferred_agent in effective_pool:
             selected = preferred_agent
             reason = f"Explicitly preferred agent: {preferred_agent}"
         else:
-            selected, reason = self._pick_best_agent(relevance, pool)
+            selected, reason = self._pick_best_agent(relevance, effective_pool)
 
         # 폴백은 이 작업과 실제로 관련 있다고 판단된 에이전트에만 한정
         # (관련성 매치가 하나도 없으면 불필요하게 다른 유료 에이전트로 확산시키지 않음)
@@ -122,6 +159,21 @@ class ForgeMasterRouter:
             capability_reason=reason,
             fallback_agents=fallbacks,
         )
+
+    def _build_tool_specific_goal(self, agent_name: str, task_description: str) -> str:
+        """각 CLI 에이전트의 강점에 맞춘 맞춤형 Goal 지시문 빌드"""
+        if agent_name == "claude_code":
+            return f"[Claude Code Dedicated Goal] Focus strictly on code refactoring and diff integrity: {task_description}"
+        elif agent_name == "codex":
+            return f"[Codex Dedicated Goal] Generate clean, concise code with syntax precision: {task_description}"
+        elif agent_name == "gemini_cli":
+            return f"[Gemini CLI Dedicated Goal] Synthesize wide context and document insights efficiently: {task_description}"
+        elif agent_name == "hermes":
+            return f"[Hermes Dedicated Goal] Execute autonomous workflow step-by-step: {task_description}"
+        elif agent_name == "frontier_api":
+            return f"[Frontier API Last-Resort Goal] Local CLI fleet unavailable; use remote frontier model as final fallback: {task_description}"
+        else:
+            return f"[{agent_name} Dedicated Goal] {task_description}"
 
     # 관련성 매치가 하나도 없는 에이전트를 동점 처리용 보조 점수만으로
     # 선택/폴백 후보에 끼워주지 않기 위한 문턱값
@@ -183,16 +235,3 @@ class ForgeMasterRouter:
         ]
         candidates.sort(key=lambda x: x[1], reverse=True)
         return [agent for agent, _ in candidates]
-
-    def _build_tool_specific_goal(self, agent_name: str, task_description: str) -> str:
-        """각 CLI 에이전트의 강점에 맞춘 맞춤형 Goal 지시문 빌드"""
-        if agent_name == "claude_code":
-            return f"[Claude Code Dedicated Goal] Focus strictly on code refactoring and diff integrity: {task_description}"
-        elif agent_name == "codex":
-            return f"[Codex Dedicated Goal] Generate clean, concise code with syntax precision: {task_description}"
-        elif agent_name == "gemini_cli":
-            return f"[Gemini CLI Dedicated Goal] Synthesize wide context and document insights efficiently: {task_description}"
-        elif agent_name == "hermes":
-            return f"[Hermes Dedicated Goal] Execute autonomous workflow step-by-step: {task_description}"
-        else:
-            return f"[{agent_name} Dedicated Goal] {task_description}"
