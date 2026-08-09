@@ -78,6 +78,49 @@ JUDGE_REGRESSION_TOLERANCE = 0.15
 DETERMINISTIC_REGRESSION_TOLERANCE = 0.0
 
 
+def _truncate_excerpt(text: str, limit: int = 1500) -> str:
+    """Truncate ``text`` to at most ``limit`` characters on a clean boundary.
+
+    A raw character slice cuts mid-token (e.g. ``...model_regist``), corrupting
+    diagnostic excerpts. This trims at the last whitespace boundary before the
+    limit so no partial tokens appear in ``stdout_excerpt``/``stderr_excerpt``.
+    """
+    if not text or len(text) <= limit:
+        return text or ""
+    candidate = text[:limit]
+    boundary = max(candidate.rfind(" "), candidate.rfind("\n"), candidate.rfind("\t"))
+    if boundary > 0:
+        return candidate[:boundary]
+    return candidate
+
+
+def _llm_provider_keys_present() -> tuple[bool, list[str]]:
+    """Return (any_present, present_provider_names) for known LLM API keys."""
+    providers = [
+        ("google", "GOOGLE_API_KEY"),
+        ("google", "GEMINI_API_KEY"),
+        ("groq", "GROQ_API_KEY"),
+        ("openai", "OPENAI_API_KEY"),
+        ("nvidia", "NVIDIA_API_KEY"),
+        ("openrouter", "OPENROUTER_API_KEY"),
+    ]
+    present = [name for name, env_var in providers if os.environ.get(env_var, "").strip()]
+    return (bool(present), present)
+
+
+def preflight_llm_availability() -> tuple[bool, str]:
+    """Fail-fast check: at least one LLM provider API key must be configured."""
+    any_present, present = _llm_provider_keys_present()
+    if not any_present:
+        return False, (
+            "No LLM provider API keys configured (checked GOOGLE_API_KEY, "
+            "GEMINI_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, NVIDIA_API_KEY, "
+            "OPENROUTER_API_KEY). Aborting scenario run to avoid recording "
+            "garbage baselines from trivial rule-based fallbacks."
+        )
+    return True, f"LLM providers available: {', '.join(sorted(set(present)))}"
+
+
 def require_openrouter_api_key() -> bool:
     """Return whether judge-dependent scenario scoring can run."""
     if os.environ.get("OPENROUTER_API_KEY", "").strip():
@@ -199,12 +242,36 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
         critical_failure = (
             exec_result["returncode"] != 0
             and "No available models" in exec_result["stderr"]
+        ) or (
+            "All fallback models failed" in exec_result["stdout"]
         )
+        if critical_failure:
+            # Total LLM infrastructure failure: every check must be marked
+            # inconclusive (not conclusive-with-a-score) and zeroed so the
+            # run cannot be mistaken for a genuine low-score conclusive run.
+            # Restores the pre-regression behavior where fallback judge
+            # evaluations propagated inconclusive=True through this path.
+            for check in graded["breakdown"].values():
+                check["score"] = 0.0
+                check["inconclusive"] = True
+                if not check["reason"].startswith("agent execution failed"):
+                    check["reason"] = (
+                        "infrastructure failure: no model available — "
+                        + check["reason"]
+                    )
+            graded["total"] = 0.0
+            graded["adjusted_total"] = 0.0
+
         # Infrastructure failures (model unavailability) must propagate a
         # non-zero returncode so CI gates can distinguish a total model
         # collapse from a genuinely successful run. Use exit code 2 for
         # infrastructure failure, distinct from 1 (agent task failure).
         recorded_returncode = 2 if critical_failure else exec_result["returncode"]
+        # The agent subprocess may exit 0 even when every fallback model failed
+        # (the failure surfaces only in stdout). Force a non-zero recorded
+        # returncode so the run cannot be mistaken for a genuine success.
+        if critical_failure and recorded_returncode == 0:
+            recorded_returncode = 2
 
         return {
             "id": spec["id"],
@@ -219,9 +286,9 @@ async def run_scenario(spec: Dict[str, Any]) -> Dict[str, Any]:
             "returncode": recorded_returncode,
             "timed_out": exec_result["timed_out"],
             "duration_s": round(exec_result["duration_s"], 2),
-            "stdout_excerpt": exec_result["stdout"][:1500],
+            "stdout_excerpt": _truncate_excerpt(exec_result["stdout"]),
             "error_taxonomy": classify_error(exec_result["stderr"]) if exec_result["returncode"] != 0 else None,
-            "stderr_excerpt": exec_result["stderr"][:1500],
+            "stderr_excerpt": _truncate_excerpt(exec_result["stderr"]),
         }
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
@@ -259,6 +326,21 @@ async def run_all(specs: List[Dict[str, Any]], parallel: bool) -> Dict[str, Any]
             "overall_score excludes them and has reduced confidence."
         )
         print(f"[scenario-eval] WARNING: {warning}", file=sys.stderr)
+    # Post-run sanity check (issue #1290): if every conclusive scenario scored
+    # 0.0, the run is degenerate (almost always a total LLM outage that slipped
+    # past the per-scenario critical_failure detection). Emit a warning and mark
+    # the run critical so the runner exits non-zero and the history append is
+    # skipped, preventing a zero-score run from being recorded as a success.
+    if conclusive and all(r["total"] == 0.0 for r in conclusive):
+        warning = (
+            "degenerate run: every conclusive scenario scored 0.0 — likely a "
+            "total LLM outage that was not caught by the per-scenario gate."
+        )
+        print(f"[scenario-eval] WARNING: {warning}", file=sys.stderr)
+        for r in results:
+            r["critical_failure"] = True
+            r["inconclusive"] = True
+            r["returncode"] = r.get("returncode") or 2
     return {
         "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -364,14 +446,31 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         print(f"[scenario-eval] history file {history_path} is empty, nothing to compare against.")
         return 0
 
-    history_window = entries[-5:]
+    # Momentum gate (Anvil Μ-2): anchor the comparison window on *conclusive*
+    # history entries only. Skipping inconclusive records here is what
+    # previously let a dead judge axis keep passing the gate — an
+    # inconclusive run carries no signal about capability change, so it must
+    # not be the comparison anchor or count toward the stagnation window.
+    conclusive_entries = [e for e in entries if e.get("inconclusive_checks", 0) == 0]
+    if not conclusive_entries:
+        print(
+            "[scenario-eval] no conclusive history entry found (all recorded runs had "
+            "inconclusive checks); cannot anchor momentum gate, treating as no-op compare.",
+            file=sys.stderr,
+        )
+        return 0
+
+    history_window = conclusive_entries[-5:]
     prior_report = history_window[-1]
-    print(f"[scenario-eval] comparing against history entry from {prior_report.get('generated_at')}")
+    print(
+        f"[scenario-eval] comparing against conclusive history entry from "
+        f"{prior_report.get('generated_at')} (skipped inconclusive entries)"
+    )
     regression_exit = _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {}))
 
     # Stagnation gate: count meaningful improvements (Δ ≥ 0.03) across the
-    # last 5 history entries. Judge-API noise that moves the raw score by a
-    # few hundredths must not register as "improvement".
+    # last 5 conclusive history entries. Judge-API noise that moves the raw
+    # score by a few hundredths must not register as "improvement".
     min_effect = 0.03
     min_improvements = 2
     current_adjusted = report.get("overall_score_adjusted")
@@ -411,6 +510,16 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
 
 def append_history(report: Dict[str, Any], history_path: Path) -> None:
     """Append this run's report as one line to an append-only JSONL history file."""
+    # Guard the history append: never record runs that never executed against an
+    # LLM (total model outage). Such records are pure noise that pollute the
+    # baseline and mask real regressions in future comparisons.
+    if any(r.get("critical_failure") for r in report.get("scenarios", {}).values()):
+        print(
+            "[scenario-eval] skipping history append: one or more scenarios had a "
+            "total LLM infrastructure failure (no model available).",
+            file=sys.stderr,
+        )
+        return
     history_path.parent.mkdir(parents=True, exist_ok=True)
     with history_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(report, ensure_ascii=False) + "\n")
@@ -490,6 +599,7 @@ async def _main() -> int:
     parser.add_argument("--update-baseline", action="store_true", help="Write results into tests/benchmark/baselines/scenario_baseline.json")
     parser.add_argument("--compare-to", help="Path to a baseline JSON to check for regressions (exit 1 on regression)")
     parser.add_argument("--compare-to-history", help="Path to a JSONL history file; compares against its most recent entry")
+    parser.add_argument("--history", help="Path to a JSONL history file; alias for --compare-to-history")
     parser.add_argument("--append-history", help="Path to a JSONL history file to append this run's report to")
     parser.add_argument("--print-trend", help="Path to a JSONL history file; print overall_score over time and exit")
     parser.add_argument("--json-out", help="Path to write the run's JSON report (default: tests/benchmark/reports/scenario_report_<ts>.json)")
@@ -508,6 +618,12 @@ async def _main() -> int:
         for spec in specs:
             print(f"{spec['id']}: {spec.get('name', '')}")
         return 0
+
+    ok, message = preflight_llm_availability()
+    if not ok:
+        print(f"[scenario-eval] {message}", file=sys.stderr)
+        return 1
+    print(f"[scenario-eval] preflight: {message}")
 
     if not require_openrouter_api_key():
         return 1
@@ -531,16 +647,18 @@ async def _main() -> int:
         exit_code = compare_to_baseline(report, Path(args.compare_to)) or exit_code
     if args.compare_to_history:
         exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
+    if args.history:
+        exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
 
     # Aggregate critical infrastructure failures: if any scenario experienced a
     # total model collapse, the runner must exit non-zero so CI gates catch it.
     if any(r.get("critical_failure") for r in report["scenarios"].values()):
+        exit_code = exit_code or 2
         print(
             "[scenario-eval] CRITICAL: one or more scenarios failed due to model "
             "infrastructure unavailability; exiting non-zero.",
             file=sys.stderr,
         )
-        exit_code = exit_code or 2
 
     return exit_code
 

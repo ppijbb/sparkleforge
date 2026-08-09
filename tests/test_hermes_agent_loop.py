@@ -1,4 +1,5 @@
 import pytest
+import tracemalloc
 from types import SimpleNamespace
 
 from src.core.agent_loop import AgentLoop, IterationBudget
@@ -64,7 +65,6 @@ def make_loop(orchestrator, mcp_hub):
     loop.compressor = NoopCompressor()
     loop.memory = NoopMemory()
     loop.overseer = None
-    loop.greedy_overseer = None
     loop.mode_controller = None
     loop.method_resolver = None
     loop.intent_guardrail = None
@@ -97,6 +97,44 @@ async def test_agent_loop_executes_tool_calls_until_final_answer():
     assert result["tool_results"][0]["success"] is True
     assert mcp_hub.calls == [("search", {"query": "sparkleforge"})]
     assert orchestrator.calls[0]["model_name"] == "tool-model"
+
+
+@pytest.mark.asyncio
+async def test_overseer_branch_is_entered_during_loop_iteration():
+    """Regression for issue #1208: the overseer branch in run_conversation must
+    actually fire when an overseer is wired. Previously the loop guarded on
+    ``self.overseer`` while the constructor assigned ``self.greedy_overseer``,
+    so the branch was dead code at runtime."""
+    tool_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "sparkleforge"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [tool_call]}),
+            ModelResult("final answer", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+
+    overseer_calls = []
+
+    class TrackingOverseer:
+        async def evaluate_execution_results(self, state):
+            overseer_calls.append(state)
+            return {"overseer_decision": "proceed"}
+
+    loop.overseer = TrackingOverseer()
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research sparkleforge"}], max_iterations=3
+    )
+
+    assert result["success"] is True
+    assert len(overseer_calls) >= 1
+    assert any(call["overseer_iterations"] >= 2 for call in overseer_calls)
 
 
 @pytest.mark.asyncio
@@ -188,6 +226,85 @@ async def test_agent_loop_allows_alternating_tool_calls_without_tripping_guard()
     assert result["success"] is True
     assert result["content"] == "done"
     assert len(mcp_hub.calls) == 4
+
+
+class FakeAskUserOverseer:
+    """Overseer stub that always decides ask_user, regardless of state."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def evaluate_execution_results(self, state):
+        self.calls += 1
+        return {
+            "overseer_decision": "ask_user",
+            "overseer_evaluations": [{"reasoning": "quality too low, need guidance"}],
+        }
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_stops_and_surfaces_overseer_ask_user_decision():
+    # Regression for issue #1300: GreedyOverseerAgent deciding "ask_user" used
+    # to be logged into `errors` and then ignored -- the loop kept iterating
+    # and calling the model instead of actually stopping for the human.
+    orchestrator = FakeOrchestrator(
+        [ModelResult("should not be reached", "tool-model", 0.1, 0.8, 0.0, {})]
+    )
+    loop = make_loop(orchestrator, FakeMCPHub())
+    overseer = FakeAskUserOverseer()
+    loop.overseer = overseer
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    assert result["metadata"]["overseer_decision"] == "ask_user"
+    assert result["metadata"]["waiting_for_user"] is True
+    assert "quality too low, need guidance" in result["content"]
+    assert overseer.calls == 1
+    assert orchestrator.calls == []
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_injects_momentum_nudge_when_only_re_reading_old_ground():
+    # Regression for the lfdb dogfooding session (issue #1216, Anvil Phase Mu):
+    # the model kept alternating between two already-read files turn after
+    # turn -- never a single *consecutive* repeat (so MAX_STUCK_TOOL_REPEATS
+    # never fires) but also never gathering anything new. The loop should
+    # notice the run-wide stagnation and push the model toward a real action.
+    call_a = {
+        "id": "call_a",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "a"}'},
+    }
+    call_b = {
+        "id": "call_b",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "b"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_a]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_b]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_a]}),
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [call_b]}),
+            ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    loop = make_loop(orchestrator, FakeMCPHub())
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    momentum_messages = [
+        m
+        for m in result["history"]
+        if m.get("role") == "system" and "Momentum check:" in str(m.get("content", ""))
+    ]
+    assert len(momentum_messages) == 1
 
 
 @pytest.mark.asyncio
@@ -314,11 +431,51 @@ async def test_oversee_iteration_skips_research_overseer_for_coworker_tasks():
             calls.append(state)
             return {"overseer_decision": "proceed"}
 
-    loop.greedy_overseer = FakeGreedyOverseer()
+    loop.overseer = FakeGreedyOverseer()
     budget = IterationBudget(max_iterations=5)
 
-    await loop._oversee_iteration(budget, [], [], [], TaskType.GENERATION)
+    await loop._oversee_iteration(budget, [], [], [], 0, TaskType.GENERATION)
     assert calls == []
 
-    await loop._oversee_iteration(budget, [], [], [], TaskType.RESEARCH)
+    await loop._oversee_iteration(budget, [], [], [], 0, TaskType.RESEARCH)
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_signature_tracking_stays_bounded_across_many_iterations():
+    # Regression for issue #1309: the per-iteration tool-call signature window
+    # must not grow unboundedly as iterations accumulate unique arguments.
+    from collections import deque
+
+    from src.core.agent_loop import SIGNATURE_WINDOW_SIZE
+
+    window: deque[set] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
+    for i in range(10_000):
+        if not window:
+            window.append(set())
+        window[-1].add(("search", f'{{"query": "unique-{i}"}}'))
+        # Simulate iteration rollover by starting a fresh window entry each
+        # iteration; deque(maxlen=...) evicts the oldest automatically.
+        window.append(set())
+
+    total_entries = sum(len(s) for s in window)
+    assert total_entries <= SIGNATURE_WINDOW_SIZE
+
+    tracemalloc.start()
+    snapshot_before = tracemalloc.take_snapshot()
+    window2: deque[set] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
+    for i in range(10_000):
+        window2.append({("search", f'{{"query": "unique-{i}"}}')})
+    snapshot_after = tracemalloc.take_snapshot()
+    tracemalloc.stop()
+
+    stats = snapshot_after.compare_to(snapshot_before, "lineno")
+    window_growth = sum(
+        stat.size_diff
+        for stat in stats
+        if "test_hermes_agent_loop" in stat.traceback[0].filename
+    )
+    # The deque is bounded by SIGNATURE_WINDOW_SIZE entries regardless of how
+    # many iterations ran; memory must not scale with iteration count.
+    assert window_growth < 1_000_000
+    assert len(window2) == SIGNATURE_WINDOW_SIZE

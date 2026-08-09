@@ -3,12 +3,12 @@ import json
 import re
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from src.core.llm_manager import ModelResult, MultiModelOrchestrator, TaskType
 from src.core.mcp_integration import UniversalMCPHub, get_mcp_hub
-from src.agents.greedy_overseer_agent import get_greedy_overseer_agent
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,15 @@ HEAT_SOFT_DEADLINE_RATIO = 0.85
 # identical (tool_name, arguments) before the loop terminates with a
 # stuck_loop reason instead of burning the full iteration budget.
 MAX_STUCK_TOOL_REPEATS = 3
+
+# Maximum number of recent iterations whose tool-call signatures are retained
+# for the stagnation/repetition check. Signatures older than this window are
+# evicted, so the tracking structure stays O(window_size) instead of growing
+# monotonically with iteration count (issue #1309: unbounded
+# all_seen_tool_signatures set caused OOM in long-running agent loops).
+SIGNATURE_WINDOW_SIZE = 16
+# Cap serialized tool arguments stored in signatures to bound per-entry memory.
+SIGNATURE_ARGS_MAX_LEN = 2048
 
 
 def _summarize_tool_result(tool_result: Dict[str, Any]) -> str:
@@ -86,7 +95,7 @@ class AgentLoop:
     mode_controller = None
     method_resolver = None
     intent_guardrail = None
-    greedy_overseer = None
+    overseer = None
 
     AUTONOMOUS_PROBLEM_SOLVING_CONTRACT = """
 Autonomous problem-solving contract:
@@ -104,7 +113,6 @@ Autonomous problem-solving contract:
         self.orchestrator = orchestrator or MultiModelOrchestrator()
         self._plan_first = False
         self.mcp_hub: UniversalMCPHub = get_mcp_hub()
-        self.overseer = get_greedy_overseer_agent()
 
         # Phase 3: Context Compression
         from src.core.context_compressor import ContextCompressor
@@ -125,16 +133,16 @@ Autonomous problem-solving contract:
         self.intent_guardrail = None
 
         # GreedyOverseerAgent wiring (issue #1038): monitor token budgets and
-        # step limits. Construction is best-effort because the overseer pulls
+        # step limits. The single attribute is named ``overseer`` (matching the
         # LLM/shared-memory config that may be unavailable in lightweight test
         # harnesses; a None overseer is treated as a no-op throughout the loop.
         try:
             from src.agents.greedy_overseer_agent import GreedyOverseerAgent
 
-            self.greedy_overseer = GreedyOverseerAgent(max_iterations=15)
+            self.overseer = GreedyOverseerAgent(max_iterations=15)
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent unavailable: %s", e)
-            self.greedy_overseer = None
+            self.overseer = None
 
     async def run_conversation(
         self,
@@ -159,7 +167,26 @@ Autonomous problem-solving contract:
         errors: List[Dict[str, Any]] = []
         tool_calls_count = 0
         last_tool_call_signature: tuple[str, str] | None = None
+        recent_tool_signatures: deque[set[tuple[str, str]]] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
         stuck_repeat_count = 0
+        # Momentum guard (Anvil Phase Mu, #1216): MAX_STUCK_TOOL_REPEATS only
+        # catches the *same* call repeated back-to-back. It misses the pattern
+        # observed live against lfdb -- re-reading the same handful of files
+        # every iteration with slightly different ordering/args, forever,
+        # because context compression erases the memory of having already
+        # read them. Track distinct (tool, args) signatures against the same
+        # bounded recent_tool_signatures window used for stuck-loop detection
+        # (issue #1309: an unbounded all-time set caused OOM in long-running
+        # loops) -- an iteration that contributes zero signatures outside the
+        # recent window is zero-momentum regardless of whether any single
+        # call repeats.
+        # ponytail: window-bounded "seen recently" instead of true "ever seen
+        # this run" -- a signature could resurface after scrolling out of the
+        # window and register as "new" again. Acceptable: the goal is
+        # detecting sustained stagnation, not exact novelty tracking. Widen
+        # SIGNATURE_WINDOW_SIZE if false negatives show up in practice.
+        stagnant_iterations = 0
+        MOMENTUM_STAGNATION_THRESHOLD = 2
 
         # Ensure MCP is initialized
         try:
@@ -210,16 +237,11 @@ Autonomous problem-solving contract:
             logger.info(f"[AgentLoop] Iteration {budget.current_iteration}/{max_iterations}")
             self._apply_mode_to_messages(history)
             await self._guard_intent(history)
-            await self._oversee_iteration(budget, history, tool_results, errors, task_type)
-
-            # Monitor token budgets and step limits via GreedyOverseerAgent
-            # (skipped for non-research tasks -- see _oversee_iteration above)
-            if (
-                budget.current_iteration > 1
-                and self.overseer
-                and task_type in (TaskType.RESEARCH, TaskType.ANALYSIS)
-            ):
-                await self.overseer.evaluate_execution_results({"overseer_iterations": budget.current_iteration})
+            ask_user_result = await self._oversee_iteration(
+                budget, history, tool_results, errors, tool_calls_count, task_type
+            )
+            if ask_user_result is not None:
+                return ask_user_result
 
             # Phase 3: Compress context if needed
             history = await self.compressor.compress_if_needed(history)
@@ -290,6 +312,11 @@ Autonomous problem-solving contract:
             if tool_calls:
                 assistant_msg["tool_calls"] = self._sanitize_tool_calls_for_history(tool_calls)
             history.append(assistant_msg)
+            logger.debug(
+                "[AgentLoop] Assistant content: %s | tool_calls requested: %d",
+                (content[:300] if content else "(empty)"),
+                len(tool_calls),
+            )
 
             if not tool_calls:
                 # Tool 불가 provider로 폴백된 응답은 '완료'로 인정하지 않는다.
@@ -328,6 +355,7 @@ Autonomous problem-solving contract:
                 )
 
             # Step 3: Execute tools
+            new_signature_this_iteration = False
             for tool_call in tool_calls:
                 model_tool_name = tool_call.get("function", {}).get("name")
                 tool_name = self._tool_alias_map().get(model_tool_name, model_tool_name)
@@ -391,12 +419,20 @@ Autonomous problem-solving contract:
                     continue
 
                 normalized_args = json.dumps(arguments, sort_keys=True, ensure_ascii=False)
+                if len(normalized_args) > SIGNATURE_ARGS_MAX_LEN:
+                    normalized_args = normalized_args[:SIGNATURE_ARGS_MAX_LEN]
                 call_signature = (tool_name, normalized_args)
-                if call_signature == last_tool_call_signature:
+                current_window = recent_tool_signatures[-1] if recent_tool_signatures else set()
+                if call_signature == last_tool_call_signature or call_signature in current_window:
                     stuck_repeat_count += 1
                 else:
                     stuck_repeat_count = 0
+                if not any(call_signature in w for w in recent_tool_signatures):
+                    new_signature_this_iteration = True
                 last_tool_call_signature = call_signature
+                if not recent_tool_signatures:
+                    recent_tool_signatures.append(set())
+                recent_tool_signatures[-1].add(call_signature)
 
                 if stuck_repeat_count >= MAX_STUCK_TOOL_REPEATS:
                     logger.warning(
@@ -444,6 +480,7 @@ Autonomous problem-solving contract:
                     )
 
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
+                logger.debug("[AgentLoop] Tool args for %s: %s", tool_name, arguments)
                 try:
                     tool_exec_result = await self.mcp_hub.execute_tool(tool_name, arguments)
                     tool_succeeded = (
@@ -471,6 +508,36 @@ Autonomous problem-solving contract:
                         self.mode_controller.record_failure()
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
+
+            if new_signature_this_iteration:
+                stagnant_iterations = 0
+            else:
+                stagnant_iterations += 1
+                logger.warning(
+                    "[AgentLoop] Zero-momentum iteration %d/%d: every tool call this "
+                    "turn repeats a signature already seen earlier in the run",
+                    stagnant_iterations,
+                    MOMENTUM_STAGNATION_THRESHOLD,
+                )
+                if stagnant_iterations >= MOMENTUM_STAGNATION_THRESHOLD:
+                    stagnant_iterations = 0
+                    history.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Momentum check: your last "
+                                f"{MOMENTUM_STAGNATION_THRESHOLD} turns only repeated tool "
+                                "calls (same tool+arguments) you already made earlier in "
+                                "this run. No new information was gathered. Do not "
+                                "re-read or re-list anything you have already seen. "
+                                "Immediately take the next concrete forward action "
+                                "(e.g. edit_file/write_file/git_commit/git_push, or an "
+                                "equivalent action tool) or, if you already have enough "
+                                "to answer, stop calling tools and give your final answer "
+                                "now."
+                            ),
+                        }
+                    )
 
         if budget.heat_hard_expired:
             # Safety net: a single iteration ran long enough to cross the hard
@@ -605,6 +672,7 @@ Autonomous problem-solving contract:
 
         tool_result_str = json.dumps(tool_exec_result, ensure_ascii=False)
         pruned_result = self.compressor.prune_tool_output(tool_result_str)
+        logger.debug("[AgentLoop] Tool result for %s: %s", tool_name, pruned_result[:500])
 
         history.append(
             {
@@ -863,22 +931,28 @@ Autonomous problem-solving contract:
         history: List[Dict[str, Any]],
         tool_results: List[Dict[str, Any]],
         errors: List[Dict[str, Any]],
+        tool_calls_count: int,
         task_type: TaskType,
-    ) -> None:
+    ) -> Dict[str, Any] | None:
         """GreedyOverseerAgent hook (issue #1038).
 
         Monitors token budgets and step limits each iteration. The overseer is
         optional: if it was never constructed (or its config is unavailable),
         this is a no-op. Failures are logged and swallowed so the agent loop
         never depends on the overseer for correctness.
+
+        Returns a result dict to end the run early when the overseer decides
+        it needs the human (issue #1300: `ask_user` used to be logged and
+        then ignored, so the loop just kept iterating). Returns None to keep
+        looping.
         """
-        overseer = getattr(self, "greedy_overseer", None)
+        overseer = getattr(self, "overseer", None)
         if overseer is None:
-            return
+            return None
         # Skip overseer for non-research tasks (e.g., coworker code tasks) --
         # its academic-sourcing requirements cause those tasks to retry forever.
         if task_type not in (TaskType.RESEARCH, TaskType.ANALYSIS):
-            return
+            return None
 
         try:
             # Approximate token usage from the pruned history so the overseer
@@ -903,6 +977,8 @@ Autonomous problem-solving contract:
             updated = await overseer.evaluate_execution_results(state)
             decision = updated.get("overseer_decision")
             if decision and decision != "proceed":
+                evaluations = updated.get("overseer_evaluations") or []
+                reasoning = evaluations[-1].get("reasoning") if evaluations else decision
                 errors.append(
                     {
                         "type": "greedy_overseer_signal",
@@ -911,8 +987,20 @@ Autonomous problem-solving contract:
                         "message": f"GreedyOverseerAgent decision: {decision}",
                     }
                 )
+                if decision == "ask_user":
+                    return self._build_result(
+                        success=True,
+                        content=f"Need human input before continuing: {reasoning}",
+                        iterations=budget.current_iteration,
+                        history=history,
+                        metadata={"overseer_decision": "ask_user", "waiting_for_user": True},
+                        tool_calls_count=tool_calls_count,
+                        tool_results=tool_results,
+                        errors=errors,
+                    )
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent evaluation failed: %s", e)
+        return None
 
     def _build_method_resolver_registry(self) -> Dict[str, Any]:
         """MethodResolver의 handler_registry를 실제 도구 레지스트리로 채운다.
