@@ -560,6 +560,7 @@ async def _main() -> int:
     parser.add_argument("--update-baseline", action="store_true", help="Write results into tests/benchmark/baselines/scenario_baseline.json")
     parser.add_argument("--compare-to", help="Path to a baseline JSON to check for regressions (exit 1 on regression)")
     parser.add_argument("--compare-to-history", help="Path to a JSONL history file; compares against its most recent entry")
+    parser.add_argument("--history", help="Path to a JSONL history file; alias for --compare-to-history")
     parser.add_argument("--append-history", help="Path to a JSONL history file to append this run's report to")
     parser.add_argument("--print-trend", help="Path to a JSONL history file; print overall_score over time and exit")
     parser.add_argument("--json-out", help="Path to write the run's JSON report (default: tests/benchmark/reports/scenario_report_<ts>.json)")
@@ -606,6 +607,8 @@ async def _main() -> int:
     if args.compare_to:
         exit_code = compare_to_baseline(report, Path(args.compare_to)) or exit_code
     if args.compare_to_history:
+        exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
+    if args.history:
         exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
 
     # Aggregate critical infrastructure failures: if any scenario experienced a
