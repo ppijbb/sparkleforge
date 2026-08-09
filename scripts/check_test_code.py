@@ -51,6 +51,68 @@ def check_test_files_in_src() -> List[str]:
     return test_files
 
 
+def check_async_tests_missing_marker() -> List[Dict]:
+    """``async def test_`` 함수에 ``@pytest.mark.asyncio``가 없는지 확인.
+
+    ``asyncio_mode = auto``가 설정되어 있지 않은 환경에서는 ``async def test_``
+    함수가 데코레이터 없이 실행되면 코루틴 객체만 반환되고 본문이 실행되지
+    않아 "통과"로 위장한다. 이 정적 검사로 해당 패턴을 사전에 탐지한다.
+    """
+    import ast
+
+    issues = []
+
+    for py_file in (project_root / "tests").rglob("*.py"):
+        if "__pycache__" in str(py_file):
+            continue
+
+        try:
+            with open(py_file, encoding="utf-8") as f:
+                content = f.read()
+                tree = ast.parse(content, filename=str(py_file))
+        except Exception:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AsyncFunctionDef):
+                continue
+            if not node.name.startswith("test_"):
+                continue
+
+            if not _has_asyncio_marker(node):
+                issues.append(
+                    {
+                        "file": str(py_file.relative_to(project_root)),
+                        "function": node.name,
+                        "line": node.lineno,
+                        "type": "async_test_missing_asyncio_marker",
+                    }
+                )
+
+    return issues
+
+
+def _has_asyncio_marker(func_node) -> bool:
+    """``func_node``에 ``@pytest.mark.asyncio`` 계열 데코레이터가 있는지 검사."""
+    import ast
+
+    for decorator in func_node.decorator_list:
+        if isinstance(decorator, ast.Attribute):
+            parts = []
+            cur = decorator
+            while isinstance(cur, ast.Attribute):
+                parts.append(cur.attr)
+                cur = cur.value
+            if isinstance(cur, ast.Name):
+                parts.append(cur.id)
+            joined = ".".join(reversed(parts))
+            if joined.endswith("pytest.mark.asyncio") or joined.endswith("mark.asyncio") or joined == "asyncio":
+                return True
+        if isinstance(decorator, ast.Name) and decorator.id == "asyncio":
+            return True
+    return False
+
+
 def check_test_code_in_production() -> List[Dict]:
     """프로덕션 코드에 테스트 코드가 섞여있는지 확인."""
     issues = []
@@ -126,6 +188,16 @@ def main():
     else:
         print("✅ 프로덕션 코드에 테스트 함수 없음")
 
+    # 4. async 테스트 함수의 @pytest.mark.asyncio 누락 확인
+    print("\n[4] async 테스트 함수의 @pytest.mark.asyncio 누락 확인...")
+    async_missing = check_async_tests_missing_marker()
+    if async_missing:
+        print(f"⚠️ {len(async_missing)}개 async 테스트 함수에 @pytest.mark.asyncio 누락:")
+        for issue in async_missing:
+            print(f"   - {issue['file']}:{issue['line']} - {issue['function']}")
+    else:
+        print("✅ async 테스트 함수에 @pytest.mark.asyncio 누락 없음")
+
     # Summary
     print("\n" + "=" * 80)
     print("점검 결과 요약")
@@ -138,6 +210,8 @@ def main():
         issues_count += len(test_files)
     if test_in_prod:
         issues_count += len(test_in_prod)
+    if async_missing:
+        issues_count += len(async_missing)
 
     if issues_count == 0:
         print("✅ 문제 없음 - 모든 테스트 코드가 적절히 분리되어 있음")

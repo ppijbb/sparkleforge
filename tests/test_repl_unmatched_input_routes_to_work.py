@@ -6,6 +6,7 @@ with zero tools registered, so the harness's classify/planner nodes never
 got a chance to decide the task actually needed file edits / tool calls.
 """
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
