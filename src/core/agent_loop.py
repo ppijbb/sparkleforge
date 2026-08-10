@@ -20,6 +20,14 @@ HEAT_SOFT_DEADLINE_RATIO = 0.85
 # stuck_loop reason instead of burning the full iteration budget.
 MAX_STUCK_TOOL_REPEATS = 3
 
+# Background compaction (issue #1335): when the context grows large enough to
+# need compression, run the summarizing LLM call as a background task instead
+# of blocking the loop. The loop keeps iterating on the pre-compression
+# history; the compressed result is swapped in at the start of the next turn
+# only if it is still safe to do so. A hard token limit forces a synchronous
+# wait so the loop never runs away past the real context window.
+COMPACTION_HARD_TOKEN_LIMIT = 120_000
+
 # Maximum number of recent iterations whose tool-call signatures are retained
 # for the stagnation/repetition check. Signatures older than this window are
 # evicted, so the tracking structure stays O(window_size) instead of growing
@@ -210,6 +218,9 @@ Autonomous problem-solving contract:
         retry_count = 0
         max_retries = 3
         tool_capable_waits = 0
+        # Background compaction state (issue #1335)
+        compaction_task: asyncio.Task | None = None
+        compaction_snapshot_len: int = 0
 
         while budget.remaining > 0 and not budget.heat_hard_expired:
             if budget.heat_soft_expired:
@@ -243,8 +254,54 @@ Autonomous problem-solving contract:
             if ask_user_result is not None:
                 return ask_user_result
 
-            # Phase 3: Compress context if needed
-            history = await self.compressor.compress_if_needed(history)
+            # Phase 3: Compress context if needed (issue #1335).
+            # Run compression as a background task so the loop can keep
+            # making progress on tool calls while the summarizing LLM call
+            # is in flight. The compressed result is swapped in at the start
+            # of the next turn, preserving any messages appended after the
+            # snapshot was taken. Only when the live history approaches the
+            # hard token limit do we block and wait synchronously.
+            if compaction_task is not None and compaction_task.done():
+                try:
+                    compressed = compaction_task.result()
+                except Exception as e:
+                    logger.warning("[AgentLoop] Background compaction failed: %s", e)
+                    compressed = None
+                compaction_task = None
+                if compressed is not None:
+                    # Preserve messages appended after the snapshot was
+                    # taken so the background task never drops new work.
+                    new_tail = history[compaction_snapshot_len:]
+                    history = list(compressed) + new_tail
+                    logger.info(
+                        "[AgentLoop] Applied background compaction: %d -> %d messages "
+                        "(preserved %d new message(s))",
+                        compaction_snapshot_len,
+                        len(compressed),
+                        len(new_tail),
+                    )
+
+            if compaction_task is None and self.compressor.needs_compression(history):
+                approx_tokens = sum(
+                    len(str(m.get("content", ""))) // 4
+                    for m in history
+                    if isinstance(m, dict)
+                )
+                if approx_tokens >= COMPACTION_HARD_TOKEN_LIMIT:
+                    logger.info(
+                        "[AgentLoop] Hard token limit (%d) reached; waiting for synchronous compaction",
+                        approx_tokens,
+                    )
+                    history = await self.compressor.compress_if_needed(history)
+                else:
+                    compaction_snapshot_len = len(history)
+                    compaction_task = asyncio.create_task(
+                        self.compressor.compress_if_needed(list(history))
+                    )
+                    logger.info(
+                        "[AgentLoop] Started background compaction from %d messages",
+                        compaction_snapshot_len,
+                    )
 
             # Step 1: Call LLM with Resilience (Phase 4)
             try:
