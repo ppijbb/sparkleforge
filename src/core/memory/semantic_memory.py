@@ -2,6 +2,8 @@ import hashlib
 import json
 import logging
 import socket
+from pathlib import Path
+import socket
 import os
 import re
 import time
@@ -10,6 +12,10 @@ import math
 from typing import Any, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
+
+# Anchor state files to the SparkleForge install root, never the runtime cwd,
+# so coworker sessions don't leak semantic memory into the target repo (issue #1331).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +174,8 @@ class SemanticMemory:
     """
 
     def __init__(self, db_path: str = "data/semantic_memory.db"):
+        if db_path == "data/semantic_memory.db":
+            db_path = str(_PROJECT_ROOT / "data" / "semantic_memory.db")
         self.db_path = db_path
         # Ensure data directory exists
         db_dir = os.path.dirname(db_path)

@@ -8,11 +8,17 @@ import hashlib
 import json
 import logging
 import os
+from pathlib import Path
 import threading
 from typing import Dict, Optional
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 logger = logging.getLogger(__name__)
+
+# Anchor state files to the SparkleForge install root, never the runtime cwd,
+# so coworker sessions don't leak the credential vault key into the target
+# repo (issue #1331).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 _SERVICE_NAME = "sparkleforge-anvil"
 
@@ -80,7 +86,8 @@ class CredentialVault:
         if self._initialized:
             return
         self._initialized = True
-        self._fallback_path = fallback_path or os.path.join("data", ".credential_store")
+        default_fallback = str(_PROJECT_ROOT / "data" / ".credential_store")
+        self._fallback_path = fallback_path or default_fallback
         self._secret_seed = _resolve_secret_seed(self._fallback_path)
         self._cache: Dict[str, str] = {}
         self._lock_data = threading.RLock()

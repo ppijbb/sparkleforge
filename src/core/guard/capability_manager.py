@@ -7,12 +7,17 @@ import json
 import logging
 import os
 import threading
+from pathlib import Path
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
+
+# Anchor state files to the SparkleForge install root, never the runtime cwd,
+# so coworker sessions don't leak capability grants into the target repo (issue #1331).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 class RiskLevel(str, Enum):
@@ -76,7 +81,8 @@ class CapabilityManager:
         # initialization attempt raised before `_initialized` was set.
         if getattr(self, "_initialized", False):
             return
-        self._state_path = state_path or os.path.join("data", "capability_grants.json")
+        default_state = str(_PROJECT_ROOT / "data" / "capability_grants.json")
+        self._state_path = state_path or default_state
         self._agent_grants: Dict[str, Set[str]] = {}   # agent_id -> set of capability names
         self._tool_grants: Dict[str, Set[str]] = {}    # tool_name -> set of capability names
         self._revocations: Dict[str, Set[str]] = {}    # id -> revoked capabilities
