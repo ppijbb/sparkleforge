@@ -105,6 +105,44 @@ _DOMAIN_KEYWORDS: Dict[str, List[str]] = {
 }
 
 
+@dataclass
+class PrimitiveAxiom:
+    """A fundamental computational or physical primitive axiom."""
+
+    name: str
+    category: str
+    description: str
+    constraints: List[str] = field(default_factory=list)
+
+
+_PRIMITIVE_AXIOMS: List[PrimitiveAxiom] = [
+    PrimitiveAxiom(
+        name="information",
+        category="computational",
+        description="A distinguishable state that reduces uncertainty.",
+        constraints=["finite representation", "lossless under transformation"],
+    ),
+    PrimitiveAxiom(
+        name="computation",
+        category="computational",
+        description="A deterministic or stochastic mapping between states.",
+        constraints=["terminates in bounded steps", "preserves invariants"],
+    ),
+    PrimitiveAxiom(
+        name="energy",
+        category="physical",
+        description="The capacity to perform work or induce state change.",
+        constraints=["conserved in closed systems", "dissipated under irreversible operations"],
+    ),
+    PrimitiveAxiom(
+        name="entropy",
+        category="physical",
+        description="A measure of disorder or uncertainty in a system.",
+        constraints=["non-decreasing in isolated systems", "reducible via measurement"],
+    ),
+]
+
+
 class CrossDomainIsomorphismExtractor:
     """Extract abstract topologies and map them onto a target problem."""
 
@@ -175,6 +213,89 @@ class CrossDomainIsomorphismExtractor:
                 )
             )
         return results
+
+    def _decompose_node(
+        self,
+        statement: str,
+        depth: int,
+        max_depth: int,
+        visited: Optional[set] = None,
+    ) -> Dict[str, Any]:
+        """Recursively decompose a statement toward primitive axioms."""
+        if visited is None:
+            visited = set()
+        statement_key = statement.strip().lower()
+        if statement_key in visited:
+            return {
+                "statement": statement,
+                "primitive": None,
+                "rationale": "Cycle detected; stopping recursion.",
+                "children": [],
+                "depth": depth,
+            }
+        visited.add(statement_key)
+
+        matched = self._match_primitive(statement)
+        if matched is not None or depth >= max_depth:
+            return {
+                "statement": statement,
+                "primitive": matched,
+                "rationale": (
+                    "Matched a primitive axiom."
+                    if matched is not None
+                    else "Reached maximum decomposition depth without a primitive match."
+                ),
+                "children": [],
+                "depth": depth,
+            }
+
+        sub_problems = self._split_statement(statement)
+        children: List[Dict[str, Any]] = []
+        for sub in sub_problems:
+            children.append(
+                self._decompose_node(sub, depth + 1, max_depth, visited.copy())
+            )
+        return {
+            "statement": statement,
+            "primitive": None,
+            "rationale": "Decomposed into sub-problems.",
+            "children": children,
+            "depth": depth,
+        }
+
+    def _match_primitive(self, statement: str) -> Optional[PrimitiveAxiom]:
+        """Return the first primitive axiom referenced by the statement."""
+        text = statement.lower()
+        for axiom in _PRIMITIVE_AXIOMS:
+            if axiom.name in text or axiom.category in text:
+                return axiom
+        return None
+
+    def _split_statement(self, statement: str) -> List[str]:
+        """Split a statement into candidate sub-problems."""
+        clauses = re.split(r"\s*(?:;|,|\.|\band\b|\bor\b|->|=>|therefore)\s*", statement)
+        sub_problems = [clause.strip() for clause in clauses if clause.strip()]
+        if len(sub_problems) <= 1:
+            tokens = statement.split()
+            if len(tokens) > 4:
+                mid = len(tokens) // 2
+                sub_problems = [
+                    " ".join(tokens[:mid]),
+                    " ".join(tokens[mid:]),
+                ]
+        return sub_problems[:4]
+
+    def decompose(self, request: str, max_depth: int = 4) -> Dict[str, Any]:
+        """Recursively decompose an open-ended challenge to primitive axioms."""
+        if not request:
+            return {
+                "root": "",
+                "primitive": None,
+                "rationale": "Empty request.",
+                "children": [],
+                "depth": 0,
+            }
+        return self._decompose_node(request, 0, max_depth)
 
     def to_dict(self, isomorphisms: List[Isomorphism]) -> List[Dict[str, Any]]:
         return [

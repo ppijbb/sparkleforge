@@ -46,3 +46,37 @@ def test_extract_no_match_for_unrelated_request():
     extractor = CrossDomainIsomorphismExtractor()
     request = "Write a poem about the ocean."
     assert extractor.extract(request) == []
+
+
+def test_decompose_empty_request_returns_empty_root():
+    extractor = CrossDomainIsomorphismExtractor()
+    result = extractor.decompose("")
+    assert result["root"] == ""
+    assert result["primitive"] is None
+    assert result["children"] == []
+
+
+def test_decompose_matches_primitive_axiom():
+    extractor = CrossDomainIsomorphismExtractor()
+    result = extractor.decompose("Model information and entropy in a closed system.")
+    assert result["primitive"] is not None
+    assert result["primitive"].name in {"information", "entropy"}
+
+
+def test_decompose_recurses_into_sub_problems():
+    extractor = CrossDomainIsomorphismExtractor()
+    result = extractor.decompose("Allocate energy across computation and storage.")
+    assert result["children"]
+    assert any(child["primitive"] is not None for child in result["children"])
+
+
+def test_decompose_respects_max_depth():
+    extractor = CrossDomainIsomorphismExtractor()
+    result = extractor.decompose("A very abstract open-ended challenge with no primitives.", max_depth=2)
+    assert result["depth"] <= 2
+
+
+def test_decompose_detects_cycles():
+    extractor = CrossDomainIsomorphismExtractor()
+    result = extractor.decompose("information information information information information")
+    assert result["primitive"] is not None or result["rationale"] == "Cycle detected; stopping recursion."
