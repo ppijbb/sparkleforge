@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import time
+
 
 class TaskType(Enum):
     """작업 유형."""
@@ -57,7 +59,11 @@ class ModelConfig:
     # (e.g. a free tier) so the cascade can skip them for oversized requests
     # instead of hitting a deterministic 413 (#1339).
     context_limit_tokens: Optional[int] = None
-
+    # Wall-clock timestamp (seconds since epoch) at which the learned
+    # ``context_limit_tokens`` was last observed from a provider 413 response.
+    # Used to re-validate the learned limit after a configurable interval so a
+    # transient TPM throttle cannot permanently shrink the model pool (#1349).
+    context_limit_learned_at: Optional[float] = None
 
 @dataclass
 class ModelResult:
