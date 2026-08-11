@@ -58,8 +58,6 @@ class ActionJournal:
     def __init__(self, journal_path: Optional[str] = None, _force_new: bool = False) -> None:
         if self._initialized and not _force_new:
             return
-        if _force_new:
-            self._initialized = False
         self._initialized = True
         self._journal_path   = journal_path or os.path.join("data", "action_journal.jsonl")
         self._snapshots_path = self._journal_path.replace(".jsonl", "_snapshots.json")
