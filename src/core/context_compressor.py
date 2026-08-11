@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict, List
 
+import asyncio
 from src.core.llm_manager import MultiModelOrchestrator, TaskType
 from src.core.pre_compressor import get_pre_compressor
 
@@ -86,3 +87,81 @@ class ContextCompressor:
             return content
 
         return self.pre_compressor.compress_for_context(content, max_tokens=int(max_length / 4))
+
+    async def compress_if_needed_background(
+        self, messages: List[Dict[str, Any]], token_limit: int = 100000
+    ) -> List[Dict[str, Any]]:
+        """Background-friendly variant of compress_if_needed.
+
+        When a background compaction task is already pending, this method
+        awaits it. If the background task failed (or did not reduce tokens
+        enough) and the history still exceeds the hard ``token_limit``,
+        fall back to synchronous ``compress_by_summarization`` so the caller
+        never receives an over-limit history that the LLM API would reject
+        (issue #1354).
+        """
+        total_tokens = sum(len(str(m.get("content", "")).split()) * 1.3 for m in messages)
+
+        if self._pending_task is not None:
+            try:
+                await self._pending_task
+            except Exception as e:
+                logger.warning("Background compaction task failed: %s", e)
+            finally:
+                self._pending_task = None
+                self._pending_snapshot = None
+
+            result = self._apply_pending_result(messages)
+            result_tokens = sum(len(str(m.get("content", "")).split()) * 1.3 for m in result)
+            if result_tokens >= token_limit:
+                logger.warning(
+                    "Background compaction left history over the hard token limit "
+                    "(%d >= %d); falling back to synchronous compression",
+                    int(result_tokens),
+                    token_limit,
+                )
+                try:
+                    return await self.compress_by_summarization(result)
+                except Exception as e:
+                    logger.error("Synchronous fallback compression failed: %s", e)
+                    raise
+            return result
+
+        if total_tokens >= token_limit:
+            logger.warning(
+                "History exceeds hard token limit (%d >= %d) with no pending "
+                "background compaction; compressing synchronously",
+                int(total_tokens),
+                token_limit,
+            )
+            return await self.compress_by_summarization(messages)
+
+        return messages
+
+    def _apply_pending_result(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Apply the result of a completed background compaction task.
+
+        If the background task raised, the exception is swallowed here and the
+        original ``messages`` are returned so the caller can detect the
+        over-limit condition and fall back to synchronous compression.
+        """
+        if self._pending_result is None:
+            return messages
+        return self._pending_result
+
+    async def discard_pending_background_compaction(self) -> None:
+        """Cancel and await any pending background compaction task.
+
+        Awaiting the cancelled task suppresses the ``"Task exception was never
+        retrieved"`` warning the event loop emits when a cancelled task is never
+        awaited (issue #1354 secondary finding).
+        """
+        if self._pending_task and not self._pending_task.done():
+            self._pending_task.cancel()
+            try:
+                await self._pending_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._pending_task = None
+                self._pending_snapshot = None
