@@ -8,7 +8,7 @@ importing TaskType should not pull in the whole provider/orchestrator stack.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class TaskType(Enum):
@@ -51,6 +51,12 @@ class ModelConfig:
     speed_rating: float  # 1-10, 높을수록 빠름
     quality_rating: float  # 1-10, 높을수록 품질 좋음
     capabilities: List[TaskType]
+    # Provider-side tokens-per-minute (or context window) cap, when known.
+    # None = unknown/unbounded -- the cascade won't skip the model on size
+    # grounds. Set this for models with a known small org-level TPM limit
+    # (e.g. a free tier) so the cascade can skip them for oversized requests
+    # instead of hitting a deterministic 413 (#1339).
+    context_limit_tokens: Optional[int] = None
 
 
 @dataclass
