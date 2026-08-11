@@ -14,6 +14,7 @@ current working directory) and carry no module-level state.
 
 from __future__ import annotations
 
+import difflib
 import re
 import subprocess
 import sys
@@ -82,6 +83,36 @@ def requested_read_paths(text: str) -> list[str]:
 
 def read_full_file(path: str, limit: int = 200_000) -> str:
     """Return full file contents with line numbers, truncated to limit chars."""
+def _truncate_numbered_lines(numbered: list[str], max_chars: int) -> str:
+    """Join numbered lines, truncating only at line boundaries.
+
+    Never ends the snippet mid-line: accumulate whole lines until adding the
+    next line would exceed ``max_chars``.
+    """
+    if not numbered:
+        return ""
+    out: list[str] = []
+    total = 0
+    for line in numbered:
+        if total and total + len(line) + 1 > max_chars:
+            break
+        out.append(line)
+        total += len(line) + 1
+    return "\n".join(out)
+
+
+def _fuzzy_match_lines(content: str, old_string: str) -> tuple[int, int]:
+    """Return (start_line, end_line) of the best line-level fuzzy match.
+
+    Uses line-level ``SequenceMatcher`` instead of character-level comparison
+    so the cost is O(file_lines * old_lines) rather than O(file_chars *
+    old_chars), and ``match.size`` is directly in line units.
+    """
+    content_lines = content.splitlines(keepends=True)
+    old_lines = old_string.splitlines(keepends=True)
+    sm = difflib.SequenceMatcher(None, content_lines, old_lines, autojunk=False)
+    match = sm.find_longest_match()
+    return match.a, match.a + match.size
     file_path = Path(path)
     if not file_path.is_file():
         return ""
