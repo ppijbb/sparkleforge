@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Any, Dict, List
 
 from src.core.llm_manager import MultiModelOrchestrator, TaskType
@@ -17,6 +18,9 @@ class ContextCompressor:
     def __init__(self, orchestrator: MultiModelOrchestrator | None = None):
         self.orchestrator = orchestrator or MultiModelOrchestrator()
         self.pre_compressor = get_pre_compressor()
+        # Background compaction lifecycle state (issue #1354).
+        self._pending_task: asyncio.Task | None = None
+        self._pending_snapshot: List[Dict[str, Any]] | None = None
         # Tool-use loops add 1 assistant message + 1+ tool-result messages per
         # iteration (more with parallel tool calls), so a low threshold here
         # forces compression every 3-4 iterations regardless of how far the
@@ -86,3 +90,83 @@ class ContextCompressor:
             return content
 
         return self.pre_compressor.compress_for_context(content, max_tokens=int(max_length / 4))
+
+    async def compress_if_needed_background(
+        self, messages: List[Dict[str, Any]], token_limit: int = 100000
+    ) -> List[Dict[str, Any]]:
+        """Background-aware variant of ``compress_if_needed`` (issue #1354).
+
+        If a background compaction task is already in flight, await it. When
+        the hard token limit is reached and the background task either failed
+        (returning uncompacted history) or did not reduce enough, fall back to
+        synchronous ``compress_by_summarization`` so the caller never sends
+        over-limit context to the LLM API.
+        """
+        total_tokens = sum(len(str(m.get("content", "")).split()) * 1.3 for m in messages)
+
+        if self._pending_task is not None and not self._pending_task.done():
+            try:
+                compacted = await self._pending_task
+            except Exception as e:
+                logger.warning(
+                    "Background compaction task failed: %s; attempting synchronous fallback",
+                    e,
+                )
+                compacted = messages
+            finally:
+                self._pending_task = None
+                self._pending_snapshot = None
+
+            if total_tokens >= token_limit:
+                compacted_tokens = sum(
+                    len(str(m.get("content", "")).split()) * 1.3 for m in compacted
+                )
+                if compacted_tokens >= token_limit:
+                    logger.info(
+                        "Background compaction insufficient (%d tokens >= %d); "
+                        "falling back to synchronous compression",
+                        int(compacted_tokens),
+                        token_limit,
+                    )
+                    try:
+                        compacted = await self.compress_by_summarization(messages)
+                    except Exception as e:
+                        logger.error(
+                            "Synchronous fallback compression failed at hard limit: %s", e
+                        )
+                        raise
+            return compacted
+
+        if total_tokens < token_limit * 0.8 and len(messages) <= self.max_history_messages:
+            return messages
+
+        if total_tokens >= token_limit:
+            logger.info(
+                "Hard token limit reached (%d >= %d); compressing synchronously",
+                int(total_tokens),
+                token_limit,
+            )
+            return await self.compress_by_summarization(messages)
+
+        # Soft limit: kick off a background compaction task.
+        self._pending_snapshot = list(messages)
+        self._pending_task = asyncio.create_task(self.compress_by_summarization(messages))
+        return messages
+
+    async def discard_pending_background_compaction(self) -> None:
+        """Cancel and await any in-flight background compaction task (issue #1354).
+
+        Awaiting the cancelled task suppresses the ``"Task exception was never
+        retrieved"`` warning and keeps the lifecycle state consistent.
+        """
+        if self._pending_task is not None and not self._pending_task.done():
+            self._pending_task.cancel()
+            try:
+                await self._pending_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.debug("Discarded background compaction task raised: %s", e)
+            finally:
+                self._pending_task = None
+                self._pending_snapshot = None
