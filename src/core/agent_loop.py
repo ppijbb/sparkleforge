@@ -243,6 +243,12 @@ Autonomous problem-solving contract:
             if ask_user_result is not None:
                 return ask_user_result
 
+            hitl_pause_result = self._pause_for_hitl_collaborative_if_needed(
+                budget, history, tool_results, tool_calls_count, errors
+            )
+            if hitl_pause_result is not None:
+                return hitl_pause_result
+
             # Phase 3: Compress context if needed (background -- #1335: a
             # blocking summarization call was eating up to 12% of a
             # session's heat budget doing nothing but waiting on it)
@@ -1008,6 +1014,44 @@ Autonomous problem-solving contract:
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent evaluation failed: %s", e)
         return None
+
+    def _pause_for_hitl_collaborative_if_needed(
+        self,
+        budget: "IterationBudget",
+        history: List[Dict[str, Any]],
+        tool_results: List[Dict[str, Any]],
+        tool_calls_count: int,
+        errors: List[Dict[str, Any]],
+    ) -> Dict[str, Any] | None:
+        """Stop the loop once ModeController has switched to HITL_COLLABORATIVE.
+
+        ModeController.on_unresolved_capability()/on_intent_review_needed()/
+        record_failure() switched the mode and logged it, but nothing ever
+        checked `mode_controller.mode` -- the loop just kept iterating
+        autonomously past the switch, making "hitl_collaborative" a label
+        with no actual effect (#1337). PLAN_FIRST already gets a real gate
+        via is_write_blocked(); this gives HITL_COLLABORATIVE the same
+        standing, same shape as the ask_user early-return above.
+        """
+        if self.mode_controller is None or not self.mode_controller.is_hitl_collaborative():
+            return None
+
+        transitions = self.mode_controller.transitions
+        reason = transitions[-1].reason if transitions else "execution mode requires human input"
+        return self._build_result(
+            success=True,
+            content=f"Waiting for human input: {reason}",
+            iterations=budget.current_iteration,
+            history=history,
+            metadata={
+                "execution_mode": "hitl_collaborative",
+                "waiting_for_user": True,
+                "mode_switch_reason": reason,
+            },
+            tool_calls_count=tool_calls_count,
+            tool_results=tool_results,
+            errors=errors,
+        )
 
     def _build_method_resolver_registry(self) -> Dict[str, Any]:
         """MethodResolver의 handler_registry를 실제 도구 레지스트리로 채운다.
