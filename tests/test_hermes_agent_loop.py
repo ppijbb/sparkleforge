@@ -540,3 +540,77 @@ async def test_tool_signature_tracking_stays_bounded_across_many_iterations():
     # many iterations ran; memory must not scale with iteration count.
     assert window_growth < 1_000_000
     assert len(window2) == SIGNATURE_WINDOW_SIZE
+
+
+def _tool_call(call_id: str, name: str, arguments: str) -> dict:
+    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}
+
+
+@pytest.mark.asyncio
+async def test_plan_first_blocks_write_until_investigation_then_unblocks():
+    # Issue #1340: PLAN_FIRST existed as a mode (and AgentLoop hardcoded
+    # plan_first=False with no way to ever reach it), but even reached it
+    # was cosmetic -- is_write_blocked() only added a system-message hint,
+    # nothing actually stopped a write/shell tool call. The real gate: the
+    # first write/shell call is blocked until an investigative (non-write)
+    # call has actually succeeded, then it auto-graduates (no synchronous
+    # human exists in the coworker path to "approve" a plan) and subsequent
+    # writes proceed normally.
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c1", "write_file", '{"file_path": "x.txt", "content": "hi"}')]},
+            ),
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c2", "read_file", '{"file_path": "README.md"}')]},
+            ),
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c3", "write_file", '{"file_path": "y.txt", "content": "bye"}')]},
+            ),
+            ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+    loop.mode_controller = ModeController(plan_first=True)
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "fix something"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    # The first write never reached the real tool executor at all...
+    assert [c[0] for c in mcp_hub.calls] == ["read_file", "write_file"]
+    # ...but the model still sees a structured (blocked) result for it.
+    assert result["tool_results"][0]["success"] is False
+    assert "planning phase" in result["tool_results"][0]["error"]
+    assert result["tool_results"][1]["success"] is True
+    assert result["tool_results"][2]["success"] is True
+    assert loop.mode_controller.mode == ExecutionMode.AUTONOMOUS
+
+
+@pytest.mark.asyncio
+async def test_plan_first_off_by_default_does_not_block_anything():
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c1", "write_file", '{"file_path": "x.txt", "content": "hi"}')]},
+            ),
+            ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+    loop.mode_controller = ModeController()  # plan_first defaults to False
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "fix something"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    assert mcp_hub.calls == [("write_file", {"file_path": "x.txt", "content": "hi"})]
+    assert result["tool_results"][0]["success"] is True

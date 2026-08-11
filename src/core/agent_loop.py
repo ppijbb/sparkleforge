@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 
 from src.core.llm_manager import ModelResult, MultiModelOrchestrator, TaskType
 from src.core.mcp_integration import UniversalMCPHub, get_mcp_hub
+from src.core.mcp_integration.hub_mixins.execution import _infer_required_capability
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +108,20 @@ Autonomous problem-solving contract:
 - Final output must be the best available answer/result, with assumptions and hard blockers stated briefly.
 """
 
-    def __init__(self, orchestrator: MultiModelOrchestrator | None = None):
+    def __init__(
+        self,
+        orchestrator: MultiModelOrchestrator | None = None,
+        plan_first: bool = False,
+    ):
         from src.core.llm_manager import MultiModelOrchestrator
 
         self.orchestrator = orchestrator or MultiModelOrchestrator()
-        self._plan_first = False
+        # PLAN_FIRST (#1340): a coworker session dropped into an unfamiliar
+        # repo starts investigating tools before writing anything. Callers
+        # opt in per entry point (e.g. the coworker/work path) rather than
+        # this defaulting True everywhere, since research/single-agent runs
+        # that never write files have nothing to gate.
+        self._plan_first = plan_first
         self.mcp_hub: UniversalMCPHub = get_mcp_hub()
 
         # Phase 3: Context Compression
@@ -492,6 +502,38 @@ Autonomous problem-solving contract:
                         }
                     )
 
+                if (
+                    self.mode_controller is not None
+                    and self.mode_controller.is_write_blocked()
+                    and _infer_required_capability(tool_name) in ("write_file", "execute_shell")
+                ):
+                    # PLAN_FIRST (#1340): block the first write/shell action
+                    # until at least one investigative (non-write) tool call
+                    # has actually run -- not a hardcoded file, just "look
+                    # before you leap". Doesn't count against record_failure
+                    # or capability resolution; it's a policy gate, not a
+                    # real tool failure.
+                    logger.info(
+                        "[AgentLoop] PLAN_FIRST: blocking %s until an investigative "
+                        "tool call has run",
+                        tool_name,
+                    )
+                    tool_exec_result = {
+                        "success": False,
+                        "error": (
+                            f"Blocked: still in the planning phase. Investigate this "
+                            f"project first (read whatever files, docs, or project "
+                            f"structure you judge relevant to understand it) before "
+                            f"calling {tool_name} or any other write/shell action -- "
+                            "your next tool call after that investigation will be "
+                            "allowed."
+                        ),
+                    }
+                    self._append_tool_result(
+                        history, tool_call, tool_name, tool_exec_result, tool_results
+                    )
+                    continue
+
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
                 logger.debug("[AgentLoop] Tool args for %s: %s", tool_name, arguments)
                 try:
@@ -506,6 +548,18 @@ Autonomous problem-solving contract:
                             self.mode_controller.record_success()
                         else:
                             self.mode_controller.record_failure()
+                        if (
+                            self.mode_controller.is_plan_first()
+                            and tool_succeeded
+                            and _infer_required_capability(tool_name) not in ("write_file", "execute_shell")
+                        ):
+                            # First successful investigative action satisfies
+                            # the planning step -- graduate to normal
+                            # execution instead of requiring a separate,
+                            # never-reachable human approval (autonomous
+                            # coworker sessions have no synchronous human to
+                            # approve a plan).
+                            self.mode_controller.submit_plan(approved=True)
                     await self._record_resolved_capability(tool_name, success=tool_succeeded)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
@@ -914,7 +968,10 @@ Autonomous problem-solving contract:
         for msg in history:
             if isinstance(msg, dict) and msg.get("role") == "system":
                 msg["content"] = (msg.get("content", "") or "") + (
-                    "\n\n[ModeController] PLAN_FIRST 모드 - 계획 승인 전까지 쓰기 액션 차단됨."
+                    "\n\n[ModeController] PLAN_FIRST 모드 - 계획 승인 전까지 쓰기/셸 액션 차단됨. "
+                    "이 작업을 이해하는 데 필요하다고 판단되는 파일/문서/구조를 먼저 조사하세요 "
+                    "(무엇을 볼지는 스스로 판단). 조사 도구 호출이 한 번 성공하면 자동으로 "
+                    "계획이 승인되어 이후 쓰기 액션이 허용됩니다."
                 )
                 break
 
