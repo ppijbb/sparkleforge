@@ -13,8 +13,14 @@ class NoopCompressor:
     async def compress_if_needed(self, history):
         return history
 
+    async def compress_if_needed_background(self, history):
+        return history
+
     async def compress_by_summarization(self, history):
         return history
+
+    def discard_pending_background_compaction(self):
+        pass
 
     def prune_tool_output(self, output):
         return output

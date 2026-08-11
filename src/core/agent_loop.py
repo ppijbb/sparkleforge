@@ -243,8 +243,10 @@ Autonomous problem-solving contract:
             if ask_user_result is not None:
                 return ask_user_result
 
-            # Phase 3: Compress context if needed
-            history = await self.compressor.compress_if_needed(history)
+            # Phase 3: Compress context if needed (background -- #1335: a
+            # blocking summarization call was eating up to 12% of a
+            # session's heat budget doing nothing but waiting on it)
+            history = await self.compressor.compress_if_needed_background(history)
 
             # Step 1: Call LLM with Resilience (Phase 4)
             try:
@@ -276,8 +278,13 @@ Autonomous problem-solving contract:
                     budget.current_iteration -= 1  # Don't count retry as iteration
                     continue
                 elif category == ErrorCategory.CONTEXT_LIMIT:
-                    # Force compression and retry
+                    # Force compression and retry. Discard any in-flight
+                    # background compaction first (#1335) -- it snapshotted
+                    # an offset into the history list we're about to replace
+                    # outright, so splicing its result in later would
+                    # misalign against the new list.
                     logger.info("Context limit hit. Forcing EXTREME compression.")
+                    self.compressor.discard_pending_background_compaction()
                     history = await self.compressor.compress_by_summarization(history)
                     continue
                 else:
