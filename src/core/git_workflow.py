@@ -7,6 +7,8 @@ Git 상태 확인, 커밋, 푸시, PR 생성 등을 자동화.
 import asyncio
 import logging
 import subprocess
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -15,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 class GitWorkflow:
     """Git 워크플로우 자동화 클래스."""
+
+    # Branches coworker must never commit or push to directly (#1330) --
+    # `git_commit` auto-branches off of these, `git_push` refuses outright.
+    _PROTECTED_BRANCHES = {"main", "master"}
 
     def __init__(self, repo_path: Path | None = None):
         """GitWorkflow 초기화.
@@ -219,13 +225,14 @@ Return only the commit message, no additional text."""
             return "Update files"
 
     async def git_commit(
-        self, message: str | None = None, auto_stage: bool = True
+        self, message: str | None = None, auto_stage: bool = True, base: str = "main"
     ) -> Dict[str, Any]:
         """Git 커밋 생성.
 
         Args:
             message: 커밋 메시지 (None이면 자동 생성)
             auto_stage: 자동으로 파일 스테이징 여부
+            base: 보호할 베이스 브랜치 (직접 커밋 금지, 자동으로 새 브랜치 생성)
 
         Returns:
             커밋 결과
@@ -239,6 +246,32 @@ Return only the commit message, no additional text."""
                     "error": "No changes to commit",
                     "status": status,
                 }
+
+            # 보호된 브랜치(main/master/base)에 있으면 직접 커밋하지 않고
+            # 새 작업 브랜치를 만들어 전환한다 (#1330: base에서 곧바로
+            # 커밋/푸시되어 사실상 review 없이 main에 반영되는 경로 차단).
+            protected_branches = self._PROTECTED_BRANCHES | {base}
+            if status["current_branch"] in protected_branches:
+                new_branch = f"agent/{int(time.time())}-{uuid.uuid4().hex[:6]}"
+                checkout_result = await self._run_git_command(
+                    "checkout", "-b", new_branch, check=False
+                )
+                if checkout_result["returncode"] != 0:
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Refusing to commit directly to protected branch "
+                            f"'{status['current_branch']}', and failed to create "
+                            f"a new branch: {checkout_result['stderr']}"
+                        ),
+                        "status": status,
+                    }
+                logger.info(
+                    "Current branch '%s' is protected; created and switched to '%s'",
+                    status["current_branch"],
+                    new_branch,
+                )
+                status["current_branch"] = new_branch
 
             # 자동 스테이징
             if auto_stage:
@@ -287,12 +320,15 @@ Return only the commit message, no additional text."""
             logger.error(f"Failed to commit: {e}")
             return {"success": False, "error": str(e)}
 
-    async def git_push(self, branch: str | None = None, force: bool = False) -> Dict[str, Any]:
+    async def git_push(
+        self, branch: str | None = None, force: bool = False, base: str = "main"
+    ) -> Dict[str, Any]:
         """Git 브랜치 푸시.
 
         Args:
             branch: 푸시할 브랜치 (None이면 현재 브랜치)
             force: 강제 푸시 여부
+            base: 보호할 베이스 브랜치 (이 브랜치로의 푸시는 거부)
 
         Returns:
             푸시 결과
@@ -304,6 +340,21 @@ Return only the commit message, no additional text."""
 
             if not branch:
                 return {"success": False, "error": "No branch specified"}
+
+            # 보호된 브랜치로의 직접 푸시는 무조건 거부 (#1330) -- force로도
+            # 우회 불가: force는 강제 push(히스토리 덮어쓰기)용 플래그이지
+            # "protected branch 보호를 우회해도 된다"는 의미가 아니다. 둘을
+            # 겸용하면 가장 위험한 조합(강제 + main 직접 덮어쓰기)이 열린다.
+            protected_branches = self._PROTECTED_BRANCHES | {base}
+            if branch in protected_branches:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Refusing to push directly to protected branch '{branch}'. "
+                        "Commit on a feature branch first -- git_commit creates one "
+                        "automatically when invoked on a protected branch."
+                    ),
+                }
 
             # 원격 저장소 확인
             remote_result = await self._run_git_command("remote", "get-url", "origin", check=False)
@@ -415,14 +466,14 @@ Return only the commit message, no additional text."""
         results = {}
 
         # 1. 커밋
-        commit_result = await self.git_commit(message=commit_message)
+        commit_result = await self.git_commit(message=commit_message, base=base)
         results["commit"] = commit_result
 
         if not commit_result.get("success"):
             return {"success": False, "error": "Commit failed", "results": results}
 
         # 2. 푸시
-        push_result = await self.git_push()
+        push_result = await self.git_push(base=base)
         results["push"] = push_result
 
         if not push_result.get("success"):
