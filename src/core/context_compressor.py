@@ -17,7 +17,12 @@ class ContextCompressor:
     def __init__(self, orchestrator: MultiModelOrchestrator | None = None):
         self.orchestrator = orchestrator or MultiModelOrchestrator()
         self.pre_compressor = get_pre_compressor()
-        self.max_history_messages = 10  # Keep at most 10 messages before summarizing
+        # Tool-use loops add 1 assistant message + 1+ tool-result messages per
+        # iteration (more with parallel tool calls), so a low threshold here
+        # forces compression every 3-4 iterations regardless of how far the
+        # real token budget is from being used (#1333) — this is a message-
+        # count backstop against unbounded growth, not the primary trigger.
+        self.max_history_messages = 40
 
     async def compress_if_needed(
         self, messages: List[Dict[str, Any]], token_limit: int = 100000
