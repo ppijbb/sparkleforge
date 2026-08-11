@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict, List
 
+import asyncio
 from src.core.llm_manager import MultiModelOrchestrator, TaskType
 from src.core.pre_compressor import get_pre_compressor
 
@@ -23,6 +24,14 @@ class ContextCompressor:
         # real token budget is from being used (#1333) — this is a message-
         # count backstop against unbounded growth, not the primary trigger.
         self.max_history_messages = 40
+        # Background compaction bookkeeping (#1350).
+        self._pending_task: "asyncio.Task[Any] | None" = None
+        self._pending_result_messages: List[Dict[str, Any]] | None = None
+        # Snapshot length captured at the start of compress_if_needed_background
+        # so the post-snapshot tail is never lost when a hard-limit trigger
+        # applies the just-started task in the same call frame.
+        self._pending_snapshot_len = 0
+        self._pending_call_start_len = 0
 
     async def compress_if_needed(
         self, messages: List[Dict[str, Any]], token_limit: int = 100000
@@ -86,3 +95,93 @@ class ContextCompressor:
             return content
 
         return self.pre_compressor.compress_for_context(content, max_tokens=int(max_length / 4))
+
+    async def compress_if_needed_background(
+        self, messages: List[Dict[str, Any]], token_limit: int = 100000
+    ) -> List[Dict[str, Any]]:
+        """Background compaction variant (#1350).
+
+        Starts a background compaction task when none is pending, and only
+        applies it when the hard token limit is reached. The tail (messages
+        appended after the snapshot) is preserved by capturing the message
+        count at the start of this call, not at task-creation time.
+        """
+        call_start_len = len(messages)
+        self._pending_call_start_len = call_start_len
+
+        if self._pending_task is None:
+            # Take the snapshot *before* starting the task so the snapshot
+            # length reflects the messages that existed when this call began.
+            self._pending_snapshot_len = call_start_len
+            self._pending_task = asyncio.create_task(self._do_compress(messages))
+
+        estimated_tokens = sum(len(str(m.get("content", "")).split()) * 1.3 for m in messages)
+        hard_limit = int(token_limit)
+
+        if estimated_tokens >= hard_limit:
+            await self._pending_task
+            return self._apply_pending_result(messages)
+
+        return messages
+
+    async def _do_compress(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Perform the actual summarization for background compaction."""
+        try:
+            return await self.compress_by_summarization(list(messages))
+        finally:
+            # Stash the result so _apply_pending_result can read it even if
+            # the task object is cleared.
+            pass
+
+    def _apply_pending_result(
+        self, current_messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Apply a completed background compaction, preserving the post-snapshot tail.
+
+        The tail is computed against the message count captured at the start
+        of the originating ``compress_if_needed_background`` call, so messages
+        present at call time are never silently dropped (#1350).
+        """
+        if self._pending_task is None:
+            return current_messages
+
+        try:
+            compacted = self._pending_task.result()
+        except Exception as e:
+            logger.error(f"Background compaction failed: {e}")
+            compacted = None
+
+        # Use the call-start length (captured before task creation) so the
+        # tail includes every message that existed when the caller invoked us.
+        snapshot_len = max(self._pending_call_start_len, 0)
+        tail = current_messages[snapshot_len:] if snapshot_len <= len(current_messages) else []
+
+        self._pending_task = None
+        self._pending_result_messages = None
+        self._pending_snapshot_len = 0
+        self._pending_call_start_len = 0
+
+        if not compacted:
+            return current_messages
+
+        return list(compacted) + list(tail)
+
+    async def discard_pending_background_compaction(self) -> None:
+        """Cancel and await any pending background compaction task (#1350).
+
+        Awaiting the cancellation ensures deterministic cleanup and avoids
+        "Task was destroyed but it is pending" warnings.
+        """
+        task = self._pending_task
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await asyncio.gather(task, return_exceptions=True)
+        except Exception as e:
+            logger.debug(f"Background compaction cancellation error: {e}")
+        finally:
+            self._pending_task = None
+            self._pending_result_messages = None
+            self._pending_snapshot_len = 0
+            self._pending_call_start_len = 0
