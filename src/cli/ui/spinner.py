@@ -94,15 +94,26 @@ def stage_status(
 
     Attaches a logging.Handler to `logger_names` for the duration of the
     `with` block that rewrites the spinner's label as matching log lines
-    come through.
+    come through. Also allowlist-filters the console for that same span
+    (see ChatModeFilter) -- this is "an agent is actively executing" in
+    exactly the sense that filter is meant to cover.
     """
+    from src.cli.ui.logging_policy import ChatModeFilter, find_console_handler
+
+    console_handler = find_console_handler()
+    chat_filter = ChatModeFilter() if console_handler is not None else None
+
     with console.status(f"[bold cyan]{initial_label}", spinner="dots") as status:
         handler = _StageStatusHandler(status, stage_labels or DEFAULT_STAGE_LABELS, echo_needles)
         loggers = [logging.getLogger(name) for name in logger_names]
         for lg in loggers:
             lg.addHandler(handler)
+        if chat_filter is not None:
+            console_handler.addFilter(chat_filter)
         try:
             yield status
         finally:
             for lg in loggers:
                 lg.removeHandler(handler)
+            if chat_filter is not None:
+                console_handler.removeFilter(chat_filter)

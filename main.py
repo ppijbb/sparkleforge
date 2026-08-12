@@ -144,14 +144,15 @@ root_logger.addHandler(file_handler)
 # Renders via rich instead of raw "asctime - name - LEVEL - message" text, through the
 # same shared get_console() singleton as the REPL/spinners/output_manager so it
 # cooperates with an active Live/Status instead of fighting it for the terminal (see
-# RichConsoleHandler's docstring).
+# RichConsoleHandler's docstring). src/cli/ui/spinner.py's stage_status() additionally
+# attaches ChatModeFilter to this handler for the span an agent is actively executing,
+# so internal orchestration chatter (capability grants, mode switches, model routing)
+# doesn't leak to the console just because it's harder to enumerate than to allowlist.
 from src.cli.ui.console_log_handler import RichConsoleHandler  # noqa: E402
-from src.cli.ui.logging_policy import ConsoleInternalsFilter  # noqa: E402
 
 console_handler = RichConsoleHandler()
 console_handler.setLevel(logging.WARNING)
 console_handler.addFilter(HTTPErrorFilter())  # HTTP 에러 필터 추가
-console_handler.addFilter(ConsoleInternalsFilter())  # 스피너/툴콜 트레이스와 중복되는 내부 로그 억제
 root_logger.addHandler(console_handler)
 
 logger = logging.getLogger(__name__)

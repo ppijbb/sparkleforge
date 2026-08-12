@@ -1,4 +1,5 @@
-"""Shared logger-suppression policy for the REPL's "quiet mode".
+"""Shared logger-suppression policy for the REPL's "quiet mode" and for
+actively-watching-an-agent-work console output.
 
 Both main.py's REPL entry path and REPLCLI's constructor need the exact
 same suppression applied; keeping it in one place instead of two hardcoded
@@ -40,28 +41,43 @@ def apply_repl_quiet_mode() -> None:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
-# agent_loop/agent_harness's routine progress lines ("[AgentLoop] Executing
-# tool: X", "[AgentLoop] Iteration N/30") already have dedicated UI:
-# src/cli/ui/spinner.py's _StageStatusHandler turns them into the spinner's
-# caption, and src/utils/output_manager.py's output_tool_execution renders a
-# proper trace line per completed tool call. Printing them AGAIN as raw log
-# lines is pure duplication -- but these loggers can't just be added to
-# QUIET_LOGGER_NAMES (that suppresses the logger itself below INFO, which
-# would also stop _StageStatusHandler -- attached directly to the same
-# logger -- from ever seeing the records it needs for the spinner caption).
-# A console-handler-only Filter blocks console rendering without touching
-# the logger's level, so both mechanisms keep working. WARNING+ still gets
-# through: routine progress is what's duplicated, not real problems.
-CONSOLE_FILTERED_LOGGER_PREFIXES = (
-    "src.core.agent_loop",
-    "src.core.agent_harness",
-)
+class ChatModeFilter(logging.Filter):
+    """Console-only allowlist for while an agent turn is actively running.
 
+    QUIET_LOGGER_NAMES is a blocklist and it keeps drifting: every internal
+    module that starts logging at INFO (capability_manager's "Granted
+    capability ...", mode_controller's "Execution mode switched: ...",
+    llm_manager's "Executing with NVIDIA NIM model: ...", agent_loop's
+    "Iteration N/30", ...) leaks to the console as raw internal-state text
+    until someone notices and adds it to the list one name at a time. None
+    of that is what a user watching an agent work wants to see -- it's
+    orchestration plumbing, not "here's what the agent just did". The
+    curated version of that (a spinner caption, a per-tool-call trace line)
+    already exists elsewhere; this just stops the raw duplicate from also
+    reaching the console.
 
-class ConsoleInternalsFilter(logging.Filter):
-    """Keeps routine agent_loop/agent_harness progress lines off the console (still logged to file)."""
+    Flipped to an allowlist instead: only src.cli.* (actual chat-facing
+    output) and WARNING+ (real problems) get through. Everything else still
+    goes to the log file -- this only changes what's visible on screen.
+    Scoped to attach/detach around the specific span where an agent is
+    actively executing (`stage_status()`), not applied globally, so
+    diagnostic commands like `health`/`tools` that print non-src.cli INFO
+    lines as their actual payload are unaffected.
+    """
+
+    ALLOWED_PREFIXES = ("src.cli",)
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.levelno >= logging.WARNING:
             return True
-        return not record.name.startswith(CONSOLE_FILTERED_LOGGER_PREFIXES)
+        return record.name.startswith(self.ALLOWED_PREFIXES)
+
+
+def find_console_handler():
+    """Return the RichConsoleHandler on the root logger, if any."""
+    from src.cli.ui.console_log_handler import RichConsoleHandler
+
+    for handler in logging.getLogger().handlers:
+        if isinstance(handler, RichConsoleHandler):
+            return handler
+    return None
