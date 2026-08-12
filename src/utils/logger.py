@@ -194,28 +194,41 @@ def setup_logger(
     level = getattr(logging, log_level.upper(), logging.INFO)
     logger.setLevel(level)
 
-    # Create formatters
+    # Create formatter
     if detailed_format:
-        console_format = "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s"
         file_format = "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(funcName)s() - %(message)s"
     else:
-        console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         file_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-    # Console formatter with colors
-    console_formatter = ColoredFormatter(
-        console_format, datefmt="%Y-%m-%d %H:%M:%S", use_colors=use_colors
-    )
 
     # File formatter without colors
     file_formatter = logging.Formatter(file_format, datefmt="%Y-%m-%d %H:%M:%S")
 
-    # Console handler
-    if console_output:
+    # Console output: this used to unconditionally attach its own
+    # StreamHandler(sys.stdout) with `propagate = False`, running every caller's
+    # console output through an independent, ungated pipeline that bypassed
+    # main.py's root console handler entirely (its WARNING/INFO/--verbose
+    # threshold, and the rich rendering in RichConsoleHandler). Under the
+    # SparkleForge CLI (root logger already has handlers -- main.py installed
+    # them), propagating instead of attaching a second handler is what routes
+    # these loggers through that one shared pipeline. But a standalone/library
+    # caller with no such root handler still needs `console_output=True` to
+    # mean something, and `console_output=False` must still mean "never touch
+    # the console" even if a root handler happens to exist -- so honor the
+    # flag explicitly instead of always propagating.
+    root_has_handlers = logging.getLogger().hasHandlers()
+    if console_output and not root_has_handlers:
+        console_formatter = ColoredFormatter(
+            file_format, datefmt="%Y-%m-%d %H:%M:%S", use_colors=use_colors
+        )
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(level)
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
+        logger.propagate = False
+    elif console_output and root_has_handlers:
+        logger.propagate = True
+    else:
+        logger.propagate = False
 
     # File handler
     if log_file:
@@ -244,9 +257,6 @@ def setup_logger(
                 logger.addHandler(file_handler)
             except Exception as e2:
                 logger.warning(f"Failed to setup file logging: {e2}")
-
-    # Prevent propagation to root logger
-    logger.propagate = False
 
     return logger
 
