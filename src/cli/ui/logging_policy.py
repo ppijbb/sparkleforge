@@ -58,6 +58,42 @@ CONSOLE_FILTERED_LOGGER_PREFIXES = (
 )
 
 
+class ChatModeFilter(logging.Filter):
+    """Allowlist filter for chat turns: only src.cli.* INFO and WARNING+ reach console.
+
+    The existing QUIET_LOGGER_NAMES blocklist keeps drifting -- every new
+    src.core.* module that logs at __init__ time leaks internal state-machine
+    chatter (capability grants, mode switches, model routing) to the console
+    until someone remembers to add it. This is the inverse: during an active
+    chat turn (scoped to stage_status()'s span), only actual chat-facing
+    output (src.cli.*) and real problems (WARNING+) are rendered to the
+    console handler; everything else still goes to the log file. Diagnostic
+    subcommands (health/tools) that print non-src.cli INFO as their payload
+    are unaffected because the filter is attached/detached around the span,
+    not applied globally.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return record.name == "src.cli" or record.name.startswith("src.cli.")
+
+
+def attach_chat_mode_filter(handler: logging.Handler) -> ChatModeFilter:
+    """Attach a ChatModeFilter to ``handler`` and return it for later removal."""
+    filt = ChatModeFilter()
+    handler.addFilter(filt)
+    return filt
+
+
+def detach_chat_mode_filter(handler: logging.Handler, filt: ChatModeFilter) -> None:
+    """Remove a previously-attached ChatModeFilter from ``handler``."""
+    try:
+        handler.removeFilter(filt)
+    except Exception:
+        pass
+
+
 class ConsoleInternalsFilter(logging.Filter):
     """Keeps routine agent_loop/agent_harness progress lines off the console (still logged to file)."""
 
