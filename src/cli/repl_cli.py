@@ -15,7 +15,7 @@ from datetime import datetime
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-from rich.console import Console
+from rich import get_console
 from rich.panel import Panel
 from rich.text import Text
 
@@ -33,7 +33,6 @@ class REPLCLI:
 
     def __init__(self, suppress_logging: bool = True):
         """초기화."""
-        import logging
         import warnings
 
         if suppress_logging:
@@ -42,23 +41,22 @@ class REPLCLI:
             # 이 생성자가 곧바로 덮어써서, agent_loop/agent_harness/llm_manager
             # 등의 실제 진행(iteration, tool 호출, 재시도) 로그가 콘솔은 물론
             # 로그 파일에도 전혀 남지 않게 된다 (issue #1255).
-            for logger_name in [
-                "__main__",
-                "src.core.agent_orchestrator",
-                "src.core.mcp_integration",
-                "src.core.shared_memory",
-                "src.core.skills_manager",
-                "src.core.prompt_refiner_wrapper",
-                "streamlit",
-                "streamlit.runtime",
-                "local_researcher",
-            ]:
-                logging.getLogger(logger_name).setLevel(logging.WARNING)
+            from src.cli.ui.logging_policy import apply_repl_quiet_mode
+
+            apply_repl_quiet_mode()
 
             # warnings도 완전히 억제
             warnings.filterwarnings("ignore")
 
-        self.console = Console()
+        # rich's process-wide singleton, not a private Console() -- anything
+        # else in this process (output_manager's tool-call trace, LLM-call
+        # progress ticks, ...) that also uses get_console() shares this same
+        # Live/Status region instead of fighting it for the terminal. Two
+        # independent Console instances both trying to own the terminal at
+        # once corrupts/hides whichever one isn't "active" (this is why tool
+        # calls never showed up during a turn -- output_manager was writing
+        # through a completely separate Console the whole time).
+        self.console = get_console()
 
         # 히스토리 초기화
         self.history_manager = SparkleForgeHistory()
@@ -237,9 +235,12 @@ class REPLCLI:
             "[bold cyan]💬 Ready to chat![/bold cyan] "
             "[dim]Type your prompt or command below:[/dim]\n"
         )
-        # Ensure terminal cursor is visible (unhide cursor ANSI code \033[?25h)
-        sys.stdout.write("\033[?25h")
-        sys.stdout.flush()
+        # Ensure terminal cursor is visible (unhide cursor ANSI code \033[?25h).
+        # Piped/non-tty stdout has no cursor to unhide, and the raw escape
+        # code would otherwise render as literal "[?25h" text in the output.
+        if sys.stdout.isatty():
+            sys.stdout.write("\033[?25h")
+            sys.stdout.flush()
 
         while True:
             try:
