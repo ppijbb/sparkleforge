@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 
 from src.core.llm_manager import ModelResult, MultiModelOrchestrator, TaskType
 from src.core.mcp_integration import UniversalMCPHub, get_mcp_hub
+from src.core.mcp_integration.hub_mixins.execution import _infer_required_capability
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +108,20 @@ Autonomous problem-solving contract:
 - Final output must be the best available answer/result, with assumptions and hard blockers stated briefly.
 """
 
-    def __init__(self, orchestrator: MultiModelOrchestrator | None = None):
+    def __init__(
+        self,
+        orchestrator: MultiModelOrchestrator | None = None,
+        plan_first: bool = False,
+    ):
         from src.core.llm_manager import MultiModelOrchestrator
 
         self.orchestrator = orchestrator or MultiModelOrchestrator()
-        self._plan_first = False
+        # PLAN_FIRST (#1340): a coworker session dropped into an unfamiliar
+        # repo starts investigating tools before writing anything. Callers
+        # opt in per entry point (e.g. the coworker/work path) rather than
+        # this defaulting True everywhere, since research/single-agent runs
+        # that never write files have nothing to gate.
+        self._plan_first = plan_first
         self.mcp_hub: UniversalMCPHub = get_mcp_hub()
 
         # Phase 3: Context Compression
@@ -243,8 +253,16 @@ Autonomous problem-solving contract:
             if ask_user_result is not None:
                 return ask_user_result
 
-            # Phase 3: Compress context if needed
-            history = await self.compressor.compress_if_needed(history)
+            hitl_pause_result = self._pause_for_hitl_collaborative_if_needed(
+                budget, history, tool_results, tool_calls_count, errors
+            )
+            if hitl_pause_result is not None:
+                return hitl_pause_result
+
+            # Phase 3: Compress context if needed (background -- #1335: a
+            # blocking summarization call was eating up to 12% of a
+            # session's heat budget doing nothing but waiting on it)
+            history = await self.compressor.compress_if_needed_background(history)
 
             # Step 1: Call LLM with Resilience (Phase 4)
             try:
@@ -276,8 +294,13 @@ Autonomous problem-solving contract:
                     budget.current_iteration -= 1  # Don't count retry as iteration
                     continue
                 elif category == ErrorCategory.CONTEXT_LIMIT:
-                    # Force compression and retry
+                    # Force compression and retry. Discard any in-flight
+                    # background compaction first (#1335) -- it snapshotted
+                    # an offset into the history list we're about to replace
+                    # outright, so splicing its result in later would
+                    # misalign against the new list.
                     logger.info("Context limit hit. Forcing EXTREME compression.")
+                    self.compressor.discard_pending_background_compaction()
                     history = await self.compressor.compress_by_summarization(history)
                     continue
                 else:
@@ -479,6 +502,38 @@ Autonomous problem-solving contract:
                         }
                     )
 
+                if (
+                    self.mode_controller is not None
+                    and self.mode_controller.is_write_blocked()
+                    and _infer_required_capability(tool_name) in ("write_file", "execute_shell")
+                ):
+                    # PLAN_FIRST (#1340): block the first write/shell action
+                    # until at least one investigative (non-write) tool call
+                    # has actually run -- not a hardcoded file, just "look
+                    # before you leap". Doesn't count against record_failure
+                    # or capability resolution; it's a policy gate, not a
+                    # real tool failure.
+                    logger.info(
+                        "[AgentLoop] PLAN_FIRST: blocking %s until an investigative "
+                        "tool call has run",
+                        tool_name,
+                    )
+                    tool_exec_result = {
+                        "success": False,
+                        "error": (
+                            f"Blocked: still in the planning phase. Investigate this "
+                            f"project first (read whatever files, docs, or project "
+                            f"structure you judge relevant to understand it) before "
+                            f"calling {tool_name} or any other write/shell action -- "
+                            "your next tool call after that investigation will be "
+                            "allowed."
+                        ),
+                    }
+                    self._append_tool_result(
+                        history, tool_call, tool_name, tool_exec_result, tool_results
+                    )
+                    continue
+
                 logger.info(f"[AgentLoop] Executing tool: {tool_name}")
                 logger.debug("[AgentLoop] Tool args for %s: %s", tool_name, arguments)
                 try:
@@ -493,6 +548,18 @@ Autonomous problem-solving contract:
                             self.mode_controller.record_success()
                         else:
                             self.mode_controller.record_failure()
+                        if (
+                            self.mode_controller.is_plan_first()
+                            and tool_succeeded
+                            and _infer_required_capability(tool_name) not in ("write_file", "execute_shell")
+                        ):
+                            # First successful investigative action satisfies
+                            # the planning step -- graduate to normal
+                            # execution instead of requiring a separate,
+                            # never-reachable human approval (autonomous
+                            # coworker sessions have no synchronous human to
+                            # approve a plan).
+                            self.mode_controller.submit_plan(approved=True)
                     await self._record_resolved_capability(tool_name, success=tool_succeeded)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
@@ -901,7 +968,10 @@ Autonomous problem-solving contract:
         for msg in history:
             if isinstance(msg, dict) and msg.get("role") == "system":
                 msg["content"] = (msg.get("content", "") or "") + (
-                    "\n\n[ModeController] PLAN_FIRST 모드 - 계획 승인 전까지 쓰기 액션 차단됨."
+                    "\n\n[ModeController] PLAN_FIRST 모드 - 계획 승인 전까지 쓰기/셸 액션 차단됨. "
+                    "이 작업을 이해하는 데 필요하다고 판단되는 파일/문서/구조를 먼저 조사하세요 "
+                    "(무엇을 볼지는 스스로 판단). 조사 도구 호출이 한 번 성공하면 자동으로 "
+                    "계획이 승인되어 이후 쓰기 액션이 허용됩니다."
                 )
                 break
 
@@ -1001,6 +1071,44 @@ Autonomous problem-solving contract:
         except Exception as e:
             logger.warning("[AgentLoop] GreedyOverseerAgent evaluation failed: %s", e)
         return None
+
+    def _pause_for_hitl_collaborative_if_needed(
+        self,
+        budget: "IterationBudget",
+        history: List[Dict[str, Any]],
+        tool_results: List[Dict[str, Any]],
+        tool_calls_count: int,
+        errors: List[Dict[str, Any]],
+    ) -> Dict[str, Any] | None:
+        """Stop the loop once ModeController has switched to HITL_COLLABORATIVE.
+
+        ModeController.on_unresolved_capability()/on_intent_review_needed()/
+        record_failure() switched the mode and logged it, but nothing ever
+        checked `mode_controller.mode` -- the loop just kept iterating
+        autonomously past the switch, making "hitl_collaborative" a label
+        with no actual effect (#1337). PLAN_FIRST already gets a real gate
+        via is_write_blocked(); this gives HITL_COLLABORATIVE the same
+        standing, same shape as the ask_user early-return above.
+        """
+        if self.mode_controller is None or not self.mode_controller.is_hitl_collaborative():
+            return None
+
+        transitions = self.mode_controller.transitions
+        reason = transitions[-1].reason if transitions else "execution mode requires human input"
+        return self._build_result(
+            success=True,
+            content=f"Waiting for human input: {reason}",
+            iterations=budget.current_iteration,
+            history=history,
+            metadata={
+                "execution_mode": "hitl_collaborative",
+                "waiting_for_user": True,
+                "mode_switch_reason": reason,
+            },
+            tool_calls_count=tool_calls_count,
+            tool_results=tool_results,
+            errors=errors,
+        )
 
     def _build_method_resolver_registry(self) -> Dict[str, Any]:
         """MethodResolver의 handler_registry를 실제 도구 레지스트리로 채운다.

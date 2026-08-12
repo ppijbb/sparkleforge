@@ -26,9 +26,9 @@ from typing import Any, Dict, List, Tuple
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.core.logging_config import get_logger
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(f"local_researcher.{__name__}")
 
 
 class CitationStyle(Enum):

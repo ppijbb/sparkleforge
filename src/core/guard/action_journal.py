@@ -10,9 +10,15 @@ import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Anchored to the SparkleForge install location, not cwd, so a coworker
+# session run against a target repo doesn't leak its audit journal into it
+# (#1331).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 @dataclass
@@ -61,7 +67,7 @@ class ActionJournal:
         if _force_new:
             self._initialized = False
         self._initialized = True
-        self._journal_path   = journal_path or os.path.join("data", "action_journal.jsonl")
+        self._journal_path   = journal_path or str(_PROJECT_ROOT / "data" / "action_journal.jsonl")
         self._snapshots_path = self._journal_path.replace(".jsonl", "_snapshots.json")
         self._entries:   List[JournalEntry] = []
         self._snapshots: Dict[str, Snapshot] = {}
