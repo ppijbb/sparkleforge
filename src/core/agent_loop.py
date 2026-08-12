@@ -573,6 +573,8 @@ Autonomous problem-solving contract:
                     )
                     if self.mode_controller:
                         self.mode_controller.record_failure()
+                    if self.mode_controller is not None and self.mode_controller.is_plan_first():
+                        self.mode_controller.submit_plan(False, feedback="tool execution failed")
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
 
