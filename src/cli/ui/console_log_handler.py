@@ -12,10 +12,11 @@ from __future__ import annotations
 import logging
 import sys
 
-from rich.console import Console
+from rich.console import Console, get_console
 from rich.markup import escape
 
 from src.cli.ui import theme
+from src.cli.ui.console_log_handler import ConsoleInternalsFilter
 
 
 class RichConsoleHandler(logging.Handler):
@@ -28,10 +29,14 @@ class RichConsoleHandler(logging.Handler):
     `_LiveAwareStderr` proxy class main.py maintained for the same reason).
     """
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.addFilter(ConsoleInternalsFilter())
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
             message = record.getMessage()
-            console = Console(file=sys.stderr, soft_wrap=True)
+            console = get_console()
             style = theme.style_for_levelname(record.levelname)
             console.print(theme.markup_for(message, style), highlight=False)
             if record.exc_info:
@@ -40,3 +45,10 @@ class RichConsoleHandler(logging.Handler):
                 console.print(f"[dim]{traceback_text}[/dim]")
         except Exception:
             self.handleError(record)
+
+
+class ConsoleInternalsFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno <= logging.INFO and record.name in ("agent_loop", "agent_harness"):
+            return False
+        return True
