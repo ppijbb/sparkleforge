@@ -15,7 +15,7 @@ from datetime import datetime
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-from rich.console import Console
+from rich import get_console
 from rich.panel import Panel
 from rich.text import Text
 
@@ -48,7 +48,15 @@ class REPLCLI:
             # warnings도 완전히 억제
             warnings.filterwarnings("ignore")
 
-        self.console = Console()
+        # rich's process-wide singleton, not a private Console() -- anything
+        # else in this process (output_manager's tool-call trace, LLM-call
+        # progress ticks, ...) that also uses get_console() shares this same
+        # Live/Status region instead of fighting it for the terminal. Two
+        # independent Console instances both trying to own the terminal at
+        # once corrupts/hides whichever one isn't "active" (this is why tool
+        # calls never showed up during a turn -- output_manager was writing
+        # through a completely separate Console the whole time).
+        self.console = get_console()
 
         # 히스토리 초기화
         self.history_manager = SparkleForgeHistory()
