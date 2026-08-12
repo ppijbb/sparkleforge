@@ -14,6 +14,7 @@ import asyncio
 from dataclasses import dataclass
 
 from rich import get_console
+from rich.markup import escape
 from rich.prompt import Prompt
 
 
@@ -35,11 +36,11 @@ async def menu_choice(
     awaiting this from inside an async checkpoint won't stall the event loop.
     """
     console = get_console()
-    console.print(f"\n[bold cyan]{title}[/bold cyan]")
+    console.print(f"\n[bold cyan]{escape(title)}[/bold cyan]")
     for line in context_lines or []:
-        console.print(line)
+        console.print(escape(line))
     for option in options:
-        console.print(f"[bold]{option.key}[/bold]) {option.label}")
+        console.print(f"[bold]{escape(option.key)}[/bold]) {escape(option.label)}")
 
     return await asyncio.to_thread(
         Prompt.ask, "Choice", choices=[o.key for o in options], default=default

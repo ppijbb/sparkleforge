@@ -13,6 +13,7 @@ import logging
 import sys
 
 from rich.console import Console
+from rich.markup import escape
 
 from src.cli.ui import theme
 
@@ -35,6 +36,7 @@ class RichConsoleHandler(logging.Handler):
             console.print(theme.markup_for(message, style), highlight=False)
             if record.exc_info:
                 formatter = logging.Formatter()
-                console.print(f"[dim]{formatter.formatException(record.exc_info)}[/dim]")
+                traceback_text = escape(formatter.formatException(record.exc_info))
+                console.print(f"[dim]{traceback_text}[/dim]")
         except Exception:
             self.handleError(record)

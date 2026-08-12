@@ -17,6 +17,8 @@ import logging
 from contextlib import contextmanager
 from typing import Iterable
 
+from rich.markup import escape
+
 # (substring to look for in a log message, spinner caption to show when found).
 # First match wins, so more specific node names are listed ahead of the
 # generic stage words research_command's orchestrator also logs.
@@ -71,7 +73,8 @@ class _StageStatusHandler(logging.Handler):
             return
         for needle in self.echo_needles:
             if needle in msg:
-                self.status.update(f"[bold cyan]⚙️  {msg.split(']', 1)[-1].strip()}")
+                detail = escape(msg.split("]", 1)[-1].strip())
+                self.status.update(f"[bold cyan]⚙️  {detail}")
                 return
         for needle, label in self.stage_labels:
             if needle in msg:

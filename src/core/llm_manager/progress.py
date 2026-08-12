@@ -15,6 +15,7 @@ import time
 from typing import Awaitable, TypeVar
 
 from rich.console import Console
+from rich.markup import escape
 
 T = TypeVar("T")
 
@@ -30,14 +31,15 @@ async def with_progress(coro: Awaitable[T], label: str, interval: float = 1.0) -
 
     console = Console()
     start = time.time()
+    safe_label = escape(label)
 
     async def _tick(status) -> None:
         while True:
             elapsed = time.time() - start
-            status.update(f"[bold cyan]⏳ {label}... {elapsed:.0f}s")
+            status.update(f"[bold cyan]⏳ {safe_label}... {elapsed:.0f}s")
             await asyncio.sleep(interval)
 
-    with console.status(f"[bold cyan]⏳ {label}...", spinner="dots") as status:
+    with console.status(f"[bold cyan]⏳ {safe_label}...", spinner="dots") as status:
         ticker = asyncio.create_task(_tick(status))
         try:
             return await coro

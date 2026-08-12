@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Any, Dict, List
 
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
 from src.cli.ui import theme
@@ -166,7 +167,7 @@ class UserCenteredOutputManager:
     def _format_agent_name(self, agent_name: str) -> str:
         """에이전트 이름 포맷팅 (rich markup)."""
         style = _AGENT_STYLE.get(agent_name.lower(), "bright_white")
-        return f"[{style}][{agent_name.upper()}][/{style}]"
+        return f"[{style}][{escape(agent_name.upper())}][/{style}]"
 
     def _should_output(self, level: OutputLevel) -> bool:
         """출력 레벨에 따라 출력 여부 결정."""
@@ -192,7 +193,10 @@ class UserCenteredOutputManager:
             return
 
         style = _STATUS_STYLE.get(status_type) if status_type else None
-        rendered = theme.markup_for(message, style) if style else message
+        # theme.markup_for() escapes `message` before embedding it; take that
+        # path (with a neutral default style) even with no status_type, since
+        # otherwise raw dynamic text flows straight into the f-strings below.
+        rendered = theme.markup_for(message, style or "default")
 
         if agent_name:
             rendered = f"{self._format_agent_name(agent_name)} {rendered}"
@@ -270,11 +274,14 @@ class UserCenteredOutputManager:
             self._progress_task_id = self._progress.add_task("", total=100)
 
     def _progress_description(self) -> str:
+        # rich's Progress TextColumn renders {task.description} through its own
+        # markup parser, so dynamic stage/message text needs the same escaping
+        # as everything routed through theme.markup_for.
         if not self.current_progress:
             return ""
         if self.current_progress.message:
-            return f"{self.current_progress.stage} - {self.current_progress.message}"
-        return self.current_progress.stage
+            return escape(f"{self.current_progress.stage} - {self.current_progress.message}")
+        return escape(self.current_progress.stage)
 
     async def start_progress(
         self,

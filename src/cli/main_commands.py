@@ -454,16 +454,26 @@ async def handle_session_command(args):
     return 0
 
 
-async def _resolve_actions_session(args) -> str | None:
-    """--session이 없으면 가장 최근 활성 세션으로 대체 (handle_run_command의 --continue와 동일한 패턴)."""
+async def _resolve_actions_session(args) -> tuple[str | None, bool]:
+    """--session이 없으면 가장 최근 활성 세션으로 대체 (handle_run_command의 --continue와 동일한 패턴).
+
+    Returns (session_id, was_inferred). KNOWN LIMITATION: AgentOrchestrator.execute()
+    (the coworker/`work` path) never persists its session state via
+    SessionManager.save_session -- only `run`/`query` does (see
+    _persist_run_session). So when session_id isn't given explicitly, "most
+    recently active session" may resolve to an unrelated research session
+    that happens to be the newest thing in that store, not the coworker
+    session that actually produced the pending actions. `was_inferred` lets
+    callers surface that assumption instead of silently acting on it.
+    """
     session_id = getattr(args, "session_id", None)
     if session_id:
-        return session_id
+        return session_id, False
 
     from src.core.session_control import get_session_control
 
     recent = await get_session_control().search_sessions(limit=1)
-    return recent[0].session_id if recent else None
+    return (recent[0].session_id if recent else None), True
 
 
 class _ActionsCliShim:
@@ -486,14 +496,23 @@ class _ActionsCliShim:
         self.console = Console(force_terminal=True)
 
 
+def _warn_if_inferred_session(shim, session_id: str, was_inferred: bool) -> None:
+    if was_inferred:
+        shim.console.print(
+            f"[dim]Using most recently active session ({session_id}) -- "
+            f"pass --session to target a specific one.[/dim]"
+        )
+
+
 async def handle_actions_command(args):
     from src.cli.commands.work import actions_command
 
-    session_id = await _resolve_actions_session(args)
+    session_id, was_inferred = await _resolve_actions_session(args)
     shim = _ActionsCliShim(session_id)
     if not session_id:
         shim.console.print("[yellow]No active or recent session found.[/yellow]")
         return 0
+    _warn_if_inferred_session(shim, session_id, was_inferred)
     await actions_command(shim, [])
     return 0
 
@@ -501,11 +520,12 @@ async def handle_actions_command(args):
 async def handle_approve_command(args):
     from src.cli.commands.work import approve_command
 
-    session_id = await _resolve_actions_session(args)
+    session_id, was_inferred = await _resolve_actions_session(args)
     shim = _ActionsCliShim(session_id)
     if not session_id:
         shim.console.print("[yellow]No active or recent session found.[/yellow]")
         return 0
+    _warn_if_inferred_session(shim, session_id, was_inferred)
     await approve_command(shim, [args.action_id])
     return 0
 
@@ -513,11 +533,12 @@ async def handle_approve_command(args):
 async def handle_deny_command(args):
     from src.cli.commands.work import deny_command
 
-    session_id = await _resolve_actions_session(args)
+    session_id, was_inferred = await _resolve_actions_session(args)
     shim = _ActionsCliShim(session_id)
     if not session_id:
         shim.console.print("[yellow]No active or recent session found.[/yellow]")
         return 0
+    _warn_if_inferred_session(shim, session_id, was_inferred)
     await deny_command(shim, [args.action_id] + list(getattr(args, "reason", None) or []))
     return 0
 

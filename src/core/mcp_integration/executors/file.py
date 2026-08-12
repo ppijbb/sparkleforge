@@ -224,11 +224,6 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 data={
                     "file_path": str(path),
                     "replacements": content.count(old_string),
-                    # 원본 내용을 함께 반환: 호출부가 diff를 보여줄 때 old_string
-                    # 기준 부분 복원(치환 역연산)을 시도하지 않아도 되게 함 --
-                    # old_string이 여러 번 등장하면 그 방식은 첫 등장만 되돌려
-                    # 잘못된 diff를 만든다.
-                    "old_content": content,
                 },
                 execution_time=time.time() - start_time,
                 confidence=0.9,

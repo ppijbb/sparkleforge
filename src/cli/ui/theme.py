@@ -8,6 +8,8 @@ instead, so the whole CLI shares one visual language.
 
 from __future__ import annotations
 
+from rich.markup import escape
+
 # Icon already carries the semantic meaning (success/error/...), so callers
 # that pass a pre-iconified message (many existing "✅ ..."/"❌ ..." strings
 # scattered across the codebase) are recognized here and not double-iconified.
@@ -41,7 +43,13 @@ def _strip_known_icon(message: str) -> tuple[str, str | None]:
 
 
 def markup_for(message: str, default_style: str) -> str:
-    """Build a rich markup string for `message`, styled by its icon or `default_style`."""
+    """Build a rich markup string for `message`, styled by its icon or `default_style`.
+
+    `message` is arbitrary dynamic text (file paths, tool output, exception
+    text, ...) that may itself contain `[...]`-shaped substrings -- escaped
+    here so it can't be parsed as (and potentially crash on, e.g. a stray
+    `[/bold]`) Rich console markup.
+    """
     body, detected_style = _strip_known_icon(message)
     style = detected_style or default_style
     icon = {
@@ -51,7 +59,7 @@ def markup_for(message: str, default_style: str) -> str:
         STYLE_INFO: ICON_INFO,
     }.get(style, "")
     prefix = f"{icon} " if icon else ""
-    return f"[{style}]{prefix}{body}[/{style}]"
+    return f"[{style}]{prefix}{escape(body)}[/{style}]"
 
 
 def style_for_levelname(levelname: str) -> str:
