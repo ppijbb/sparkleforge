@@ -1098,6 +1098,21 @@ class ExecutionMixin:
                 )
                 await output_manager.output_tool_execution(tool_exec_result)
 
+                # edit_file 성공 시 "파일 작업 완료" 한 줄 대신 실제 변경 내용을 diff로 보여준다.
+                if tool_name == "edit_file" and tool_result.success and isinstance(tool_result.data, dict):
+                    try:
+                        from pathlib import Path
+
+                        from src.cli.ui.diff_view import render_diff
+
+                        edited_path = tool_result.data.get("file_path")
+                        old_content = tool_result.data.get("old_content")
+                        if edited_path and old_content is not None:
+                            new_content = Path(edited_path).read_text(encoding="utf-8")
+                            render_diff(output_manager.console, edited_path, old_content, new_content)
+                    except Exception:
+                        logger.debug("edit_file diff rendering skipped", exc_info=True)
+
                 return {
                     "success": tool_result.success,
                     "data": tool_result.data,
