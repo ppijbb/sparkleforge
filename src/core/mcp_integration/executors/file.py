@@ -9,6 +9,8 @@ from src.core.tools.registry import ToolResult
 
 logger = logging.getLogger(__name__)
 
+MIN_MATCH_LINES = 2
+
 
 def _edit_mismatch_hint(content: str, old_string: str, context_lines: int = 3, max_chars: int = 800) -> str:
     """Best-effort hint for an edit_file 'old_string not found' failure.
@@ -19,21 +21,26 @@ def _edit_mismatch_hint(content: str, old_string: str, context_lines: int = 3, m
     matching region to `old_string` -- typically the same code with
     different whitespace/indentation -- and return it with line numbers so
     the model can retry with the exact text in one shot.
-    """
-    lines = content.splitlines()
-    matcher = difflib.SequenceMatcher(None, content, old_string, autojunk=False)
-    match = matcher.find_longest_match(0, len(content), 0, len(old_string))
 
-    if match.size < 8:
+    Matching is line-level (not character-level) to avoid false positives
+    from common programming idioms (e.g. `}\n}\n}\n`) and to keep the
+    SequenceMatcher complexity proportional to line counts, not file size.
+    """
+    content_lines = content.splitlines()
+    old_lines = old_string.splitlines()
+    matcher = difflib.SequenceMatcher(None, content_lines, old_lines, autojunk=False)
+    match = matcher.find_longest_match(0, len(content_lines), 0, len(old_lines))
+
+    if match.size < MIN_MATCH_LINES:
         # No meaningful overlap at all -- showing the head of the file is
         # more useful than nothing.
-        snippet = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines[: context_lines * 2 + 1]))
+        snippet = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(content_lines[: context_lines * 2 + 1]))
         return f"No similar text found in the file. Start of file instead:\n{snippet[:max_chars]}"
 
-    start_line = content.count("\n", 0, match.a)
+    start_line = match.a  # 0-indexed line where the match begins
     lo = max(0, start_line - context_lines)
-    hi = min(len(lines), start_line + context_lines + old_string.count("\n") + 1)
-    numbered = "\n".join(f"{i + 1}: {lines[i]}" for i in range(lo, hi))
+    hi = min(len(content_lines), start_line + match.size + context_lines)
+    numbered = "\n".join(f"{i + 1}: {content_lines[i]}" for i in range(lo, hi))
     return f"Closest match in file (lines {lo + 1}-{hi}):\n{numbered[:max_chars]}"
 
 
