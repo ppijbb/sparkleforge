@@ -3,6 +3,7 @@ import tracemalloc
 from types import SimpleNamespace
 
 from src.core.agent_loop import AgentLoop, IterationBudget
+from src.core.anvil.mode_controller import ExecutionMode, ModeController
 from src.core.autonomous_orchestrator import _autopilot_mode_enabled
 from src.core.llm_manager import ModelResult, TaskType
 from src.core.orchestrator.execution import ExecutionNode
@@ -272,6 +273,60 @@ async def test_agent_loop_stops_and_surfaces_overseer_ask_user_decision():
     assert orchestrator.calls == []
 
 
+class FailingMCPHub:
+    """Like FakeMCPHub, but every tool call raises."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def initialize_mcp(self):
+        return None
+
+    async def execute_tool(self, tool_name, arguments):
+        self.calls.append((tool_name, arguments))
+        raise RuntimeError("simulated tool failure")
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_stops_when_mode_switches_to_hitl_collaborative():
+    # Regression for issue #1337: ModeController switching AUTONOMOUS ->
+    # HITL_COLLABORATIVE (e.g. after repeated tool failures) was logged
+    # ("Execution mode switched: autonomous -> hitl_collaborative") but
+    # nothing ever checked mode_controller.mode -- the loop just kept
+    # iterating autonomously past the switch. It must actually stop before
+    # the next autonomous tool call, the same way the overseer's ask_user
+    # decision already does.
+    tool_calls = [
+        {
+            "id": f"call_{i}",
+            "type": "function",
+            "function": {"name": "search", "arguments": f'{{"query": "q{i}"}}'},
+        }
+        for i in range(3)
+    ]
+    orchestrator = FakeOrchestrator(
+        [ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [c]}) for c in tool_calls]
+    )
+    mcp_hub = FailingMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+    loop.mode_controller = ModeController()  # default failure_threshold=3
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "do something"}], max_iterations=10
+    )
+
+    assert loop.mode_controller.mode == ExecutionMode.HITL_COLLABORATIVE
+    assert result["success"] is True
+    assert result["metadata"]["execution_mode"] == "hitl_collaborative"
+    assert result["metadata"]["waiting_for_user"] is True
+    assert "Waiting for human input" in result["content"]
+    # Exactly 3 failing tool calls tripped the switch; a 4th, now-blocked
+    # autonomous iteration would have called the model and the tool again --
+    # neither should have happened.
+    assert len(mcp_hub.calls) == 3
+    assert len(orchestrator.calls) == 3
+
+
 @pytest.mark.asyncio
 async def test_agent_loop_injects_momentum_nudge_when_only_re_reading_old_ground():
     # Regression for the lfdb dogfooding session (issue #1216, Anvil Phase Mu):
@@ -485,3 +540,77 @@ async def test_tool_signature_tracking_stays_bounded_across_many_iterations():
     # many iterations ran; memory must not scale with iteration count.
     assert window_growth < 1_000_000
     assert len(window2) == SIGNATURE_WINDOW_SIZE
+
+
+def _tool_call(call_id: str, name: str, arguments: str) -> dict:
+    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}
+
+
+@pytest.mark.asyncio
+async def test_plan_first_blocks_write_until_investigation_then_unblocks():
+    # Issue #1340: PLAN_FIRST existed as a mode (and AgentLoop hardcoded
+    # plan_first=False with no way to ever reach it), but even reached it
+    # was cosmetic -- is_write_blocked() only added a system-message hint,
+    # nothing actually stopped a write/shell tool call. The real gate: the
+    # first write/shell call is blocked until an investigative (non-write)
+    # call has actually succeeded, then it auto-graduates (no synchronous
+    # human exists in the coworker path to "approve" a plan) and subsequent
+    # writes proceed normally.
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c1", "write_file", '{"file_path": "x.txt", "content": "hi"}')]},
+            ),
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c2", "read_file", '{"file_path": "README.md"}')]},
+            ),
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c3", "write_file", '{"file_path": "y.txt", "content": "bye"}')]},
+            ),
+            ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+    loop.mode_controller = ModeController(plan_first=True)
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "fix something"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    # The first write never reached the real tool executor at all...
+    assert [c[0] for c in mcp_hub.calls] == ["read_file", "write_file"]
+    # ...but the model still sees a structured (blocked) result for it.
+    assert result["tool_results"][0]["success"] is False
+    assert "planning phase" in result["tool_results"][0]["error"]
+    assert result["tool_results"][1]["success"] is True
+    assert result["tool_results"][2]["success"] is True
+    assert loop.mode_controller.mode == ExecutionMode.AUTONOMOUS
+
+
+@pytest.mark.asyncio
+async def test_plan_first_off_by_default_does_not_block_anything():
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult(
+                "", "tool-model", 0.1, 0.8, 0.0,
+                {"tool_calls": [_tool_call("c1", "write_file", '{"file_path": "x.txt", "content": "hi"}')]},
+            ),
+            ModelResult("done", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+    loop.mode_controller = ModeController()  # plan_first defaults to False
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "fix something"}], max_iterations=10
+    )
+
+    assert result["success"] is True
+    assert mcp_hub.calls == [("write_file", {"file_path": "x.txt", "content": "hi"})]
+    assert result["tool_results"][0]["success"] is True
