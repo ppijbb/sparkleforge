@@ -1,17 +1,27 @@
 """통합 출력 시스템 - 사용자 중심 출력 관리
 
-gemini-cli 수준의 실시간 스트리밍 출력, 도구 실행 결과 포맷팅,
-진행 상황 표시, 색상 지원을 제공하는 통합 출력 시스템
+rich 기반의 실시간 스트리밍 출력, 도구 실행 결과 포맷팅, 진행 상황 표시를
+제공하는 통합 출력 시스템. 공개 API(`UserCenteredOutputManager`,
+`get_output_manager`/`set_output_manager`, `output_tool_execution` 등)는
+`src/core/mcp_integration/hub_mixins/execution.py`(도구 실행 결과 표시),
+`src/core/error_handler.py`, `src/core/progress_tracker.py`에서 그대로
+사용하므로 시그니처는 유지하고, 내부 렌더링만 손으로 짠 ANSI 코드/텍스트
+진행률 바에서 rich(+공유 테마)로 교체했다.
 """
 
 import logging
-import sys
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List
+
+from rich.console import Console
+from rich.markup import escape
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
+
+from src.cli.ui import theme
 
 
 class OutputLevel(Enum):
@@ -68,6 +78,27 @@ class AgentCommunicationInfo:
             self.discussion_topics = []
 
 
+_STATUS_STYLE = {
+    "success": theme.STYLE_SUCCESS,
+    "error": theme.STYLE_ERROR,
+    "warning": theme.STYLE_WARNING,
+    "info": theme.STYLE_INFO,
+    "tool_success": theme.STYLE_SUCCESS,
+    "tool_error": theme.STYLE_ERROR,
+    "progress": theme.STYLE_INFO,
+}
+
+_AGENT_STYLE = {
+    "planner": "bright_blue",
+    "executor": "bright_green",
+    "verifier": "bright_yellow",
+    "generator": "bright_magenta",
+    "orchestrator": "bright_cyan",
+    "parallel_executor": "green",
+    "parallel_verifier": "yellow",
+}
+
+
 class UserCenteredOutputManager:
     """사용자 중심 출력 매니저.
 
@@ -91,50 +122,13 @@ class UserCenteredOutputManager:
         self.stream_output = stream_output
         self.show_progress = show_progress
 
-        # 색상 코드 정의 (기존 ColoredFormatter 확장)
-        self.colors = {
-            "reset": "\033[0m",
-            "red": "\033[31m",
-            "green": "\033[32m",
-            "yellow": "\033[33m",
-            "blue": "\033[34m",
-            "magenta": "\033[35m",
-            "cyan": "\033[36m",
-            "white": "\033[37m",
-            "bright_red": "\033[91m",
-            "bright_green": "\033[92m",
-            "bright_yellow": "\033[93m",
-            "bright_blue": "\033[94m",
-            "bright_magenta": "\033[95m",
-            "bright_cyan": "\033[96m",
-            "bright_white": "\033[97m",
-        }
+        self.console = Console(no_color=not enable_colors, soft_wrap=True)
 
-        # 에이전트별 색상 (기존 AGENT_COLORS 확장)
-        self.agent_colors = {
-            "planner": "bright_blue",
-            "executor": "bright_green",
-            "verifier": "bright_yellow",
-            "generator": "bright_magenta",
-            "orchestrator": "bright_cyan",
-            "parallel_executor": "green",
-            "parallel_verifier": "yellow",
-        }
-
-        # 상태별 색상
-        self.status_colors = {
-            "success": "bright_green",
-            "error": "bright_red",
-            "warning": "bright_yellow",
-            "info": "bright_blue",
-            "progress": "bright_cyan",
-            "tool_success": "green",
-            "tool_error": "red",
-        }
-
-        # 진행 상황 추적
+        # 진행 상황 추적 (rich Progress는 start_progress에서 지연 생성)
         self.current_progress: ProgressInfo | None = None
         self.progress_start_time: float | None = None
+        self._progress: Progress | None = None
+        self._progress_task_id: int | None = None
 
         # 통계
         self.stats = {
@@ -143,10 +137,6 @@ class UserCenteredOutputManager:
             "agents_communicated": 0,
             "results_shared": 0,
         }
-
-        # 스트림 출력 설정
-        self.stdout = sys.stdout
-        self.stderr = sys.stderr
 
         # 로깅 설정 (디버그 정보용)
         self.debug_logger = None
@@ -158,7 +148,6 @@ class UserCenteredOutputManager:
         logger = logging.getLogger("output_manager_debug")
         logger.setLevel(logging.DEBUG)
 
-        # 파일 핸들러
         from pathlib import Path
 
         log_path = Path(log_file)
@@ -175,21 +164,10 @@ class UserCenteredOutputManager:
 
         return logger
 
-    def _colorize(self, text: str, color: str) -> str:
-        """텍스트에 색상 적용."""
-        if not self.enable_colors or color not in self.colors:
-            return text
-        return f"{self.colors[color]}{text}{self.colors['reset']}"
-
     def _format_agent_name(self, agent_name: str) -> str:
-        """에이전트 이름 포맷팅."""
-        color = self.agent_colors.get(agent_name.lower(), "bright_white")
-        return self._colorize(f"[{agent_name.upper()}]", color)
-
-    def _format_status(self, status: str, status_type: str = "info") -> str:
-        """상태 텍스트 포맷팅."""
-        color = self.status_colors.get(status_type, "bright_white")
-        return self._colorize(status, color)
+        """에이전트 이름 포맷팅 (rich markup)."""
+        style = _AGENT_STYLE.get(agent_name.lower(), "bright_white")
+        return f"[{style}][{escape(agent_name.upper())}][/{style}]"
 
     def _should_output(self, level: OutputLevel) -> bool:
         """출력 레벨에 따라 출력 여부 결정."""
@@ -210,51 +188,42 @@ class UserCenteredOutputManager:
     ):
         """메시지 출력."""
         if not self._should_output(level):
-            # 디버그 레벨은 로거에 기록
             if level == OutputLevel.DEBUG and self.debug_logger:
                 self.debug_logger.debug(message)
             return
 
-        # 메시지 포맷팅
-        formatted_message = message
+        style = _STATUS_STYLE.get(status_type) if status_type else None
+        # theme.markup_for() escapes `message` before embedding it; take that
+        # path (with a neutral default style) even with no status_type, since
+        # otherwise raw dynamic text flows straight into the f-strings below.
+        rendered = theme.markup_for(message, style or "default")
 
         if agent_name:
-            formatted_message = f"{self._format_agent_name(agent_name)} {formatted_message}"
+            rendered = f"{self._format_agent_name(agent_name)} {rendered}"
 
-        if status_type:
-            formatted_message = self._format_status(formatted_message, status_type)
-
-        # 타임스탬프 추가 (서비스 레벨 이상)
-        if level.value in ["service", "user"]:
+        if level.value in ("service", "user"):
             timestamp = datetime.now().strftime("%H:%M:%S")
-            formatted_message = f"[{timestamp}] {formatted_message}"
+            rendered = f"[dim]{timestamp}[/dim] {rendered}"
 
-        # 출력
         if self.stream_output:
-            print(formatted_message, flush=True)
+            self.console.print(rendered, highlight=False)
 
     async def output_tool_execution(self, tool_result: ToolExecutionResult):
         """도구 실행 결과 출력."""
         if not self._should_output(OutputLevel.USER):
             return
 
-        # 아이콘 선택
-        icon = "✅" if tool_result.success else "❌"
-
-        # 실행 시간 포맷팅
+        icon = theme.ICON_SUCCESS if tool_result.success else theme.ICON_ERROR
         exec_time = f"{tool_result.execution_time:.2f}s"
 
-        # 신뢰도 표시 (성공시에만)
         confidence = ""
         if tool_result.success and tool_result.confidence > 0:
             confidence = f" (신뢰도: {tool_result.confidence:.1%})"
 
-        # 결과 요약
         result_preview = tool_result.result_summary[:100]
         if len(tool_result.result_summary) > 100:
             result_preview += "..."
 
-        # 메시지 구성
         message = f"{icon} 도구 '{tool_result.tool_name}' 실행 완료 ({exec_time}){confidence}"
         if result_preview:
             message += f"\n    결과: {result_preview}"
@@ -268,7 +237,6 @@ class UserCenteredOutputManager:
             status_type="tool_success" if tool_result.success else "tool_error",
         )
 
-        # 통계 업데이트
         self.stats["tools_executed"] += 1
         if tool_result.success:
             self.stats["tools_successful"] += 1
@@ -289,9 +257,31 @@ class UserCenteredOutputManager:
 
         await self.output(message, level=OutputLevel.SERVICE, agent_name=comm_info.agent_id)
 
-        # 통계 업데이트
         self.stats["agents_communicated"] += 1
         self.stats["results_shared"] += comm_info.shared_results_count
+
+    def _ensure_progress_started(self) -> None:
+        if self._progress is None:
+            self._progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+                console=self.console,
+            )
+            self._progress.start()
+            self._progress_task_id = self._progress.add_task("", total=100)
+
+    def _progress_description(self) -> str:
+        # rich's Progress TextColumn renders {task.description} through its own
+        # markup parser, so dynamic stage/message text needs the same escaping
+        # as everything routed through theme.markup_for.
+        if not self.current_progress:
+            return ""
+        if self.current_progress.message:
+            return escape(f"{self.current_progress.stage} - {self.current_progress.message}")
+        return escape(self.current_progress.stage)
 
     async def start_progress(
         self,
@@ -314,7 +304,10 @@ class UserCenteredOutputManager:
         )
         self.progress_start_time = time.time()
 
-        await self._display_progress()
+        self._ensure_progress_started()
+        self._progress.reset(
+            self._progress_task_id, total=total, description=self._progress_description()
+        )
 
     async def update_progress(
         self,
@@ -334,7 +327,6 @@ class UserCenteredOutputManager:
         if message is not None:
             self.current_progress.message = message
 
-        # 예상 남은 시간 계산
         if self.progress_start_time and self.current_progress.total > 0:
             elapsed = time.time() - self.progress_start_time
             progress_ratio = self.current_progress.current / self.current_progress.total
@@ -343,23 +335,33 @@ class UserCenteredOutputManager:
                 remaining = estimated_total - elapsed
                 self.current_progress.estimated_time_remaining = max(0, remaining)
 
-        await self._display_progress()
+        if self._progress is not None:
+            self._progress.update(
+                self._progress_task_id,
+                completed=self.current_progress.current,
+                total=self.current_progress.total,
+                description=self._progress_description(),
+            )
 
     async def complete_progress(self, success: bool = True):
         """진행 상황 완료."""
         if not self.current_progress or not self.show_progress:
             return
 
-        self.current_progress.current = self.current_progress.total
+        stage = self.current_progress.stage
+        elapsed = time.time() - self.progress_start_time if self.progress_start_time else None
 
-        # 완료 메시지
-        status_icon = "✅" if success else "❌"
+        if self._progress is not None:
+            self._progress.update(self._progress_task_id, completed=self.current_progress.total)
+            self._progress.stop()
+            self._progress = None
+            self._progress_task_id = None
+
+        status_icon = theme.ICON_SUCCESS if success else theme.ICON_ERROR
         status_text = "완료" if success else "실패"
-        message = f"{status_icon} {self.current_progress.stage} {status_text}"
-
-        if self.progress_start_time:
-            total_time = time.time() - self.progress_start_time
-            message += f" (총 {total_time:.1f}초)"
+        message = f"{status_icon} {stage} {status_text}"
+        if elapsed is not None:
+            message += f" (총 {elapsed:.1f}초)"
 
         await self.output(
             message,
@@ -370,41 +372,6 @@ class UserCenteredOutputManager:
         self.current_progress = None
         self.progress_start_time = None
 
-    async def _display_progress(self):
-        """진행률 표시."""
-        if not self.current_progress:
-            return
-
-        progress = self.current_progress
-        percentage = (progress.current / progress.total * 100) if progress.total > 0 else 0
-
-        # 진행률 바
-        bar_width = 40
-        filled = int(bar_width * progress.current / progress.total) if progress.total > 0 else 0
-        bar = "█" * filled + "░" * (bar_width - filled)
-
-        # 예상 시간
-        eta = ""
-        if progress.estimated_time_remaining and progress.estimated_time_remaining > 0:
-            eta = f" (예상 {progress.estimated_time_remaining:.0f}초 남음)"
-
-        message = f"📊 {progress.stage}: [{bar}] {percentage:.1f}% ({progress.current}/{progress.total}){eta}"
-
-        if progress.message:
-            message += f" - {progress.message}"
-
-        # 이전 라인 지우고 새로 쓰기 (같은 줄에 업데이트)
-        if self.stream_output:
-            # ANSI escape code로 줄 끝까지 지우기
-            import sys
-
-            sys.stdout.write(f"\r\033[K{message}")
-            sys.stdout.flush()
-
-            if progress.current >= progress.total:
-                sys.stdout.write("\n")  # 완료 시에만 줄바꿈
-                sys.stdout.flush()
-
     async def output_workflow_summary(self):
         """워크플로우 요약 출력."""
         if not self._should_output(OutputLevel.USER):
@@ -413,7 +380,6 @@ class UserCenteredOutputManager:
         await self.output("\n" + "=" * 80, level=OutputLevel.USER)
         await self.output("📋 워크플로우 실행 요약", level=OutputLevel.USER)
 
-        # 통계 출력
         await self.output(
             f"🔧 실행된 도구: {self.stats['tools_executed']}개", level=OutputLevel.USER
         )
@@ -456,7 +422,6 @@ class UserCenteredOutputManager:
             status_type="error",
         )
 
-        # 트레이스백 출력 (디버그 모드에서)
         if show_traceback and self._should_output(OutputLevel.DEBUG):
             import traceback
 
@@ -474,7 +439,6 @@ class UserCenteredOutputManager:
         full_message = message
 
         if details:
-            # 중요한 세부 정보만 표시
             important_details = []
             if "count" in details:
                 important_details.append(f"개수: {details['count']}")

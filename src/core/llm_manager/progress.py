@@ -14,9 +14,10 @@ import sys
 import time
 from typing import Awaitable, TypeVar
 
-T = TypeVar("T")
+from rich.console import Console
+from rich.markup import escape
 
-_CLEAR_LINE = "\r\033[K"
+T = TypeVar("T")
 
 
 async def with_progress(coro: Awaitable[T], label: str, interval: float = 1.0) -> T:
@@ -28,27 +29,23 @@ async def with_progress(coro: Awaitable[T], label: str, interval: float = 1.0) -
     if not callable(isatty) or not isatty():
         return await coro
 
+    console = Console()
     start = time.time()
+    safe_label = escape(label)
 
-    async def _tick() -> None:
+    async def _tick(status) -> None:
         while True:
             elapsed = time.time() - start
-            try:
-                print(f"\r⏳ {label}... {elapsed:.0f}s", end="", flush=True)
-            except UnicodeEncodeError:
-                # Terminal encoding can't represent the emoji (e.g. legacy
-                # Windows code pages, LC_ALL=C) -- stop ticking rather than
-                # crash the call this is just decorating.
-                return
+            status.update(f"[bold cyan]⏳ {safe_label}... {elapsed:.0f}s")
             await asyncio.sleep(interval)
 
-    ticker = asyncio.create_task(_tick())
-    try:
-        return await coro
-    finally:
-        ticker.cancel()
+    with console.status(f"[bold cyan]⏳ {safe_label}...", spinner="dots") as status:
+        ticker = asyncio.create_task(_tick(status))
         try:
-            await ticker
-        except asyncio.CancelledError:
-            pass
-        print(_CLEAR_LINE, end="", flush=True)
+            return await coro
+        finally:
+            ticker.cancel()
+            try:
+                await ticker
+            except asyncio.CancelledError:
+                pass
