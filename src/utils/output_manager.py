@@ -131,10 +131,11 @@ class UserCenteredOutputManager:
         # gets hidden behind the spinner or corrupts it. That's why tool-call
         # results never visibly appeared during a turn even though this
         # method was being called for every one of them. `enable_colors=False`
-        # is kept as a genuinely separate, private Console -- turning off
-        # color for one caller shouldn't mute the shared console for everyone
-        # else in the process.
-        self.console = get_console() if enable_colors else Console(no_color=True, soft_wrap=True)
+        # disables color on the shared singleton rather than spawning a
+        # competing Console instance (which would reintroduce the race).
+        self.console = get_console()
+        if not enable_colors:
+            self.console._no_color = True
 
         # 진행 상황 추적 (rich Progress는 start_progress에서 지연 생성)
         self.current_progress: ProgressInfo | None = None
