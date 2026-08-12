@@ -14,7 +14,7 @@ import sys
 import time
 from typing import Awaitable, TypeVar
 
-from rich.console import Console
+from rich import get_console
 from rich.markup import escape
 
 T = TypeVar("T")
@@ -29,7 +29,7 @@ async def with_progress(coro: Awaitable[T], label: str, interval: float = 1.0) -
     if not callable(isatty) or not isatty():
         return await coro
 
-    console = Console()
+    console = get_console()
     start = time.time()
     safe_label = escape(label)
 

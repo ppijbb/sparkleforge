@@ -17,6 +17,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List
 
+from rich import get_console
 from rich.console import Console
 from rich.markup import escape
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
@@ -122,7 +123,18 @@ class UserCenteredOutputManager:
         self.stream_output = stream_output
         self.show_progress = show_progress
 
-        self.console = Console(no_color=not enable_colors, soft_wrap=True)
+        # rich's process-wide singleton Console (same one REPLCLI.console and
+        # everything else sharing get_console() uses), NOT a private
+        # Console() -- a second, independent Console instance can't
+        # coordinate with an active Live/Status region (e.g. work_command's
+        # stage_status spinner) on the *same* terminal, so its output either
+        # gets hidden behind the spinner or corrupts it. That's why tool-call
+        # results never visibly appeared during a turn even though this
+        # method was being called for every one of them. `enable_colors=False`
+        # is kept as a genuinely separate, private Console -- turning off
+        # color for one caller shouldn't mute the shared console for everyone
+        # else in the process.
+        self.console = get_console() if enable_colors else Console(no_color=True, soft_wrap=True)
 
         # 진행 상황 추적 (rich Progress는 start_progress에서 지연 생성)
         self.current_progress: ProgressInfo | None = None
