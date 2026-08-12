@@ -38,3 +38,30 @@ def apply_repl_quiet_mode() -> None:
     """Suppress infra/init logger chatter so only chat-facing output reaches the console."""
     for logger_name in QUIET_LOGGER_NAMES:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+# agent_loop/agent_harness's routine progress lines ("[AgentLoop] Executing
+# tool: X", "[AgentLoop] Iteration N/30") already have dedicated UI:
+# src/cli/ui/spinner.py's _StageStatusHandler turns them into the spinner's
+# caption, and src/utils/output_manager.py's output_tool_execution renders a
+# proper trace line per completed tool call. Printing them AGAIN as raw log
+# lines is pure duplication -- but these loggers can't just be added to
+# QUIET_LOGGER_NAMES (that suppresses the logger itself below INFO, which
+# would also stop _StageStatusHandler -- attached directly to the same
+# logger -- from ever seeing the records it needs for the spinner caption).
+# A console-handler-only Filter blocks console rendering without touching
+# the logger's level, so both mechanisms keep working. WARNING+ still gets
+# through: routine progress is what's duplicated, not real problems.
+CONSOLE_FILTERED_LOGGER_PREFIXES = (
+    "src.core.agent_loop",
+    "src.core.agent_harness",
+)
+
+
+class ConsoleInternalsFilter(logging.Filter):
+    """Keeps routine agent_loop/agent_harness progress lines off the console (still logged to file)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return not record.name.startswith(CONSOLE_FILTERED_LOGGER_PREFIXES)
