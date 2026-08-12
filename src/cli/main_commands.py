@@ -373,13 +373,18 @@ async def _execute_coworker_goal(goal: str, heat_seconds: float | None = None) -
         logger.warning(network_message)
 
     logger.info(f"🤝 Starting coworker session for: {goal}")
+    from rich import get_console
+
+    from src.cli.ui.spinner import stage_status
     from src.core.agent_orchestrator import get_orchestrator
-    orchestrator = get_orchestrator()
-    result = await orchestrator.execute(
-        goal,
-        custom_state={"mode": "coworker", "current_goal": goal},
-        heat_seconds=heat_seconds,
-    )
+
+    with stage_status(get_console(), "Working...", ("src.core.agent_harness", "src.core.agent_loop")):
+        orchestrator = get_orchestrator()
+        result = await orchestrator.execute(
+            goal,
+            custom_state={"mode": "coworker", "current_goal": goal},
+            heat_seconds=heat_seconds,
+        )
     print(result.get("content", ""))
 
     heat_report = result.get("metadata", {}).get("heat_report")
