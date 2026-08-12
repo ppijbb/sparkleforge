@@ -36,14 +36,17 @@ class RichConsoleHandler(logging.Handler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Renders log records via the global console singleton.
+        Note: soft_wrap is explicitly set to True to prevent log lines from
+        hard-wrapping at the terminal width."""
         try:
             message = record.getMessage()
             console = get_console()
             style = theme.style_for_levelname(record.levelname)
-            console.print(theme.markup_for(message, style), highlight=False)
+            console.print(theme.markup_for(message, style), highlight=False, soft_wrap=True)
             if record.exc_info:
                 formatter = logging.Formatter()
                 traceback_text = escape(formatter.formatException(record.exc_info))
-                console.print(f"[dim]{traceback_text}[/dim]")
+                console.print(f"[dim]{traceback_text}[/dim]", soft_wrap=True)
         except Exception:
             self.handleError(record)
