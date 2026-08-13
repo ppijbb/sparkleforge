@@ -1,3 +1,5 @@
+from typing import Any, List
+
 """Base CLI Agent - CLI 기반 에이전트들의 공통 추상화 레이어
 
 모든 CLI 기반 에이전트(claudecode, opencode, gemini cli, cline cli 등)의
