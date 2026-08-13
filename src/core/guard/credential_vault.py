@@ -9,12 +9,18 @@ import json
 import logging
 import os
 import threading
+from pathlib import Path
 from typing import Dict, Optional
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 logger = logging.getLogger(__name__)
 
 _SERVICE_NAME = "sparkleforge-anvil"
+
+# Anchored to the SparkleForge install location, not cwd, so a coworker
+# session run against a target repo doesn't leak the vault key/store into it
+# (#1331).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # Try OS keyring first
 try:
@@ -80,7 +86,7 @@ class CredentialVault:
         if self._initialized:
             return
         self._initialized = True
-        self._fallback_path = fallback_path or os.path.join("data", ".credential_store")
+        self._fallback_path = fallback_path or str(_PROJECT_ROOT / "data" / ".credential_store")
         self._secret_seed = _resolve_secret_seed(self._fallback_path)
         self._cache: Dict[str, str] = {}
         self._lock_data = threading.RLock()

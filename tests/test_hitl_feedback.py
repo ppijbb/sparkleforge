@@ -2,13 +2,16 @@
 
 import pytest
 
+from src.cli.ui import confirm
 from src.core.anvil.hitl_checkpoint import CheckpointDecision, CheckpointStage
 from src.core.orchestrator import hitl_feedback
 
 
 def _patch_prompts(monkeypatch, answers):
+    # plan_feedback_provider now prompts via src.cli.ui.confirm (shared with
+    # every other menu-style confirmation), not its own rich.prompt.Prompt.
     calls = iter(answers)
-    monkeypatch.setattr(hitl_feedback.Prompt, "ask", lambda *a, **k: next(calls))
+    monkeypatch.setattr(confirm.Prompt, "ask", lambda *a, **k: next(calls))
 
 
 @pytest.mark.asyncio
