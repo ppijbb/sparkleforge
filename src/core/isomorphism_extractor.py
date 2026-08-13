@@ -124,14 +124,29 @@ class HybridMechanism:
         return tuple(self.control_loop())
 
 
+def _copy_node(node: TopologyNode) -> TopologyNode:
+    return TopologyNode(
+        role=node.role,
+        responsibility=node.responsibility,
+        inputs=list(node.inputs),
+        outputs=list(node.outputs),
+    )
+
+
 def _interleave(left: List[TopologyNode], right: List[TopologyNode]) -> List[TopologyNode]:
-    """Interleave two control loops into a single hybrid loop."""
+    """Interleave two control loops into a single hybrid loop.
+
+    Copies each node rather than reusing the ones from `self.topologies` --
+    those are the shared, module-level source topologies every extractor
+    instance reads from, so mutating a returned hybrid's nodes in place
+    would corrupt them for every other caller.
+    """
     hybrid: List[TopologyNode] = []
     for idx in range(max(len(left), len(right))):
         if idx < len(left):
-            hybrid.append(left[idx])
+            hybrid.append(_copy_node(left[idx]))
         if idx < len(right):
-            hybrid.append(right[idx])
+            hybrid.append(_copy_node(right[idx]))
     return hybrid
 
 
@@ -222,10 +237,17 @@ class CrossDomainIsomorphismExtractor:
         swap_roles: Optional[Tuple[str, str]] = None,
     ) -> List[TopologyNode]:
         """Return a mutated copy of a control loop with a single edit applied."""
-        mutated = [TopologyNode(role=n.role, responsibility=n.responsibility,
-                                inputs=list(n.inputs), outputs=list(n.outputs)) for n in mechanism]
+        mutated = [_copy_node(n) for n in mechanism]
         if drop_role is not None:
             mutated = [n for n in mutated if n.role != drop_role]
+            # Dropping a role can strand a downstream node's input on an
+            # output nothing left in the loop produces (e.g. dropping
+            # "optimizer" leaves "emitter" still requiring "optimized_ir").
+            # Reconcile against what the mutated loop can actually produce
+            # rather than silently keeping an unsatisfiable dependency.
+            available_outputs = {out for n in mutated for out in n.outputs}
+            for n in mutated:
+                n.inputs = [i for i in n.inputs if i in available_outputs]
         if swap_roles is not None:
             a, b = swap_roles
             idx_a = next((i for i, n in enumerate(mutated) if n.role == a), None)
