@@ -167,6 +167,16 @@ class AgentOrchestrator:
             custom_state=custom_state,
         )
 
+        # Persist coworker sessions so they can be resumed/approved/denied later
+        if identity == "coder" and session_id:
+            try:
+                from src.core.session_manager import get_session_manager
+                get_session_manager().save_session(
+                    session_id, agent_state=harness_result, metadata={"tags": ["coworker"]}
+                )
+            except Exception:
+                logger.debug("Session persistence skipped for coworker session %s", session_id, exc_info=True)
+
         # Cross-domain isomorphism extraction (issue #922): map abstract
         # operational topologies from non-obvious domains onto the request.
         isomorphisms = self.isomorphism_extractor.extract(request)
@@ -192,11 +202,24 @@ class AgentOrchestrator:
             "results": final_report,
             "final_report": final_report,
             "content": final_report,
+            "detailed_results": harness_result.get("detailed_results", {}),
             "metadata": harness_result.get("metadata", {}),
             "session_id": session_id,
             "research_failed": not harness_result.get("success", False),
             "error": harness_result.get("error"),
         }
+
+
+def agent_workflow_result_to_public_dict(
+    result: Dict[str, Any], context: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
+    """이전 버전의 API 호환성을 위한 포맷터"""
+    return {
+        "plan": result.get("plan", ""),
+        "tasks": result.get("tasks", []),
+        "results": result.get("results", ""),
+        "success": result.get("success", False),
+    }
 
 
 def get_orchestrator(config=None) -> AgentOrchestrator:

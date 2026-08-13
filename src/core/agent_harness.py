@@ -888,7 +888,14 @@ class AgentHarness:
             try:
                 from src.core.agent_loop import AgentLoop
 
-                loop = AgentLoop(self.orchestrator)
+                # PLAN_FIRST (#1340): coworker sessions land in an unfamiliar
+                # repo and used to jump straight to tool calls -- gate the
+                # first write/shell action behind at least one investigative
+                # tool call. Other autonomous runs (e.g. research with a heat
+                # budget) have nothing to gate, so this stays off for them.
+                loop = AgentLoop(
+                    self.orchestrator, plan_first=custom_state.get("mode") == "coworker"
+                )
 
                 # 대화 형식으로 변환 (시스템 메시지 포함 가능)
                 messages = [{"role": "user", "content": request}]
