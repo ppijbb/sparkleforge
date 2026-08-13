@@ -253,8 +253,11 @@ class AutonomousOrchestrator:
         show_progress = self._is_interactive_tty()
         async for chunk in self.graph.astream(initial_state, config, stream_mode="updates"):
             if show_progress and isinstance(chunk, dict):
+                from rich import get_console
+
+                console = get_console()
                 for node_name in chunk:
-                    print(f"▶ orchestrator stage completed: {node_name}", flush=True)
+                    console.print(f"[dim]▶ {node_name}[/dim]")
         async for chunk in self.graph.astream(initial_state, config, stream_mode="values"):
             if isinstance(chunk, dict):
                 final_state = chunk

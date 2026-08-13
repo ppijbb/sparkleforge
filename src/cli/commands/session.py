@@ -1,12 +1,25 @@
 """세션 관리 명령어"""
 
 import logging
+from datetime import datetime
 from typing import List
 
 from rich.panel import Panel
 from rich.table import Table
 
 logger = logging.getLogger(__name__)
+
+def _format_activity(value) -> str:
+    """last_activity/created_at 값을 datetime 또는 문자열 모두에서 안전하게 포맷."""
+    if value is None:
+        return "N/A"
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    text = str(value)
+    try:
+        return datetime.fromisoformat(text).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return text[:19]
 
 
 def _format_quota_usage(usage: dict) -> str:
@@ -64,7 +77,7 @@ async def session_list_command(cli, args: List[str]):
             status = status_icons.get(s.status, "[dim]⚪ UNKNOWN[/dim]")
             session_id = s.session_id[:28] + "..." if len(s.session_id) > 28 else s.session_id
             progress = f"{s.progress_percentage:.1f}%"
-            last_activity = s.last_activity.strftime("%Y-%m-%d %H:%M:%S")
+            last_activity = _format_activity(s.last_activity)
             query = (
                 (s.user_query[:37] + "...")
                 if s.user_query and len(s.user_query) > 40
@@ -115,8 +128,8 @@ async def session_show_command(cli, args: List[str]):
         info_text = f"""
 [bold]Session ID:[/bold] {session_info.session_id}
 [bold]Status:[/bold] {status}
-[bold]Created:[/bold] {session_info.created_at.strftime("%Y-%m-%d %H:%M:%S")}
-[bold]Last Activity:[/bold] {session_info.last_activity.strftime("%Y-%m-%d %H:%M:%S")}
+[bold]Created:[/bold] {_format_activity(session_info.created_at)}
+[bold]Last Activity:[/bold] {_format_activity(session_info.last_activity)}
 [bold]Progress:[/bold] {session_info.progress_percentage:.1f}%
 [bold]Errors:[/bold] {session_info.error_count}
 [bold]Warnings:[/bold] {session_info.warning_count}

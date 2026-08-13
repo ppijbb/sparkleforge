@@ -33,6 +33,7 @@ class FakeSessionManager:
     def __init__(self, state):
         self._state = state
         self.context_engineer = object()
+        self.shared_memory = object()
 
     def restore_session(self, session_id, context_engineer, shared_memory):
         return self._state
@@ -47,11 +48,17 @@ def make_cli(state):
 
 def make_orchestrator(state, execute_result=None):
     orchestrator = SimpleNamespace(
-        session_manager=FakeSessionManager(state),
-        shared_memory={},
         execute=AsyncMock(return_value=execute_result or {"detailed_results": {}}),
     )
     return orchestrator
+
+
+def patch_session_manager(monkeypatch, state):
+    """actions/approve/deny_command load session state via the module-level
+    get_session_manager() singleton (src/core/session_manager.py), not an
+    attribute on the orchestrator -- AgentOrchestrator never had a
+    `session_manager`/`shared_memory` attribute in production."""
+    monkeypatch.setattr(work, "get_session_manager", lambda: FakeSessionManager(state))
 
 
 @pytest.mark.asyncio
@@ -63,6 +70,7 @@ async def test_deny_command_marks_action_denied_and_reinvokes_orchestrator(monke
     }
     orchestrator = make_orchestrator(state)
     monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+    patch_session_manager(monkeypatch, state)
 
     cli = make_cli(state)
     await work.deny_command(cli, ["42", "too risky"])
@@ -85,6 +93,7 @@ async def test_deny_command_defaults_reason_when_not_provided(monkeypatch):
     }
     orchestrator = make_orchestrator(state)
     monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+    patch_session_manager(monkeypatch, state)
 
     cli = make_cli(state)
     await work.deny_command(cli, ["7"])
@@ -98,6 +107,7 @@ async def test_deny_command_no_pending_actions(monkeypatch):
     state = {"user_query": "do the thing"}
     orchestrator = make_orchestrator(state)
     monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+    patch_session_manager(monkeypatch, state)
 
     cli = make_cli(state)
     await work.deny_command(cli, ["1"])
@@ -138,6 +148,7 @@ async def test_deny_command_no_matching_action_skips_orchestrator(monkeypatch):
     }
     orchestrator = make_orchestrator(state)
     monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+    patch_session_manager(monkeypatch, state)
 
     cli = make_cli(state)
     await work.deny_command(cli, ["99"])
@@ -155,6 +166,7 @@ async def test_approve_command_no_matching_action_skips_orchestrator(monkeypatch
     }
     orchestrator = make_orchestrator(state)
     monkeypatch.setattr(work, "get_orchestrator", lambda: orchestrator)
+    patch_session_manager(monkeypatch, state)
 
     cli = make_cli(state)
     await work.approve_command(cli, ["99"])

@@ -468,6 +468,11 @@ class ModelRegistryMixin:
                     TaskType.ANALYSIS,
                     TaskType.CREATIVE,
                 ],
+                # Observed org-level Groq free-tier TPM limit for this model
+                # is 8000 (#1339: a 10238-token request got a deterministic
+                # 413 here). Lets the cascade skip it for oversized requests
+                # instead of retrying into the same 413.
+                "context_limit_tokens": 8000,
             },
             {
                 "name": "openai/gpt-oss-120b",
@@ -510,6 +515,7 @@ class ModelRegistryMixin:
                 speed_rating=model_data["speed_rating"],
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
+                context_limit_tokens=model_data.get("context_limit_tokens"),
             )
             logger.debug(f"Loaded Groq model: {model_data['name']} ({model_data['model_id']})")
 
