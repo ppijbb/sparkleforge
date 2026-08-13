@@ -187,7 +187,10 @@ def test_sandbox_executor_dry_run():
 
 
 def test_sandbox_executor_real_command():
-    executor = SandboxExecutor(timeout_seconds=5.0)
+    # Generous timeout: on a cold CI runner the docker/firejail backend may need
+    # to pull an image before it can run, and there's no unsandboxed fallback
+    # to mask that latency anymore (removing that fallback closed a sandbox-escape hole).
+    executor = SandboxExecutor(timeout_seconds=60.0)
     result = executor.execute("echo anvil_guard_test")
     assert result.ok
     assert "anvil_guard_test" in result.stdout.strip()
