@@ -157,6 +157,44 @@ _DOMAIN_KEYWORDS: Dict[str, List[str]] = {
 }
 
 
+@dataclass
+class PrimitiveAxiom:
+    """A fundamental computational or physical primitive axiom."""
+
+    name: str
+    category: str
+    description: str
+    constraints: List[str] = field(default_factory=list)
+
+
+_PRIMITIVE_AXIOMS: List[PrimitiveAxiom] = [
+    PrimitiveAxiom(
+        name="information",
+        category="computational",
+        description="A distinguishable state that reduces uncertainty.",
+        constraints=["finite representation", "lossless under transformation"],
+    ),
+    PrimitiveAxiom(
+        name="computation",
+        category="computational",
+        description="A deterministic or stochastic mapping between states.",
+        constraints=["terminates in bounded steps", "preserves invariants"],
+    ),
+    PrimitiveAxiom(
+        name="energy",
+        category="physical",
+        description="The capacity to perform work or induce state change.",
+        constraints=["conserved in closed systems", "dissipated under irreversible operations"],
+    ),
+    PrimitiveAxiom(
+        name="entropy",
+        category="physical",
+        description="A measure of disorder or uncertainty in a system.",
+        constraints=["non-decreasing in isolated systems", "reducible via measurement"],
+    ),
+]
+
+
 class CrossDomainIsomorphismExtractor:
     """Extract abstract topologies and map them onto a target problem."""
 
@@ -227,6 +265,104 @@ class CrossDomainIsomorphismExtractor:
                 )
             )
         return results
+
+    def _decompose_node(
+        self,
+        statement: str,
+        depth: int,
+        max_depth: int,
+        visited: Optional[set] = None,
+    ) -> Dict[str, Any]:
+        """Recursively decompose a statement toward primitive axioms."""
+        if visited is None:
+            visited = set()
+        statement_key = statement.strip().lower()
+        if statement_key in visited:
+            return {
+                "statement": statement,
+                "primitive": None,
+                "rationale": "Cycle detected; stopping recursion.",
+                "children": [],
+                "depth": depth,
+            }
+        visited.add(statement_key)
+
+        # A compound statement must be split before it's tested against a
+        # primitive axiom -- otherwise a statement that merely *mentions* a
+        # primitive in passing (e.g. "Allocate energy across computation and
+        # storage") is accepted as a terminal "energy" leaf and its other
+        # sub-problems (computation, storage) are never explored. Only an
+        # atomic (unsplittable) clause is eligible to match directly.
+        if depth < max_depth:
+            sub_problems = self._split_statement(statement)
+            if sub_problems:
+                children = [
+                    self._decompose_node(sub, depth + 1, max_depth, visited.copy())
+                    for sub in sub_problems
+                ]
+                return {
+                    "statement": statement,
+                    "primitive": None,
+                    "rationale": "Decomposed into sub-problems.",
+                    "children": children,
+                    "depth": depth,
+                }
+
+        matched = self._match_primitive(statement)
+        return {
+            "statement": statement,
+            "primitive": matched,
+            "rationale": (
+                "Matched a primitive axiom."
+                if matched is not None
+                else "Reached maximum decomposition depth without a primitive match."
+                if depth >= max_depth
+                else "Atomic statement with no primitive match."
+            ),
+            "children": [],
+            "depth": depth,
+        }
+
+    def _match_primitive(self, statement: str) -> Optional[PrimitiveAxiom]:
+        """Return the first primitive axiom referenced by the statement."""
+        text = statement.lower()
+        for axiom in _PRIMITIVE_AXIOMS:
+            if re.search(rf"\b{re.escape(axiom.name)}\b", text) or re.search(
+                rf"\b{re.escape(axiom.category)}\b", text
+            ):
+                return axiom
+        return None
+
+    def _split_statement(self, statement: str) -> List[str]:
+        """Split a statement into candidate sub-problems.
+
+        Returns an empty list when the statement is atomic: no delimiter
+        found, and too short to halve into two distinct sub-problems. The
+        caller relies on that to recognize a statement it cannot decompose
+        any further, rather than recursing into an unchanged copy of the
+        same text.
+        """
+        clauses = re.split(r"\s*(?:;|,|\.|\band\b|\bor\b|->|=>|therefore)\s*", statement)
+        sub_problems = [clause.strip() for clause in clauses if clause.strip()]
+        if len(sub_problems) > 1:
+            return sub_problems[:4]
+        tokens = statement.split()
+        if len(tokens) > 4:
+            mid = len(tokens) // 2
+            return [" ".join(tokens[:mid]), " ".join(tokens[mid:])]
+        return []
+
+    def decompose(self, request: str, max_depth: int = 4) -> Dict[str, Any]:
+        """Recursively decompose an open-ended challenge to primitive axioms."""
+        if not request:
+            return {
+                "statement": "",
+                "primitive": None,
+                "rationale": "Empty request.",
+                "children": [],
+                "depth": 0,
+            }
+        return self._decompose_node(request, 0, max_depth)
 
     def mutate(
         self,
