@@ -2,14 +2,15 @@
 
 Extracts abstract operational topologies from non-obvious domains (biological
 immune systems, compiler passes, economic equilibrium, etc.) and maps them onto
-open engineering and research problems.
+open engineering and research problems. Also supports algorithmic mutation and
+recombination of distinct source mechanisms into hybrid control loops (issue #925).
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -33,6 +34,12 @@ class Isomorphism:
     rationale: str
     confidence: float = 0.0
 
+    def control_loop(self) -> List[str]:
+        """Return the ordered roles that form this topology's control loop."""
+        return [node.role for node in self.topology]
+
+    def signature(self) -> Tuple[str, ...]:
+        return tuple(self.control_loop())
 
 _SOURCE_TOPOLOGIES: Dict[str, List[TopologyNode]] = {
     "immune_system": [
@@ -96,6 +103,51 @@ _SOURCE_TOPOLOGIES: Dict[str, List[TopologyNode]] = {
         ),
     ],
 }
+
+
+@dataclass
+class HybridMechanism:
+    """A hybrid architectural pattern produced by recombining two mechanisms."""
+
+    name: str
+    parent_a: str
+    parent_b: str
+    topology: List[TopologyNode]
+    recombination: str
+    rationale: str
+    confidence: float = 0.0
+
+    def control_loop(self) -> List[str]:
+        return [node.role for node in self.topology]
+
+    def signature(self) -> Tuple[str, ...]:
+        return tuple(self.control_loop())
+
+
+def _copy_node(node: TopologyNode) -> TopologyNode:
+    return TopologyNode(
+        role=node.role,
+        responsibility=node.responsibility,
+        inputs=list(node.inputs),
+        outputs=list(node.outputs),
+    )
+
+
+def _interleave(left: List[TopologyNode], right: List[TopologyNode]) -> List[TopologyNode]:
+    """Interleave two control loops into a single hybrid loop.
+
+    Copies each node rather than reusing the ones from `self.topologies` --
+    those are the shared, module-level source topologies every extractor
+    instance reads from, so mutating a returned hybrid's nodes in place
+    would corrupt them for every other caller.
+    """
+    hybrid: List[TopologyNode] = []
+    for idx in range(max(len(left), len(right))):
+        if idx < len(left):
+            hybrid.append(_copy_node(left[idx]))
+        if idx < len(right):
+            hybrid.append(_copy_node(right[idx]))
+    return hybrid
 
 
 _DOMAIN_KEYWORDS: Dict[str, List[str]] = {
@@ -176,6 +228,68 @@ class CrossDomainIsomorphismExtractor:
             )
         return results
 
+    def mutate(
+        self,
+        mechanism: List[TopologyNode],
+        *,
+        insert: Optional[TopologyNode] = None,
+        drop_role: Optional[str] = None,
+        swap_roles: Optional[Tuple[str, str]] = None,
+    ) -> List[TopologyNode]:
+        """Return a mutated copy of a control loop with a single edit applied."""
+        mutated = [_copy_node(n) for n in mechanism]
+        if drop_role is not None:
+            mutated = [n for n in mutated if n.role != drop_role]
+            # Dropping a role can strand a downstream node's input on an
+            # output nothing left in the loop produces (e.g. dropping
+            # "optimizer" leaves "emitter" still requiring "optimized_ir").
+            # Reconcile against what the mutated loop can actually produce
+            # rather than silently keeping an unsatisfiable dependency.
+            available_outputs = {out for n in mutated for out in n.outputs}
+            for n in mutated:
+                n.inputs = [i for i in n.inputs if i in available_outputs]
+        if swap_roles is not None:
+            a, b = swap_roles
+            idx_a = next((i for i, n in enumerate(mutated) if n.role == a), None)
+            idx_b = next((i for i, n in enumerate(mutated) if n.role == b), None)
+            if idx_a is not None and idx_b is not None:
+                mutated[idx_a], mutated[idx_b] = mutated[idx_b], mutated[idx_a]
+        if insert is not None:
+            mutated.append(insert)
+        return mutated
+
+    def recombine(
+        self,
+        domain_a: str,
+        domain_b: str,
+        *,
+        strategy: str = "interleave",
+    ) -> Optional[HybridMechanism]:
+        """Algorithmically recombine two distinct source mechanisms into a hybrid."""
+        if domain_a not in self.topologies or domain_b not in self.topologies:
+            return None
+        if domain_a == domain_b:
+            return None
+        left = self.topologies[domain_a]
+        right = self.topologies[domain_b]
+        if strategy == "interleave":
+            hybrid_topology = _interleave(left, right)
+            recombination = f"interleave({domain_a}, {domain_b})"
+        else:
+            return None
+        return HybridMechanism(
+            name=f"{domain_a}::{domain_b}",
+            parent_a=domain_a,
+            parent_b=domain_b,
+            topology=hybrid_topology,
+            recombination=recombination,
+            rationale=(
+                f"Recombined {len(left)} {domain_a} roles with {len(right)} {domain_b} roles "
+                f"using {strategy} to yield a {len(hybrid_topology)}-step hybrid control loop."
+            ),
+            confidence=min(1.0, (len(left) + len(right)) / 12.0),
+        )
+
     def to_dict(self, isomorphisms: List[Isomorphism]) -> List[Dict[str, Any]]:
         return [
             {
@@ -196,3 +310,22 @@ class CrossDomainIsomorphismExtractor:
             }
             for iso in isomorphisms
         ]
+
+    def hybrid_to_dict(self, hybrid: HybridMechanism) -> Dict[str, Any]:
+        return {
+            "name": hybrid.name,
+            "parent_a": hybrid.parent_a,
+            "parent_b": hybrid.parent_b,
+            "topology": [
+                {
+                    "role": node.role,
+                    "responsibility": node.responsibility,
+                    "inputs": node.inputs,
+                    "outputs": node.outputs,
+                }
+                for node in hybrid.topology
+            ],
+            "recombination": hybrid.recombination,
+            "rationale": hybrid.rationale,
+            "confidence": hybrid.confidence,
+        }
