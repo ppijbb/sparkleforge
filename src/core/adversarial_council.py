@@ -236,8 +236,15 @@ async def _query_persona(
 
 
 def _aggregate_risk(risks: List[str]) -> str:
-    """Aggregate per-persona risk levels into an overall council risk."""
-    order = {"critical": 4, "high": 3, "medium": 2, "low": 1, "none": 0}
+    """Aggregate per-persona risk levels into an overall council risk.
+
+    "unknown" ranks above "none": a round where every model call failed
+    couldn't be evaluated at all, which is not the same as having been
+    evaluated and found risk-free, and must not be silently downgraded to
+    "none" just because it happens to tie on score and comes later in the
+    input list (max() keeps the first tied element it sees).
+    """
+    order = {"none": 0, "unknown": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}
     if not risks:
         return "none"
     best = max(risks, key=lambda r: order.get(r, 0))
@@ -354,9 +361,9 @@ async def run_red_team_council(
     api_url: str,
     timeout: float = 120.0,
     personas: Optional[List[Dict[str, str]]] = None,
-) -> Dict[str, Any]:
     rounds: int = 1,
     debate_personas: Optional[List[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
     """Run the multi-agent adversarial red-team council against a synthesis.
 
     Args:
@@ -436,6 +443,12 @@ async def run_red_team_council(
             )
         else:
             parsed_critiques.append(critique)
+
+    # Every persona here ran concurrently as round 1; label them explicitly
+    # so _build_rebuttal_prompt's `entry.get("round", idx + 1)` fallback
+    # doesn't mislabel them as sequential rounds 1, 2, 3 by list position.
+    for critique in parsed_critiques:
+        critique.setdefault("round", 1)
 
     overall_risk = _aggregate_risk([c.get("overall_risk", "unknown") for c in parsed_critiques])
 
