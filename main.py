@@ -141,9 +141,13 @@ root_logger.addHandler(file_handler)
 # Console handler (WARNING+ only; full INFO detail still goes to the log file above.
 # Prevents import-time init noise (DB driver, tool registry, plugin discovery, ...)
 # from spamming stdout before --verbose/REPL suppression logic below has a chance to run.
-# Renders via rich instead of raw "asctime - name - LEVEL - message" text, and looks
-# up sys.stderr fresh on every emit so it keeps cooperating with rich's own Live/Status
-# spinner redirect (see RichConsoleHandler's docstring).
+# Renders via rich instead of raw "asctime - name - LEVEL - message" text, through the
+# same shared get_console() singleton as the REPL/spinners/output_manager so it
+# cooperates with an active Live/Status instead of fighting it for the terminal (see
+# RichConsoleHandler's docstring). src/cli/ui/spinner.py's stage_status() additionally
+# attaches ChatModeFilter to this handler for the span an agent is actively executing,
+# so internal orchestration chatter (capability grants, mode switches, model routing)
+# doesn't leak to the console just because it's harder to enumerate than to allowlist.
 from src.cli.ui.console_log_handler import RichConsoleHandler  # noqa: E402
 
 console_handler = RichConsoleHandler()

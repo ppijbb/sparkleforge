@@ -43,10 +43,15 @@ async def work_command(cli, args: List[str]):
 
     cli.console.print(f"[cyan]🤝 Starting coworker session for: {goal}[/cyan]")
 
-    orchestrator = get_orchestrator()
     custom_state = {"mode": "coworker", "current_goal": goal}
 
+    # get_orchestrator() inside the spinner scope, not before it: on the
+    # first call in a process it lazily constructs AgentHarness (tool
+    # registration, LLM client init, ...), which logs a burst of one-time
+    # setup chatter that should be caught by the same chat-mode noise filter
+    # as everything else this turn does, not leak before the spinner starts.
     with _stage_status(cli, "Working..."):
+        orchestrator = get_orchestrator()
         result = await orchestrator.execute(
             user_query=goal, session_id=session_id, restore_session=True, custom_state=custom_state
         )

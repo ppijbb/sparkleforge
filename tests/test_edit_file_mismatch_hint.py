@@ -5,6 +5,8 @@ guard (#1307) then flags as a stall. The error should carry enough of the
 actual file content for the model to retry in one shot.
 """
 
+import re
+
 import pytest
 
 from src.core.mcp_integration.executors.file import _execute_file_tool
@@ -32,7 +34,7 @@ async def test_edit_mismatch_includes_closest_match_with_line_numbers(tmp_path, 
     assert "Closest match in file" in result.error
     assert "self.buf.clear();" in result.error
     # Line numbers let the model locate the mismatch without a fresh read.
-    assert "1: fn flush" in result.error
+    assert re.search(r"(^|\n)1: fn flush", result.error)
 
 
 @pytest.mark.asyncio
