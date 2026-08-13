@@ -48,19 +48,30 @@ def test_extract_no_match_for_unrelated_request():
     assert extractor.extract(request) == []
 
 
-def test_decompose_empty_request_returns_empty_root():
+def _leaf_nodes(node):
+    if not node["children"]:
+        return [node]
+    leaves = []
+    for child in node["children"]:
+        leaves.extend(_leaf_nodes(child))
+    return leaves
+
+
+def test_decompose_empty_request_returns_empty_statement():
     extractor = CrossDomainIsomorphismExtractor()
     result = extractor.decompose("")
-    assert result["root"] == ""
+    assert result["statement"] == ""
     assert result["primitive"] is None
     assert result["children"] == []
 
 
-def test_decompose_matches_primitive_axiom():
+def test_decompose_matches_primitive_axiom_in_an_atomic_clause():
     extractor = CrossDomainIsomorphismExtractor()
+    # A compound statement ("and") is split first, so the primitive match
+    # shows up on one of its (atomic) children, not necessarily the root.
     result = extractor.decompose("Model information and entropy in a closed system.")
-    assert result["primitive"] is not None
-    assert result["primitive"].name in {"information", "entropy"}
+    matched_names = {leaf["primitive"].name for leaf in _leaf_nodes(result) if leaf["primitive"]}
+    assert matched_names & {"information", "entropy"}
 
 
 def test_decompose_recurses_into_sub_problems():
@@ -70,13 +81,36 @@ def test_decompose_recurses_into_sub_problems():
     assert any(child["primitive"] is not None for child in result["children"])
 
 
+def test_decompose_does_not_accept_a_compound_statement_as_a_single_primitive():
+    """#940: a statement mentioning a primitive in passing (e.g. "energy") must
+    still be split into its other sub-problems, not accepted as one terminal
+    "energy" leaf that discards "computation" and "storage"."""
+    extractor = CrossDomainIsomorphismExtractor()
+    result = extractor.decompose("Allocate energy across computation and storage.")
+    assert result["primitive"] is None
+    assert result["rationale"] == "Decomposed into sub-problems."
+
+
 def test_decompose_respects_max_depth():
     extractor = CrossDomainIsomorphismExtractor()
     result = extractor.decompose("A very abstract open-ended challenge with no primitives.", max_depth=2)
     assert result["depth"] <= 2
+    assert all(leaf["depth"] <= 2 for leaf in _leaf_nodes(result))
 
 
-def test_decompose_detects_cycles():
+def test_decompose_does_not_loop_forever_on_repeated_words():
     extractor = CrossDomainIsomorphismExtractor()
     result = extractor.decompose("information information information information information")
-    assert result["primitive"] is not None or result["rationale"] == "Cycle detected; stopping recursion."
+    for leaf in _leaf_nodes(result):
+        assert leaf["primitive"] is not None or leaf["rationale"] in (
+            "Cycle detected; stopping recursion.",
+            "Atomic statement with no primitive match.",
+            "Reached maximum decomposition depth without a primitive match.",
+        )
+
+
+def test_decompose_matches_whole_words_not_substrings():
+    """#940: "energy" must not match inside unrelated words like "synergy"."""
+    extractor = CrossDomainIsomorphismExtractor()
+    result = extractor.decompose("Improve synergy between teams.")
+    assert all(leaf["primitive"] is None for leaf in _leaf_nodes(result))

@@ -235,31 +235,39 @@ class CrossDomainIsomorphismExtractor:
             }
         visited.add(statement_key)
 
-        matched = self._match_primitive(statement)
-        if matched is not None or depth >= max_depth:
-            return {
-                "statement": statement,
-                "primitive": matched,
-                "rationale": (
-                    "Matched a primitive axiom."
-                    if matched is not None
-                    else "Reached maximum decomposition depth without a primitive match."
-                ),
-                "children": [],
-                "depth": depth,
-            }
+        # A compound statement must be split before it's tested against a
+        # primitive axiom -- otherwise a statement that merely *mentions* a
+        # primitive in passing (e.g. "Allocate energy across computation and
+        # storage") is accepted as a terminal "energy" leaf and its other
+        # sub-problems (computation, storage) are never explored. Only an
+        # atomic (unsplittable) clause is eligible to match directly.
+        if depth < max_depth:
+            sub_problems = self._split_statement(statement)
+            if sub_problems:
+                children = [
+                    self._decompose_node(sub, depth + 1, max_depth, visited.copy())
+                    for sub in sub_problems
+                ]
+                return {
+                    "statement": statement,
+                    "primitive": None,
+                    "rationale": "Decomposed into sub-problems.",
+                    "children": children,
+                    "depth": depth,
+                }
 
-        sub_problems = self._split_statement(statement)
-        children: List[Dict[str, Any]] = []
-        for sub in sub_problems:
-            children.append(
-                self._decompose_node(sub, depth + 1, max_depth, visited.copy())
-            )
+        matched = self._match_primitive(statement)
         return {
             "statement": statement,
-            "primitive": None,
-            "rationale": "Decomposed into sub-problems.",
-            "children": children,
+            "primitive": matched,
+            "rationale": (
+                "Matched a primitive axiom."
+                if matched is not None
+                else "Reached maximum decomposition depth without a primitive match."
+                if depth >= max_depth
+                else "Atomic statement with no primitive match."
+            ),
+            "children": [],
             "depth": depth,
         }
 
@@ -267,29 +275,36 @@ class CrossDomainIsomorphismExtractor:
         """Return the first primitive axiom referenced by the statement."""
         text = statement.lower()
         for axiom in _PRIMITIVE_AXIOMS:
-            if axiom.name in text or axiom.category in text:
+            if re.search(rf"\b{re.escape(axiom.name)}\b", text) or re.search(
+                rf"\b{re.escape(axiom.category)}\b", text
+            ):
                 return axiom
         return None
 
     def _split_statement(self, statement: str) -> List[str]:
-        """Split a statement into candidate sub-problems."""
+        """Split a statement into candidate sub-problems.
+
+        Returns an empty list when the statement is atomic: no delimiter
+        found, and too short to halve into two distinct sub-problems. The
+        caller relies on that to recognize a statement it cannot decompose
+        any further, rather than recursing into an unchanged copy of the
+        same text.
+        """
         clauses = re.split(r"\s*(?:;|,|\.|\band\b|\bor\b|->|=>|therefore)\s*", statement)
         sub_problems = [clause.strip() for clause in clauses if clause.strip()]
-        if len(sub_problems) <= 1:
-            tokens = statement.split()
-            if len(tokens) > 4:
-                mid = len(tokens) // 2
-                sub_problems = [
-                    " ".join(tokens[:mid]),
-                    " ".join(tokens[mid:]),
-                ]
-        return sub_problems[:4]
+        if len(sub_problems) > 1:
+            return sub_problems[:4]
+        tokens = statement.split()
+        if len(tokens) > 4:
+            mid = len(tokens) // 2
+            return [" ".join(tokens[:mid]), " ".join(tokens[mid:])]
+        return []
 
     def decompose(self, request: str, max_depth: int = 4) -> Dict[str, Any]:
         """Recursively decompose an open-ended challenge to primitive axioms."""
         if not request:
             return {
-                "root": "",
+                "statement": "",
                 "primitive": None,
                 "rationale": "Empty request.",
                 "children": [],
