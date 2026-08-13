@@ -200,9 +200,16 @@ class AgentOrchestrator:
         }
 
 
-def agent_workflow_result_to_public_dict(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Legacy formatter for external API compatibility."""
-    return result
+def agent_workflow_result_to_public_dict(
+    result: Dict[str, Any], context: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
+    """이전 버전의 API 호환성을 위한 포맷터"""
+    return {
+        "plan": result.get("plan", ""),
+        "tasks": result.get("tasks", []),
+        "results": result.get("results", ""),
+        "success": result.get("success", False),
+    }
 
 
 def get_orchestrator(config=None) -> AgentOrchestrator:
