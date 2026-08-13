@@ -8,6 +8,7 @@ attempts (including retries) skip it too.
 """
 
 import asyncio
+import time
 
 import pytest
 
@@ -107,6 +108,50 @@ def test_413_response_is_learned():
 
     assert executed == ["small-model"]
     assert registry.models["small-model"].context_limit_tokens == 8000
+
+
+def test_stale_learned_limit_is_revalidated_instead_of_skipped_forever():
+    """#1349: a limit learned from a transient TPM throttle must expire, or a
+    momentary rate limit permanently removes the model from the pool."""
+    executed = []
+    registry = _Registry(
+        {
+            "small-model": _model(
+                "small-model",
+                context_limit_tokens=100,
+                context_limit_learned_at=time.time()
+                - CascadeMixin.CONTEXT_LIMIT_REVALIDATION_SECONDS
+                - 1,
+            )
+        },
+        executed,
+    )
+
+    huge_prompt = "word " * 1000  # would exceed the stale 100-token limit
+
+    with pytest.raises(RuntimeError, match="All fallback models failed"):
+        asyncio.run(registry._try_fallback_models(TaskType.GENERATION, huge_prompt, None))
+
+    assert executed == ["small-model"], "expired learned limit must not block retrying the model"
+
+
+def test_fresh_learned_limit_still_skips_model():
+    executed = []
+    registry = _Registry(
+        {
+            "small-model": _model(
+                "small-model", context_limit_tokens=100, context_limit_learned_at=time.time()
+            )
+        },
+        executed,
+    )
+
+    huge_prompt = "word " * 1000
+
+    with pytest.raises(RuntimeError, match="All fallback models failed"):
+        asyncio.run(registry._try_fallback_models(TaskType.GENERATION, huge_prompt, None))
+
+    assert executed == [], "a recently learned limit must still be honored"
 
 
 def test_413_message_does_not_get_misclassified_as_generic_retry(capsys):

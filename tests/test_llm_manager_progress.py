@@ -43,6 +43,10 @@ def test_returns_result_and_ticks_when_a_tty(capsys):
     # predates capsys's per-test stdout swap -- so this test needs its own
     # fresh Console bound to the *current* (captured) stdout, or it would
     # write to a stream capsys.readouterr() here can no longer see.
+    #
+    # output_manager must use that same shared console object even when
+    # colors are disabled, so a private no-color Console never competes with
+    # the singleton spinner (see issue #1375).
     from rich.console import Console
 
     async def _slower_result():
