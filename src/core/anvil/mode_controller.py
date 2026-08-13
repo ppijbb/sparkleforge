@@ -160,6 +160,9 @@ class ModeController:
     def is_plan_first(self) -> bool:
         return self.mode == ExecutionMode.PLAN_FIRST
 
+    def is_hitl_collaborative(self) -> bool:
+        return self.mode == ExecutionMode.HITL_COLLABORATIVE
+
     def summary(self) -> Dict[str, object]:
         return {
             "mode": self.mode.value,
