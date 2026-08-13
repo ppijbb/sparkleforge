@@ -1,75 +1,21 @@
 import argparse
 import logging
 import os
-from contextlib import contextmanager
 from typing import List
 
+from src.cli.ui.spinner import stage_status
 from src.core.agent_orchestrator import get_orchestrator
 from src.core.env_configurator import ConfigurationError, verify_environment
+from src.core.session_manager import get_session_manager
 
 logger = logging.getLogger(__name__)
 
-# Maps substrings of AgentHarness's "[Harness] ... Node" log lines (research
-# mode) and AgentLoop's "[AgentLoop] ..." log lines (autonomous/coworker mode)
-# to a human-readable spinner label, so the status text moves as execution
-# actually moves instead of sitting on a static "Working...".
-_STAGE_LABELS = [
-    ("Classify Node", "🔍 Classifying request..."),
-    ("Planner Node", "📋 Planning tasks..."),
-    ("Single Agent Node", "🤖 Running agent..."),
-    ("Executor Node", "⚙️  Executing tasks..."),
-    ("assigned to:", "🧑‍💻 Assigning tasks..."),
-    ("Anvil engine processed", "🔨 Running local tasks..."),
-    ("SubAgent Delegate Node", "🤝 Delegating to sub-agent..."),
-    ("Document Processor Node", "📄 Processing documents..."),
-    ("Synthesize Node", "📝 Synthesizing results..."),
-    ("Retrying in", "⏳ Retrying..."),
-    ("Context limit hit", "🗜️  Compressing context..."),
-]
-
-# AgentLoop's iteration/tool-call lines carry their own useful detail (which
-# tool, which step) so we echo them instead of collapsing to a static label.
-_STAGE_ECHO_NEEDLES = ("[AgentLoop] Executing tool:", "[AgentLoop] Iteration")
+_STAGE_LOGGERS = ("src.core.agent_harness", "src.core.agent_loop")
 
 
-class _StageStatusHandler(logging.Handler):
-    """Updates a rich Status spinner's label as the harness/loop moves through stages."""
-
-    def __init__(self, status):
-        super().__init__()
-        self.status = status
-
-    def emit(self, record):
-        try:
-            msg = record.getMessage()
-        except Exception:
-            return
-        for needle in _STAGE_ECHO_NEEDLES:
-            if needle in msg:
-                self.status.update(f"[bold cyan]⚙️  {msg.split(']', 1)[-1].strip()}")
-                return
-        for needle, label in _STAGE_LABELS:
-            if needle in msg:
-                self.status.update(f"[bold cyan]{label}")
-                return
-
-
-@contextmanager
 def _stage_status(cli, initial_label: str):
     """Like cli.console.status(), but its label tracks execution progress."""
-    with cli.console.status(f"[bold cyan]{initial_label}", spinner="dots") as status:
-        handler = _StageStatusHandler(status)
-        stage_loggers = [
-            logging.getLogger("src.core.agent_harness"),
-            logging.getLogger("src.core.agent_loop"),
-        ]
-        for stage_logger in stage_loggers:
-            stage_logger.addHandler(handler)
-        try:
-            yield status
-        finally:
-            for stage_logger in stage_loggers:
-                stage_logger.removeHandler(handler)
+    return stage_status(cli.console, initial_label, _STAGE_LOGGERS)
 
 
 async def work_command(cli, args: List[str]):
@@ -97,10 +43,15 @@ async def work_command(cli, args: List[str]):
 
     cli.console.print(f"[cyan]🤝 Starting coworker session for: {goal}[/cyan]")
 
-    orchestrator = get_orchestrator()
     custom_state = {"mode": "coworker", "current_goal": goal}
 
+    # get_orchestrator() inside the spinner scope, not before it: on the
+    # first call in a process it lazily constructs AgentHarness (tool
+    # registration, LLM client init, ...), which logs a burst of one-time
+    # setup chatter that should be caught by the same chat-mode noise filter
+    # as everything else this turn does, not leak before the spinner starts.
     with _stage_status(cli, "Working..."):
+        orchestrator = get_orchestrator()
         result = await orchestrator.execute(
             user_query=goal, session_id=session_id, restore_session=True, custom_state=custom_state
         )
@@ -117,8 +68,9 @@ async def actions_command(cli, args: List[str]):
 
     # Load state from memory
     orchestrator = get_orchestrator()
-    state = orchestrator.session_manager.restore_session(
-        session_id, orchestrator.session_manager.context_engineer, orchestrator.shared_memory
+    session_manager = get_session_manager()
+    state = session_manager.restore_session(
+        session_id, session_manager.context_engineer, session_manager.shared_memory
     )
     if not state:
         cli.console.print("[yellow]Could not load session state.[/yellow]")
@@ -140,8 +92,9 @@ async def approve_command(cli, args: List[str]):
         return
 
     orchestrator = get_orchestrator()
-    state = orchestrator.session_manager.restore_session(
-        session_id, orchestrator.session_manager.context_engineer, orchestrator.shared_memory
+    session_manager = get_session_manager()
+    state = session_manager.restore_session(
+        session_id, session_manager.context_engineer, session_manager.shared_memory
     )
 
     if not state or not state.get("pending_questions"):
@@ -187,8 +140,9 @@ async def deny_command(cli, args: List[str]):
         return
 
     orchestrator = get_orchestrator()
-    state = orchestrator.session_manager.restore_session(
-        session_id, orchestrator.session_manager.context_engineer, orchestrator.shared_memory
+    session_manager = get_session_manager()
+    state = session_manager.restore_session(
+        session_id, session_manager.context_engineer, session_manager.shared_memory
     )
 
     if not state or not state.get("pending_questions"):
@@ -229,20 +183,22 @@ def _display_action_proposals(cli, state):
             or state.get("results")
         )
         if output:
-            cli.console.print(f"\n[bold]Result:[/bold]\n{output}")
+            from src.cli.ui.markdown_stream import render_markdown_result
+
+            render_markdown_result(cli.console, output, title="Result")
         else:
             cli.console.print("[green]No pending actions.[/green]")
         return
 
-    cli.console.print("\n[bold]Action Proposals:[/bold]")
-    for ap in proposals:
-        status_color = (
-            "yellow"
-            if ap["status"] == "pending"
-            else "green" if ap["status"] == "approved" else "red"
+    from src.cli.ui.todo_panel import TodoItem, render_todo_panel
+
+    items = [
+        TodoItem(
+            id=ap["id"],
+            title=ap["title"],
+            status=ap["status"],
+            detail=f"Type: {ap['tool_type']}, Preview: {ap['preview']}" if ap["status"] == "pending" else None,
         )
-        cli.console.print(
-            f"  [{ap['id']}] {ap['title']} - [{status_color}]{ap['status']}[/{status_color}]"
-        )
-        if ap["status"] == "pending":
-            cli.console.print(f"      Type: {ap['tool_type']}, Preview: {ap['preview']}")
+        for ap in proposals
+    ]
+    render_todo_panel(cli.console, "Action Proposals", items)

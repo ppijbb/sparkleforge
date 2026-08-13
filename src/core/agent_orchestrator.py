@@ -167,6 +167,16 @@ class AgentOrchestrator:
             custom_state=custom_state,
         )
 
+        # Persist coworker sessions so they can be resumed/approved/denied later
+        if identity == "coder" and session_id:
+            try:
+                from src.core.session_manager import get_session_manager
+                get_session_manager().save_session(
+                    session_id, agent_state=harness_result, metadata={"tags": ["coworker"]}
+                )
+            except Exception:
+                logger.debug("Session persistence skipped for coworker session %s", session_id, exc_info=True)
+
         # Cross-domain isomorphism extraction (issue #922): map abstract
         # operational topologies from non-obvious domains onto the request.
         isomorphisms = self.isomorphism_extractor.extract(request)

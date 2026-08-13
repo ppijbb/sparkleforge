@@ -1,4 +1,5 @@
 """Filesystem tool dispatch (ToolCategory.FILE): read/write/list/delete operations."""
+import difflib
 import itertools
 import logging
 import time
@@ -7,6 +8,40 @@ from typing import Any, Dict
 from src.core.tools.registry import ToolResult
 
 logger = logging.getLogger(__name__)
+
+MIN_MATCH_LINES = 2
+
+
+def _edit_mismatch_hint(content: str, old_string: str, context_lines: int = 3, max_chars: int = 800) -> str:
+    """Best-effort hint for an edit_file 'old_string not found' failure.
+
+    A bare "not found" error gives the model nothing to correct itself with,
+    so it re-reads the whole file (an extra iteration, and one the momentum
+    guard tends to flag as a stall -- #1338). Find the file's closest
+    matching region to `old_string` -- typically the same code with
+    different whitespace/indentation -- and return it with line numbers so
+    the model can retry with the exact text in one shot.
+
+    Matching is line-level (not character-level) to avoid false positives
+    from common programming idioms (e.g. `}\n}\n}\n`) and to keep the
+    SequenceMatcher complexity proportional to line counts, not file size.
+    """
+    content_lines = content.splitlines()
+    old_lines = old_string.splitlines()
+    matcher = difflib.SequenceMatcher(None, content_lines, old_lines, autojunk=False)
+    match = matcher.find_longest_match(0, len(content_lines), 0, len(old_lines))
+
+    if match.size < MIN_MATCH_LINES:
+        # No meaningful overlap at all -- showing the head of the file is
+        # more useful than nothing.
+        snippet = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(content_lines[: context_lines * 2 + 1]))
+        return f"No similar text found in the file. Start of file instead:\n{snippet[:max_chars]}"
+
+    start_line = match.a  # 0-indexed line where the match begins
+    lo = max(0, start_line - context_lines)
+    hi = min(len(content_lines), start_line + match.size + context_lines)
+    numbered = "\n".join(f"{i + 1}: {content_lines[i]}" for i in range(lo, hi))
+    return f"Closest match in file (lines {lo + 1}-{hi}):\n{numbered[:max_chars]}"
 
 
 async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> ToolResult:
@@ -185,7 +220,8 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
 
             content = path.read_text(encoding="utf-8")
             if old_string not in content:
-                raise ValueError(f"Old string not found in file: {file_path}")
+                hint = _edit_mismatch_hint(content, old_string)
+                raise ValueError(f"Old string not found in file: {file_path}\n{hint}")
 
             new_content = content.replace(old_string, new_string)
             path.write_text(new_content, encoding="utf-8")

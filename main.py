@@ -138,34 +138,20 @@ file_handler.setFormatter(
 )
 root_logger.addHandler(file_handler)
 
-class _LiveAwareStderr:
-    """Proxies to the *current* sys.stderr on every write.
-
-    logging.StreamHandler() binds sys.stderr once, at import time -- long
-    before the REPL ever opens a Rich Live/Status spinner. Rich's spinner
-    redirects sys.stderr for its duration, but a handler holding the old
-    reference bypasses that redirect entirely, so ERROR/WARNING logs punch
-    raw escape-sequence garbage straight through the middle of the spinner
-    line instead of being captured and redrawn above it. Looking up
-    sys.stderr on every write instead of once lets Rich's redirect work as
-    intended.
-    """
-
-    def write(self, message):
-        sys.stderr.write(message)
-
-    def flush(self):
-        sys.stderr.flush()
-
-
 # Console handler (WARNING+ only; full INFO detail still goes to the log file above.
 # Prevents import-time init noise (DB driver, tool registry, plugin discovery, ...)
-# from spamming stdout before --verbose/REPL suppression logic below has a chance to run.)
-console_handler = logging.StreamHandler(_LiveAwareStderr())
+# from spamming stdout before --verbose/REPL suppression logic below has a chance to run.
+# Renders via rich instead of raw "asctime - name - LEVEL - message" text, through the
+# same shared get_console() singleton as the REPL/spinners/output_manager so it
+# cooperates with an active Live/Status instead of fighting it for the terminal (see
+# RichConsoleHandler's docstring). src/cli/ui/spinner.py's stage_status() additionally
+# attaches ChatModeFilter to this handler for the span an agent is actively executing,
+# so internal orchestration chatter (capability grants, mode switches, model routing)
+# doesn't leak to the console just because it's harder to enumerate than to allowlist.
+from src.cli.ui.console_log_handler import RichConsoleHandler  # noqa: E402
+
+console_handler = RichConsoleHandler()
 console_handler.setLevel(logging.WARNING)
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
 console_handler.addFilter(HTTPErrorFilter())  # HTTP 에러 필터 추가
 root_logger.addHandler(console_handler)
 
@@ -385,15 +371,27 @@ EXAMPLES:
 
     # actions 커맨드
     actions_parser = subparsers.add_parser("actions", help="List pending actions")
+    actions_parser.add_argument(
+        "--session", dest="session_id", default=None,
+        help="Session ID to inspect (default: most recently active session)",
+    )
 
     # approve 커맨드
     approve_parser = subparsers.add_parser("approve", help="Approve action")
     approve_parser.add_argument("action_id", help="Action ID or 'all'")
+    approve_parser.add_argument(
+        "--session", dest="session_id", default=None,
+        help="Session ID the action belongs to (default: most recently active session)",
+    )
 
     # deny 커맨드
     deny_parser = subparsers.add_parser("deny", help="Deny action")
     deny_parser.add_argument("action_id", help="Action ID")
     deny_parser.add_argument("reason", nargs="*", help="Reason for denial")
+    deny_parser.add_argument(
+        "--session", dest="session_id", default=None,
+        help="Session ID the action belongs to (default: most recently active session)",
+    )
 
     # query 커맨드 (run과 동일 — sparkleforge query "..." 형태 지원)
     query_parser = subparsers.add_parser(
@@ -803,19 +801,10 @@ EXAMPLES:
         # 단, src.cli.* 는 INFO 허용 -- 실제 채팅 결과가 이 네임스페이스에서 나옴
         logging.getLogger("src.cli").setLevel(logging.INFO)
 
-        # 외부 라이브러리 / 시스템 로거 억제 (기존 동작 유지)
-        for logger_name in [
-            "__main__",
-            "src.core.agent_orchestrator",
-            "src.core.mcp_integration",
-            "src.core.shared_memory",
-            "src.core.skills_manager",
-            "src.core.prompt_refiner_wrapper",
-            "streamlit",
-            "streamlit.runtime",
-            "local_researcher",
-        ]:
-            logging.getLogger(logger_name).setLevel(logging.WARNING)
+        # 외부 라이브러리 / 시스템 로거 억제 (REPLCLI.__init__과 동일한 정책 공유)
+        from src.cli.ui.logging_policy import apply_repl_quiet_mode
+
+        apply_repl_quiet_mode()
 
         # warnings도 완전히 억제
         warnings.filterwarnings("ignore")

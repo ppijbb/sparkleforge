@@ -7,9 +7,14 @@ import re
 import time
 import sqlite3
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
+
+# Anchored to the SparkleForge install location, not cwd, so a coworker
+# session run against a target repo doesn't leak its memory DB into it (#1331).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 # ---------------------------------------------------------------------------
@@ -167,10 +172,10 @@ class SemanticMemory:
     unrelated texts.
     """
 
-    def __init__(self, db_path: str = "data/semantic_memory.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or str(_PROJECT_ROOT / "data" / "semantic_memory.db")
         # Ensure data directory exists
-        db_dir = os.path.dirname(db_path)
+        db_dir = os.path.dirname(self.db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
             

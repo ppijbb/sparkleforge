@@ -28,10 +28,9 @@ def _load_agent_orchestrator():
     """Lazy import to keep lightweight CLI paths usable without full optional deps."""
     from src.core.agent_orchestrator import (
         AgentOrchestrator,
-        agent_workflow_result_to_public_dict,
     )
 
-    return AgentOrchestrator, agent_workflow_result_to_public_dict
+    return AgentOrchestrator
 
 
 def _load_autonomous_orchestrator():
@@ -205,7 +204,7 @@ class AutonomousResearchSystem:
                     logger.info(f"✅ SQLite database driver initialized: {sqlite_db_path}")
 
             # Use new multi-agent orchestrator (no fallback - fail clearly)
-            AgentOrchestrator, _ = _load_agent_orchestrator()
+            AgentOrchestrator = _load_agent_orchestrator()
             self.orchestrator = AgentOrchestrator()
 
             # Initialize TaskAnalyzerAgent
@@ -862,9 +861,8 @@ class AutonomousResearchSystem:
 
         # Unified path: same as non-streaming (AgentOrchestrator.execute)
         raw = await self.orchestrator.execute(request)
-        _, agent_workflow_result_to_public_dict = _load_agent_orchestrator()
         raw = await self._run_deep_validation(raw, request)
-        result = agent_workflow_result_to_public_dict(raw)
+        result = raw
 
         # Extract and format result
         final_synthesis = result.get("synthesis_results", {}).get("content", "")
