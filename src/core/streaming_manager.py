@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, List, Set
 
-from src.core.logging_config import get_logger
+import logging
 
 # Production-grade reliability imports
 from src.core.reliability import (
@@ -31,7 +31,7 @@ from src.core.reliability import (
     CircuitBreakerConfig,
 )
 
-logger = get_logger(__name__)
+logger = logging.getLogger(f"local_researcher.{__name__}")
 
 
 class EventType(Enum):

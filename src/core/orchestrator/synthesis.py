@@ -60,7 +60,9 @@ class SynthesisNode(BaseNode):
             "Synthesize a final deliverable from the actual research execution evidence.\n\n"
             f"User request:\n{state.get('user_request', '')}\n\n"
             f"Execution evidence:\n{execution_summary}\n\n"
-            "Write the answer from the evidence above. Include limitations when tasks failed or evidence is thin."
+            "Write the answer from the evidence above. Include limitations when tasks failed or evidence is thin.\n\n"
+            "Dual Horizon: split the proposal into (1) immediate tactical optimizations that can ship now, "
+            "and (2) long-term paradigm-shifting architectural roadmaps for future exploration."
         )
 
         result = await execute_llm_task(prompt=synthesis_prompt, task_type=TaskType.SYNTHESIS)
