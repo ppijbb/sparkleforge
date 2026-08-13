@@ -161,6 +161,16 @@ class SandboxExecutor:
             )
 
         env_strategy = os.getenv("SPARKLEFORGE_SANDBOX_STRATEGY", "").lower()
+        if env_strategy and env_strategy not in ("subprocess", "gvisor", "firejail", "docker"):
+            # An unrecognized value (typo, "auto", trailing whitespace, ...) must
+            # not silently fall through every `elif` below into the unsandboxed
+            # subprocess branch. Treat it as unset so real backend discovery
+            # still runs instead of a config mistake disabling sandboxing.
+            logger.warning(
+                "Unknown SPARKLEFORGE_SANDBOX_STRATEGY=%r, ignoring and auto-detecting a backend",
+                env_strategy,
+            )
+            env_strategy = ""
 
         # Choose sandbox strategy
         if env_strategy == "subprocess":

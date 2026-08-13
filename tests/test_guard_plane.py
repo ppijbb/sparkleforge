@@ -196,6 +196,25 @@ def test_sandbox_executor_real_command():
     assert "anvil_guard_test" in result.stdout.strip()
 
 
+def test_sandbox_executor_unknown_strategy_falls_back_to_auto_detection():
+    """An unrecognized SPARKLEFORGE_SANDBOX_STRATEGY (typo, "auto", ...) must
+    not silently disable sandboxing by falling through every known-strategy
+    branch into the unsandboxed subprocess path."""
+    baseline = SandboxExecutor(timeout_seconds=60.0).execute("echo baseline")
+
+    os.environ["SPARKLEFORGE_SANDBOX_STRATEGY"] = "not-a-real-strategy"
+    try:
+        result = SandboxExecutor(timeout_seconds=60.0).execute("echo unknown_strategy_test")
+    finally:
+        os.environ.pop("SPARKLEFORGE_SANDBOX_STRATEGY", None)
+
+    assert result.ok
+    assert result.sandbox_type == baseline.sandbox_type, (
+        "an unknown strategy value must resolve to the same backend auto-detection "
+        "picks with no strategy set, not force the unsandboxed subprocess path"
+    )
+
+
 def test_sandbox_executor_env_strategy_subprocess():
     os.environ["SPARKLEFORGE_SANDBOX_STRATEGY"] = "subprocess"
     try:
