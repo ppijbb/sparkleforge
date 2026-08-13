@@ -6,21 +6,18 @@ unused. Only engaged when a human can actually respond (a real TTY on
 stdin); autopilot/headless runs never touch this module.
 """
 
-import asyncio
 import sys
 from typing import Any, Dict, Tuple
 
-from rich.console import Console
-from rich.prompt import Prompt
-
+from src.cli.ui.confirm import MenuOption, free_text, menu_choice
 from src.core.anvil.hitl_checkpoint import CheckpointDecision, CheckpointStage
 
-_MENU = (
-    "[bold]1[/bold]) Approve the plan as-is\n"
-    "[bold]2[/bold]) Revise — add a missing requirement\n"
-    "[bold]3[/bold]) Revise — flag a task as wrong/unnecessary\n"
-    "[bold]4[/bold]) Abort this research run"
-)
+_OPTIONS = [
+    MenuOption("1", "Approve the plan as-is"),
+    MenuOption("2", "Revise — add a missing requirement"),
+    MenuOption("3", "Revise — flag a task as wrong/unnecessary"),
+    MenuOption("4", "Abort this research run"),
+]
 
 
 def is_interactive() -> bool:
@@ -40,21 +37,14 @@ async def plan_feedback_provider(
     abort) rather than a bare APPROVE-REVISE-ABORT prompt, then maps the
     choice down to the (decision, feedback) contract HITLCheckpointManager
     expects.
-
-    ``Prompt.ask`` blocks on stdin, so it runs in a worker thread — this
-    function is awaited from HITLCheckpointManager.checkpoint(), and blocking
-    the event loop there would stall every other concurrent async task.
     """
-    console = Console()
-    console.print(f"\n[bold cyan]HITL checkpoint: {stage.value}[/bold cyan]")
-    console.print(f"Tasks planned: {context.get('task_count', 0)}")
-    console.print(f"Strategy: {context.get('strategy', 'unknown')}")
-    for name in context.get("task_names", [])[:5]:
-        console.print(f"  - {name}")
-    console.print(_MENU)
-
-    choice = await asyncio.to_thread(
-        Prompt.ask, "Choice", choices=["1", "2", "3", "4"], default="1"
+    context_lines = [
+        f"Tasks planned: {context.get('task_count', 0)}",
+        f"Strategy: {context.get('strategy', 'unknown')}",
+        *[f"  - {name}" for name in context.get("task_names", [])[:5]],
+    ]
+    choice = await menu_choice(
+        f"HITL checkpoint: {stage.value}", _OPTIONS, default="1", context_lines=context_lines
     )
 
     if choice == "1":
@@ -62,8 +52,7 @@ async def plan_feedback_provider(
     if choice == "4":
         return CheckpointDecision.ABORT, "Aborted by human reviewer at plan checkpoint"
 
-    detail = await asyncio.to_thread(
-        Prompt.ask,
+    detail = await free_text(
         "Describe the requirement to add" if choice == "2" else "Describe which task is wrong and why",
     )
     prefix = "Add requirement" if choice == "2" else "Fix/remove task"

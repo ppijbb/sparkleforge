@@ -114,3 +114,48 @@ def test_decompose_matches_whole_words_not_substrings():
     extractor = CrossDomainIsomorphismExtractor()
     result = extractor.decompose("Improve synergy between teams.")
     assert all(leaf["primitive"] is None for leaf in _leaf_nodes(result))
+
+
+def test_recombine_does_not_mutate_shared_source_topologies():
+    """#925: _interleave must copy nodes, not alias the module-level source
+    topologies -- otherwise mutating a hybrid's nodes corrupts every other
+    extractor instance's view of that source domain."""
+    extractor = CrossDomainIsomorphismExtractor()
+    original_snapshot = [
+        (node.role, list(node.inputs), list(node.outputs))
+        for node in extractor.topologies["compiler_passes"]
+    ]
+
+    hybrid = extractor.recombine("compiler_passes", "immune_system")
+    assert hybrid is not None
+    for node in hybrid.topology:
+        node.inputs.append("mutated-in-place")
+        node.outputs.append("mutated-in-place")
+
+    after_snapshot = [
+        (node.role, list(node.inputs), list(node.outputs))
+        for node in extractor.topologies["compiler_passes"]
+    ]
+    assert after_snapshot == original_snapshot
+
+
+def test_mutate_drop_role_rewires_dangling_inputs():
+    """#925: dropping a role must not leave a downstream node requiring an
+    input that nothing in the mutated loop still produces."""
+    extractor = CrossDomainIsomorphismExtractor()
+    mechanism = extractor.topologies["compiler_passes"]
+
+    optimizer = next(n for n in mechanism if n.role == "optimizer")
+    emitter = next(n for n in mechanism if n.role == "emitter")
+    assert any(out in emitter.inputs for out in optimizer.outputs), (
+        "test assumes emitter depends on an optimizer output in the current fixture"
+    )
+
+    mutated = extractor.mutate(mechanism, drop_role="optimizer")
+
+    available_outputs = {out for n in mutated for out in n.outputs}
+    for node in mutated:
+        for dep in node.inputs:
+            assert dep in available_outputs, (
+                f"{node.role} still requires '{dep}' but no remaining node produces it"
+            )

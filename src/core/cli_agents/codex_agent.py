@@ -60,8 +60,8 @@ class CodexCLIAgent(BaseCLIAgent):
         args = ["exec", "--json", full_prompt]
 
         # 명령 실행 (공유 상태 self.config.args를 수정하지 않음)
-        full_args = (self.config.args or []) + args
-        result = await self._execute_command([self.config.command] + full_args)
+        # _execute_command가 self.config.args를 자동으로 덧붙이므로 extra args만 전달
+        result = await self._execute_command([self.config.command] + args)
         parsed_result = self.parse_output(result)
 
         return {

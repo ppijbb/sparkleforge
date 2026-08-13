@@ -1071,6 +1071,21 @@ class ExecutionMixin:
                     _execute_file_tool as file_execute_tool,
                 )
 
+                # edit_file diff rendering needs the pre-edit content, but it must
+                # never enter ToolResult.data: AgentLoop._append_tool_result keeps
+                # and serializes tool results into model-visible history, and a
+                # full file's prior contents there would bloat every edit's
+                # context footprint for a value only the terminal needs. Read it
+                # here, locally, instead.
+                pre_edit_content = None
+                if tool_name == "edit_file":
+                    try:
+                        from pathlib import Path as _Path
+
+                        pre_edit_content = _Path(parameters.get("file_path", "")).read_text(encoding="utf-8")
+                    except Exception:
+                        pre_edit_content = None
+
                 tool_result = await file_execute_tool(tool_name, parameters)
                 execution_time = time.time() - start_time
 
@@ -1097,6 +1112,25 @@ class ExecutionMixin:
                     error_message=tool_result.error,
                 )
                 await output_manager.output_tool_execution(tool_exec_result)
+
+                # edit_file 성공 시 "파일 작업 완료" 한 줄 대신 실제 변경 내용을 diff로 보여준다.
+                if (
+                    tool_name == "edit_file"
+                    and tool_result.success
+                    and isinstance(tool_result.data, dict)
+                    and pre_edit_content is not None
+                ):
+                    try:
+                        from pathlib import Path
+
+                        from src.cli.ui.diff_view import render_diff
+
+                        edited_path = tool_result.data.get("file_path")
+                        if edited_path:
+                            new_content = Path(edited_path).read_text(encoding="utf-8")
+                            render_diff(output_manager.console, edited_path, pre_edit_content, new_content)
+                    except Exception:
+                        logger.debug("edit_file diff rendering skipped", exc_info=True)
 
                 return {
                     "success": tool_result.success,

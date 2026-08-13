@@ -4,6 +4,7 @@ Split out of the former monolithic llm_manager.py (issue #582).
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Tuple
 
 from src.core.llm_manager.types import TaskType
@@ -14,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 class CascadeMixin:
     """Cascade model classification and provider-fallback execution."""
+
+    # A learned context_limit_tokens can come from a transient TPM throttle
+    # rather than the model's actual context window (#1349), so stop trusting
+    # it after this many seconds and let the model be tried again.
+    CONTEXT_LIMIT_REVALIDATION_SECONDS = 600
 
     def _get_provider_models(self, provider: str, task_type: TaskType) -> List[str]:
         """Provider의 모든 사용 가능한 모델 리스트 반환.
@@ -350,8 +356,43 @@ class CascadeMixin:
             if not available_models:
                 continue
 
-            # 첫 번째 사용 가능한 모델 시도
-            fallback_model = available_models[0]
+            # 요청 크기가 이 모델의 알려진 TPM/컨텍스트 한도를 넘으면 시도해도
+            # 결정론적으로 413이 나므로 건너뛴다 (#1339). 한도를 모르는
+            # 모델(context_limit_tokens=None)은 기존과 동일하게 그냥 시도.
+            estimated_tokens = int(len(prompt.split()) * 1.3) + (
+                int(len(system_message.split()) * 1.3) if system_message else 0
+            )
+            fallback_model = None
+            for candidate in available_models:
+                candidate_config = self.models[candidate]
+                limit = candidate_config.context_limit_tokens
+                learned_at = candidate_config.context_limit_learned_at
+                if (
+                    limit is not None
+                    and learned_at is not None
+                    and time.time() - learned_at > self.CONTEXT_LIMIT_REVALIDATION_SECONDS
+                ):
+                    # Learned limit is stale -- likely a transient TPM throttle
+                    # rather than the model's real context window. Let it be
+                    # tried again instead of skipping it forever (#1349).
+                    limit = None
+                if limit is not None and estimated_tokens > limit:
+                    logger.info(
+                        f"Skipping {candidate}: request ~{estimated_tokens} tokens "
+                        f"exceeds its known {limit}-token limit (would 413)"
+                    )
+                    print(
+                        f"⏭ skipping {candidate}: request ~{estimated_tokens}t > limit {limit}t",
+                        flush=True,
+                    )
+                    continue
+                fallback_model = candidate
+                break
+
+            if fallback_model is None:
+                # 이 provider의 사용 가능한 모델 전부가 이 요청엔 너무 작음
+                continue
+
             logger.info(f"Trying fallback model: {fallback_model} (provider: {provider})")
             print(f"→ trying fallback: {fallback_model} ({provider})", flush=True)
 
@@ -426,6 +467,44 @@ class CascadeMixin:
                             f"Removing unavailable Groq model from available models: {fallback_model}"
                         )
                         del self.models[fallback_model]
+                    continue
+
+                # 요청이 모델의 TPM/컨텍스트 한도보다 큼 (413) -- 429/timeout과
+                # 달리 결정론적 실패라 "재시도 가능"이 아니라 "이 모델은 이
+                # 크기의 요청엔 스킵"으로 분류한다 (#1339). 에러 메시지에 실제
+                # provider 한도가 찍혀 있으면 학습해서, 같은 프로세스 내 다음
+                # 시도부터는 위의 사전 스킵 로직이 먼저 걸러내게 한다.
+                if (
+                    "413" in error_str
+                    or "too large" in error_str.lower()
+                    or "tokens per minute" in error_str.lower()
+                    or "request_too_large" in error_str.lower()
+                ):
+                    import re
+
+                    learned = re.search(
+                        r"limit[:\s]+(\d+).{0,80}?requested[:\s]+(\d+)",
+                        error_str,
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                    if learned and fallback_model in self.models:
+                        learned_limit = int(learned.group(1))
+                        self.models[fallback_model].context_limit_tokens = learned_limit
+                        self.models[fallback_model].context_limit_learned_at = time.time()
+                        logger.warning(
+                            f"Learned TPM limit for {fallback_model}: {learned_limit} tokens "
+                            f"from a live 413 -- will skip it for oversized requests for the next "
+                            f"{self.CONTEXT_LIMIT_REVALIDATION_SECONDS}s"
+                        )
+                    logger.warning(
+                        f"Fallback model {fallback_model} rejected request as too large "
+                        "(413/TPM limit), skipping this model, trying next..."
+                    )
+                    print(
+                        f"⚠ {fallback_model} failed: request too large for this model "
+                        "(413/TPM), trying next...",
+                        flush=True,
+                    )
                     continue
 
                 # Rate limit 에러 (429)는 재시도 가능하지만 fallback에서는 다음 모델로
