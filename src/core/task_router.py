@@ -90,15 +90,44 @@ class TaskRouter:
         pass  # LLM orchestrator는 호출 시점에 lazy하게 가져옴
 
     def _extract_json(self, text: str) -> dict:
-        """LLM 응답에서 JSON을 추출합니다."""
+        r"""LLM 응답에서 JSON을 추출합니다.
+
+        중첩된 중괄호(예: 구조화된 객체를 담은 fallback_agents 배열)가 있으면
+        기존의 non-greedy 정규식(r"\{.*?\}")은 첫 '}'에서 조기 종료해 JSON이
+        잘려 json.loads()가 실패했다. 문자열 리터럴을 건너뛰며 중괄호 깊이를
+        직접 세어 첫 완전한 JSON 객체를 찾는다.
+        """
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```\s*", "", text)
-        match = re.search(r"\{.*?\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
+
+        start = text.find("{")
+        if start == -1:
+            return {}
+
+        depth = 0
+        in_string = False
+        escape = False
+        for i, char in enumerate(text[start:], start):
+            if escape:
+                escape = False
+                continue
+            if char == "\\" and in_string:
+                escape = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
+                        return {}
         return {}
 
     async def determine_route(self, query: str) -> RoutePath:
