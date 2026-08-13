@@ -135,7 +135,7 @@ class UserCenteredOutputManager:
         # competing Console instance (which would reintroduce the race).
         self.console = get_console()
         if not enable_colors:
-            self.console._no_color = True
+            self.console.no_color = True
 
         # 진행 상황 추적 (rich Progress는 start_progress에서 지연 생성)
         self.current_progress: ProgressInfo | None = None
