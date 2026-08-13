@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Any, Dict, List
@@ -268,32 +269,40 @@ class PlanningNode(BaseNode):
 
         search_results = []
         search_tools = ["g-search", "tavily", "exa"]
-        # Distribute keywords across search tools via modulo so a single tool
-        # failure or low-relevance return doesn't waste every other tool on the
-        # exact same query. An empty keywords list must not reach any tool.
-        if not keywords or not search_tools:
-            return {
-                "keywords": keywords,
-                "search_results": [],
-                "academic_results": [],
-                "sources_count": 0,
-                "total_results": 0,
-            }
+        # Distribute *phrase* chunks (not single tokens -- decontextualized
+        # single words like "project"/"identify" return near-zero results
+        # from real search engines) across tools via modulo, so one query
+        # isn't repeated identically against every tool. Tools that need an
+        # unset API key return a silent "success, zero results" (see
+        # src/core/mcp_integration/executors/search.py), so exclude them
+        # instead of burning a chunk on a provider that can't search (#1144).
+        usable_tools = [
+            tool
+            for tool in search_tools
+            if tool == "g-search"
+            or (tool == "tavily" and os.getenv("TAVILY_API_KEY"))
+            or (tool == "exa" and os.getenv("EXA_API_KEY"))
+        ] or ["g-search"]
+        chunk_size = 2
+        chunks = [
+            " ".join(keywords[i : i + chunk_size])
+            for i in range(0, min(len(keywords), 4), chunk_size)
+        ]
 
-        for i, kw in enumerate(keywords[:4]):
-            if not kw:
+        for i, chunk in enumerate(chunks):
+            if not chunk:
                 continue
-            tool_name = search_tools[i % len(search_tools)]
+            tool_name = usable_tools[i % len(usable_tools)]
             try:
                 result = await execute_tool(
-                    tool_name=tool_name, parameters={"query": kw, "max_results": 5}
+                    tool_name=tool_name, parameters={"query": chunk, "max_results": 5}
                 )
                 if result.get("success", False):
                     result_data = result.get("data", {})
                     data_list = _extract_tool_result_items(result_data)
                     search_results.append(
                         {
-                            "keyword": kw,
+                            "keyword": chunk,
                             "tool": tool_name,
                             "data": data_list,
                             "sources_count": len(data_list),
@@ -398,7 +407,6 @@ class PlanningNode(BaseNode):
         decomposition_prompt = f"""
         Based on preliminary research, decompose into {num_tasks} tasks:
         {feedback_block}
-        (Apply non-linear structural mutation: prioritize high-surprise leaps over incremental tweaks while maintaining physical feasibility)
         Request: {state.get("user_request", "")}
         Complexity: {complexity}
         Preliminary Research: {preliminary_research.get("keywords", [])}
