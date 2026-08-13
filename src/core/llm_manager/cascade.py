@@ -4,6 +4,7 @@ Split out of the former monolithic llm_manager.py (issue #582).
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Tuple
 
 from src.core.llm_manager.types import TaskType
@@ -14,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 class CascadeMixin:
     """Cascade model classification and provider-fallback execution."""
+
+    # A learned context_limit_tokens can come from a transient TPM throttle
+    # rather than the model's actual context window (#1349), so stop trusting
+    # it after this many seconds and let the model be tried again.
+    CONTEXT_LIMIT_REVALIDATION_SECONDS = 600
 
     def _get_provider_models(self, provider: str, task_type: TaskType) -> List[str]:
         """Provider의 모든 사용 가능한 모델 리스트 반환.
@@ -358,7 +364,18 @@ class CascadeMixin:
             )
             fallback_model = None
             for candidate in available_models:
-                limit = self.models[candidate].context_limit_tokens
+                candidate_config = self.models[candidate]
+                limit = candidate_config.context_limit_tokens
+                learned_at = candidate_config.context_limit_learned_at
+                if (
+                    limit is not None
+                    and learned_at is not None
+                    and time.time() - learned_at > self.CONTEXT_LIMIT_REVALIDATION_SECONDS
+                ):
+                    # Learned limit is stale -- likely a transient TPM throttle
+                    # rather than the model's real context window. Let it be
+                    # tried again instead of skipping it forever (#1349).
+                    limit = None
                 if limit is not None and estimated_tokens > limit:
                     logger.info(
                         f"Skipping {candidate}: request ~{estimated_tokens} tokens "
@@ -473,9 +490,11 @@ class CascadeMixin:
                     if learned and fallback_model in self.models:
                         learned_limit = int(learned.group(1))
                         self.models[fallback_model].context_limit_tokens = learned_limit
+                        self.models[fallback_model].context_limit_learned_at = time.time()
                         logger.warning(
                             f"Learned TPM limit for {fallback_model}: {learned_limit} tokens "
-                            "from a live 413 -- will skip it for oversized requests from now on"
+                            f"from a live 413 -- will skip it for oversized requests for the next "
+                            f"{self.CONTEXT_LIMIT_REVALIDATION_SECONDS}s"
                         )
                     logger.warning(
                         f"Fallback model {fallback_model} rejected request as too large "
