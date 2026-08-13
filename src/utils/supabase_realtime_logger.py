@@ -267,6 +267,52 @@ _global_original_stdout: Optional[Any] = None
 _active_redirect_count = 0
 
 
+class SupabaseRealtimeLogger:
+    """Per-session logger instance to isolate concurrent logging streams."""
+
+    def __init__(self, session_id: str, supabase_client: Optional[Any] = None):
+        self.session_id = session_id
+        self.client = supabase_client
+        self.queue: queue.Queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._worker, daemon=True)
+        self.thread.start()
+
+    def _worker(self):
+        """Background worker to drain this session's queue and send to Supabase."""
+        while not self.stop_event.is_set() or not self.queue.empty():
+            try:
+                log_entry = self.queue.get(timeout=1.0)
+                log_entry["session_id"] = self.session_id
+                if self.client is not None:
+                    try:
+                        self.client.table("logs").insert(log_entry).execute()
+                    except Exception:
+                        pass
+                self.queue.task_done()
+            except queue.Empty:
+                continue
+
+    def log(self, message: str, level: str = "INFO"):
+        """Enqueue a log entry for this session."""
+        self.queue.put({"message": message, "level": level})
+
+    def stop(self, timeout: float = 5.0):
+        """Signal the worker to stop and drain remaining items before joining."""
+        self.stop_event.set()
+        deadline = timeout
+        while not self.queue.empty() and deadline > 0:
+            try:
+                self.queue.get(timeout=0.1)
+                self.queue.task_done()
+            except queue.Empty:
+                break
+            deadline -= 0.1
+        self.thread.join(timeout=timeout)
+
+
+# --- End of restored classes ---
+
 class SessionStdoutRedirector:
     """Context manager that routes stdout to a specific session logger."""
 
