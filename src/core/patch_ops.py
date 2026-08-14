@@ -14,6 +14,7 @@ current working directory) and carry no module-level state.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import subprocess
 import sys
@@ -86,17 +87,23 @@ def read_full_file(path: str, limit: int = 200_000) -> str:
     if not file_path.is_file():
         return ""
     content = file_path.read_text(encoding="utf-8")
-    if len(content) > limit:
-        lines = content[:limit].splitlines()
-        numbered = [f"{i+1:5d}: {line}" for i, line in enumerate(lines)]
-        return (
-            f"--- {path} (truncated to {limit} chars) ---\n"
-            + "\n".join(numbered)
-            + "\n...[truncated]\n"
-        )
+
     lines = content.splitlines()
-    numbered = [f"{i+1:5d}: {line}" for i, line in enumerate(lines)]
-    return f"--- {path} ---\n" + "\n".join(numbered) + "\n"
+    total_chars = 0
+    truncated_lines = []
+    for i, line in enumerate(lines):
+        line_with_num = f"{i+1:5d}: {line}"
+        if total_chars + len(line_with_num) > limit and i > 0:
+            truncated_lines.append("...[truncated]")
+            break
+        truncated_lines.append(line_with_num)
+        total_chars += len(line_with_num) + 1
+
+    header = f"--- {path} ---\n"
+    if len(truncated_lines) < len(lines):
+        header = f"--- {path} (truncated) ---\n"
+
+    return header + "\n".join(truncated_lines) + "\n"
 
 
 def build_prompt(
