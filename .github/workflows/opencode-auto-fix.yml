@@ -623,6 +623,7 @@ jobs:
             --force >/dev/null 2>&1 || true
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
+            --remove-label auto-fix-pr-opened \
             --add-label auto-fix-failed || true
           {
             echo "OpenCode auto-fix failed before a PR could be created."
