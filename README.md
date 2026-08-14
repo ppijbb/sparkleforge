@@ -157,7 +157,7 @@ Rather than relying on transient CI test runs, SparkleForge logs un-truncated ex
 - **Mean Time to Merge (MTTM)**: **141.08 min** (2h 21m) from PR creation to unattended merge.
 - **Autonomous Merge Rate**: **66.7%** (2 / 3 PRs) validated and merged by CI harnesses.
 - **Zero-Cost Idle Rate**: **100% Token Efficiency** (zero LLM token consumption awaiting async background tasks).
-- **Research Quality Pass Rate**: **100.0%** (Score: 0.775 across Tech and Science evaluation suites).
+- **Research Quality Pass Rate**: see [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md) §3 -- generated from `tests/benchmark/baselines/scenario_history.jsonl`, not hand-typed.
 
 
 ## 🤝 Contributing

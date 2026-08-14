@@ -152,9 +152,14 @@ jobs:
           with open('tests/benchmark/baselines/scenario_history.jsonl', 'a') as f:
               f.write(json.dumps(report, ensure_ascii=False) + '\n')
           PY
+
+          # Mu-4: keep docs/BENCHMARK_REPORT.md's generated block in sync with
+          # the history file it's sourced from, in the same commit/PR.
+          python3 scripts/generate_benchmark_report.py
+
           git config user.name "sparkleforge-bot"
           git config user.email "actions@github.com"
-          git add tests/benchmark/baselines/scenario_history.jsonl
+          git add tests/benchmark/baselines/scenario_history.jsonl docs/BENCHMARK_REPORT.md
           git commit -m "chore: record scenario-eval history for ${GITHUB_SHA::12}"
           git push origin "$BRANCH"
           gh pr create --repo "${{ github.repository }}" \
