@@ -121,9 +121,14 @@ jobs:
           BRANCH="chore/swebench-lite-report-$(date -u +%Y%m%d)"
           git checkout -b "$BRANCH"
           python3 scripts/record_swebench_report.py "$REPORT_FILE" "$RUN_ID" docs/SWEBENCH_REPORT.md
+
+          # Mu-4: keep docs/BENCHMARK_REPORT.md's generated block in sync with
+          # the SWE-bench report it's sourced from, in the same commit/PR.
+          python3 scripts/generate_benchmark_report.py
+
           git config user.name "sparkleforge-bot"
           git config user.email "actions@github.com"
-          git add docs/SWEBENCH_REPORT.md
+          git add docs/SWEBENCH_REPORT.md docs/BENCHMARK_REPORT.md
           if git diff --cached --quiet; then
             echo "No changes to record."
             exit 0
