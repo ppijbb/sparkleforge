@@ -1,8 +1,8 @@
-"""Tests for scripts/generate_benchmark_report.py (Anvil Phase Mu-4, issue #1220).
+"""Tests for scripts/generate_benchmark_report.py (Anvil Phase Mu-4/Mu-5, issues #1220/#1221).
 
-Covers the two things that mattered about the bug this replaces: a fabricated
-"Research Pass Rate 100.0%" figure with no basis in scenario_history.jsonl,
-and no CI signal when docs/BENCHMARK_REPORT.md drifted from its data source.
+Covers the fabricated "Research Pass Rate 100.0%" figure this replaces, the
+CI drift check, and the Mu-5 momentum-divergence check (internal score
+improving while external resolve rate or cost does not).
 """
 
 import importlib.util
@@ -74,6 +74,89 @@ class TestLoadSwebenchRuns:
         assert [r["run_id"] for r in runs] == ["ci-20260726-abc", "ci-20260802-def"]
         assert runs[-1]["resolved"] == "2"
         assert runs[-1]["submitted"] == "6"
+
+
+class TestComputeMomentum:
+    def _entry(self, generated_at: str, adjusted: float, duration: float) -> dict:
+        return {
+            "generated_at": generated_at,
+            "inconclusive_checks": 0,
+            "overall_score_adjusted": adjusted,
+            "scenarios": {"s1": {"duration_s": duration}},
+        }
+
+    def test_insufficient_data_yields_no_trends_and_no_divergence(self):
+        momentum = gbr.compute_momentum([], [])
+        assert all(axis["trend"] is None for axis in momentum["axes"].values())
+        assert momentum["divergence"] is False
+
+    def test_all_axes_improving_together_is_not_divergence(self):
+        entries = [self._entry("1", 0.2, 100.0), self._entry("2", 0.3, 80.0)]
+        runs = [
+            {"date": "1", "run_id": "a", "resolved": "0", "submitted": "6"},
+            {"date": "2", "run_id": "b", "resolved": "2", "submitted": "6"},
+        ]
+        momentum = gbr.compute_momentum(entries, runs)
+        assert momentum["axes"]["internal"]["trend"] == "improving"
+        assert momentum["axes"]["external"]["trend"] == "improving"
+        assert momentum["axes"]["cost"]["trend"] == "improving"
+        assert momentum["divergence"] is False
+
+    def test_internal_improving_external_flat_is_divergence(self):
+        entries = [self._entry("1", 0.2, 100.0), self._entry("2", 0.3, 90.0)]
+        runs = [
+            {"date": "1", "run_id": "a", "resolved": "2", "submitted": "6"},
+            {"date": "2", "run_id": "b", "resolved": "2", "submitted": "6"},
+        ]
+        momentum = gbr.compute_momentum(entries, runs)
+        assert momentum["divergence"] is True
+        assert "external" in momentum["opposing_axes"]
+
+    def test_internal_improving_cost_worse_is_divergence(self):
+        entries = [self._entry("1", 0.2, 100.0), self._entry("2", 0.3, 150.0)]
+        momentum = gbr.compute_momentum(entries, [])
+        assert momentum["axes"]["cost"]["trend"] == "declining"
+        assert momentum["divergence"] is True
+        assert "cost" in momentum["opposing_axes"]
+
+    def test_internal_declining_is_never_divergence_regardless_of_other_axes(self):
+        entries = [self._entry("1", 0.3, 100.0), self._entry("2", 0.2, 150.0)]
+        runs = [
+            {"date": "1", "run_id": "a", "resolved": "3", "submitted": "6"},
+            {"date": "2", "run_id": "b", "resolved": "0", "submitted": "6"},
+        ]
+        momentum = gbr.compute_momentum(entries, runs)
+        assert momentum["axes"]["internal"]["trend"] == "declining"
+        assert momentum["divergence"] is False
+
+
+class TestRenderMomentum:
+    def test_divergence_renders_warning(self):
+        momentum = {
+            "axes": {
+                "internal": {"trend": "improving", "delta": 0.1},
+                "external": {"trend": "flat", "delta": 0.0},
+                "cost": {"trend": "improving", "delta": -5.0},
+            },
+            "divergence": True,
+            "opposing_axes": ["external"],
+        }
+        block = gbr.render_block(None, [], momentum)
+        assert "DIVERGENCE DETECTED" in block
+
+    def test_no_divergence_renders_clean(self):
+        momentum = {
+            "axes": {
+                "internal": {"trend": "flat", "delta": 0.0},
+                "external": {"trend": None, "delta": None},
+                "cost": {"trend": None, "delta": None},
+            },
+            "divergence": False,
+            "opposing_axes": [],
+        }
+        block = gbr.render_block(None, [], momentum)
+        assert "DIVERGENCE DETECTED" not in block
+        assert "No divergence detected" in block
 
 
 class TestRenderAndSplice:
