@@ -34,6 +34,7 @@ class ContextCompressor:
         # (snapshot summary + whatever was appended since) once it's done.
         self._pending_task: Optional[asyncio.Task] = None
         self._pending_snapshot_len: int = 0
+        self._call_start_len: int = 0
 
     @staticmethod
     def _estimate_tokens(messages: List[Dict[str, Any]]) -> float:
@@ -79,6 +80,7 @@ class ContextCompressor:
 
         if self._pending_task is None:
             snapshot = list(messages)
+            self._call_start_len = len(messages)
             self._pending_snapshot_len = len(snapshot)
             logger.info(
                 f"Context limit reached ({int(total_tokens)} tokens). "
@@ -106,13 +108,15 @@ class ContextCompressor:
         is preserved verbatim on top of the compacted prefix.
         """
         task, self._pending_task = self._pending_task, None
+        snapshot_len = self._pending_snapshot_len
+        self._pending_snapshot_len = 0
         try:
             compressed = task.result()
         except Exception as e:
             logger.error(f"Background compaction failed, keeping uncompacted history: {e}")
             return current_messages
 
-        new_tail = current_messages[self._pending_snapshot_len:]
+        new_tail = current_messages[snapshot_len:]
         logger.info(
             "Swapped in background-compacted history (%d -> %d messages)",
             len(current_messages),
@@ -132,6 +136,7 @@ class ContextCompressor:
             self._pending_task.cancel()
         self._pending_task = None
         self._pending_snapshot_len = 0
+        self._call_start_len = 0
 
     async def compress_by_summarization(
         self, messages: List[Dict[str, Any]]
