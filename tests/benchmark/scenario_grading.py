@@ -68,6 +68,20 @@ def removed_files(before: Dict[str, str], after: Dict[str, str]) -> list[str]:
     return [p for p in before if p not in after]
 
 
+def modified_files(before: Dict[str, str], after: Dict[str, str]) -> list[str]:
+    """Relative paths present in both snapshots whose content hash changed.
+
+    Excludes known agent-runtime artifacts (see RUNTIME_ARTIFACT_PREFIXES) so
+    side-effect files from the process running aren't miscounted as scenario
+    work. Detecting modifications is required for scenarios that expect an
+    existing file to be edited in place rather than created or deleted.
+    """
+    common = before.keys() & after.keys()
+    return [
+        p for p in common if before[p] != after[p] and not is_runtime_artifact(p)
+    ]
+
+
 def unchanged(before: Dict[str, str], after: Dict[str, str], relpath: str) -> bool:
     """True if relpath exists in both snapshots with an identical hash."""
     return relpath in before and relpath in after and before[relpath] == after[relpath]
