@@ -107,6 +107,34 @@ async def test_agent_loop_executes_tool_calls_until_final_answer():
 
 
 @pytest.mark.asyncio
+async def test_agent_loop_executes_tool_calls_until_final_answer():
+    tool_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "search", "arguments": '{"query": "sparkleforge"}'},
+    }
+    orchestrator = FakeOrchestrator(
+        [
+            ModelResult("", "tool-model", 0.1, 0.8, 0.0, {"tool_calls": [tool_call]}),
+            ModelResult("final answer", "tool-model", 0.1, 0.8, 0.0, {}),
+        ]
+    )
+    mcp_hub = FakeMCPHub()
+    loop = make_loop(orchestrator, mcp_hub)
+
+    result = await loop.run_conversation(
+        [{"role": "user", "content": "research sparkleforge"}], max_iterations=3
+    )
+
+    assert result["success"] is True
+    assert result["content"] == "final answer"
+    assert result["tool_calls_count"] == 1
+    assert result["tool_results"][0]["success"] is True
+    assert mcp_hub.calls == [("search", {"query": "sparkleforge"})]
+    assert orchestrator.calls[0]["model_name"] == "tool-model"
+
+
+@pytest.mark.asyncio
 async def test_overseer_branch_is_entered_during_loop_iteration():
     """Regression for issue #1208: the overseer branch in run_conversation must
     actually fire when an overseer is wired. Previously the loop guarded on
