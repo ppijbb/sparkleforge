@@ -1,6 +1,5 @@
 """M3 체크리스트 제안 파이프라인 (Anvil Phase Mu-3).
 
-from .exception_handler import assert_session_separation
 RequestAnalyzer -> DynamicChecklistGenerator가 만든 체크리스트를 그대로 채점
 기준으로 쓰면 이해충돌이다: 나중에 그 기준으로 채점받을 에이전트가 자기 시험
 문제를 직접 낼 수 있기 때문이다. 이 모듈은 제안된 각 항목을 사람 승인 전에
@@ -11,10 +10,6 @@ AdversarialEvaluator(zero-trust 검증기)에 통과시키고, 제안 세션과 
 """
 
 from dataclasses import dataclass, field
-    # Enforce conflict-of-interest gate: a session must never grade its own
-    # proposal. assert_session_separation raises when the two session ids match,
-    # preventing the adversarial evaluation architecture from being bypassed.
-    assert_session_separation(proposer_session_id, evaluator_session_id)
 
 from typing import List
 
@@ -45,9 +40,14 @@ async def propose_checklist(request: str, proposer_session_id: str) -> Checklist
     """요청을 분석해 체크리스트를 제안하고, 항목별로 적대적 검증을 거쳐 거른다."""
     analysis = RequestAnalyzer().analyze(request)
     checklist = DynamicChecklistGenerator().generate(analysis)
-    proposal = ChecklistProposal(checklist=checklist, proposer_session_id=proposer_session_id)
 
     evaluator = AdversarialEvaluator()
+    # Enforce conflict-of-interest gate: a session must never grade its own
+    # proposal. assert_session_separation raises when the two session ids match,
+    # preventing the adversarial evaluation architecture from being bypassed.
+    assert_session_separation(proposer_session_id, evaluator.session_id)
+    proposal = ChecklistProposal(checklist=checklist, proposer_session_id=proposer_session_id)
+
     for item in checklist.items:
         result = await evaluator.evaluate_output(
             task_query=request,
