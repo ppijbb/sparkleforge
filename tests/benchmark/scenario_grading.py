@@ -233,11 +233,11 @@ async def judge_score(rubric: str, transcript: str, context: str = "") -> GradeR
     except asyncio.TimeoutError:
         logger.warning("[ScenarioGrading] LLM judge timed out after %ss", JUDGE_TIMEOUT_S)
         score, reason = _rule_based_judge(rubric, transcript, context)
-        return score, f"{reason} (LLM judge timed out after {JUDGE_TIMEOUT_S}s)"
+        return score, f"{INCONCLUSIVE_MARKER}{reason} (LLM judge timed out after {JUDGE_TIMEOUT_S}s)"
     except Exception as e:  # noqa: BLE001 - judge must never crash grading
         logger.warning("[ScenarioGrading] LLM judge unavailable: %s", e)
         score, reason = _rule_based_judge(rubric, transcript, context)
-        return score, f"{reason} (LLM judge unavailable: {e})"
+        return score, f"{INCONCLUSIVE_MARKER}{reason} (LLM judge unavailable: {e})"
 
 
 async def _call_judge(rubric: str, transcript: str, context: str) -> GradeResult:
