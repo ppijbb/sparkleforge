@@ -25,7 +25,7 @@ def _step_b(state):
     return {"x": state["x"] + 10, "log": state["log"] + ["b"]}
 
 
-class _FakeOrchestrator:
+class _FakeOrchestrator(AutonomousOrchestrator):
     """Holds just the `.graph` attribute _invoke_with_stage_updates() needs,
     avoiding AutonomousOrchestrator.__init__'s heavy config/agent wiring."""
 
@@ -38,11 +38,10 @@ class _FakeOrchestrator:
         g.add_edge("step_b", END)
         self.graph = g.compile()
 
+        # Bypass AutonomousOrchestrator.__init__'s heavy config/agent wiring.
 
-_invoke_with_stage_updates = AutonomousOrchestrator._invoke_with_stage_updates
 
-
-def test_final_state_matches_ainvoke():
+def test_final_state_matches_ainvoke_when_values_yielded_last():
     fake = _FakeOrchestrator()
     input_state = {"x": 0, "log": []}
 
@@ -57,7 +56,7 @@ def test_prints_each_node_name_when_a_tty(capsys):
     fake = _FakeOrchestrator()
 
     with patch("sys.stdout.isatty", return_value=True):
-        asyncio.run(_invoke_with_stage_updates(fake, {"x": 0, "log": []}, {}))
+        asyncio.run(fake._invoke_with_stage_updates({"x": 0, "log": []}, {}))
 
     out = capsys.readouterr().out
     assert "→ step_a" in out
@@ -68,7 +67,7 @@ def test_silent_when_not_a_tty(capsys):
     fake = _FakeOrchestrator()
 
     with patch("sys.stdout.isatty", return_value=False):
-        asyncio.run(_invoke_with_stage_updates(fake, {"x": 0, "log": []}, {}))
+        asyncio.run(fake._invoke_with_stage_updates({"x": 0, "log": []}, {}))
 
     out = capsys.readouterr().out
     assert "step_a" not in out

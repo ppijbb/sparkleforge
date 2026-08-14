@@ -4,6 +4,7 @@ Modular architecture refactored from the monolithic 165KB orchestrator.
 Delegates core logic to src.core.orchestrator packages.
 """
 
+import copy
 import logging
 import os
 import sys
@@ -262,6 +263,39 @@ class AutonomousOrchestrator:
             if isinstance(chunk, dict):
                 final_state = chunk
         return final_state
+
+    async def _invoke_with_stage_updates(self, input_state, config):
+        """Invoke the graph while printing each node name as it completes.
+
+        Mirrors ``graph.ainvoke()``'s contract by always returning the fully
+        accumulated final state, even when the LangGraph stream emits an
+        """
+        final_state = copy.copy(input_state) if isinstance(input_state, dict) else input_state
+        received_values = False
+        async for mode, chunk in self.graph.astream(
+            input_state, config=config, stream_mode=["updates", "values"]
+        ):
+            if mode == "updates":
+                for node, updates in chunk.items():
+                    if updates:
+                        if isinstance(final_state, dict) and isinstance(updates, dict):
+                            final_state = {**final_state, **updates}
+                        self._print_stage_update(node)
+            elif mode == "values":
+                final_state = chunk
+                received_values = True
+        if final_state is input_state or not received_values:
+            final_state = await self.graph.ainvoke(input_state, config=config)
+        return final_state
+
+    def _print_stage_update(self, node: str) -> None:
+        """Print a node name as it completes when stdout is a TTY."""
+        if not self._is_interactive_tty():
+            return
+        from rich import get_console
+
+        console = get_console()
+        console.print(f"[dim]▶ {node}[/dim]")
 
     async def execute(
         self, request: str, context: Dict[str, Any] = None, objective_id: str = None
