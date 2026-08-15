@@ -123,6 +123,7 @@ class ForgeMasterController:
 
         attempt = 0
         last_error = ""
+        last_agent_used = current_agent
 
         while attempt <= max_retries:
             attempt += 1
@@ -137,6 +138,7 @@ class ForgeMasterController:
                 compact_context=compact_ctx,
                 **kwargs,
             )
+            last_agent_used = current_agent
 
             # 5. 적대적 평가 수행 (Zero-Trust Adversarial Audit)
             adv_audit = await self.adversarial_evaluator.evaluate_output(
@@ -195,6 +197,7 @@ class ForgeMasterController:
             "success": False,
             "master_verdict": "REJECTED",
             "last_agent_used": current_agent,
+            "agent_used": last_agent_used,
             "session_id": session_id,
             "error": f"Adversarial Evaluation failed after {attempt} attempt(s) with '{current_agent}'. Last error: {last_error}",
             "response": "",
