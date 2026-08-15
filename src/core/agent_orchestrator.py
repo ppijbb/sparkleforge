@@ -7,7 +7,6 @@
 import logging
 import os
 from typing import Any, Dict, List, TypedDict
-
 from src.core.isomorphism_extractor import CrossDomainIsomorphismExtractor
 # Removed global AgentHarness import for optimization
 
@@ -36,7 +35,6 @@ class AgentOrchestrator:
         from src.core.agent_harness import AgentHarness
         self.harness = AgentHarness()
         self.config = config
-        self.isomorphism_extractor = CrossDomainIsomorphismExtractor()
         self.recursion_limit = getattr(config, "recursion_limit", 20000)
         self.gemini_cache = self._init_gemini_cache()
         self.federation_enabled = getattr(config, "federation_enabled", False)
@@ -177,11 +175,6 @@ class AgentOrchestrator:
             except Exception:
                 logger.debug("Session persistence skipped for coworker session %s", session_id, exc_info=True)
 
-        # Cross-domain isomorphism extraction (issue #922): map abstract
-        # operational topologies from non-obvious domains onto the request.
-        isomorphisms = self.isomorphism_extractor.extract(request)
-        harness_result.setdefault("metadata", {})["isomorphisms"] = isomorphisms
-
         # Persist any Gemini prompt-cache handle produced by the harness run
         # back into the per-session store so subsequent turns can reuse it.
         new_handle = (
@@ -194,37 +187,14 @@ class AgentOrchestrator:
 
         # main.py 호환을 위한 필드 추가
         final_report = harness_result.get("results", "")
-        # ponytail: stream return payload -> redundant nested detailed_results dict
         return {
             "success": harness_result.get("success", False),
             "plan": harness_result.get("plan", ""),
             "tasks": harness_result.get("tasks", []),
             "results": final_report,
             "final_report": final_report,
-            "content": final_report,
-            "detailed_results": harness_result.get("detailed_results", {}),
             "metadata": harness_result.get("metadata", {}),
             "session_id": session_id,
             "research_failed": not harness_result.get("success", False),
             "error": harness_result.get("error"),
         }
-
-
-def agent_workflow_result_to_public_dict(
-    result: Dict[str, Any], context: Dict[str, Any] | None = None
-) -> Dict[str, Any]:
-    """이전 버전의 API 호환성을 위한 포맷터"""
-    return {
-        "plan": result.get("plan", ""),
-        "tasks": result.get("tasks", []),
-        "results": result.get("results", ""),
-        "success": result.get("success", False),
-    }
-
-
-def get_orchestrator(config=None) -> AgentOrchestrator:
-    """이전 CLI 코드와의 호환성을 위한 lazy singleton accessor."""
-    global _orchestrator
-    if _orchestrator is None:
-        _orchestrator = AgentOrchestrator(config=config)
-    return _orchestrator
