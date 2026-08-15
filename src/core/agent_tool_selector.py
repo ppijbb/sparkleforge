@@ -200,7 +200,7 @@ class AgentToolSelector:
 
     def _infer_tool_category(self, tool_info: ToolInfo) -> ToolCategory:
         """도구 이름과 설명으로 카테고리를 추론."""
-        text_to_check = f"{tool_info.name} {tool_info.description}".lower()
+        text_to_check = f"{tool_info.name} {tool_info.description} {tool_info.server_guess}".lower()
 
         # 각 카테고리에 대해 키워드 매칭 수행
         for category, keywords in self.category_keywords.items():

@@ -169,6 +169,7 @@ class MCPToolLoader:
         for t in tools:
             name = t.name
             desc = getattr(t, "description", "") or ""
+            server = getattr(t, "server", None) or getattr(t, "serverName", None) or ""
             schema = getattr(t, "inputSchema", None) or {}
             model = _jsonschema_to_pydantic(schema, model_name=f"Args_{name}")
             out.append(
