@@ -12,6 +12,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import List
+import yaml
 
 from src.core.nightwelding.adapter import (
     BaseNightweldingAdapter,
@@ -105,16 +106,28 @@ class LocalGitAdapter(BaseNightweldingAdapter):
         exclude_labels: List[str] | None = None,
         limit: int = 100,
     ) -> List[int | str]:
-        """List local issue files from issues directory."""
+        """List local issue files from issues directory with label filtering."""
         if not self.issues_dir.is_dir():
             return []
 
+        exclude_labels = exclude_labels or []
         candidates: List[int | str] = []
         for file_path in sorted(self.issues_dir.glob("*.md")):
-            candidates.append(str(file_path.resolve()))
+            content = file_path.read_text(encoding="utf-8")
+            labels = []
+            if content.startswith("---"):
+                parts = content.split("---")
+                if len(parts) > 2:
+                    meta = yaml.safe_load(parts[1]) or {}
+                    labels = meta.get("labels", [])
+            if backlog_label in labels and not any(l in labels for l in exclude_labels):
+                candidates.append(str(file_path.resolve()))
             if len(candidates) >= limit:
                 break
         return candidates
+
+    def push_branch(self, repo_root: Path, branch: str, base_branch: str) -> bool:
+        return True
 
     def publish_draft_change(
         self,

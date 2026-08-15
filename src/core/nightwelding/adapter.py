@@ -52,6 +52,26 @@ class BaseNightweldingAdapter(ABC):
         pass
 
     @abstractmethod
+    def push_branch(
+        self,
+        repo_root: Path,
+        branch: str,
+        base_branch: str,
+    ) -> bool:
+        """Push the branch to remote."""
+        pass
+
+    @abstractmethod
+    def push_branch(
+        self,
+        repo_root: Path,
+        branch: str,
+        base_branch: str,
+    ) -> bool:
+        """Push the branch to remote."""
+        pass
+
+    @abstractmethod
     def publish_draft_change(
         self,
         repo_root: Path,
