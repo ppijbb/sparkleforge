@@ -28,7 +28,7 @@ class NightweldingStatus(str, Enum):
 
 @dataclass
 class NightweldingItem:
-    issue_number: int
+    issue_number: int | str
     status: NightweldingStatus = NightweldingStatus.QUEUED
     repro_test_files: List[str] = field(default_factory=list)
     branch: str | None = None
@@ -57,7 +57,7 @@ class NightweldingItem:
 
 
 class NightweldingQueue:
-    """JSON-backed store of NightweldingItem history, keyed by issue number."""
+    """JSON-backed store of NightweldingItem history, keyed by issue number/id."""
 
     def __init__(self, storage_path: Path | None = None):
         if storage_path is None:
@@ -65,7 +65,7 @@ class NightweldingQueue:
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self.queue_file = self.storage_path / "queue.json"
-        self.items: Dict[int, NightweldingItem] = {}
+        self.items: Dict[int | str, NightweldingItem] = {}
         self._load()
 
     def _load(self) -> None:
@@ -91,10 +91,10 @@ class NightweldingQueue:
         self.items[item.issue_number] = item
         self._save()
 
-    def get(self, issue_number: int) -> NightweldingItem | None:
+    def get(self, issue_number: int | str) -> NightweldingItem | None:
         return self.items.get(issue_number)
 
-    def remove(self, issue_number: int) -> bool:
+    def remove(self, issue_number: int | str) -> bool:
         if self.items.pop(issue_number, None) is not None:
             self._save()
             return True
