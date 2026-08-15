@@ -181,7 +181,7 @@ Autonomous problem-solving contract:
         stuck_repeat_count = 0
         # Momentum guard (Anvil Phase Mu, #1216): MAX_STUCK_TOOL_REPEATS only
         # catches the *same* call repeated back-to-back. It misses the pattern
-        # observed live against lfdb -- re-reading the same handful of files
+        # observed live against lfdb (#1411) -- re-reading the same handful of files
         # every iteration with slightly different ordering/args, forever,
         # because context compression erases the memory of having already
         # read them. Track distinct (tool, args) signatures against the same
