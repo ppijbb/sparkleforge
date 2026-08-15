@@ -123,3 +123,56 @@ async def test_discard_pending_background_compaction_cancels_and_clears():
 
     assert compressor._pending_task is None
     assert compressor._pending_snapshot_len == 0
+    # #1354: the cancelled task must actually be drained so it doesn't leak
+    # a "Task exception was never retrieved" warning.
+    await asyncio.sleep(0)
+
+
+class FailingOrchestrator:
+    """Always raises -- simulates a background compaction that fails."""
+
+    async def execute_with_model(self, **kwargs):
+        raise RuntimeError("summarization backend unavailable")
+
+
+@pytest.mark.asyncio
+async def test_hard_limit_falls_back_to_sync_compression_when_background_task_fails():
+    """#1354: if the background task fails, the hard-limit path must not
+    hand the caller an uncompacted, over-limit history -- it must fall back
+    to a synchronous compression so the result is actually under the limit.
+    """
+    orchestrator = FailingOrchestrator()
+    compressor = ContextCompressor(orchestrator)
+    messages = _short_messages(45)
+
+    result = await asyncio.wait_for(
+        compressor.compress_if_needed_background(messages, token_limit=10),
+        timeout=1.0,
+    )
+
+    assert len(result) < len(messages), "must fall back to sync compression, not return raw history"
+
+
+@pytest.mark.asyncio
+async def test_hard_limit_preserves_concurrently_appended_tail():
+    """#1350: messages appended to the shared history list while the
+    hard-limit path awaits the background task must survive in the tail,
+    not be silently dropped.
+    """
+    orchestrator = GatedOrchestrator()
+    compressor = ContextCompressor(orchestrator)
+    messages = _short_messages(45)
+
+    async def append_during_wait():
+        await asyncio.sleep(0.02)
+        messages.append({"role": "user", "content": "SENTINEL_APPENDED_DURING_WAIT"})
+        orchestrator.release.set()
+
+    asyncio.ensure_future(append_during_wait())
+
+    result = await asyncio.wait_for(
+        compressor.compress_if_needed_background(messages, token_limit=10),
+        timeout=1.0,
+    )
+
+    assert result[-1]["content"] == "SENTINEL_APPENDED_DURING_WAIT"

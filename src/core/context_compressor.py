@@ -96,6 +96,23 @@ class ContextCompressor:
             await self._pending_task
             messages = self._apply_pending_result(messages)
 
+            # #1354: the background task may have failed (network/LLM error)
+            # and _apply_pending_result falls back to the uncompacted
+            # history in that case -- sending that straight to the LLM API
+            # would hit a hard context_length_exceeded error. If we're still
+            # over the hard limit here, force a synchronous compression as
+            # a last resort rather than let an over-limit history through.
+            if self._estimate_tokens(messages) >= token_limit:
+                logger.warning(
+                    "Still over hard limit (%d) after background compaction; "
+                    "falling back to synchronous compression.",
+                    token_limit,
+                )
+                try:
+                    messages = await self.compress_by_summarization(messages)
+                except Exception as e:
+                    logger.error(f"Synchronous fallback compression failed: {e}")
+
         return messages
 
     def _apply_pending_result(self, current_messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -106,13 +123,20 @@ class ContextCompressor:
         is preserved verbatim on top of the compacted prefix.
         """
         task, self._pending_task = self._pending_task, None
+        # #1361: capture (and immediately clear) the snapshot offset that
+        # belongs to *this* task atomically with extracting the task itself.
+        # Nothing awaits between these two lines, so a re-entrant call
+        # starting a new compaction can't overwrite the offset out from
+        # under us before it's used below.
+        snapshot_len = self._pending_snapshot_len
+        self._pending_snapshot_len = 0
         try:
             compressed = task.result()
         except Exception as e:
             logger.error(f"Background compaction failed, keeping uncompacted history: {e}")
             return current_messages
 
-        new_tail = current_messages[self._pending_snapshot_len:]
+        new_tail = current_messages[snapshot_len:]
         logger.info(
             "Swapped in background-compacted history (%d -> %d messages)",
             len(current_messages),
@@ -129,7 +153,23 @@ class ContextCompressor:
         that no longer matches the (now-replaced) history list.
         """
         if self._pending_task is not None and not self._pending_task.done():
-            self._pending_task.cancel()
+            task = self._pending_task
+            task.cancel()
+
+            # #1354: cancelling without ever awaiting the task leaves it in
+            # limbo -- the event loop logs "Task exception was never
+            # retrieved" and cleanup isn't deterministic. This method is
+            # called from synchronous call sites, so it can't await the
+            # cancellation itself; schedule a drain task that does instead.
+            async def _drain_cancelled_task() -> None:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Error while cancelling background compaction")
+
+            asyncio.ensure_future(_drain_cancelled_task())
         self._pending_task = None
         self._pending_snapshot_len = 0
 
