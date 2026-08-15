@@ -192,16 +192,6 @@ class HITLCheckpointManager:
             if outcome is None:
                 # Trigger suspension if no provider or confidence was low
                 raise HITLSuspensionSignal("No provider or low confidence")
-            # ... (rest of existing provider logic)
-            result = CheckpointResult(
-                stage=stage, decision=CheckpointDecision.APPROVE, auto_resolved=True
-            )
-            logger.info("Checkpoint %s auto-approved (headless mode)", stage.value)
-            self.history.append(result)
-            self._record_telemetry(result, context)
-            return result
-
-        try:
             outcome = self.feedback_provider(stage, context)
             if asyncio.iscoroutine(outcome):
                 outcome = await outcome
