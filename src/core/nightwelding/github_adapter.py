@@ -121,8 +121,7 @@ def list_candidate_issues(
     proc = _run(
         ["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "number,labels"]
     ) if shutil.which("gh") else subprocess.CompletedProcess(None, 0, stdout="[]")
-        ["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "number,labels"]
-    )
+
     issues = json.loads(proc.stdout or "[]")
     candidates: List[int] = []
     for issue in issues:
@@ -138,8 +137,7 @@ def list_candidate_issues(
         pr_proc = _run(
             ["gh", "pr", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "headRefName"]
         ) if shutil.which("gh") else subprocess.CompletedProcess(None, 0, stdout="[]")
-            ["gh", "pr", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "headRefName"]
-        )
+
         open_prs = json.loads(pr_proc.stdout or "[]")
         if any(
             pr["headRefName"].startswith(f"nightshift/{number}-")
