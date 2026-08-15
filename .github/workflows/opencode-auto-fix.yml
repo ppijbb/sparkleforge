@@ -3,6 +3,11 @@ name: OpenCode Auto Fix PR
 on:
   workflow_dispatch:
     inputs:
+      target_repo:
+        description: 'External repository to fix (owner/name). Defaults to this repo.'
+        required: false
+        default: ''
+        type: string
       issue_number:
         description: 'GitHub issue number to fix with OpenCode'
         required: false
@@ -94,6 +99,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
+          TARGET_REPO="${{ github.event.inputs.target_repo }}"
+          if [ -z "$TARGET_REPO" ]; then
+            TARGET_REPO="${{ github.repository }}"
+          fi
+          echo "target_repo=$TARGET_REPO" >> "$GITHUB_OUTPUT"
+          if [ "$TARGET_REPO" != "${{ github.repository }}" ]; then
+            echo "Cross-repo dogfooding target detected ($TARGET_REPO). Cloning external checkout."
+            EXTERNAL_WORK_DIR="$RUNNER_TEMP/target-repo"
+            rm -rf "$EXTERNAL_WORK_DIR"
+            mkdir -p "$EXTERNAL_WORK_DIR"
+            gh repo clone "$TARGET_REPO" "$EXTERNAL_WORK_DIR" -- --depth=1 --no-tags
+            echo "target_path=$EXTERNAL_WORK_DIR" >> "$GITHUB_OUTPUT"
+          else
+            echo "target_path=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
+          fi
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
           elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
