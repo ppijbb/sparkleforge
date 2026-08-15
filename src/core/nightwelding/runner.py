@@ -174,7 +174,9 @@ async def run_nightwelding_issue(
         )
 
         # Push branch if remote is configured
-        github_adapter.push_branch(repo_root, branch, base_branch)
+        push_ok = active_adapter.push_branch(repo_root, branch, base_branch)
+        if not push_ok:
+            return _fail(queue, item, active_adapter, issue_number, "Nightwelding completed without commits.")
 
         published_ref = active_adapter.publish_draft_change(
             repo_root=repo_root,
