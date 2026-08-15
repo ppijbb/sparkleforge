@@ -248,7 +248,6 @@ def main():
             for entry in pr_stream:
                 badge = "🟢 MERGED" if entry["state"] == "MERGED" else "🟡 IN PROGRESS"
                 st.markdown(f"- {badge} PR {entry['pr']} — MTTM: {entry['mttm']}")
-            )
 
         # 시스템 상태
         with st.expander("🏥 System Health", expanded=True):
