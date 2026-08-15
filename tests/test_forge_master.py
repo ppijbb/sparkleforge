@@ -113,6 +113,35 @@ async def test_controller_execution_with_mocked_cli():
         assert result["adversarial_audit"]["passed"] is True
 
 
+@pytest.mark.asyncio
+async def test_controller_applies_persona_directive_to_dispatched_query():
+    """#1161: `persona` was threaded through the CLI/controller signature and
+    `apply_persona` was imported, but never actually called -- passing
+    `--persona ponytail` had zero effect on the dispatched goal text."""
+    controller = ForgeMasterController()
+
+    mock_cli_result = {"success": True, "response": "ok", "confidence": 0.9}
+    seen_query = {}
+
+    async def fake_execute_with_agent(agent_name, query, **kwargs):
+        seen_query["query"] = query
+        return mock_cli_result
+
+    with patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(side_effect=fake_execute_with_agent),
+    ):
+        await controller.execute_task_with_master_control(
+            task_query="Write calculate function",
+            preferred_agent="codex",
+            persona="ponytail",
+        )
+
+    assert "[Persona: ponytail]" in seen_query["query"]
+    assert EXECUTION_PERSONAS["ponytail"] in seen_query["query"]
+
+
 @pytest.mark.parametrize(
     "usage,expected_tokens",
     [
