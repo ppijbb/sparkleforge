@@ -16,22 +16,126 @@ branch prefixes.
 from __future__ import annotations
 
 import json
-import subprocess
 import secrets
 import shutil
+import subprocess
 import sys
-import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from src.core.nightwelding.adapter import (
+    BaseNightweldingAdapter,
+    IssueContext,
+    NightweldingAdapterError,
+)
 
 NIGHTWELDING_DRAFT_LABEL = ("nightwelding-draft-opened", "5319E7", "Nightwelding opened a Draft PR; human must review and mark it ready before it can merge.")
 NIGHTWELDING_FAILED_LABEL = ("nightwelding-failed", "B60205", "Nightwelding could not reproduce the issue, or could not make the reproduction test pass.")
 NIGHTWELDING_QUEUE_LABEL = ("nightwelding-queue", "1D76DB", "Queued for Nightwelding's overnight autonomous-implementation pipeline.")
 
 
-class GitHubAdapterError(RuntimeError):
+class GitHubAdapterError(NightweldingAdapterError):
     pass
+
+
+class GitHubAdapter(BaseNightweldingAdapter):
+    """GitHub & `gh` CLI implementation of BaseNightweldingAdapter."""
+
+    def __init__(self, repo: str | None = None, repo_root: Path | None = None):
+        self.repo = repo
+        self.repo_root = Path(repo_root or Path.cwd())
+
+    def _get_repo(self) -> str:
+        if self.repo:
+            return self.repo
+        import os
+        env_repo = os.getenv("GITHUB_REPOSITORY")
+        if env_repo:
+            return env_repo
+        proc = _run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], check=False)
+        if proc.returncode == 0 and proc.stdout.strip():
+            self.repo = proc.stdout.strip()
+            return self.repo
+        raise GitHubAdapterError(
+            "Could not determine the GitHub repository (set GITHUB_REPOSITORY or run inside a repo with `gh` configured)."
+        )
+
+    def fetch_issue_context(self, issue_ref: int | str) -> IssueContext:
+        issue_num = int(issue_ref) if str(issue_ref).isdigit() else issue_ref
+        return fetch_issue_context(self._get_repo(), issue_num)
+
+    def default_base_branch(self) -> str:
+        return default_base_branch(self._get_repo())
+
+    def list_candidate_issues(
+        self,
+        backlog_label: str = "auto-fix-failed",
+        exclude_labels: List[str] | None = None,
+        limit: int = 100,
+    ) -> List[int | str]:
+        return list_candidate_issues(
+            self._get_repo(),
+            backlog_label=backlog_label,
+            exclude_labels=exclude_labels or [NIGHTWELDING_DRAFT_LABEL[0], NIGHTWELDING_FAILED_LABEL[0]],
+            limit=limit,
+        )
+
+    def publish_draft_change(
+        self,
+        repo_root: Path,
+        base_branch: str,
+        branch: str,
+        title: str,
+        body: str,
+        issue_ref: int | str,
+    ) -> str:
+        issue_num = int(issue_ref) if str(issue_ref).isdigit() else None
+        return open_draft_pr(
+            self._get_repo(),
+            base_branch,
+            branch,
+            title,
+            body,
+            issue_number=issue_num,
+        )
+
+    def report_success(
+        self,
+        issue_ref: int | str,
+        pr_or_patch_ref: str,
+    ) -> None:
+        if str(issue_ref).isdigit():
+            repo = self._get_repo()
+            num = int(issue_ref)
+            ensure_label(repo, NIGHTWELDING_DRAFT_LABEL[0], NIGHTWELDING_DRAFT_LABEL[1], NIGHTWELDING_DRAFT_LABEL[2])
+            add_labels(repo, num, [NIGHTWELDING_DRAFT_LABEL[0]])
+            remove_labels(repo, num, [NIGHTWELDING_QUEUE_LABEL[0]])
+            comment_on_issue(
+                repo,
+                num,
+                f"Nightwelding opened a Draft PR: {pr_or_patch_ref}. It requires human review — mark it ready for review, then merge manually.",
+            )
+
+    def report_failure(
+        self,
+        issue_ref: int | str,
+        reason: str,
+        log: str = "",
+    ) -> None:
+        if str(issue_ref).isdigit():
+            repo = self._get_repo()
+            num = int(issue_ref)
+            ensure_label(repo, NIGHTWELDING_FAILED_LABEL[0], NIGHTWELDING_FAILED_LABEL[1], NIGHTWELDING_FAILED_LABEL[2])
+            add_labels(repo, num, [NIGHTWELDING_FAILED_LABEL[0]])
+            remove_labels(repo, num, [NIGHTWELDING_QUEUE_LABEL[0]])
+            comment = (
+                "Nightwelding could not complete this issue overnight.\n\n"
+                f"Reason: {reason}\n\n"
+            )
+            if log:
+                comment += f"Log (tail):\n```text\n{log[-3000:]}\n```\n\n"
+            comment += "Re-add the `nightwelding-queue` label to retry after addressing the root cause."
+            comment_on_issue(repo, num, comment)
 
 
 def _run(cmd: List[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -65,15 +169,7 @@ def normalize_commit_title(issue_title: str, repo_root: Path) -> str | None:
     return proc.stdout.strip()
 
 
-@dataclass
-class IssueContext:
-    number: int
-    title: str
-    url: str
-    markdown: str
-
-
-def fetch_issue_context(repo: str, issue_number: int) -> IssueContext:
+def fetch_issue_context(repo: str, issue_number: int | str) -> IssueContext:
     title = _run(["gh", "issue", "view", str(issue_number), "--repo", repo, "--json", "title", "--jq", ".title"]).stdout.strip()
     url = _run(["gh", "issue", "view", str(issue_number), "--repo", repo, "--json", "url", "--jq", ".url"]).stdout.strip()
     jq = (

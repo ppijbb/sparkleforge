@@ -52,8 +52,12 @@ def implement_until_green(
     extra_context_path = repo_root / "opencode-extra-context.md"
     extra_context_path.write_text("", encoding="utf-8")
 
+    validator_script = Path(__file__).resolve().parents[3] / "scripts" / "validate_commit_messages.py"
+    if not validator_script.exists():
+        validator_script = repo_root / "scripts" / "validate_commit_messages.py"
+
     validate = _run(
-        [sys.executable, "scripts/validate_commit_messages.py", "--message", commit_title],
+        [sys.executable, str(validator_script), "--message", commit_title],
         cwd=repo_root,
     )
     if validate.returncode != 0:
