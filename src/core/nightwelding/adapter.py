@@ -62,13 +62,8 @@ class BaseNightweldingAdapter(ABC):
         pass
 
     @abstractmethod
-    def push_branch(
-        self,
-        repo_root: Path,
-        branch: str,
-        base_branch: str,
-    ) -> bool:
-        """Push the branch to remote."""
+    def commit_changes(self, repo_root: Path, message: str) -> None:
+        """Stage all changes (tracked + untracked) and commit them."""
         pass
 
     @abstractmethod
