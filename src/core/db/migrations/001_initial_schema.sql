@@ -84,3 +84,19 @@ CREATE TABLE IF NOT EXISTS message_archive (
 CREATE INDEX IF NOT EXISTS idx_message_archive_session_id ON message_archive(session_id);
 CREATE INDEX IF NOT EXISTS idx_message_archive_compaction_event_id ON message_archive(compaction_event_id);
 
+-- Agent Error Contexts (Phase 1)
+CREATE TABLE IF NOT EXISTS agent_error_contexts (
+    error_id VARCHAR(255) PRIMARY KEY,
+    session_id VARCHAR(255) REFERENCES sessions(session_id) ON DELETE CASCADE,
+    error_message TEXT,
+    stack_trace TEXT,
+    workspace_state JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- RLS Policies
+ALTER TABLE agent_error_contexts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated can read agent error contexts" ON public.agent_error_contexts;
+CREATE POLICY "Authenticated can read agent error contexts"
+    ON public.agent_error_contexts FOR SELECT TO authenticated USING (true);
