@@ -155,6 +155,23 @@ class TrustGate:
     async def evaluate(self) -> TrustContext:
         """Evaluate the current runtime trust policy."""
         file_config = self._read_policy_file()
+
+        # Risk-based escalation threshold evaluation
+        # High-risk actions (e.g., destructive git, file deletion) trigger escalation
+        # if the current trust level is not FULL.
+        def evaluate_risk(action_type: str) -> bool:
+            high_risk_actions = {"delete_file", "git_push", "network_call"}
+            if action_type in high_risk_actions:
+                # If we are in a restricted mode, escalate to human review
+                current_level = self._resolve_level(file_config)
+                if current_level != TrustLevel.FULL:
+                    # In a real implementation, this would trigger an async 
+                    # human-in-the-loop (HITL) request via the orchestrator.
+                    return False
+            return True
+
+        # (Integration point for risk-based gate)
+
         level = self._resolve_level(file_config)
 
         deny_names = {
