@@ -134,7 +134,13 @@ class LocalGitAdapter(BaseNightweldingAdapter):
         return candidates
 
     def push_branch(self, repo_root: Path, branch: str, base_branch: str) -> bool:
-        return True
+        # Attempt to push to origin. If no remote 'origin' is configured, this will fail.
+        proc = subprocess.run(
+            ["git", "push", "origin", branch],
+            cwd=repo_root,
+            capture_output=True,
+        )
+        return proc.returncode == 0
 
     def commit_changes(self, repo_root: Path, message: str) -> None:
         subprocess.run(["git", "add", "-u"], cwd=repo_root, capture_output=True, text=True, check=False)
