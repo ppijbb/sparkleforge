@@ -3,7 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,11 @@ class RequestAnalysis:
     requirements: List[str] = field(default_factory=list)
     constraints: List[str] = field(default_factory=list)
     confidence: float = 0.0
+    goal_tree: List["GoalNode"] = field(default_factory=list)
+
+    # Intent-Outcome 매칭 결과 (1:1 체크리스트 검증)
+    intent_outcome_matches: List["IntentOutcomeMatch"] = field(default_factory=list)
+    intent_coverage: float = 0.0
 
 
 class RequestAnalyzer:
@@ -87,3 +92,93 @@ class RequestAnalyzer:
             for sentence in re.split(r"[.\n]", text)
             if any(marker in sentence.lower() for marker in constraint_markers) and sentence.strip()
         ]
+
+
+@dataclass
+class GoalNode:
+    """목표 트리 노드."""
+    description: str
+    children: List["GoalNode"] = field(default_factory=list)
+
+
+@dataclass
+class IntentOutcomeMatch:
+    """의도-결과 1:1 매칭 항목 - 작업 완수 후 체크리스트 검증 단위."""
+
+    intent: str
+    outcome: Optional[str]
+    matched: bool
+    evidence: str = ""
+
+
+class IntentOutcomeMatcher:
+    """작업 완료 후 파싱된 의도와 git diff 결과물을 1:1 체크리스트로 검증."""
+
+    def __init__(self, analyzer: Optional[RequestAnalyzer] = None) -> None:
+        self._analyzer = analyzer or RequestAnalyzer()
+
+    def match(
+        self,
+        request: str,
+        diff_text: str,
+    ) -> List[IntentOutcomeMatch]:
+        """요청에서 추출된 의도와 diff 결과물을 1:1로 매칭 검증."""
+        analysis = self._analyzer.analyze(request)
+        intents = self._collect_intents(analysis)
+        diff_lower = (diff_text or "").lower()
+        matches: List[IntentOutcomeMatch] = []
+        for intent in intents:
+            keywords = self._intent_keywords(intent)
+            evidence = next((kw for kw in keywords if kw and kw in diff_lower), "")
+            matched = bool(evidence)
+            matches.append(
+                IntentOutcomeMatch(
+                    intent=intent,
+                    outcome=evidence or None,
+                    matched=matched,
+                    evidence=evidence,
+                )
+            )
+        return matches
+
+    def verify(
+        self,
+        request: str,
+        diff_text: str,
+        min_coverage: float = 0.95,
+    ) -> Dict[str, object]:
+        """의도 커버리지와 매칭 일치도를 계산해 검증 보고서 반환."""
+        matches = self.match(request, diff_text)
+        total = len(matches) or 1
+        matched_count = sum(1 for m in matches if m.matched)
+        coverage = matched_count / total
+        return {
+            "matches": matches,
+            "intent_coverage": round(coverage, 2),
+            "intent_omission_rate": round(1.0 - coverage, 2),
+            "passed": coverage >= min_coverage,
+            "unmatched_intents": [m.intent for m in matches if not m.matched],
+        }
+
+    @staticmethod
+    def _collect_intents(analysis: RequestAnalysis) -> List[str]:
+        """목표 트리의 하위 노드와 요구사항을 의도 체크리스트로 수집."""
+        intents: List[str] = []
+        for root in analysis.goal_tree:
+            for child in root.children:
+                intents.append(child.description)
+        intents.extend(analysis.requirements)
+        # 중복 제거 (순서 유지)
+        seen: set = set()
+        unique: List[str] = []
+        for item in intents:
+            if item not in seen:
+                seen.add(item)
+                unique.append(item)
+        return unique
+
+    @staticmethod
+    def _intent_keywords(intent: str) -> List[str]:
+        """의도 문장에서 diff 매칭에 사용할 핵심 키워드를 추출."""
+        tokens = [t.strip().lower() for t in re.split(r"[\s,;·]| 그리고 | 및 | and | or ", intent) if t.strip()]
+        return [t for t in tokens if len(t) >= 3]
