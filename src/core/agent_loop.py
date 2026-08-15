@@ -179,24 +179,6 @@ Autonomous problem-solving contract:
         last_tool_call_signature: tuple[str, str] | None = None
         recent_tool_signatures: deque[set[tuple[str, str]]] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
         stuck_repeat_count = 0
-        # Momentum guard (Anvil Phase Mu, #1216): MAX_STUCK_TOOL_REPEATS only
-        # catches the *same* call repeated back-to-back. It misses the pattern
-        # observed live against lfdb -- re-reading the same handful of files
-        # every iteration with slightly different ordering/args, forever,
-        # because context compression erases the memory of having already
-        # read them. Track distinct (tool, args) signatures against the same
-        # bounded recent_tool_signatures window used for stuck-loop detection
-        # (issue #1309: an unbounded all-time set caused OOM in long-running
-        # loops) -- an iteration that contributes zero signatures outside the
-        # recent window is zero-momentum regardless of whether any single
-        # call repeats.
-        # ponytail: window-bounded "seen recently" instead of true "ever seen
-        # this run" -- a signature could resurface after scrolling out of the
-        # window and register as "new" again. Acceptable: the goal is
-        # detecting sustained stagnation, not exact novelty tracking. Widen
-        # SIGNATURE_WINDOW_SIZE if false negatives show up in practice.
-        stagnant_iterations = 0
-        MOMENTUM_STAGNATION_THRESHOLD = 2
 
         # Ensure MCP is initialized
         try:
@@ -577,36 +559,6 @@ Autonomous problem-solving contract:
                         self.mode_controller.submit_plan(False, feedback="tool execution failed")
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
-
-            if new_signature_this_iteration:
-                stagnant_iterations = 0
-            else:
-                stagnant_iterations += 1
-                logger.warning(
-                    "[AgentLoop] Zero-momentum iteration %d/%d: every tool call this "
-                    "turn repeats a signature already seen earlier in the run",
-                    stagnant_iterations,
-                    MOMENTUM_STAGNATION_THRESHOLD,
-                )
-                if stagnant_iterations >= MOMENTUM_STAGNATION_THRESHOLD:
-                    stagnant_iterations = 0
-                    history.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "Momentum check: your last "
-                                f"{MOMENTUM_STAGNATION_THRESHOLD} turns only repeated tool "
-                                "calls (same tool+arguments) you already made earlier in "
-                                "this run. No new information was gathered. Do not "
-                                "re-read or re-list anything you have already seen. "
-                                "Immediately take the next concrete forward action "
-                                "(e.g. edit_file/write_file/git_commit/git_push, or an "
-                                "equivalent action tool) or, if you already have enough "
-                                "to answer, stop calling tools and give your final answer "
-                                "now."
-                            ),
-                        }
-                    )
 
         if budget.heat_hard_expired:
             # Safety net: a single iteration ran long enough to cross the hard

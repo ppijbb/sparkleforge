@@ -438,43 +438,6 @@ class AgentHarness:
         self._update_token_budget(state, all_tasks)
         return state
 
-    async def _invoke_with_stage_updates(
-        self,
-        input_state: Dict[str, Any] | None,
-        config: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Invoke the graph while streaming stage updates through the logger.
-
-        ``input_state`` is ``None`` on the checkpoint-resume path; in that case
-        we default ``final_state`` to an empty dict so callers always receive a
-        state dict even if the graph errors or exits before emitting a
-        ``"values"`` chunk. ``stream_mode`` is passed as a keyword argument to
-        ``astream`` so the call is robust against positional-signature changes
-        across LangGraph versions. All stage output goes through ``logger.info``
-        instead of ``print()`` so it is captured by the Supabase redirect and
-        respects log-level configuration.
-        """
-        final_state: Dict[str, Any] = input_state if input_state is not None else {}
-        try:
-            async for mode, chunk in self.graph.astream(
-                input_state, config, stream_mode=["updates", "values"]
-            ):
-                if mode == "values":
-                    if isinstance(chunk, dict):
-                        final_state = chunk
-                elif mode == "updates":
-                    if isinstance(chunk, dict):
-                        for _node, update in chunk.items():
-                            if isinstance(update, dict):
-                                final_state.update(update)
-                    stage = chunk.get("stage") if isinstance(chunk, dict) else None
-                    if stage:
-                        logger.info(f"[Harness/Stage] {stage}")
-        except Exception as e:
-            logger.error(f"[Harness] Stage-update invocation failed: {e}", exc_info=True)
-            raise
-        return final_state
-
     async def _dispatch_codebase_tasks_via_forge_master(
         self, state: HarnessState, tasks: list[Dict[str, Any]]
     ) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
