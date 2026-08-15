@@ -84,15 +84,22 @@ class MemoryAccessControl:
         Returns:
             접근 허용 여부
         """
+        # Bounds handling: empty/None identifiers cannot identify an owned
+        # memory or a valid ACL entry, so deny early to avoid substring
+        # false positives (e.g. user_id="" in memory_id="" -> True).
+        if not user_id or not memory_id:
+            return False
+
         # 메모리 소유자 확인 (메모리 ID에서 추출 또는 별도 저장소에서)
         # 간단한 구현: 메모리 ID에 user_id가 포함되어 있다고 가정
-        if user_id in memory_id or memory_id.startswith(f"mem_{user_id}_"):
+        if memory_id.startswith(f"mem_{user_id}_") or user_id in memory_id:
             # 소유자는 모든 권한
             return True
 
         # ACL 확인
-        if memory_id in self.acls:
-            user_access = self.acls[memory_id].get(user_id, AccessLevel.NONE)
+        memory_acl = self.acls.get(memory_id)
+        if memory_acl is not None:
+            user_access = memory_acl.get(user_id, AccessLevel.NONE)
 
             # 접근 레벨 비교
             level_hierarchy = {
