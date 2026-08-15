@@ -28,7 +28,16 @@ def _edit_mismatch_hint(content: str, old_string: str, context_lines: int = 3, m
     """
     content_lines = content.splitlines()
     old_lines = old_string.splitlines()
-    matcher = difflib.SequenceMatcher(None, content_lines, old_lines, autojunk=False)
+    # Compare stripped lines so a match isn't fragmented by leading/trailing
+    # whitespace differences on an otherwise-identical line (e.g. a single
+    # trailing space) -- exactly the kind of mismatch this hint exists to
+    # surface. Line numbers/content displayed below still use the originals.
+    matcher = difflib.SequenceMatcher(
+        None,
+        [line.strip() for line in content_lines],
+        [line.strip() for line in old_lines],
+        autojunk=False,
+    )
     match = matcher.find_longest_match(0, len(content_lines), 0, len(old_lines))
 
     if match.size < MIN_MATCH_LINES:
