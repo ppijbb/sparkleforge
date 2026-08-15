@@ -91,7 +91,7 @@ async def run_nightwelding_issue(
     try:
         issue = active_adapter.fetch_issue_context(issue_number)
 
-        commit_title_impl = active_adapter.normalize_commit_title(issue.title, main_repo_root)
+        commit_title_impl = active_adapter.normalize_commit_title(issue.title, main_repo_root, issue_markdown=issue.markdown)
         if not commit_title_impl:
             msg = f"Could not derive a valid commit title from issue title: {issue.title!r}"
             return _fail(queue, item, active_adapter, issue_number, msg)
