@@ -16,6 +16,7 @@ branch prefixes.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import secrets
 import shutil
@@ -34,6 +35,20 @@ class GitHubAdapterError(RuntimeError):
     pass
 
 
+class IssueTrackerAdapter:
+    def fetch_issue_context(self, identifier: str) -> IssueContext:
+        raise NotImplementedError
+
+    def list_candidate_issues(self, filter_criteria: Any) -> List[str]:
+        raise NotImplementedError
+
+    def publish_draft_change(self, branch: str, base_branch: str, title: str, body: str) -> str:
+        raise NotImplementedError
+
+    def update_issue_status(self, identifier: str, status: str, comment: str, labels: List[str]) -> None:
+        raise NotImplementedError
+
+
 def _run(cmd: List[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
     proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
     if check and proc.returncode != 0:
@@ -42,8 +57,11 @@ def _run(cmd: List[str], cwd: Path | None = None, check: bool = True) -> subproc
 
 
 def default_base_branch(repo: str) -> str:
-    proc = _run(["gh", "repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"])
-    return proc.stdout.strip()
+    if shutil.which("gh"):
+        proc = _run(["gh", "repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"])
+        return proc.stdout.strip()
+    # Fallback for local-only environments
+    return "main"
 
 
 def normalize_commit_title(issue_title: str, repo_root: Path) -> str | None:
@@ -74,6 +92,10 @@ class IssueContext:
 
 
 def fetch_issue_context(repo: str, issue_number: int) -> IssueContext:
+    if not shutil.which("gh"):
+        # Local file fallback: look for issue_{number}.md in the repo root
+        path = Path.cwd() / f"issue_{issue_number}.md"
+        return IssueContext(issue_number, f"Issue {issue_number}", "local", path.read_text() if path.exists() else "")
     title = _run(["gh", "issue", "view", str(issue_number), "--repo", repo, "--json", "title", "--jq", ".title"]).stdout.strip()
     url = _run(["gh", "issue", "view", str(issue_number), "--repo", repo, "--json", "url", "--jq", ".url"]).stdout.strip()
     jq = (
@@ -98,6 +120,8 @@ def list_candidate_issues(
     """
     proc = _run(
         ["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "number,labels"]
+    ) if shutil.which("gh") else subprocess.CompletedProcess(None, 0, stdout="[]")
+        ["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "number,labels"]
     )
     issues = json.loads(proc.stdout or "[]")
     candidates: List[int] = []
@@ -112,6 +136,8 @@ def list_candidate_issues(
     eligible: List[int] = []
     for number in candidates:
         pr_proc = _run(
+            ["gh", "pr", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "headRefName"]
+        ) if shutil.which("gh") else subprocess.CompletedProcess(None, 0, stdout="[]")
             ["gh", "pr", "list", "--repo", repo, "--state", "open", "--limit", str(limit), "--json", "headRefName"]
         )
         open_prs = json.loads(pr_proc.stdout or "[]")
@@ -178,6 +204,8 @@ def push_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
 
 
 def ensure_label(repo: str, name: str, color: str, description: str) -> None:
+    if not shutil.which("gh"):
+        return
     subprocess.run(
         ["gh", "label", "create", name, "--repo", repo, "--color", color, "--description", description, "--force"],
         capture_output=True, text=True, check=False,
@@ -185,6 +213,8 @@ def ensure_label(repo: str, name: str, color: str, description: str) -> None:
 
 
 def add_labels(repo: str, issue_number: int, labels: List[str]) -> None:
+    if not shutil.which("gh"):
+        return
     subprocess.run(
         ["gh", "issue", "edit", str(issue_number), "--repo", repo, "--add-label", ",".join(labels)],
         capture_output=True, text=True, check=False,
@@ -192,6 +222,8 @@ def add_labels(repo: str, issue_number: int, labels: List[str]) -> None:
 
 
 def remove_labels(repo: str, issue_number: int, labels: List[str]) -> None:
+    if not shutil.which("gh"):
+        return
     subprocess.run(
         ["gh", "issue", "edit", str(issue_number), "--repo", repo, "--remove-label", ",".join(labels)],
         capture_output=True, text=True, check=False,
@@ -199,6 +231,8 @@ def remove_labels(repo: str, issue_number: int, labels: List[str]) -> None:
 
 
 def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
+    if not shutil.which("gh"):
+        return
     subprocess.run(
         ["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", body],
         capture_output=True, text=True, check=False,
@@ -206,6 +240,8 @@ def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
 
 
 def find_open_pr(repo: str, branch: str, base_branch: str) -> str | None:
+    if not shutil.which("gh"):
+        return None
     proc = _run(
         ["gh", "pr", "list", "--repo", repo, "--head", branch, "--base", base_branch, "--state", "open", "--json", "url"],
         check=False,
@@ -247,6 +283,8 @@ def _validate_issue_metadata_schema(meta: Dict[str, Any]) -> None:
 def fetch_issue_metadata(repo: str, issue_number: int) -> Dict[str, Any]:
     """Fetch labels, milestone, and projectItems for an issue."""
     try:
+        if not shutil.which("gh"):
+            return {}
         proc = _run([
             "gh", "issue", "view", str(issue_number),
             "--repo", repo,
@@ -287,6 +325,8 @@ def open_draft_pr(
     if "OpenCode-generated" not in body:
         raise GitHubAdapterError("PR body must contain the literal substring 'OpenCode-generated'.")
 
+    if not shutil.which("gh"):
+        return f"local-draft-pr-{branch}"
     existing = find_open_pr(repo, branch, base_branch)
     if existing:
         return existing
@@ -329,6 +369,8 @@ async def create_subissues(parent_issue_number: str, sub_issues: list[dict]) -> 
     created_numbers = []
     for sub in sub_issues[:6]: # Limit to 6
         title = sub["title"]
+        if not shutil.which("gh"):
+            continue
         body = sub["body"]
         # Check for existing sub-issue to avoid duplicates
         existing = subprocess.run(
