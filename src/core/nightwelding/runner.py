@@ -86,19 +86,8 @@ async def run_nightwelding_issue(
         item.status = NightweldingStatus.RED
         item.repro_test_files = repro.test_files
         queue.upsert(item)
-
-        # Commit the reproduction test itself before attempting an implementation.
-        github_adapter._run(["git", "add", "-u"], cwd=repo_root, check=False)
-        untracked = github_adapter._run(
-            ["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=repo_root, check=False
-        ).stdout.split("\0")
-        untracked = [p for p in untracked if p]
-        if untracked:
-            github_adapter._run(["git", "add", "--", *untracked], cwd=repo_root, check=False)
-        github_adapter._run(
-            ["git", "commit", "-m", f"test: add reproduction test for issue {issue_number} (nightwelding)"],
-            cwd=repo_root,
-        )
+        
+        github_adapter.commit_changes(repo_root, f"test: add reproduction test for issue {issue_number} (nightwelding)")
 
         item.status = NightweldingStatus.IMPLEMENTING
         queue.upsert(item)

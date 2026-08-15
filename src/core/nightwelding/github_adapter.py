@@ -176,6 +176,11 @@ def push_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
     _run(["git", "push", "--set-upstream", "origin", branch], cwd=repo_root)
     return True
 
+def commit_changes(repo_root: Path, message: str) -> None:
+    _run(["git", "add", "-u"], cwd=repo_root)
+    _run(["git", "add", "."], cwd=repo_root)
+    _run(["git", "commit", "-m", message], cwd=repo_root)
+
 
 def ensure_label(repo: str, name: str, color: str, description: str) -> None:
     subprocess.run(
