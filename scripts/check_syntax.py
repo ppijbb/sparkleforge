@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python 파일 문법 오류 점검 스크립트. CI 헬스체크 회귀 감지용으로도 사용됨."""
+"""Python syntax check script. Also used for CI health-check regression detection."""
 
 import ast
 import sys
@@ -52,5 +52,5 @@ if errors:
         print()
     sys.exit(1)
 else:
-    print(f"✅ 모든 Python 파일 문법 오류 없음 ({checked}개 파일 점검 완료)")
+    print(f"✅ All Python files passed syntax checks ({checked} files checked)")
     sys.exit(0)
