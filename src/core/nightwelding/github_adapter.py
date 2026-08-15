@@ -80,6 +80,12 @@ class GitHubAdapter(BaseNightweldingAdapter):
             limit=limit,
         )
 
+    def push_branch(self, repo_root: Path, branch: str, base_branch: str) -> bool:
+        return push_branch(repo_root, branch, base_branch)
+
+    def commit_changes(self, repo_root: Path, message: str) -> None:
+        commit_changes(repo_root, message)
+
     def publish_draft_change(
         self,
         repo_root: Path,
@@ -90,6 +96,11 @@ class GitHubAdapter(BaseNightweldingAdapter):
         issue_ref: int | str,
     ) -> str:
         issue_num = int(issue_ref) if str(issue_ref).isdigit() else None
+        if issue_ref is not None and issue_num is None:
+            raise GitHubAdapterError(
+                f"issue_ref {issue_ref!r} is not a numeric GitHub issue number; "
+                "cannot open a PR with a 'Closes #N' keyword or apply issue labels."
+            )
         return open_draft_pr(
             self._get_repo(),
             base_branch,
@@ -260,6 +271,18 @@ def remove_worktree(repo_root: Path | str, worktree_dir: Path | None = None) -> 
         _run(["git", "worktree", "prune"], cwd=Path.cwd(), check=False)
     except OSError as e:
         print(f"Error: Failed to clean up worktree directory {worktree_dir}: {e}")
+
+
+def commit_changes(repo_root: Path, message: str) -> None:
+    """Stage all changes (tracked modifications + untracked files) and commit."""
+    _run(["git", "add", "-u"], cwd=repo_root, check=False)
+    untracked = _run(
+        ["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=repo_root, check=False
+    ).stdout.split("\0")
+    untracked = [p for p in untracked if p]
+    if untracked:
+        _run(["git", "add", "--", *untracked], cwd=repo_root, check=False)
+    _run(["git", "commit", "-m", message], cwd=repo_root)
 
 
 def push_branch(repo_root: Path, branch: str, base_branch: str) -> bool:
