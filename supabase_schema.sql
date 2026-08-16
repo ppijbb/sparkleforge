@@ -53,6 +53,22 @@ ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.forge_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_logs ENABLE ROW LEVEL SECURITY;
 
+-- #1106/#1105: these three agent_logs policies were dropped without
+-- replacement when agent_error_contexts was added, which would strip all
+-- SELECT/INSERT/UPDATE access on an existing database and break any
+-- application code reading/writing agent_logs. Restored as they were.
+DROP POLICY IF EXISTS "Public can read agent logs" ON public.agent_logs;
+CREATE POLICY "Public can read agent logs"
+    ON public.agent_logs FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert agent logs" ON public.agent_logs;
+CREATE POLICY "Authenticated users can insert agent logs"
+    ON public.agent_logs FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated users can update agent logs" ON public.agent_logs;
+CREATE POLICY "Authenticated users can update agent logs"
+    ON public.agent_logs FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
 -- reports policies: public read, authenticated-only writes.
 DROP POLICY IF EXISTS "Allow public read access to reports" ON public.reports;
 CREATE POLICY "Allow public read access to reports" 
@@ -96,9 +112,14 @@ CREATE TABLE IF NOT EXISTS public.agent_error_contexts (
 -- Enable RLS on agent_error_contexts
 ALTER TABLE public.agent_error_contexts ENABLE ROW LEVEL SECURITY;
 
+-- #1106/#1105: agent_error_contexts stores full un-truncated stack traces,
+-- raw error messages, and workspace state -- anon read access here is a
+-- data exfiltration risk, unlike the intentionally-public reports/forge_jobs
+-- tables above.
 DROP POLICY IF EXISTS "Public can read agent error contexts" ON public.agent_error_contexts;
-CREATE POLICY "Public can read agent error contexts"
-    ON public.agent_error_contexts FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "Authenticated can read agent error contexts" ON public.agent_error_contexts;
+CREATE POLICY "Authenticated can read agent error contexts"
+    ON public.agent_error_contexts FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Authenticated users can insert agent error contexts" ON public.agent_error_contexts;
 CREATE POLICY "Authenticated users can insert agent error contexts"
