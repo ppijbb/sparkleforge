@@ -41,7 +41,21 @@ class TaskAnalyzerAgent:
             raise ValueError("GOOGLE_API_KEY environment variable is required")
 
         genai.configure(api_key=self.llm_config.api_key)
-        self.model = genai.GenerativeModel(self.llm_config.model)
+        # LLMConfig (src/core/researcher_config.py) exposes the model name as
+        # ``primary_model`` (and ``llm_model``), not ``model``. Fall back across
+        # the known attribute names so this constructor no longer crashes for
+        # every caller that reaches it (issue #1413).
+        model_name = (
+            getattr(self.llm_config, "primary_model", None)
+            or getattr(self.llm_config, "llm_model", None)
+            or getattr(self.llm_config, "model", None)
+        )
+        if not model_name:
+            raise ValueError(
+                "LLMConfig is missing a model name "
+                "(expected 'primary_model', 'llm_model', or 'model')"
+            )
+        self.model = genai.GenerativeModel(model_name)
 
         # Learning capabilities
         self.learning_data = []
