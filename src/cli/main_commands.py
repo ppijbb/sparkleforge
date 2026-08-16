@@ -1224,6 +1224,37 @@ async def handle_ci_command(args):
 
         extra_context = Path(args.extra_context) if args.extra_context else None
         return await fix_issue(Path(args.issue_context), extra_context)
+    elif args.ci_command == "publish":
+        import json
+
+        from src.core.ci.publish import commit_push_and_open_pr
+
+        commit_body = Path(args.commit_body_file).read_text(encoding="utf-8") if args.commit_body_file else None
+        pr_body = Path(args.pr_body_file).read_text(encoding="utf-8")
+        try:
+            result = commit_push_and_open_pr(
+                repo=args.repo,
+                repo_root=Path.cwd(),
+                branch=args.branch,
+                base_branch=args.base,
+                commit_title=args.commit_title,
+                commit_body=commit_body,
+                paths=args.paths,
+                pr_title=args.pr_title,
+                pr_body=pr_body,
+                labels=args.labels,
+            )
+        except RuntimeError as e:
+            logger.error(f"❌ ci publish failed: {e}")
+            return 1
+        Path("publish_result.json").write_text(
+            json.dumps(result.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        if result.skipped_reason:
+            print(f"ci publish: {result.skipped_reason}")
+        else:
+            print(f"ci publish: opened/reused {result.pr_url}")
+        return 0
 
     logger.error(f"❌ Unknown ci command: {args.ci_command}")
     return 2

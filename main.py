@@ -596,6 +596,17 @@ EXAMPLES:
     ci_fix_issue_parser.add_argument("--issue-context", default="issue-context.md")
     ci_fix_issue_parser.add_argument("--extra-context", default=None)
 
+    ci_publish_parser = ci_subparsers.add_parser("publish", help="Commit given paths, push a branch, and open (or reuse) a PR")
+    ci_publish_parser.add_argument("--repo", required=True, help="owner/name, e.g. ${{ github.repository }}")
+    ci_publish_parser.add_argument("--branch", required=True)
+    ci_publish_parser.add_argument("--base", default="main")
+    ci_publish_parser.add_argument("--commit-title", required=True)
+    ci_publish_parser.add_argument("--commit-body-file", default=None)
+    ci_publish_parser.add_argument("--paths", nargs="+", required=True)
+    ci_publish_parser.add_argument("--pr-title", required=True)
+    ci_publish_parser.add_argument("--pr-body-file", required=True)
+    ci_publish_parser.add_argument("--labels", nargs="*", default=None)
+
     # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
     autofix_parser = subparsers.add_parser(
         "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"

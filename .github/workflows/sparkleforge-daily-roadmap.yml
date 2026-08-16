@@ -536,43 +536,16 @@ jobs:
           MILESTONE_NUMBER=$(python -c "import json; print(json.load(open('anvil-milestone.json'))['number'])")
           SYNC_BRANCH="docs/anvil-sync-$MILESTONE_NUMBER"
 
-          ACTOR_LOGIN=$(gh api user --jq '.login')
-          ACTOR_ID=$(gh api user --jq '.id')
-          if [[ ! "$ACTOR_LOGIN" =~ ^[a-zA-Z0-9-]+$ ]]; then
-            echo "::error::Invalid actor login from GitHub API: $ACTOR_LOGIN"
-            exit 1
-          fi
-          if [[ ! "$ACTOR_ID" =~ ^[0-9]+$ ]]; then
-            echo "::error::Invalid actor id from GitHub API: $ACTOR_ID"
-            exit 1
-          fi
-          export GIT_AUTHOR_NAME="$ACTOR_LOGIN"
-          export GIT_AUTHOR_EMAIL="$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
-          export GIT_COMMITTER_NAME="$ACTOR_LOGIN"
-          export GIT_COMMITTER_EMAIL="$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
+          echo "Automated sync from the daily roadmap workflow. Updates the phase table status in docs/ANVIL_PLAN.md to reflect milestone #$MILESTONE_NUMBER sub-issue completion. Human review required before merge." > anvil-sync-pr-body.md
 
-          git checkout -B "$SYNC_BRANCH"
-          git add docs/ANVIL_PLAN.md
-          git commit -m "docs: sync anvil phase status for milestone #$MILESTONE_NUMBER"
-          git push --force-with-lease origin "$SYNC_BRANCH"
-
-          EXISTING_SYNC_PR=$(gh pr list \
+          uv run sparkleforge ci publish \
             --repo "${{ github.repository }}" \
-            --head "$SYNC_BRANCH" \
-            --state open \
-            --json number \
-            --jq '.[0].number // empty')
-
-          if [ -z "$EXISTING_SYNC_PR" ]; then
-            gh pr create \
-              --repo "${{ github.repository }}" \
-              --title "docs: sync Anvil phase status for milestone #$MILESTONE_NUMBER" \
-              --body "Automated sync from the daily roadmap workflow. Updates the phase table status in docs/ANVIL_PLAN.md to reflect milestone #$MILESTONE_NUMBER sub-issue completion. Human review required before merge." \
-              --base main \
-              --head "$SYNC_BRANCH"
-          else
-            echo "Sync PR already open: #$EXISTING_SYNC_PR"
-          fi
+            --branch "$SYNC_BRANCH" \
+            --base main \
+            --commit-title "docs: sync anvil phase status for milestone #$MILESTONE_NUMBER" \
+            --paths docs/ANVIL_PLAN.md \
+            --pr-title "docs: sync Anvil phase status for milestone #$MILESTONE_NUMBER" \
+            --pr-body-file anvil-sync-pr-body.md
 
           git checkout main
 
