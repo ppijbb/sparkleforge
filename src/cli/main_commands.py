@@ -1123,16 +1123,24 @@ async def handle_nightwelding_command(args):
         )
 
         try:
-            if args.issue:
-                logger.info(f"🌙 Nightwelding: running issue #{args.issue}")
-                item = await run_nightwelding_issue(args.issue, max_iterations=args.max_iterations)
+            target_issue = getattr(args, "file", None) or getattr(args, "issue", None)
+            provider = getattr(args, "provider", None)
+
+            if target_issue:
+                logger.info(f"🌙 Nightwelding: running issue {target_issue} (provider={provider or 'auto'})")
+                item = await run_nightwelding_issue(
+                    target_issue,
+                    max_iterations=args.max_iterations,
+                    provider=provider,
+                )
                 items = [item]
             else:
-                logger.info(f"🌙 Nightwelding: sweeping backlog label '{args.backlog_label}'")
+                logger.info(f"🌙 Nightwelding: sweeping backlog label '{args.backlog_label}' (provider={provider or 'auto'})")
                 items = await run_nightwelding_sweep(
                     backlog_label=args.backlog_label,
                     max_per_run=args.max_per_run,
                     max_iterations=args.max_iterations,
+                    provider=provider,
                 )
 
             if not items:
@@ -1142,7 +1150,7 @@ async def handle_nightwelding_command(args):
             failed = 0
             for item in items:
                 if item.status.value == "draft_opened":
-                    logger.info(f"✅ Issue #{item.issue_number}: Draft PR opened -> {item.pr_url}")
+                    logger.info(f"✅ Issue #{item.issue_number}: Published -> {item.pr_url}")
                 else:
                     failed += 1
                     logger.error(f"❌ Issue #{item.issue_number}: {item.status.value} — {item.failure_reason}")

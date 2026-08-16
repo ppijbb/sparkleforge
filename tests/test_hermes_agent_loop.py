@@ -1,5 +1,6 @@
 import pytest
 import tracemalloc
+import logging
 from types import SimpleNamespace
 
 from src.core.agent_loop import AgentLoop, IterationBudget
@@ -642,3 +643,25 @@ async def test_plan_first_off_by_default_does_not_block_anything():
     assert result["success"] is True
     assert mcp_hub.calls == [("write_file", {"file_path": "x.txt", "content": "hi"})]
     assert result["tool_results"][0]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_append_tool_result_does_not_raise_nameerror_with_debug_logging(caplog):
+    # Regression for issue #1308: _append_tool_result's debug log line
+    # referenced `tool_name`, which must be in scope at the log site. With
+    # DEBUG logging enabled (caplog forces eager evaluation), a NameError here
+    # would crash the agent loop on the first tool result append.
+    loop = make_loop(FakeOrchestrator([]), FakeMCPHub())
+    history: list = []
+    tool_results: list = []
+    tool_call = {"id": "call_dbg", "type": "function", "function": {"name": "search"}}
+    tool_exec_result = {"success": True, "data": {"answer": "evidence"}}
+
+    with caplog.at_level(logging.DEBUG, logger="src.core.agent_loop"):
+        loop._append_tool_result(history, tool_call, "search", tool_exec_result, tool_results)
+
+    assert tool_results[0]["success"] is True
+    assert history[-1]["role"] == "tool"
+    assert history[-1]["name"] == "search"
+    debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
+    assert any("Tool result for search" in r.getMessage() for r in debug_records)

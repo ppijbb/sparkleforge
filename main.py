@@ -533,10 +533,17 @@ EXAMPLES:
     nightwelding_run_parser = nightwelding_subparsers.add_parser(
         "run", help="Run Nightwelding once: a single issue, or a sweep of the backlog"
     )
-    nightwelding_run_parser.add_argument("--issue", type=int, help="Specific GitHub issue number to process")
+    nightwelding_run_parser.add_argument("--issue", type=str, help="Specific GitHub issue number, local issue ID, or issue file to process")
+    nightwelding_run_parser.add_argument("--file", type=str, default=None, help="Path to local Markdown issue file")
+    nightwelding_run_parser.add_argument(
+        "--provider",
+        choices=["github", "local"],
+        default=None,
+        help="VCS/Issue tracker provider: 'github' or 'local' (auto-detected by default)",
+    )
     nightwelding_run_parser.add_argument(
         "--backlog-label", default="auto-fix-failed",
-        help="Label identifying the sweep backlog when --issue is not given (default: auto-fix-failed)",
+        help="Label identifying the sweep backlog when --issue/--file is not given (default: auto-fix-failed)",
     )
     nightwelding_run_parser.add_argument("--max-iterations", type=int, default=4, help="Max implementation repair attempts (1-6)")
     nightwelding_run_parser.add_argument("--max-per-run", type=int, default=3, help="Max issues to process per sweep")
@@ -779,7 +786,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report"}
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)
