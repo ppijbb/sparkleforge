@@ -261,23 +261,6 @@ def main():
             st.checkbox("Show Debug Info", value=False, key="show_debug")
             st.selectbox("Response Format", ["markdown", "json", "html"], key="response_format")
 
-        # Docker 관리 (Docker가 사용 가능한 경우)
-        if check_docker_available():
-            with st.expander("🐳 Docker Services"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("🚀 Start Services"):
-                        start_docker_services()
-                        st.success("Services started!")
-                with col2:
-                    if st.button("🛑 Stop Services"):
-                        stop_docker_services()
-                        st.success("Services stopped!")
-
-                if st.button("📊 Service Status"):
-                    status = get_docker_status()
-                    st.code(status, language="bash")
-
         # 에이전트별 보안 정책 상태
         with st.expander("🛡️ Agent Security"):
             try:
@@ -1396,52 +1379,10 @@ def check_docker_available() -> bool:
     try:
         import subprocess
 
-        result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
+        result = subprocess.run(["docker", "--version"], capture_output=True, text=True, check=False)
         return result.returncode == 0
     except Exception:
         return False
-
-
-def start_docker_services():
-    """Docker 서비스 시작"""
-    try:
-        import subprocess
-
-        # docker compose up -d 실행
-        result = subprocess.run(["docker", "compose", "up", "-d"], cwd=str(project_root))
-        return result.returncode == 0
-    except Exception as e:
-        st.error(f"Docker start failed: {e}")
-        return False
-
-
-def stop_docker_services():
-    """Docker 서비스 중지"""
-    try:
-        import subprocess
-
-        # docker compose down 실행
-        result = subprocess.run(["docker", "compose", "down"], cwd=str(project_root))
-        return result.returncode == 0
-    except Exception as e:
-        st.error(f"Docker stop failed: {e}")
-        return False
-
-
-def get_docker_status() -> str:
-    """Docker 서비스 상태 확인"""
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            ["docker", "compose", "ps"],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Failed to get status: {e}"
 
 
 def test_sandbox_execution(code: str) -> Dict[str, Any]:
