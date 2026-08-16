@@ -33,6 +33,23 @@ def _load_history(history_path: Path, n: int = 5) -> list[dict]:
     return entries[-n:]
 
 
+def _count_inconclusive(report: dict) -> tuple[int, int]:
+    """Return (inconclusive_count, total_checks) across all scenarios.
+
+    Per Anvil Μ-1, judge-based checks that chronically fall to inconclusive
+    are a dead judgment axis and must be surfaced rather than silently
+    skipped by the stagnation gate.
+    """
+    inconclusive = 0
+    total = 0
+    for scenario in report.get("scenarios", {}).values():
+        for check in scenario.get("breakdown", {}).values():
+            total += 1
+            if check.get("inconclusive"):
+                inconclusive += 1
+    return inconclusive, total
+
+
 def _lowest_breakdown(report: dict) -> tuple[str, str, float] | None:
     worst = None
     for scenario_id, scenario in report.get("scenarios", {}).items():
@@ -84,12 +101,22 @@ def main() -> int:
         return 0
 
     worst = _lowest_breakdown(report)
+    inconclusive, total_checks = _count_inconclusive(report)
     worst_str = f"{worst[0]}.{worst[1]} (score={worst[2]:.3f})" if worst else "unknown"
     history_entries = _load_history(Path(args.history))
     trend_lines = "\n".join(
         f"- {e.get('generated_at', '?')}: adjusted={e.get('overall_score_adjusted')}"
         for e in history_entries
     ) or "- (no history)"
+
+    inconclusive_note = ""
+    if total_checks and inconclusive / total_checks > 0.5:
+        inconclusive_note = (
+            f"\n\n### Dead judgment axis warning\n\n"
+            f"{inconclusive}/{total_checks} checks are `inconclusive`. "
+            "Per Anvil Μ-1, judge-based checks must not chronically fall to "
+            "inconclusive — this masks stagnation behind coin-flip judge axes."
+        )
 
     title = "scenario-eval: stagnation detected (Anvil Μ-2)"
     body = (
@@ -99,6 +126,7 @@ def main() -> int:
         f"### Lowest-scoring breakdown item\n\n`{worst_str}`\n\n"
         "### Recent history\n\n"
         f"{trend_lines}\n\n"
+        f"{inconclusive_note}\n\n"
         "This issue is intentionally excluded from the opencode-auto-fix.yml "
         "auto-scan/auto-merge pipeline (labeled `no-auto-fix`) per the "
         "CLAUDE.md principle that merges require an explicit in-session human "
