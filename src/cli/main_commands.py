@@ -1351,6 +1351,34 @@ async def handle_ci_command(args):
             return 0
         create_github_issue(repo, issue)
         return 0
+    elif args.ci_command == "collect-todos":
+        import json
+
+        from src.core.ci.todo_inventory import collect_todos, generate_inventory, generate_json_inventory
+
+        todos = collect_todos(project_root)
+        docs_dir = project_root / "docs"
+        docs_dir.mkdir(exist_ok=True)
+        (docs_dir / "todo_inventory.md").write_text(generate_inventory(todos), encoding="utf-8")
+        (docs_dir / "todo_inventory.json").write_text(
+            json.dumps(generate_json_inventory(todos), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f"Collected {len(todos)} TODO/FIXME item(s).")
+        return 0
+    elif args.ci_command == "plan-todo-issues":
+        import json
+
+        from src.core.ci.todo_issue_plan import known_anchors, plan_todo_issues
+
+        inventory = json.loads(Path(args.inventory_file).read_text(encoding="utf-8"))
+        existing_issues = json.loads(Path(args.existing_issues_file).read_text(encoding="utf-8"))
+        plan = plan_todo_issues(inventory, existing_issues)
+        Path(args.plan_out).write_text(
+            json.dumps([{"anchor": p.anchor, "title": p.title, "body": p.body} for p in plan]),
+            encoding="utf-8",
+        )
+        print(f"Planned {len(plan)} new todo-debt issue(s); {len(known_anchors(existing_issues))} already tracked.")
+        return 0
 
     logger.error(f"❌ Unknown ci command: {args.ci_command}")
     return 2
