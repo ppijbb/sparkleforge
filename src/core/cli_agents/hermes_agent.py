@@ -56,11 +56,12 @@ class HermesCLIAgent(BaseCLIAgent):
         if tools:
             args.extend(["--tools", ",".join(tools)])
 
-        # Merge the default config args (e.g. --format json) with the per-call
-        # args without mutating the shared config instance, so concurrent batch
-        # tasks sharing a cached hermes agent do not trample each other's args.
-        full_args = list(self.config.args) + list(args)
-        result = await self._execute_command(self.config.command, full_args)
+        # _execute_command appends self.config.args (e.g. --format json)
+        # itself, onto a local copy -- never mutating the shared config
+        # instance -- so concurrent batch tasks sharing a cached hermes
+        # agent don't trample each other's per-call args. Only pass the
+        # per-call args here (matching CodexCLIAgent's convention).
+        result = await self._execute_command([self.config.command] + args)
         parsed_result = self.parse_output(result)
 
         return {
