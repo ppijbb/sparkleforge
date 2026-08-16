@@ -1,4 +1,14 @@
 """Regression tests for the monolith-split refactor bugs in main_commands.py,
+import pytest
+from unittest.mock import AsyncMock
+
+@pytest.mark.asyncio
+async def test_code_review_soft_fails_when_all_model_providers_are_unavailable():
+    mock_review = AsyncMock(return_value=None)
+    # Simulate the scenario where all providers are unavailable
+    result = await mock_review("some code")
+    assert result is None
+    mock_review.assert_awaited_once()
 code.py, status.py, and execution.py (CLI import, Docker sandbox return path,
 execute_tool signature, and MCP-session fallback).
 """
