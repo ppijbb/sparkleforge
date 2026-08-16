@@ -651,6 +651,14 @@ EXAMPLES:
     ci_assess_substantiality_parser.add_argument("--issue-file", required=True)
     ci_assess_substantiality_parser.add_argument("--range", required=True, help="git diff revision range, e.g. origin/main...HEAD")
 
+    ci_classify_scenario_parser = ci_subparsers.add_parser("classify-scenario-outcome", help="Decide whether a scenario-eval run reflects an infra outage rather than agent capability")
+    ci_classify_scenario_parser.add_argument("--report-file", default="tests/benchmark/reports/scenario_report_ci.json")
+
+    ci_stagnation_issue_parser = ci_subparsers.add_parser("stagnation-issue", help="Open a tracking issue when scenario-eval detects prolonged stagnation")
+    ci_stagnation_issue_parser.add_argument("--report", required=True, help="Path to scenario_report_ci.json")
+    ci_stagnation_issue_parser.add_argument("--history", required=True, help="Path to scenario_history.jsonl")
+    ci_stagnation_issue_parser.add_argument("--repo", default=None, help="Defaults to $GITHUB_REPOSITORY")
+
     # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
     autofix_parser = subparsers.add_parser(
         "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"
