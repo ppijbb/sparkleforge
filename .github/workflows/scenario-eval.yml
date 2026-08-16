@@ -46,6 +46,10 @@ jobs:
       - name: Run acceptance scenarios and compare against recorded history
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
         run: |
           set -e
           timeout 25m uv run python tests/benchmark/run_scenarios.py \
@@ -152,9 +156,14 @@ jobs:
           with open('tests/benchmark/baselines/scenario_history.jsonl', 'a') as f:
               f.write(json.dumps(report, ensure_ascii=False) + '\n')
           PY
+
+          # Mu-4: keep docs/BENCHMARK_REPORT.md's generated block in sync with
+          # the history file it's sourced from, in the same commit/PR.
+          python3 scripts/generate_benchmark_report.py
+
           git config user.name "sparkleforge-bot"
           git config user.email "actions@github.com"
-          git add tests/benchmark/baselines/scenario_history.jsonl
+          git add tests/benchmark/baselines/scenario_history.jsonl docs/BENCHMARK_REPORT.md
           git commit -m "chore: record scenario-eval history for ${GITHUB_SHA::12}"
           git push origin "$BRANCH"
           gh pr create --repo "${{ github.repository }}" \
