@@ -485,6 +485,8 @@ class ProviderAdaptersMixin:
         if not history or (history and history[-1].get("content") != prompt):
             messages.append({"role": "user", "content": prompt})
 
+        max_tokens = kwargs.pop("max_tokens", model_config.max_tokens)
+
         try:
             # Groq API 호출
             response = await asyncio.get_running_loop().run_in_executor(
@@ -493,7 +495,7 @@ class ProviderAdaptersMixin:
                     model=model_id,  # 실제 Groq 모델 ID 사용
                     messages=messages,
                     temperature=model_config.temperature,
-                    max_tokens=model_config.max_tokens,
+                    max_tokens=max_tokens,
                     **kwargs,
                 ),
             )
@@ -549,7 +551,7 @@ class ProviderAdaptersMixin:
                                     model=rm,
                                     messages=messages,
                                     temperature=model_config.temperature,
-                                    max_tokens=model_config.max_tokens,
+                                    max_tokens=max_tokens,
                                     **kwargs,
                                 )
                             ),
@@ -614,6 +616,8 @@ class ProviderAdaptersMixin:
         if not history or (history and history[-1].get("content") != prompt):
             messages.append({"role": "user", "content": prompt})
 
+        max_tokens = kwargs.pop("max_tokens", model_config.max_tokens)
+
         try:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -621,7 +625,7 @@ class ProviderAdaptersMixin:
                     model=model_config.model_id,
                     messages=messages,
                     temperature=model_config.temperature,
-                    max_tokens=model_config.max_tokens,
+                    max_tokens=max_tokens,
                     **kwargs,
                 ),
             )
@@ -668,6 +672,7 @@ class ProviderAdaptersMixin:
             "tools", "tool_choice", "stop", "frequency_penalty", "presence_penalty",
         }
         api_kwargs = {k: v for k, v in kwargs.items() if k in _OPENAI_API_KWARGS}
+        max_tokens = api_kwargs.pop("max_tokens", model_config.max_tokens)
         # 메시지 구성
         history = kwargs.pop("history_messages", [])
         messages = []
@@ -686,7 +691,7 @@ class ProviderAdaptersMixin:
                     model=model_config.model_id,
                     messages=messages,
                     temperature=model_config.temperature,
-                    max_tokens=model_config.max_tokens,
+                    max_tokens=max_tokens,
                     **api_kwargs,
                 ),
             )
@@ -749,6 +754,8 @@ class ProviderAdaptersMixin:
         if not history or (history and history[-1].get("content") != prompt):
             messages.append({"role": "user", "content": prompt})
 
+        max_tokens = kwargs.pop("max_tokens", model_config.max_tokens)
+
         try:
             # NVIDIA API 호출 (OpenAI 라이브러리 연동) — 429는 백오프 후 재시도
             max_retries = 3
@@ -761,7 +768,7 @@ class ProviderAdaptersMixin:
                             model=model_config.model_id,
                             messages=messages,
                             temperature=model_config.temperature,
-                            max_tokens=model_config.max_tokens,
+                            max_tokens=max_tokens,
                             **kwargs,
                         ),
                     )
