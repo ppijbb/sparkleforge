@@ -1255,6 +1255,64 @@ async def handle_ci_command(args):
         else:
             print(f"ci publish: opened/reused {result.pr_url}")
         return 0
+    elif args.ci_command == "select-issue":
+        import json
+
+        from src.core.ci.issue_selection import select_fixable_issue
+
+        issues = json.loads(Path(args.issues_file).read_text(encoding="utf-8") or "[]")
+        open_prs = json.loads(Path(args.open_prs_file).read_text(encoding="utf-8") or "[]")
+        selected = select_fixable_issue(issues, open_prs)
+        # Write to a file rather than printing the number for `$(...)`
+        # capture -- a background init path unrelated to this command logs a
+        # stray line to stdout after the command "returns" (see the
+        # daily-roadmap-prompt handler above for the same issue), which would
+        # corrupt a direct stdout capture.
+        Path("selected_issue.txt").write_text(str(selected) if selected is not None else "", encoding="utf-8")
+        return 0
+    elif args.ci_command == "classify-commit":
+        import json
+
+        from src.core.ci.commit_classify import classify_conventional_commit
+
+        commit = classify_conventional_commit(args.title)
+        Path("commit_classification.json").write_text(
+            json.dumps({"type": commit.type, "subject": commit.subject}), encoding="utf-8"
+        )
+        return 0
+    elif args.ci_command == "assess-substantiality":
+        import json
+
+        from src.core.ci.fix_substantiality import (
+            SubstantialityVerdict,
+            assess_fix_substantiality,
+            count_unchecked,
+            gather_diff_stats,
+        )
+
+        issue_text = Path(args.issue_file).read_text(encoding="utf-8")
+        try:
+            diff_text, changed_files, changed_lines = gather_diff_stats(args.range)
+            verdict = assess_fix_substantiality(
+                issue_text=issue_text,
+                diff_text=diff_text,
+                changed_files=changed_files,
+                changed_lines=changed_lines,
+            )
+        except Exception as e:
+            logger.error(f"❌ assess-substantiality: diff gathering failed: {e}")
+            verdict = SubstantialityVerdict(
+                substantial=False,
+                reason=" and the scope-overlap check itself failed to run, so it could not be verified",
+                unchecked=count_unchecked(issue_text),
+            )
+        Path("substantiality_result.json").write_text(
+            json.dumps(
+                {"substantial": verdict.substantial, "reason": verdict.reason, "unchecked": verdict.unchecked}
+            ),
+            encoding="utf-8",
+        )
+        return 0
 
     logger.error(f"❌ Unknown ci command: {args.ci_command}")
     return 2
