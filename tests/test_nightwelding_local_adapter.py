@@ -49,6 +49,32 @@ def test_local_git_adapter_list_candidate_issues(tmp_path: Path) -> None:
     assert any("bug_b.md" in c for c in candidates)
 
 
+def test_local_git_adapter_list_candidate_issues_respects_declared_labels(tmp_path: Path) -> None:
+    """#1407: list_candidate_issues accepted backlog_label/exclude_labels but
+    ignored them entirely. Files that opt in via frontmatter `labels:` must
+    actually be filtered; undecorated files (tested above) stay unaffected."""
+    issues_dir = tmp_path / ".sparkleforge" / "issues"
+    issues_dir.mkdir(parents=True)
+    (issues_dir / "wanted.md").write_text(
+        "---\nlabels: [auto-fix-failed]\n---\n# Wanted\nDesc", encoding="utf-8"
+    )
+    (issues_dir / "wrong_label.md").write_text(
+        "---\nlabels: [enhancement]\n---\n# Wrong label\nDesc", encoding="utf-8"
+    )
+    (issues_dir / "excluded.md").write_text(
+        "---\nlabels: [auto-fix-failed, nightwelding-failed]\n---\n# Excluded\nDesc",
+        encoding="utf-8",
+    )
+
+    adapter = LocalGitAdapter(issues_dir=issues_dir, repo_root=tmp_path)
+    candidates = adapter.list_candidate_issues(
+        backlog_label="auto-fix-failed", exclude_labels=["nightwelding-failed"]
+    )
+
+    assert len(candidates) == 1
+    assert "wanted.md" in candidates[0]
+
+
 def test_resolve_adapter_prefers_explicit_and_heuristics(tmp_path: Path) -> None:
     # Explicit provider="local"
     adapter = _resolve_adapter("123", repo_root=tmp_path, provider="local")
