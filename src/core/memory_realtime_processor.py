@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from src.core.adaptive_memory import get_adaptive_memory
 from src.core.db.database_driver import Transaction
+from src.core.db.database_driver import get_database_driver
 from src.core.db.transaction_manager import get_transaction_manager
 from src.core.memory_extraction import get_memory_consolidator, get_memory_extractor
 from src.core.memory_types import BaseMemory
@@ -200,17 +201,17 @@ class RealtimeMemoryProcessor:
     async def _load_existing_memories(
         self, user_id: str, tx: Transaction | None = None
     ) -> List[BaseMemory]:
-        """기존 메모리 로드."""
+        """기존 메모리 로드 (데이터베이스에서 조회)."""
         try:
-            # AdaptiveMemory에서 사용자별 메모리 조회
-            # 현재는 인메모리이므로 간단히 처리
-            # 나중에 데이터베이스 저장소로 마이그레이션 시 트랜잭션 사용
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                None, self.adaptive_memory.get_memories_for_user, user_id
-            )
+            driver = get_database_driver()
+            if driver:
+                query = "SELECT * FROM memories WHERE user_id = :user_id ORDER BY created_at DESC"
+                params = {"user_id": user_id}
+                rows = await driver.fetch_all(query, params)
+                return [BaseMemory(**row) for row in rows]
+            return await self.adaptive_memory.get_memories_for_user(user_id)
         except Exception as e:
-            logger.debug(f"Failed to load existing memories: {e}")
+            logger.error(f"Failed to load existing memories: {e}")
             return []
 
     def get_stats(self) -> Dict[str, Any]:
