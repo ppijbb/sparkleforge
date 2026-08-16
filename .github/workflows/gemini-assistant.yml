@@ -91,7 +91,14 @@ jobs:
       
       - name: Extract Git Diff
         run: git diff HEAD~1 HEAD > diff.txt || echo "" > diff.txt
-        
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
+      - name: Install SparkleForge
+        run: uv sync
+
       - name: SparkleForge Diff Review
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
@@ -99,11 +106,8 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
           LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install aiohttp openai google-generativeai langchain-google-genai
-          python scripts/opencode_github_worker.py code-review --diff diff.txt
-          
+        run: uv run sparkleforge ci code-review --diff-file diff.txt
+
       - name: Leave PR review summary
         if: github.event_name == 'pull_request'
         env:
@@ -154,7 +158,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: review-results
-          
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
+      - name: Install SparkleForge
+        run: uv sync
+
       - name: SparkleForge Triage & Issue Create
         id: create_issue
         env:
@@ -182,9 +193,7 @@ jobs:
             --limit 100 \
             --json number,title > open_issues.json
 
-          python -m pip install --upgrade pip
-          python -m pip install aiohttp openai google-generativeai langchain-google-genai
-          python scripts/opencode_github_worker.py issue-triage --review-file review_result.txt --open-issues-file open_issues.json
+          uv run sparkleforge ci issue-triage --review-file review_result.txt --open-issues-file open_issues.json
 
           if [ ! -f triage_result.json ]; then
             echo "Triage produced no result."
@@ -243,6 +252,13 @@ jobs:
         with:
           name: review-results
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
+      - name: Install SparkleForge
+        run: uv sync
+
       - name: Decide and merge PR
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
@@ -262,10 +278,8 @@ jobs:
           gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --json title,body,url,isDraft,mergeStateStatus,reviewDecision,headRefName,baseRefName,statusCheckRollup > pr_meta.json
-            
-          python -m pip install --upgrade pip
-          python -m pip install aiohttp openai google-generativeai langchain-google-genai
-          python scripts/opencode_github_worker.py merge-decision --pr-meta-file pr_meta.json --review-file review_result.txt
+
+          uv run sparkleforge ci merge-decision --pr-meta-file pr_meta.json --review-file review_result.txt
           
           if [ ! -f merge_decision.json ]; then
             echo "Merge decider produced no result."
