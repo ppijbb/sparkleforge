@@ -640,6 +640,17 @@ EXAMPLES:
     ci_publish_parser.add_argument("--pr-body-file", required=True)
     ci_publish_parser.add_argument("--labels", nargs="*", default=None)
 
+    ci_select_issue_parser = ci_subparsers.add_parser("select-issue", help="Pick the next open issue eligible for the auto-fix sweep")
+    ci_select_issue_parser.add_argument("--issues-file", required=True, help="gh issue list --json number,labels output")
+    ci_select_issue_parser.add_argument("--open-prs-file", required=True, help="gh pr list --json headRefName,body output")
+
+    ci_classify_commit_parser = ci_subparsers.add_parser("classify-commit", help="Derive a Conventional Commit type + subject from an issue title")
+    ci_classify_commit_parser.add_argument("--title", required=True)
+
+    ci_assess_substantiality_parser = ci_subparsers.add_parser("assess-substantiality", help="Decide whether an auto-fix diff substantially implements the issue it targets")
+    ci_assess_substantiality_parser.add_argument("--issue-file", required=True)
+    ci_assess_substantiality_parser.add_argument("--range", required=True, help="git diff revision range, e.g. origin/main...HEAD")
+
     # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
     autofix_parser = subparsers.add_parser(
         "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"
