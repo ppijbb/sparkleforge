@@ -1313,6 +1313,44 @@ async def handle_ci_command(args):
             encoding="utf-8",
         )
         return 0
+    elif args.ci_command == "classify-scenario-outcome":
+        import json
+
+        from src.core.ci.scenario_classify import classify_scenario_outcome
+
+        report = json.loads(Path(args.report_file).read_text(encoding="utf-8"))
+        outcome = classify_scenario_outcome(report)
+        Path("scenario_outcome.json").write_text(
+            json.dumps(
+                {
+                    "overall_score": outcome.overall_score,
+                    "infra_failed": outcome.infra_failed,
+                    "total": outcome.total,
+                    "infra_ratio": outcome.infra_ratio,
+                    "is_infra_outage": outcome.is_infra_outage,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0
+    elif args.ci_command == "stagnation-issue":
+        import json
+        import os
+
+        from src.core.ci.stagnation_issue import build_stagnation_issue, create_github_issue, load_history
+
+        report = json.loads(Path(args.report).read_text(encoding="utf-8"))
+        history = load_history(Path(args.history))
+        issue = build_stagnation_issue(report, history)
+        if issue is None:
+            return 0
+
+        repo = args.repo or os.getenv("GITHUB_REPOSITORY", "")
+        if not repo:
+            logger.error("GITHUB_REPOSITORY not set; cannot create stagnation issue.")
+            return 0
+        create_github_issue(repo, issue)
+        return 0
 
     logger.error(f"❌ Unknown ci command: {args.ci_command}")
     return 2
