@@ -149,32 +149,11 @@ jobs:
             || echo '[]' > anvil-subissue-status.json
           jq empty anvil-subissue-status.json
 
-          python - <<'PY' >> github-planning-context.md
-          import json
-          from pathlib import Path
-
-          raw = Path("anvil-milestone.json").read_text(encoding="utf-8").strip()
-          milestone = json.loads(raw) if raw else None
-
-          if not milestone:
-              print("- No open Anvil phase milestone found.")
-          else:
-              sub_status = json.loads(Path("anvil-subissue-status.json").read_text(encoding="utf-8") or "[]")
-              print(f"- Open milestone: #{milestone['number']} {milestone['title']}")
-              if sub_status:
-                  for item in sub_status:
-                      print(f"  - #{item['number']} [{item['state']}] {item['title']}")
-              else:
-                  print("- No sub-issues referenced in the milestone checklist yet.")
-
-              open_target = next((item for item in sub_status if item["state"] == "OPEN"), None)
-              if open_target:
-                  print(f"- Next open Anvil roadmap sub-issue: #{open_target['number']} {open_target['title']}")
-                  Path("anvil-roadmap-target.md").write_text(f"{open_target['number']}|{open_target['title']}", encoding="utf-8")
-              else:
-                  print("- All known Anvil roadmap sub-issues are closed (or none tracked).")
-                  Path("anvil-roadmap-target.md").write_text("", encoding="utf-8")
-          PY
+          uv run sparkleforge report roadmap-target \
+            --milestone-file anvil-milestone.json \
+            --subissue-status-file anvil-subissue-status.json \
+            --target-out anvil-roadmap-target.md \
+            >> github-planning-context.md
 
           if [ ! -f anvil-roadmap-target.md ]; then
             : > anvil-roadmap-target.md
@@ -247,108 +226,15 @@ jobs:
           fi
 
           if [ "$RC" -ne 0 ] || [ ! -s sparkleforge-roadmap.md ] || [ -n "$INVALID_OUTPUT_REASON" ]; then
-            export DAILY_RC="$RC"
-            export DAILY_OUTPUT_BYTES="$OUTPUT_BYTES"
-            export DAILY_CONSOLE_BYTES="$CONSOLE_BYTES"
-            export DAILY_ERROR_BYTES="$ERROR_BYTES"
-            export DAILY_INVALID_OUTPUT_REASON="$INVALID_OUTPUT_REASON"
-            python - <<'PY' > sparkleforge-roadmap.md
-          import os
-          import re
-          from pathlib import Path
-
-          context = Path("github-planning-context.md").read_text(encoding="utf-8")
-
-          def collect(header: str, stop: str) -> list[str]:
-              active = False
-              rows = []
-              for raw in context.splitlines():
-                  line = raw.strip()
-                  if line == header:
-                      active = True
-                      continue
-                  if active and line == stop:
-                      break
-                  if active and line.startswith("- #"):
-                      rows.append(line)
-              return rows
-
-          anvil_target_path = Path("anvil-roadmap-target.md")
-          anvil_target = anvil_target_path.read_text(encoding="utf-8").strip() if anvil_target_path.exists() else ""
-
-          prs = collect("### Open pull requests", "### Open issues")
-          issues = collect("### Open issues", "### Anvil roadmap status")
-
-          if anvil_target:
-              number, _, title = anvil_target.partition("|")
-              target_kind = "anvil roadmap sub-issue"
-          elif prs:
-              target_kind = "pull request"
-              match = re.match(r"- #(?P<number>\d+) (?P<title>.*?) \[", prs[0])
-              number = match.group("number") if match else ""
-              title = match.group("title") if match else "repository backlog"
-          elif issues:
-              target_kind = "issue"
-              match = re.match(r"- #(?P<number>\d+) (?P<title>.*?) \[", issues[0])
-              number = match.group("number") if match else ""
-              title = match.group("title") if match else "repository backlog"
-          else:
-              target_kind = "repository backlog"
-              number = ""
-              title = "repository backlog"
-
-          if target_kind == "anvil roadmap sub-issue" and number:
-              heading = f"Advance Anvil roadmap sub-issue {number}"
-              target_label = f"Anvil roadmap sub-issue #{number}: {title}"
-          elif target_kind == "pull request" and number:
-              heading = f"Unblock pull request {number}"
-              target_label = f"PR #{number}: {title}"
-          elif target_kind == "issue" and number:
-              heading = f"Triage issue {number}"
-              target_label = f"Issue #{number}: {title}"
-          else:
-              heading = "Triage issue 13"
-              target_label = title
-
-          rc = os.getenv("DAILY_RC", "")
-          invalid = os.getenv("DAILY_INVALID_OUTPUT_REASON", "")
-          output_bytes = os.getenv("DAILY_OUTPUT_BYTES", "0")
-          console_bytes = os.getenv("DAILY_CONSOLE_BYTES", "0")
-          error_bytes = os.getenv("DAILY_ERROR_BYTES", "0")
-
-          print(f"# {heading}")
-          print()
-          print("## Why now")
-          print("- Daily roadmap generation must update the tracked GitHub issue even when the full SparkleForge research path is slow, unavailable, or returns invalid output.")
-          print(f"- The live GitHub context collection selected {target_label} as the top actionable backlog item.")
-          print(f"- SparkleForge CLI fallback metadata: exit code `{rc}`, output bytes `{output_bytes}`, console bytes `{console_bytes}`, error bytes `{error_bytes}`.")
-          if invalid:
-              print(f"- Invalid output reason: {invalid}.")
-          print()
-          print("## Proposed change")
-          print(f"- Use the current repository issue/PR context to move {target_label} toward a mergeable or closable state.")
-          print("- Keep the scope bounded to the smallest code, workflow, or documentation change needed to unblock that item.")
-          print()
-          print("## Implementation notes")
-          if target_kind == "anvil roadmap sub-issue":
-              print(f"- This is an Anvil roadmap sub-issue (#{number}). Implement exactly the checklist items in that issue's body — do not re-scope it or substitute a different idea.")
-              print("- See docs/ANVIL_PLAN.md for the phase this sub-issue belongs to and its success criteria.")
-          else:
-              print("- Start from the referenced PR/issue, inspect its checks, labels, and latest comments, then patch only the directly related files.")
-          print("- Preserve the daily roadmap workflow contract: collect GitHub context, produce required roadmap sections, and update the existing daily issue instead of creating duplicates.")
-          print("- If this item is already resolved by the time the automation runs, select the next open Anvil roadmap sub-issue first, then the next open PR, then the next open issue.")
-          print()
-          print("## Acceptance criteria")
-          print("- [ ] The selected PR/issue has a concrete code or workflow change attached.")
-          print("- [ ] Required GitHub checks pass for the resulting PR.")
-          print("- [ ] The daily roadmap issue body is updated with the latest GitHub context rather than skipped.")
-          print("- [ ] No new duplicate daily-roadmap failure issue is created for the same day.")
-          print()
-          print("## Validation")
-          print("- `./actionlint .github/workflows/sparkleforge-daily-roadmap.yml .github/workflows/gemini-assistant.yml .github/workflows/opencode-auto-fix.yml .github/workflows/pr-merge-gate.yml`")
-          print("- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_cli_entrypoints.py tests/test_open_code_agent_config.py tests/test_cli_result_handling.py`")
-          print("- `git diff --check`")
-          PY
+            uv run sparkleforge report roadmap-fallback-issue \
+              --context-file github-planning-context.md \
+              --anvil-target-file anvil-roadmap-target.md \
+              --rc "$RC" \
+              --invalid-reason "$INVALID_OUTPUT_REASON" \
+              --output-bytes "$OUTPUT_BYTES" \
+              --console-bytes "$CONSOLE_BYTES" \
+              --error-bytes "$ERROR_BYTES" \
+              > sparkleforge-roadmap.md
             echo "status=fallback" >> "$GITHUB_OUTPUT"
           else
             echo "status=generated" >> "$GITHUB_OUTPUT"
@@ -419,35 +305,12 @@ jobs:
             : > previous-issue-body.md
           fi
 
-          python - <<'PY' > issue-body.md
-          import os
-          import re
-          from pathlib import Path
-
-          today = os.environ["TODAY"]
-          status = os.environ["STATUS"]
-          roadmap = Path("sparkleforge-roadmap.md").read_text(encoding="utf-8")
-
-          print(f"<!-- sparkleforge-daily-roadmap:{today} -->")
-          print()
-          print("This issue was generated by the daily SparkleForge roadmap workflow.")
-          print("It is intentionally scoped so the automated OpenCode workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback.")
-          print()
-
-          if status == "fallback":
-              previous = Path("previous-issue-body.md").read_text(encoding="utf-8") if Path("previous-issue-body.md").exists() else ""
-              occurrences = re.findall(r"^- (\d{4}-\d{2}-\d{2})$", previous, flags=re.MULTILINE)
-              if today not in occurrences:
-                  occurrences.append(today)
-              occurrences = occurrences[-10:]
-              print("## Occurrence log")
-              print("Recurring daily-roadmap generation failures are tracked in this single issue instead of one new issue per day.")
-              for day in occurrences:
-                  print(f"- {day}")
-              print()
-
-          print(roadmap)
-          PY
+          uv run sparkleforge report roadmap-issue-body \
+            --today "$TODAY" \
+            --status "$STATUS" \
+            --roadmap-file sparkleforge-roadmap.md \
+            --previous-body-file previous-issue-body.md \
+            > issue-body.md
 
           if [ "$STATUS" = "fallback" ]; then
             EXTRA_LABEL_ARGS=(--label "$RELIABILITY_LABEL")
@@ -492,41 +355,10 @@ jobs:
             exit 0
           fi
 
-          SYNC_STATUS=$(python - <<'PY'
-          import json
-          from pathlib import Path
-
-          milestone = json.loads(Path("anvil-milestone.json").read_text(encoding="utf-8"))
-          number = milestone["number"]
-          sub_status = json.loads(Path("anvil-subissue-status.json").read_text(encoding="utf-8") or "[]")
-          total = len(sub_status)
-          closed = sum(1 for item in sub_status if item["state"] == "CLOSED")
-
-          if total == 0 or closed == 0:
-              print("nochange")
-              raise SystemExit(0)
-
-          new_status = "✅" if closed == total else f"🔲 진행 중 ({closed}/{total})"
-
-          plan_path = Path("docs/ANVIL_PLAN.md")
-          lines = plan_path.read_text(encoding="utf-8").splitlines()
-          marker = f"마일스톤 #{number}"
-          changed = False
-          for i, line in enumerate(lines):
-              if line.startswith("|") and marker in line:
-                  cells = line.split("|")
-                  if len(cells) >= 5 and cells[3].strip() != new_status:
-                      cells[3] = f" {new_status} "
-                      lines[i] = "|".join(cells)
-                      changed = True
-
-          if changed:
-              plan_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-              print("changed")
-          else:
-              print("nochange")
-          PY
-          )
+          SYNC_STATUS=$(uv run sparkleforge report sync-anvil-doc \
+            --milestone-file anvil-milestone.json \
+            --subissue-status-file anvil-subissue-status.json \
+            --plan-file docs/ANVIL_PLAN.md)
           echo "Anvil doc sync status: $SYNC_STATUS"
 
           if [ "$SYNC_STATUS" != "changed" ]; then

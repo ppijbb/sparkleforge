@@ -573,6 +573,39 @@ EXAMPLES:
     )
     daily_roadmap_prompt_parser.add_argument("--today", default=None)
 
+    roadmap_target_parser = report_subparsers.add_parser(
+        "roadmap-target", help="Select the next open Anvil roadmap sub-issue and print its planning-context lines"
+    )
+    roadmap_target_parser.add_argument("--milestone-file", default="anvil-milestone.json")
+    roadmap_target_parser.add_argument("--subissue-status-file", default="anvil-subissue-status.json")
+    roadmap_target_parser.add_argument("--target-out", default="anvil-roadmap-target.md")
+
+    roadmap_fallback_parser = report_subparsers.add_parser(
+        "roadmap-fallback-issue", help="Render the fallback daily-roadmap issue body when the primary CLI research path fails"
+    )
+    roadmap_fallback_parser.add_argument("--context-file", default="github-planning-context.md")
+    roadmap_fallback_parser.add_argument("--anvil-target-file", default="anvil-roadmap-target.md")
+    roadmap_fallback_parser.add_argument("--rc", default="")
+    roadmap_fallback_parser.add_argument("--invalid-reason", default="")
+    roadmap_fallback_parser.add_argument("--output-bytes", default="0")
+    roadmap_fallback_parser.add_argument("--console-bytes", default="0")
+    roadmap_fallback_parser.add_argument("--error-bytes", default="0")
+
+    roadmap_issue_body_parser = report_subparsers.add_parser(
+        "roadmap-issue-body", help="Assemble the daily roadmap issue body, with occurrence-log dedup for recurring failures"
+    )
+    roadmap_issue_body_parser.add_argument("--today", required=True)
+    roadmap_issue_body_parser.add_argument("--status", required=True, choices=["generated", "fallback"])
+    roadmap_issue_body_parser.add_argument("--roadmap-file", default="sparkleforge-roadmap.md")
+    roadmap_issue_body_parser.add_argument("--previous-body-file", default="previous-issue-body.md")
+
+    sync_anvil_doc_parser = report_subparsers.add_parser(
+        "sync-anvil-doc", help="Recompute and rewrite the Anvil milestone's status cell in docs/ANVIL_PLAN.md"
+    )
+    sync_anvil_doc_parser.add_argument("--milestone-file", default="anvil-milestone.json")
+    sync_anvil_doc_parser.add_argument("--subissue-status-file", default="anvil-subissue-status.json")
+    sync_anvil_doc_parser.add_argument("--plan-file", default="docs/ANVIL_PLAN.md")
+
     # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단/이슈수정)
     ci_parser = subparsers.add_parser(
         "ci", help="CI gate agents used by GitHub Actions (code review, issue triage, merge decision, issue fixing)"
