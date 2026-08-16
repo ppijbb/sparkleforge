@@ -1,8 +1,7 @@
 """Shared unified-diff application primitives.
 
-Extracted from scripts/opencode_github_worker.py so that both the GitHub Actions
-worker script and src/core/nightwelding can apply LLM-generated diffs without
-duplicating the patch-application strategy:
+Extracted so that both src/core/ci/fix_issue.py and src/core/nightwelding can
+apply LLM-generated diffs without duplicating the patch-application strategy:
 
   1. git apply --3way --ignore-whitespace  (main path)
   2. patch --fuzz=3 -p1                   (fallback: tolerates +/-3 lines of offset)

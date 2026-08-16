@@ -1201,7 +1201,7 @@ async def handle_nightwelding_command(args):
 
 
 async def handle_ci_command(args):
-    """CI 게이트 커맨드 처리 (code-review / issue-triage / merge-decision)."""
+    """CI 게이트 커맨드 처리 (code-review / issue-triage / merge-decision / fix-issue)."""
     from pathlib import Path
 
     if args.ci_command == "code-review":
@@ -1219,8 +1219,38 @@ async def handle_ci_command(args):
 
         cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
         return await merge_decision(Path(args.pr_meta_file), Path(args.review_file), cerebras_file)
+    elif args.ci_command == "fix-issue":
+        from src.core.ci.fix_issue import fix_issue
+
+        extra_context = Path(args.extra_context) if args.extra_context else None
+        return await fix_issue(Path(args.issue_context), extra_context)
 
     logger.error(f"❌ Unknown ci command: {args.ci_command}")
+    return 2
+
+
+async def handle_autofix_command(args):
+    """OpenCode repair-loop 커맨드 처리 (opencode-auto-fix.yml의 bash 재시도 루프를 내재화)."""
+    from pathlib import Path
+
+    if args.autofix_command == "run":
+        from src.core.autofix.runner import run_autofix_repair_loop
+
+        result = run_autofix_repair_loop(
+            issue_context_path=Path(args.issue_context),
+            repo_root=Path.cwd(),
+            commit_title=args.commit_title,
+            max_iterations=args.max_iterations,
+            verify_command=args.verify_command,
+            self_verify_command=args.self_verify_command or None,
+        )
+        if result.success:
+            logger.info(f"✅ Autofix repair loop succeeded after {result.attempts} attempt(s).")
+            return 0
+        logger.error(f"❌ Autofix repair loop failed: {result.reason}")
+        return 1
+
+    logger.error(f"❌ Unknown autofix command: {args.autofix_command}")
     return 2
 
 

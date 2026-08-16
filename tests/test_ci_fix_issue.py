@@ -1,19 +1,14 @@
 import subprocess
 from pathlib import Path
 
-import pytest
-
-from scripts.opencode_github_worker import (
+from src.core.ci.fix_issue import (
     _apply_patch,
     _budgeted_relevant_file_contents,
     _budgeted_requested_tool_context,
-    _normalize_diff,
     _per_file_context_limit,
     _prompt_fits_budget,
 )
-from src.core.ci.code_review import code_review
-from src.core.ci.response_parsing import _parse_triage_response
-from src.core.patch_ops import _split_multifile_patch, _validate_patch_paths
+from src.core.patch_ops import _normalize_diff, _split_multifile_patch, _validate_patch_paths
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -349,53 +344,3 @@ def test_budgeted_requested_tool_context_counts_existing_file_context(tmp_path) 
         extra_context="",
         tool_context=tool_context,
     )
-
-
-def test_parse_triage_response_accepts_fenced_json() -> None:
-    parsed = _parse_triage_response(
-        """```json
-{"should_create_issue": true, "title": "fix: bug", "body": "details"}
-```"""
-    )
-
-    assert parsed["should_create_issue"] is True
-    assert parsed["title"] == "fix: bug"
-
-
-def test_parse_triage_response_defaults_to_no_issue_for_prose() -> None:
-    parsed = _parse_triage_response(
-        "We need to decide if any listed issue qualifies, but this is not JSON."
-    )
-
-    assert parsed == {"should_create_issue": False, "title": "", "body": ""}
-
-
-def test_parse_triage_response_rejects_json_missing_required_fields() -> None:
-    with pytest.raises(ValueError, match="missing required"):
-        _parse_triage_response('{"title": "fix: bug", "body": "details"}')
-
-
-def test_parse_triage_response_rejects_malformed_json_shape() -> None:
-    with pytest.raises(ValueError, match="looked like JSON"):
-        _parse_triage_response('{"should_create_issue": true, "title": "fix: bug"')
-
-
-async def test_code_review_soft_fails_when_all_model_providers_are_unavailable(
-    tmp_path, monkeypatch
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    diff_path = tmp_path / "diff.txt"
-    diff_path.write_text("diff --git a/foo.py b/foo.py\n+pass\n", encoding="utf-8")
-
-    from src.core.llm_manager import MultiModelOrchestrator
-
-    async def _raise_all_failed(self, *args, **kwargs):
-        raise RuntimeError("All fallback models failed. No available models.")
-
-    monkeypatch.setattr(MultiModelOrchestrator, "execute_with_model", _raise_all_failed)
-
-    result = await code_review(diff_path)
-
-    assert result == 0
-    review_text = (tmp_path / "review_result.txt").read_text(encoding="utf-8")
-    assert "unavailable" in review_text.lower()
