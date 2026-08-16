@@ -1200,6 +1200,30 @@ async def handle_nightwelding_command(args):
     return 0
 
 
+async def handle_ci_command(args):
+    """CI 게이트 커맨드 처리 (code-review / issue-triage / merge-decision)."""
+    from pathlib import Path
+
+    if args.ci_command == "code-review":
+        from src.core.ci.code_review import code_review
+
+        return await code_review(Path(args.diff_file))
+    elif args.ci_command == "issue-triage":
+        from src.core.ci.issue_triage import issue_triage
+
+        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
+        open_issues_file = Path(args.open_issues_file) if args.open_issues_file else None
+        return await issue_triage(Path(args.review_file), cerebras_file, open_issues_file)
+    elif args.ci_command == "merge-decision":
+        from src.core.ci.merge_decision import merge_decision
+
+        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
+        return await merge_decision(Path(args.pr_meta_file), Path(args.review_file), cerebras_file)
+
+    logger.error(f"❌ Unknown ci command: {args.ci_command}")
+    return 2
+
+
 async def handle_interactive_command(args):
     """인터랙티브 모드 처리"""
     logger.info("💬 Starting interactive mode...")

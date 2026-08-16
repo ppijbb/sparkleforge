@@ -104,6 +104,7 @@ from src.cli.cli_result import cli_result_succeeded, extract_cli_result_content
 from src.cli.main_commands import (
     handle_actions_command,
     handle_approve_command,
+    handle_ci_command,
     handle_cli_command,
     handle_deny_command,
     handle_docker_command,
@@ -567,6 +568,25 @@ EXAMPLES:
     report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
     report_subparsers.add_parser("aggregate", help="Aggregate all history entries into a release metrics summary")
 
+    # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단)
+    ci_parser = subparsers.add_parser(
+        "ci", help="CI gate agents used by GitHub Actions (code review, issue triage, merge decision)"
+    )
+    ci_subparsers = ci_parser.add_subparsers(dest="ci_command", help="CI commands")
+
+    ci_code_review_parser = ci_subparsers.add_parser("code-review", help="Summarize a git diff for PR review")
+    ci_code_review_parser.add_argument("--diff-file", default="diff.txt")
+
+    ci_issue_triage_parser = ci_subparsers.add_parser("issue-triage", help="Decide whether a review finding warrants a new issue")
+    ci_issue_triage_parser.add_argument("--review-file", default="review_result.txt")
+    ci_issue_triage_parser.add_argument("--cerebras-file", default="cerebras_result.txt")
+    ci_issue_triage_parser.add_argument("--open-issues-file", default=None)
+
+    ci_merge_decision_parser = ci_subparsers.add_parser("merge-decision", help="Decide whether a reviewed PR should auto-merge")
+    ci_merge_decision_parser.add_argument("--pr-meta-file", default="pr_meta.json")
+    ci_merge_decision_parser.add_argument("--review-file", default="review_result.txt")
+    ci_merge_decision_parser.add_argument("--cerebras-file", default="cerebras_result.txt")
+
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
         "--request",
@@ -768,6 +788,8 @@ EXAMPLES:
         cli_rc = await handle_nightwelding_command(args)
     elif cmd == "report":
         cli_rc = await handle_report_command(args)
+    elif cmd == "ci":
+        cli_rc = await handle_ci_command(args)
     elif cmd == "interactive":
         cli_rc = await handle_interactive_command(args)
     elif cmd == "repl":
@@ -786,7 +808,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding"}
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding", "ci"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)

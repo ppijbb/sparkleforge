@@ -7,15 +7,17 @@ Robust patch application strategy:
   1. git apply --3way --ignore-whitespace  (main path)
   2. patch --fuzz=3 -p1                   (fallback: tolerates ±3 lines of offset)
   3. fail with full diagnostics
+
+code_review/issue_triage/merge_decision moved to src/core/ci/ -- see
+src.core.ci.code_review, src.core.ci.issue_triage, src.core.ci.merge_decision,
+exposed via `sparkleforge ci {code-review,issue-triage,merge-decision}`.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -34,40 +36,11 @@ from src.core.patch_ops import (
     build_prompt,
     run,
 )
+from src.core.ci.response_parsing import _strip_fenced_response
 
-# CI 잡은 LLM_PROVIDER/LLM_MODEL과 API 키만 주입하므로, 설정 로더가 요구하는
-# 나머지 필수 변수에 안전한 기본값을 채운다. 시크릿 성격의 키에는 기본값을 두지 않는다.
-_CONFIG_ENV_DEFAULTS = {
-    "LLM_TEMPERATURE": "0.2",
-    "LLM_MAX_TOKENS": "8192",
-    "BUDGET_LIMIT": "5.0",
-    "ENABLE_COST_OPTIMIZATION": "true",
-}
-_MODEL_ROLE_KEYS = (
-    "PLANNING_MODEL",
-    "REASONING_MODEL",
-    "VERIFICATION_MODEL",
-    "GENERATION_MODEL",
-    "COMPRESSION_MODEL",
-)
 _CHARS_PER_TOKEN = 3
 _PROMPT_SAFETY_TOKENS = 1_000
 _MAX_FILE_CONTEXT_CHARS = 200_000
-
-
-def ensure_config_loaded() -> None:
-    """MultiModelOrchestrator 생성 전에 전역 LLM 설정을 1회 로드한다."""
-    from src.core import researcher_config
-
-    if researcher_config.config is not None:
-        return
-    for key, value in _CONFIG_ENV_DEFAULTS.items():
-        os.environ.setdefault(key, value)
-    default_model = os.getenv("LLM_MODEL")
-    if default_model:
-        for key in _MODEL_ROLE_KEYS:
-            os.environ.setdefault(key, default_model)
-    researcher_config.load_config_from_env()
 
 
 def _infer_relevant_files(issue_context: str, all_files: list[str]) -> list[str]:
@@ -305,52 +278,6 @@ def _budgeted_requested_tool_context(
     return ""
 
 
-def _strip_fenced_response(raw_content: str) -> str:
-    raw_content = raw_content.strip()
-    if not raw_content.startswith("```"):
-        return raw_content
-    lines = raw_content.splitlines()
-    if lines and lines[0].startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].startswith("```"):
-        lines = lines[:-1]
-    return "\n".join(lines).strip()
-
-
-def _parse_triage_response(raw_content: str) -> dict[str, object]:
-    import json
-
-    raw_content = _strip_fenced_response(raw_content)
-    candidates = [raw_content]
-    start = raw_content.find("{")
-    end = raw_content.rfind("}")
-    if 0 <= start < end:
-        candidates.append(raw_content[start : end + 1])
-
-    saw_json_shape = raw_content.startswith("{") or start >= 0
-    for candidate in candidates:
-        try:
-            data = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(data, dict):
-            raise ValueError("Triage response JSON must be an object.")
-        required = {"should_create_issue", "title", "body"}
-        missing = sorted(required - set(data))
-        if missing:
-            raise ValueError(
-                "Triage response JSON missing required field(s): "
-                + ", ".join(missing)
-            )
-        if isinstance(data.get("should_create_issue"), bool):
-            return data
-        raise ValueError("Triage response field should_create_issue must be boolean.")
-
-    if saw_json_shape:
-        raise ValueError("Triage response looked like JSON but could not be parsed.")
-    return {"should_create_issue": False, "title": "", "body": ""}
-
-
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -472,211 +399,16 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     return 0
 
 
-async def code_review(diff_path: Path) -> int:
-    if not diff_path.exists():
-        print(f"Error: Diff file {diff_path} not found.", file=sys.stderr)
-        return 1
-    diff = diff_path.read_text(encoding="utf-8")
-    if not diff.strip():
-        Path("review_result.txt").write_text("No changes or empty diff.", encoding="utf-8")
-        return 0
-    
-    from src.core.llm_manager import MultiModelOrchestrator, TaskType
-    ensure_config_loaded()
-    orchestrator = MultiModelOrchestrator()
-    prompt = f"You are an expert code reviewer. Read the git diff and summarize key issues, bugs, or style violations briefly.\n\nGit Diff:\n{diff}"
-    system_message = "You are an expert code reviewer. If the primary model is unavailable, the system will fallback."
-
-    try:
-        result = await orchestrator.execute_with_model(
-            prompt=prompt,
-            task_type=TaskType.RESEARCH,
-            system_message=system_message,
-            use_cascade=False
-        )
-    except Exception as e:
-        # All providers being down/rate-limited at once is an external outage,
-        # not something this PR's diff caused -- don't fail the whole check
-        # over it, or every PR opened during an outage gets stuck forever.
-        print(f"::warning::Code review unavailable, all model providers failed: {e}", file=sys.stderr)
-        Path("review_result.txt").write_text(
-            f"Automated code review unavailable: all model providers failed ({e}).",
-            encoding="utf-8",
-        )
-        return 0
-
-    Path("review_result.txt").write_text(result.content, encoding="utf-8")
-    print("✅ Code review completed and saved to review_result.txt")
-    return 0
-
-
-async def issue_triage(
-    review_path: Path,
-    cerebras_path: Path | None = None,
-    open_issues_path: Path | None = None,
-) -> int:
-    if not review_path.exists():
-        print(f"Error: Review file {review_path} not found.", file=sys.stderr)
-        return 1
-    openrouter_review = review_path.read_text(encoding="utf-8")
-    cerebras_review = ""
-    if cerebras_path and cerebras_path.exists():
-        cerebras_review = cerebras_path.read_text(encoding="utf-8")
-
-    combined_review = f"OpenRouter Review:\n{openrouter_review}\n\nCerebras Review:\n{cerebras_review}"
-
-    open_issues_section = "None known."
-    if open_issues_path and open_issues_path.exists():
-        try:
-            import json as _json
-
-            open_issues = _json.loads(open_issues_path.read_text(encoding="utf-8"))
-            if open_issues:
-                open_issues_section = "\n".join(
-                    f"- #{item['number']}: {item['title']}" for item in open_issues
-                )
-        except Exception:
-            pass
-
-    from src.core.llm_manager import MultiModelOrchestrator, TaskType
-    import datetime
-
-    ensure_config_loaded()
-    orchestrator = MultiModelOrchestrator()
-    current_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    prompt = f"""You are an elite architectural and security reviewer for SparkleForge. Based on the review, generate a JSON object with 'should_create_issue', 'title', and 'body' keys.
-CRITICAL INSTRUCTION: DO NOT create an issue for stylistic changes, minor nitpicks, or uncertain hallucinations. Set should_create_issue to true ONLY if the review identifies a concrete correctness bug, security vulnerability, workflow failure, or critical architectural debt.
-DEDUPLICATION: The following issues are currently OPEN in this repository:
-{open_issues_section}
-If the finding you would report is already substantially covered by one of the open issues above (even if it would be worded differently), set should_create_issue to false — do not file a near-duplicate.
-If should_create_issue is true, the title MUST use the repository's plain Conventional Commit prefix style (e.g. 'fix: ...', 'feat: ...').
-The 'body' MUST be a Markdown string that explicitly includes the following structured header at the very top:
-> **Date**: {current_date}
-> **Issue Type**: [Classify as Parent Issue or Sub-issue (Anvil Phase A)]
-> **Related Milestone**: [Mention if related to a known milestone like #13 Anvil, otherwise N/A]
-> **Metrics & Justification**: [Provide a concrete, logical proof or metric of why this code must be changed. Do not use simple judgments.]
-
-Below the header, provide a highly specific explanation of what is wrong and an actionable plan to fix it.
-If should_create_issue is false, title and body must be empty strings.
-
-Review Content:
-{combined_review}"""
-
-    system_message = "You are an elite triage agent. Return only a JSON object."
-    
-    result = await orchestrator.execute_with_model(
-        prompt=prompt,
-        task_type=TaskType.ANALYSIS,
-        system_message=system_message,
-        use_cascade=False
-    )
-    
-    try:
-        import json
-
-        data = _parse_triage_response(result.content)
-        raw_clean = _strip_fenced_response(result.content)
-        if (
-            data == {"should_create_issue": False, "title": "", "body": ""}
-            and raw_clean
-            and not raw_clean.startswith("{")
-        ):
-            print("Triage response was not actionable JSON; defaulting to no issue.")
-        Path("triage_result.json").write_text(
-            json.dumps(data, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        print("✅ Triage completed and saved to triage_result.json")
-        return 0
-    except Exception as e:
-        print(f"Error: Unexpected error during triage: {e}", file=sys.stderr)
-        return 1
-
-
-async def merge_decision(pr_meta_path: Path, review_path: Path, cerebras_path: Path | None = None) -> int:
-    if not pr_meta_path.exists():
-        print(f"Error: PR metadata file {pr_meta_path} not found.", file=sys.stderr)
-        return 1
-    pr_meta = pr_meta_path.read_text(encoding="utf-8")
-    
-    openrouter_review = ""
-    if review_path.exists():
-        openrouter_review = review_path.read_text(encoding="utf-8")
-        
-    cerebras_review = ""
-    if cerebras_path and cerebras_path.exists():
-        cerebras_review = cerebras_path.read_text(encoding="utf-8")
-        
-    from src.core.llm_manager import MultiModelOrchestrator, TaskType
-    import json
-
-    ensure_config_loaded()
-    orchestrator = MultiModelOrchestrator()
-    prompt = f"""You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, or any concrete issue. Do not block solely because one provider skipped or returned no content if another review is available. Keep reason concise.
-
-PR Metadata:
-{pr_meta}
-
-OpenRouter Review:
-{openrouter_review}
-
-Cerebras Review:
-{cerebras_review}"""
-
-    system_message = "You are a merge decision gate. Return only a JSON object."
-    
-    result = await orchestrator.execute_with_model(
-        prompt=prompt,
-        task_type=TaskType.VERIFICATION,
-        system_message=system_message,
-        use_cascade=False
-    )
-    
-    raw_content = result.content.strip()
-    if raw_content.startswith("```"):
-        lines = raw_content.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        raw_content = "\n".join(lines).strip()
-        
-    try:
-        json.loads(raw_content)
-        Path("merge_decision.json").write_text(raw_content, encoding="utf-8")
-        print("✅ Merge decision completed and saved to merge_decision.json")
-        return 0
-    except Exception as je:
-        print(f"Error: Invalid JSON response: {je}", file=sys.stderr)
-        print(f"Raw response:\n{result.content}", file=sys.stderr)
-        return 1
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["fix-issue", "code-review", "issue-triage", "merge-decision"])
+    parser.add_argument("command", choices=["fix-issue"])
     parser.add_argument("--issue-context", default="issue-context.md")
     parser.add_argument("--extra-context", default=None)
-    parser.add_argument("--diff", default="diff.txt")
-    parser.add_argument("--review-file", default="review_result.txt")
-    parser.add_argument("--cerebras-file", default="cerebras_result.txt")
-    parser.add_argument("--pr-meta-file", default="pr_meta.json")
-    parser.add_argument("--open-issues-file", default=None)
     args = parser.parse_args()
 
     if args.command == "fix-issue":
         extra_context = Path(args.extra_context) if args.extra_context else None
         return asyncio.run(fix_issue(Path(args.issue_context), extra_context))
-    elif args.command == "code-review":
-        return asyncio.run(code_review(Path(args.diff)))
-    elif args.command == "issue-triage":
-        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
-        open_issues_file = Path(args.open_issues_file) if args.open_issues_file else None
-        return asyncio.run(issue_triage(Path(args.review_file), cerebras_file, open_issues_file))
-    elif args.command == "merge-decision":
-        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
-        return asyncio.run(merge_decision(Path(args.pr_meta_file), Path(args.review_file), cerebras_file))
 
     return 2
 

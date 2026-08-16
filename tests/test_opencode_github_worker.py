@@ -8,11 +8,11 @@ from scripts.opencode_github_worker import (
     _budgeted_relevant_file_contents,
     _budgeted_requested_tool_context,
     _normalize_diff,
-    _parse_triage_response,
     _per_file_context_limit,
     _prompt_fits_budget,
-    code_review,
 )
+from src.core.ci.code_review import code_review
+from src.core.ci.response_parsing import _parse_triage_response
 from src.core.patch_ops import _split_multifile_patch, _validate_patch_paths
 
 
