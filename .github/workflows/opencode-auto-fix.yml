@@ -89,10 +89,12 @@ jobs:
           git config user.name "$ACTOR_LOGIN"
           git config user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
 
-      - name: Install OpenCode worker dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install aiohttp
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
+      - name: Install SparkleForge (with dev/test dependencies)
+        run: uv sync
 
       - name: Resolve issue and branch
         id: context
@@ -290,112 +292,13 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
           OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
-          OPENCODE_VERIFY_COMMAND: ${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall -q src scripts' }}
-          OPENCODE_SELF_VERIFY_COMMAND: ${{ vars.OPENCODE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}
         run: |
-          MAX_ITERATIONS="${{ github.event.inputs.max_iterations || '3' }}"
-          case "$MAX_ITERATIONS" in
-            ''|*[!0-9]*) MAX_ITERATIONS=3 ;;
-          esac
-          if [ "$MAX_ITERATIONS" -lt 1 ]; then
-            MAX_ITERATIONS=1
-          fi
-          if [ "$MAX_ITERATIONS" -gt 5 ]; then
-            MAX_ITERATIONS=5
-          fi
-
-          : > opencode-extra-context.md
-          for attempt in $(seq 1 "$MAX_ITERATIONS"); do
-            echo "OpenCode attempt $attempt of $MAX_ITERATIONS"
-            if ! python scripts/opencode_github_worker.py fix-issue \
-              --issue-context issue-context.md \
-              --extra-context opencode-extra-context.md 2> opencode-worker-error.log; then
-              {
-                echo "Previous OpenCode attempt failed before commit."
-                echo
-                echo "git apply, no-op patch, or worker error:"
-                cat opencode-worker-error.log
-                if [ -f opencode.patch ]; then
-                  echo
-                  echo "Rejected patch:"
-                  head -n 220 opencode.patch
-                fi
-                echo
-                echo "Regenerate the patch against the current repository contents."
-              } > opencode-extra-context.md
-
-              if [ "$attempt" -eq "$MAX_ITERATIONS" ]; then
-                cat opencode-worker-error.log
-                exit 1
-              fi
-              continue
-            fi
-
-            REPOSITORY_CHANGES=$(git status --porcelain --untracked-files=all -- \
-              . \
-              ':!issue-context.md' \
-              ':!opencode.patch' \
-              ':!opencode-extra-context.md' \
-              ':!opencode-verify.log' \
-              ':!opencode-worker-error.log' \
-              ':!*.orig' \
-              ':!*.rej')
-            if [ -z "$REPOSITORY_CHANGES" ]; then
-              echo "OpenCode produced no repository changes on attempt $attempt." | tee opencode-worker-error.log
-              {
-                echo "Previous OpenCode attempt produced no repository changes."
-                echo
-                echo "The response either generated a no-op patch or changed only files ignored by git."
-                echo "Regenerate a minimal patch that changes tracked repository files relevant to the issue."
-              } > opencode-extra-context.md
-
-              if [ "$attempt" -eq "$MAX_ITERATIONS" ]; then
-                exit 1
-              fi
-              continue
-            fi
-
-            git add -u .
-            git ls-files --others --exclude-standard -z | xargs -0 -r git add --
-            if ! git diff --cached --quiet; then
-              python scripts/validate_commit_messages.py --message "${{ steps.context.outputs.commit_title }}"
-              git commit -m "$(echo "${{ steps.context.outputs.commit_title }}" | sed 's/"/\\"/g')"
-            else
-              echo "::error::Repository changes were detected but no non-ignored files were staged."
-              exit 1
-            fi
-
-            if [ -n "$OPENCODE_SELF_VERIFY_COMMAND" ]; then
-              echo "Running self-verification: $OPENCODE_SELF_VERIFY_COMMAND"
-              if ! bash -lc "$OPENCODE_SELF_VERIFY_COMMAND" > opencode-self-verify.log 2>&1; then
-                echo "Self-verification failed."
-                cat opencode-self-verify.log
-                # If self-verification fails, we treat it as a failed attempt to trigger refinement
-                exit 1
-              fi
-            fi
-
-            if bash -lc "$OPENCODE_VERIFY_COMMAND" > opencode-verify.log 2>&1; then
-              echo "Verification passed: $OPENCODE_VERIFY_COMMAND"
-              break
-            fi
-
-            {
-              echo "Previous attempt did not pass verification."
-              echo
-              echo "Command:"
-              echo "$OPENCODE_VERIFY_COMMAND"
-              echo
-              echo "Output:"
-              tail -n 160 opencode-verify.log
-            } > opencode-extra-context.md
-
-            if [ "$attempt" -eq "$MAX_ITERATIONS" ]; then
-              echo "Verification still failed after $MAX_ITERATIONS attempts."
-              cat opencode-verify.log
-              exit 1
-            fi
-          done
+          uv run sparkleforge autofix run \
+            --issue-context issue-context.md \
+            --commit-title "${{ steps.context.outputs.commit_title }}" \
+            --max-iterations "${{ github.event.inputs.max_iterations || '3' }}" \
+            --verify-command "${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall -q src scripts' }}" \
+            --self-verify-command "${{ vars.OPENCODE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}"
 
       - name: Push OpenCode changes
         id: commit

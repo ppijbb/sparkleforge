@@ -1,13 +1,13 @@
 """Implementation repair loop: turn a red reproduction test green.
 
-Mirrors the retry loop in .github/workflows/opencode-auto-fix.yml (the
-"OpenCode repair loop" step) but in Python, and verifies against the
-reproduction test written by src/core/nightwelding/gate.py instead of a bare
-`compileall` check.
+Mirrors the retry loop in src/core/autofix/runner.py (which backs the
+"OpenCode repair loop" step in .github/workflows/opencode-auto-fix.yml) but
+verifies against the reproduction test written by
+src/core/nightwelding/gate.py instead of a bare `compileall` check.
 
-Reuses scripts/opencode_github_worker.py's `fix-issue` subcommand as a
-subprocess (the same, already-hardened usage pattern the existing GitHub
-Actions workflow already relies on) rather than importing `fix_issue()`
+Reuses `sparkleforge ci fix-issue` (src/core/ci/fix_issue.py) as a subprocess
+(the same, already-hardened usage pattern the autofix repair loop and the
+GitHub Actions workflow already relied on) rather than importing `fix_issue()`
 in-process — see the Nightwelding plan for why.
 """
 
@@ -56,6 +56,10 @@ def implement_until_green(
     if not validator_script.exists():
         validator_script = repo_root / "scripts" / "validate_commit_messages.py"
 
+    sparkleforge_entrypoint = Path(__file__).resolve().parents[3] / "main.py"
+    if not sparkleforge_entrypoint.exists():
+        sparkleforge_entrypoint = repo_root / "main.py"
+
     validate = _run(
         [sys.executable, str(validator_script), "--message", commit_title],
         cwd=repo_root,
@@ -78,7 +82,8 @@ def implement_until_green(
         proc = _run(
             [
                 sys.executable,
-                "scripts/opencode_github_worker.py",
+                str(sparkleforge_entrypoint),
+                "ci",
                 "fix-issue",
                 "--issue-context",
                 str(issue_context_path),

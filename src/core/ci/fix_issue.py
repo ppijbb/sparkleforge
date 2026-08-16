@@ -1,27 +1,22 @@
-"""GitHub Actions helper for low-cost OpenCode issue fixing.
+"""Single-attempt LLM diff generation + apply for one issue context.
 
-This worker reads a GitHub issue context file, asks the local OpenCode agent for
-a unified diff, and applies it to the checked-out branch.
+Moved from scripts/opencode_github_worker.py so GitHub Actions calls
+`sparkleforge ci fix-issue` instead of a standalone script. Reused by three
+callers: opencode-auto-fix.yml's repair loop (via src.core.autofix.runner),
+src.core.nightwelding.implement, and scripts/run_swebench_lite.py -- all three
+now invoke it as a subprocess via `main.py ci fix-issue`.
 
-Robust patch application strategy:
+Robust patch application strategy (src/core/patch_ops.py):
   1. git apply --3way --ignore-whitespace  (main path)
   2. patch --fuzz=3 -p1                   (fallback: tolerates ±3 lines of offset)
   3. fail with full diagnostics
-
-code_review/issue_triage/merge_decision moved to src/core/ci/ -- see
-src.core.ci.code_review, src.core.ci.issue_triage, src.core.ci.merge_decision,
-exposed via `sparkleforge ci {code-review,issue-triage,merge-decision}`.
 """
 
 from __future__ import annotations
 
-import argparse
-import asyncio
 import re
 import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.core.cli_agents.open_code_agent import OpenCodeAgent
 
@@ -31,7 +26,6 @@ from src.core.patch_ops import (
     read_full_file,
     repo_snapshot,
     repository_change_signature,
-    _normalize_diff,
     _apply_patch,
     build_prompt,
     run,
@@ -334,7 +328,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
 
         response = result.get("response", "")
         diff = extract_diff(response)
-        
+
         # Check for decomposition request
         import json
         try:
@@ -397,21 +391,3 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         return 1
 
     return 0
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["fix-issue"])
-    parser.add_argument("--issue-context", default="issue-context.md")
-    parser.add_argument("--extra-context", default=None)
-    args = parser.parse_args()
-
-    if args.command == "fix-issue":
-        extra_context = Path(args.extra_context) if args.extra_context else None
-        return asyncio.run(fix_issue(Path(args.issue_context), extra_context))
-
-    return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
