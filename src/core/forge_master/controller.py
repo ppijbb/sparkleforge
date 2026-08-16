@@ -98,7 +98,7 @@ class ForgeMasterController:
             preferred_agent=preferred_agent,
         )
         current_agent = assignment.agent_name
-        assigned_goal = assignment.assigned_goal
+        assigned_goal = apply_persona(assignment.assigned_goal, persona)
         fallback_candidates = assignment.fallback_agents.copy()
 
         # Local-first 라우팅 정책: 프론티어 API 폴백은 로컬 CLI 함대 전원이
