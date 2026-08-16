@@ -552,13 +552,13 @@ class AgentHarness:
                     "tokens_used": result.get("tokens_used", 0),
                 }
                 task["status"] = "completed"
-                dashboard_task_id = self.dashboard.submit(
+                dashboard_task = self.dashboard.submit(
                     name=task.get("description", "CodeBase Task"),
                     description=task.get("description", ""),
                     agent_id=result.get("agent_used", "forge_master"),
                     metadata={"session_id": session_id, "task_id": task_id},
                 )
-                self.dashboard.complete(dashboard_task_id, result=task["result"])
+                self.dashboard.complete(dashboard_task.task_id, result=task["result"])
                 handled.append(task)
             else:
                 unhandled.append(task)
