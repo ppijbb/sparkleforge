@@ -136,10 +136,14 @@ async def _run_batch_in_waves(
             idx = int(task_id)
             task = tasks[idx]
             dep_indices = [int(d) for d in (task.get("dependencies") or [])]
+            # `results` is a list slot per task index, not a value set, so
+            # "is this dependency's result available" must check the slot at
+            # that index (still None until its wave completes), not whether
+            # the integer dep_idx happens to appear as a value in `results`.
             missing_indices = [
                 dep_idx
                 for dep_idx in dep_indices
-                if dep_idx < 0 or dep_idx >= len(tasks) or dep_idx not in results
+                if dep_idx < 0 or dep_idx >= len(tasks) or results[dep_idx] is None
             ]
             for dep_idx in missing_indices:
                 logger.warning(
@@ -152,7 +156,8 @@ async def _run_batch_in_waves(
             prior_outputs = [
                 f"[Output of task {dep_idx}]\n{results[dep_idx].get('response', '')}"
                 for dep_idx in dep_indices
-                if dep_idx in results
+                if 0 <= dep_idx < len(results)
+                and results[dep_idx] is not None
                 and isinstance(results[dep_idx], dict)
                 and results[dep_idx].get("success")
             ]
