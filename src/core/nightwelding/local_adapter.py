@@ -13,6 +13,7 @@ import yaml
 import subprocess
 from pathlib import Path
 from typing import List
+import yaml
 
 from src.core.nightwelding.adapter import (
     BaseNightweldingAdapter,
@@ -122,16 +123,46 @@ class LocalGitAdapter(BaseNightweldingAdapter):
         exclude_labels: List[str] | None = None,
         limit: int = 100,
     ) -> List[int | str]:
-        """List local issue files from issues directory."""
+        """List local issue files from issues directory with label filtering."""
         if not self.issues_dir.is_dir():
             return []
 
+        exclude_labels = exclude_labels or []
         candidates: List[int | str] = []
         for file_path in sorted(self.issues_dir.glob("*.md")):
-            candidates.append(str(file_path.resolve()))
+            content = file_path.read_text(encoding="utf-8")
+            labels = None
+            if content.startswith("---"):
+                parts = content.split("---")
+                if len(parts) > 2:
+                    meta = yaml.safe_load(parts[1]) or {}
+                    if "labels" in meta:
+                        labels = meta.get("labels") or []
+            # Local issue files aren't required to declare frontmatter labels
+            # at all -- only apply backlog_label/exclude_labels filtering to
+            # files that opt in by declaring a `labels:` field; undecorated
+            # files are candidates by default.
+            if labels is None:
+                candidates.append(str(file_path.resolve()))
+            elif backlog_label in labels and not any(l in labels for l in exclude_labels):
+                candidates.append(str(file_path.resolve()))
             if len(candidates) >= limit:
                 break
         return candidates
+
+    def push_branch(self, repo_root: Path, branch: str, base_branch: str) -> bool:
+        return True
+
+    def commit_changes(self, repo_root: Path, message: str) -> None:
+        subprocess.run(["git", "add", "-u"], cwd=repo_root, capture_output=True, text=True, check=False)
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            cwd=repo_root, capture_output=True, text=True, check=False,
+        ).stdout.split("\0")
+        untracked = [p for p in untracked if p]
+        if untracked:
+            subprocess.run(["git", "add", "--", *untracked], cwd=repo_root, capture_output=True, text=True, check=False)
+        subprocess.run(["git", "commit", "-m", message], cwd=repo_root, capture_output=True, text=True, check=False)
 
     def publish_draft_change(
         self,

@@ -147,8 +147,14 @@ class ForgeMasterRouter:
             selected, reason = self._pick_best_agent(relevance, effective_pool)
 
         # 폴백은 이 작업과 실제로 관련 있다고 판단된 에이전트에만 한정
-        # (관련성 매치가 하나도 없으면 불필요하게 다른 유료 에이전트로 확산시키지 않음)
-        fallbacks = self._relevant_fallbacks(selected, relevance)
+        # (관련성 매치가 하나도 없으면 불필요하게 다른 유료 에이전트로 확산시키지 않음).
+        # 예외: 풀 전체에 관련성 매치가 하나도 없는 경우(순수 동점 처리로 선택된
+        # 경우) 폴백이 완전히 비어버리면 선택된 에이전트가 실패했을 때 회복
+        # 경로가 없으므로, 광역 역량(static score) 상위 에이전트를 안전망으로 둔다.
+        if relevance and max(relevance.values()) < self._RELEVANCE_THRESHOLD:
+            fallbacks = self._broadest_capability_fallbacks(selected, effective_pool)
+        else:
+            fallbacks = self._relevant_fallbacks(selected, relevance)
 
         # 맞춤 Goal 부여 생성
         goal_text = self._build_tool_specific_goal(selected, task_description)
@@ -235,3 +241,15 @@ class ForgeMasterRouter:
         ]
         candidates.sort(key=lambda x: x[1], reverse=True)
         return [agent for agent, _ in candidates]
+
+    def _broadest_capability_fallbacks(self, selected: str, pool: List[str], limit: int = 2) -> List[str]:
+        """Safety-net fallback for tasks with no keyword/capability match at
+        all: the highest static-score agents in the pool (excluding the
+        already-selected one), so a zero-relevance task still has a
+        recovery path if the default pick fails."""
+        candidates = sorted(
+            (agent for agent in pool if agent != selected),
+            key=lambda agent: self.CAPABILITY_MATRIX.get(agent, {}).get("score", 0.0),
+            reverse=True,
+        )
+        return candidates[:limit]
