@@ -95,6 +95,15 @@ jobs:
         with:
           fetch-depth: 1
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge
+        run: uv sync
+
       - uses: actions/download-artifact@v4
         with:
           name: scenario-eval-report
@@ -142,8 +151,6 @@ jobs:
               sys.exit(0)
           PY
 
-          BRANCH="chore/scenario-history-${GITHUB_SHA::12}"
-          git checkout -b "$BRANCH"
           # Strip verbose stderr_excerpt before appending to avoid unbounded
           # repository growth from fully-duplicated log blobs on every CI run.
           python3 - <<'PY'
@@ -161,12 +168,13 @@ jobs:
           # the history file it's sourced from, in the same commit/PR.
           python3 scripts/generate_benchmark_report.py
 
-          git config user.name "sparkleforge-bot"
-          git config user.email "actions@github.com"
-          git add tests/benchmark/baselines/scenario_history.jsonl docs/BENCHMARK_REPORT.md
-          git commit -m "chore: record scenario-eval history for ${GITHUB_SHA::12}"
-          git push origin "$BRANCH"
-          gh pr create --repo "${{ github.repository }}" \
-            --title "chore: record scenario-eval history for ${GITHUB_SHA::12}" \
-            --body "Appends this merge's scenario-eval report to tests/benchmark/baselines/scenario_history.jsonl. Auto-merges via the existing fix/chore auto-merge automation once checks pass." \
-            --base main --head "$BRANCH"
+          echo "Appends this merge's scenario-eval report to tests/benchmark/baselines/scenario_history.jsonl. Auto-merges via the existing fix/chore auto-merge automation once checks pass." > scenario-history-pr-body.md
+
+          uv run sparkleforge ci publish \
+            --repo "${{ github.repository }}" \
+            --branch "chore/scenario-history-${GITHUB_SHA::12}" \
+            --base main \
+            --commit-title "chore: record scenario-eval history for ${GITHUB_SHA::12}" \
+            --paths tests/benchmark/baselines/scenario_history.jsonl docs/BENCHMARK_REPORT.md \
+            --pr-title "chore: record scenario-eval history for ${GITHUB_SHA::12}" \
+            --pr-body-file scenario-history-pr-body.md
