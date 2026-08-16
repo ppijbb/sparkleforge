@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from src.core.tools.registry import ToolCategory, ToolMetadata, registry
 
 logger = logging.getLogger(__name__)
 
+# In-memory cache of indexed directories: maps resolved directory path to a
+# tuple of (directory mtime, list of candidate file entries). Avoids redundant
+# filesystem scans during continuous research loops.
+_DIRECTORY_INDEX_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 
 def _keyword_score(query: str, content: str) -> float:
     """Simple fallback similarity score based on term overlap."""
@@ -25,6 +29,41 @@ def _keyword_score(query: str, content: str) -> float:
     content_lower = content.lower()
     hits = sum(1 for term in query_terms if term in content_lower)
     return hits / len(query_terms)
+
+
+def _get_indexed_candidates(
+    base: Path, extensions: tuple[str, ...]
+) -> List[Dict[str, Any]]:
+    """Return candidate file entries for ``base``, caching the index.
+
+    The cache is keyed by the resolved directory path and invalidated when
+    the directory's modification time changes, so repeated searches over the
+    same stable tree reuse the in-memory index instead of rescanning disk.
+    """
+    cache_key = str(base)
+    try:
+        dir_mtime = base.stat().st_mtime
+    except OSError:
+        dir_mtime = 0.0
+
+    cached = _DIRECTORY_INDEX_CACHE.get(cache_key)
+    if cached is not None and cached[0] == dir_mtime:
+        return cached[1]
+
+    candidates: List[Dict[str, Any]] = []
+    for path in base.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix and extensions and path.suffix.lower() not in extensions:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        candidates.append({"path": str(path), "content": text})
+
+    _DIRECTORY_INDEX_CACHE[cache_key] = (dir_mtime, candidates)
+    return candidates
 
 
 def _semantic_search(
@@ -42,19 +81,8 @@ def _semantic_search(
     if not base.exists():
         return {"success": False, "error": f"Directory not found: {directory}", "matches": []}
 
-    candidates: List[Dict[str, Any]] = []
     extensions = tuple(file_extensions) if file_extensions else ()
-
-    for path in base.rglob("*"):
-        if not path.is_file():
-            continue
-        if path.suffix and extensions and path.suffix.lower() not in extensions:
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        candidates.append({"path": str(path), "content": text})
+    candidates = _get_indexed_candidates(base, extensions)
 
     try:
         from src.core.actuate.semantic_fs import SemanticFS
