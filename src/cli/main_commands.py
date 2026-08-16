@@ -1432,6 +1432,26 @@ async def handle_cli_command(args):
 
 async def handle_report_command(args):
     """보고서 및 에이전트 평가 명령어 처리."""
+    if getattr(args, "report_command", None) == "daily-roadmap-prompt":
+        # Piped straight into a file by the daily-roadmap workflow -- must be plain
+        # text, so this bypasses the rich Console(force_terminal=True) shim below
+        # (that would emit ANSI escape codes into the redirected file).
+        import datetime
+        import os
+        import sys
+        from zoneinfo import ZoneInfo
+
+        from src.core.daily_roadmap import build_daily_roadmap_mission_brief
+
+        today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+        sys.stdout.write(build_daily_roadmap_mission_brief(today) + "\n")
+        sys.stdout.flush()
+        # Some background init path (unrelated to this subcommand -- reproduces even on
+        # `sparkleforge health`) logs a stray line to stdout after the command "returns".
+        # This command's whole job is printing static text for a workflow to redirect to
+        # a file, so exit immediately rather than risk that noise corrupting the output.
+        os._exit(0)
+
     from src.cli.commands.report import report_command
     from rich.console import Console
 

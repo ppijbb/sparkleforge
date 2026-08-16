@@ -568,6 +568,10 @@ EXAMPLES:
     report_subparsers.add_parser("generate", help="Generate the daily metric evaluation report")
     report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
     report_subparsers.add_parser("aggregate", help="Aggregate all history entries into a release metrics summary")
+    daily_roadmap_prompt_parser = report_subparsers.add_parser(
+        "daily-roadmap-prompt", help="Print the daily roadmap mission-brief prompt template"
+    )
+    daily_roadmap_prompt_parser.add_argument("--today", default=None)
 
     # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단/이슈수정)
     ci_parser = subparsers.add_parser(
