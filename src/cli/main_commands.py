@@ -1483,6 +1483,102 @@ async def handle_report_command(args):
         # a file, so exit immediately rather than risk that noise corrupting the output.
         os._exit(0)
 
+    report_command_name = getattr(args, "report_command", None)
+    if report_command_name in (
+        "roadmap-target",
+        "roadmap-fallback-issue",
+        "roadmap-issue-body",
+        "sync-anvil-doc",
+    ):
+        # Same stray-stdout-log concern as daily-roadmap-prompt above: these are
+        # all piped straight into a file (or captured via `$(...)`) by the
+        # workflow, so bypass the rich Console shim and exit immediately.
+        import json as json_module
+        import os
+        import sys
+        from pathlib import Path
+
+        if report_command_name == "roadmap-target":
+            from src.core.roadmap.target_selection import (
+                render_planning_context,
+                select_anvil_target,
+                target_file_contents,
+            )
+
+            milestone_file = Path(args.milestone_file)
+            raw = milestone_file.read_text(encoding="utf-8").strip() if milestone_file.exists() else ""
+            milestone = json_module.loads(raw) if raw else None
+            status_file = Path(args.subissue_status_file)
+            sub_status = json_module.loads(status_file.read_text(encoding="utf-8") or "[]") if status_file.exists() else []
+
+            sys.stdout.write(render_planning_context(milestone, sub_status) + "\n")
+            sys.stdout.flush()
+            target = select_anvil_target(milestone, sub_status)
+            Path(args.target_out).write_text(target_file_contents(target), encoding="utf-8")
+            os._exit(0)
+
+        if report_command_name == "roadmap-fallback-issue":
+            from src.core.roadmap.planning import build_fallback_roadmap
+
+            context_file = Path(args.context_file)
+            context_md = context_file.read_text(encoding="utf-8") if context_file.exists() else ""
+            target_file = Path(args.anvil_target_file)
+            anvil_target = target_file.read_text(encoding="utf-8").strip() if target_file.exists() else ""
+
+            sys.stdout.write(
+                build_fallback_roadmap(
+                    context_md=context_md,
+                    anvil_target=anvil_target,
+                    rc=args.rc,
+                    invalid_reason=args.invalid_reason,
+                    output_bytes=args.output_bytes,
+                    console_bytes=args.console_bytes,
+                    error_bytes=args.error_bytes,
+                )
+            )
+            sys.stdout.flush()
+            os._exit(0)
+
+        if report_command_name == "roadmap-issue-body":
+            from src.core.roadmap.planning import build_issue_body
+
+            roadmap_file = Path(args.roadmap_file)
+            roadmap_text = roadmap_file.read_text(encoding="utf-8") if roadmap_file.exists() else ""
+            previous_file = Path(args.previous_body_file)
+            previous_body = previous_file.read_text(encoding="utf-8") if previous_file.exists() else ""
+
+            sys.stdout.write(
+                build_issue_body(
+                    today=args.today,
+                    status=args.status,
+                    roadmap_text=roadmap_text,
+                    previous_body=previous_body,
+                )
+            )
+            sys.stdout.flush()
+            os._exit(0)
+
+        if report_command_name == "sync-anvil-doc":
+            from src.core.roadmap.anvil_doc_sync import sync_anvil_doc
+
+            milestone_file = Path(args.milestone_file)
+            raw = milestone_file.read_text(encoding="utf-8").strip() if milestone_file.exists() else ""
+            milestone = json_module.loads(raw) if raw else None
+            status_file = Path(args.subissue_status_file)
+            sub_status = json_module.loads(status_file.read_text(encoding="utf-8") or "[]") if status_file.exists() else []
+
+            if not milestone:
+                sys.stdout.write("nochange\n")
+                sys.stdout.flush()
+                os._exit(0)
+
+            total = len(sub_status)
+            closed = sum(1 for item in sub_status if item.get("state") == "CLOSED")
+            changed = sync_anvil_doc(Path(args.plan_file), milestone["number"], closed, total)
+            sys.stdout.write(("changed" if changed else "nochange") + "\n")
+            sys.stdout.flush()
+            os._exit(0)
+
     from src.cli.commands.report import report_command
     from rich.console import Console
 
