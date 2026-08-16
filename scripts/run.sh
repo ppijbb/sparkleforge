@@ -144,6 +144,14 @@ EOF
 # Function to run the application
 run_app() {
     print_status "Starting Local Researcher..."
+
+    # Check for rollback request
+    if [ "$1" = "rollback" ]; then
+        print_status "Executing rollback sequence..."
+        docker compose down
+        docker compose build
+        exit 0
+    fi
     
     # Activate virtual environment
     source venv/bin/activate
@@ -167,6 +175,7 @@ show_usage() {
     echo "  cancel <research_id>        - Cancel a research project"
     echo "  interactive                 - Run in interactive mode"
     echo "  help                        - Show help"
+    echo "  rollback                    - Rollback deployment (requires local build)"
     echo ""
     echo "Examples:"
     echo "  $0 --setup-only"
