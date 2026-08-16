@@ -1,39 +1,33 @@
 import os
-from typing import List
+from typing import List, Optional
 
 
 class ConfigurationError(Exception):
     """Raised when the environment configuration is invalid or missing."""
-
     pass
 
 
+class EnvConfigurator:
+    def __init__(self, environ: Optional[dict] = None):
+        self.environ = environ if environ is not None else os.environ
+
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        return self.environ.get(key, default)
+
+    def verify(self, required_vars: Optional[List[str]] = None) -> bool:
+        if required_vars is None:
+            self.environ.setdefault("SPARKLEFORGE_ENV", "development")
+            required_vars = ["SPARKLEFORGE_ENV"]
+
+        missing = [var for var in required_vars if var not in self.environ]
+        if missing:
+            raise ConfigurationError(
+                f"Missing required environment variables: {', '.join(missing)}"
+            )
+        return True
+
+
 def verify_environment(required_vars: List[str] = None) -> bool:
-    """
-    Validates that the environment is correctly configured.
-
-    Checks for the presence of required environment variables after any
-    environment population logic has run. A variable is considered present when
-    it exists in os.environ, even if its value is an empty string.
-
-    Args:
-        required_vars: A list of environment variable names that must be set.
-
-    Returns:
-        bool: True if validation passes.
-
-    Raises:
-        ConfigurationError: If any required environment variable is missing.
-    """
-    if required_vars is None:
-        os.environ.setdefault("SPARKLEFORGE_ENV", "development")
-        required_vars = ["SPARKLEFORGE_ENV"]
-
-    missing = [var for var in required_vars if var not in os.environ]
-
-    if missing:
-        raise ConfigurationError(
-            f"Missing required environment variables: {', '.join(missing)}"
-        )
-
-    return True
+    """Legacy wrapper for EnvConfigurator.verify."""
+    configurator = EnvConfigurator()
+    return configurator.verify(required_vars)
