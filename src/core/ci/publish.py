@@ -75,10 +75,13 @@ def commit_push_and_open_pr(
             "--head", branch,
             "--title", pr_title,
             "--body", pr_body,
+            "--force",
+            "--json", "url",
+            "--jq", ".url",
         ]
         if labels:
             cmd.extend(["--label", ",".join(labels)])
         proc = _run(cmd, cwd=repo_root)
-        pr_url = proc.stdout.strip()
+        pr_url = proc.stdout.strip() if proc.stdout else None
 
     return PublishResult(committed=True, pushed=True, pr_url=pr_url)
