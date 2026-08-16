@@ -1379,17 +1379,6 @@ async def handle_ci_command(args):
         )
         print(f"Planned {len(plan)} new todo-debt issue(s); {len(known_anchors(existing_issues))} already tracked.")
         return 0
-    elif args.ci_command == "mergeability-gate":
-        import json
-
-        from src.core.ci.mergeability_gate import check_mechanical_mergeability
-
-        pr = json.loads(Path(args.pr_json_file).read_text(encoding="utf-8"))
-        verdict = check_mechanical_mergeability(pr)
-        Path("mergeability_result.json").write_text(
-            json.dumps({"ready": verdict.ready, "reason": verdict.reason}), encoding="utf-8"
-        )
-        return 0
 
     logger.error(f"❌ Unknown ci command: {args.ci_command}")
     return 2

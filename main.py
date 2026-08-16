@@ -666,9 +666,6 @@ EXAMPLES:
     ci_plan_todo_issues_parser.add_argument("--existing-issues-file", required=True)
     ci_plan_todo_issues_parser.add_argument("--plan-out", default="todo-issue-plan.json")
 
-    ci_mergeability_gate_parser = ci_subparsers.add_parser("mergeability-gate", help="Check whether a PR is mechanically ready to merge (draft/mergeable/checks-settled)")
-    ci_mergeability_gate_parser.add_argument("--pr-json-file", required=True, help="gh pr view/list JSON output for one PR")
-
     # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
     autofix_parser = subparsers.add_parser(
         "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"

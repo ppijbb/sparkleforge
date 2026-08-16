@@ -21,11 +21,16 @@ jobs:
       github.event.review.body != ''
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       issues: write
       pull-requests: read
     steps:
+      # Pinned to main, not the default PR-merge ref this event would otherwise
+      # check out: this job runs with a repo-write PAT, so executing
+      # PR-controlled code here would be a privilege-escalation hole.
       - uses: actions/checkout@v4
         with:
+          ref: main
           sparse-checkout: |
             scripts/extract_linked_issues.py
           sparse-checkout-cone-mode: false
@@ -316,7 +321,7 @@ jobs:
             exit 0
           fi
 
-          uv run sparkleforge ci mergeability-gate --pr-json-file pr_meta.json
+          python scripts/check_pr_mergeability.py --pr-json-file pr_meta.json
           READY=$(jq -r '.ready' mergeability_result.json)
           GATE_REASON=$(jq -r '.reason' mergeability_result.json)
           if [ "$READY" != "true" ]; then
@@ -344,13 +349,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@v5
-      - name: Install SparkleForge
-        run: uv sync
-
       - name: Merge ready fix PRs
         env:
           GH_TOKEN: ${{ secrets.PAT }}
@@ -376,7 +374,7 @@ jobs:
             MERGE_SUBJECT=$(python scripts/validate_commit_messages.py --normalize-title "$TITLE")
 
             echo "$PR" > current-pr.json
-            uv run sparkleforge ci mergeability-gate --pr-json-file current-pr.json
+            python scripts/check_pr_mergeability.py --pr-json-file current-pr.json
             READY=$(jq -r '.ready' mergeability_result.json)
             REASON=$(jq -r '.reason' mergeability_result.json)
             if [ "$READY" != "true" ]; then
@@ -421,11 +419,16 @@ jobs:
       github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       issues: write
       pull-requests: read
     steps:
+      # Pinned to main for the same reason as route-gemini-review-feedback's
+      # checkout: don't execute code from an unpinned/PR-influenced ref in a
+      # job holding a repo-write PAT.
       - uses: actions/checkout@v4
         with:
+          ref: main
           sparse-checkout: |
             scripts/extract_linked_issues.py
           sparse-checkout-cone-mode: false
