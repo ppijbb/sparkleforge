@@ -104,6 +104,7 @@ from src.cli.cli_result import cli_result_succeeded, extract_cli_result_content
 from src.cli.main_commands import (
     handle_actions_command,
     handle_approve_command,
+    handle_autofix_command,
     handle_ci_command,
     handle_cli_command,
     handle_deny_command,
@@ -568,9 +569,9 @@ EXAMPLES:
     report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
     report_subparsers.add_parser("aggregate", help="Aggregate all history entries into a release metrics summary")
 
-    # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단)
+    # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단/이슈수정)
     ci_parser = subparsers.add_parser(
-        "ci", help="CI gate agents used by GitHub Actions (code review, issue triage, merge decision)"
+        "ci", help="CI gate agents used by GitHub Actions (code review, issue triage, merge decision, issue fixing)"
     )
     ci_subparsers = ci_parser.add_subparsers(dest="ci_command", help="CI commands")
 
@@ -586,6 +587,24 @@ EXAMPLES:
     ci_merge_decision_parser.add_argument("--pr-meta-file", default="pr_meta.json")
     ci_merge_decision_parser.add_argument("--review-file", default="review_result.txt")
     ci_merge_decision_parser.add_argument("--cerebras-file", default="cerebras_result.txt")
+
+    ci_fix_issue_parser = ci_subparsers.add_parser("fix-issue", help="Single-attempt LLM diff generation + apply for one issue context")
+    ci_fix_issue_parser.add_argument("--issue-context", default="issue-context.md")
+    ci_fix_issue_parser.add_argument("--extra-context", default=None)
+
+    # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
+    autofix_parser = subparsers.add_parser(
+        "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"
+    )
+    autofix_subparsers = autofix_parser.add_subparsers(dest="autofix_command", help="Autofix commands")
+    autofix_run_parser = autofix_subparsers.add_parser(
+        "run", help="Run the repair loop once against an already-checked-out issue context"
+    )
+    autofix_run_parser.add_argument("--issue-context", default="issue-context.md")
+    autofix_run_parser.add_argument("--commit-title", required=True)
+    autofix_run_parser.add_argument("--max-iterations", type=int, default=3)
+    autofix_run_parser.add_argument("--verify-command", default="python -m compileall -q src scripts")
+    autofix_run_parser.add_argument("--self-verify-command", default="")
 
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
@@ -790,6 +809,8 @@ EXAMPLES:
         cli_rc = await handle_report_command(args)
     elif cmd == "ci":
         cli_rc = await handle_ci_command(args)
+    elif cmd == "autofix":
+        cli_rc = await handle_autofix_command(args)
     elif cmd == "interactive":
         cli_rc = await handle_interactive_command(args)
     elif cmd == "repl":
@@ -808,7 +829,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding", "ci"}
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding", "ci", "autofix"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)
