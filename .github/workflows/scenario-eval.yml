@@ -46,6 +46,10 @@ jobs:
       - name: Run acceptance scenarios and compare against recorded history
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
         run: |
           set -e
           timeout 25m uv run python tests/benchmark/run_scenarios.py \
@@ -54,7 +58,7 @@ jobs:
             --json-out tests/benchmark/reports/scenario_report_ci.json
           SCENARIO_EXIT=$?
           if [ -f tests/benchmark/reports/scenario_report_ci.json ]; then
-            python3 scripts/create_stagnation_issue.py \
+            uv run sparkleforge ci stagnation-issue \
               --report tests/benchmark/reports/scenario_report_ci.json \
               --history tests/benchmark/baselines/scenario_history.jsonl || true
           fi
@@ -91,6 +95,15 @@ jobs:
         with:
           fetch-depth: 1
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge
+        run: uv sync
+
       - uses: actions/download-artifact@v4
         with:
           name: scenario-eval-report
@@ -116,30 +129,16 @@ jobs:
           # the overall score is below 0.3) pollutes the benchmark dataset and
           # makes regression detection impossible. Override with
           # RECORD_INFRA_DIAGNOSTIC=1 for an explicit diagnostic run.
-          python3 - <<'PY'
-          import json
-          import os
-          import sys
+          uv run sparkleforge ci classify-scenario-outcome \
+            --report-file tests/benchmark/reports/scenario_report_ci.json
+          IS_INFRA_OUTAGE=$(jq -r '.is_infra_outage' scenario_outcome.json)
+          OVERALL_SCORE=$(printf '%.3f' "$(jq -r '.overall_score' scenario_outcome.json)")
+          INFRA_RATIO=$(printf '%.2f' "$(jq -r '.infra_ratio' scenario_outcome.json)")
+          if [ "$IS_INFRA_OUTAGE" = "true" ] && [ "$RECORD_INFRA_DIAGNOSTIC" != "1" ]; then
+            echo "::warning::Skipping scenario history commit: overall_score=$OVERALL_SCORE, infra_failure_ratio=$INFRA_RATIO indicates an infrastructure/model outage rather than agent capability. Set RECORD_INFRA_DIAGNOSTIC=1 to force-record this diagnostic run."
+            exit 0
+          fi
 
-          report = json.load(open('tests/benchmark/reports/scenario_report_ci.json'))
-          overall = float(report.get('overall_score', 0.0) or 0.0)
-          scenarios = report.get('scenarios', {}) or {}
-          infra_failed = 0
-          total = 0
-          for scenario in scenarios.values():
-              total += 1
-              stdout = (scenario.get('stdout_excerpt') or '')
-              if 'No available models.' in stdout or 'All fallback models failed' in stdout:
-                  infra_failed += 1
-          infra_ratio = (infra_failed / total) if total else 1.0
-          is_infra_outage = overall < 0.3 or infra_ratio > 0.9
-          if is_infra_outage and os.environ.get('RECORD_INFRA_DIAGNOSTIC') != '1':
-              print(f"::warning::Skipping scenario history commit: overall_score={overall:.3f}, infra_failure_ratio={infra_ratio:.2f} indicates an infrastructure/model outage rather than agent capability. Set RECORD_INFRA_DIAGNOSTIC=1 to force-record this diagnostic run.")
-              sys.exit(0)
-          PY
-
-          BRANCH="chore/scenario-history-${GITHUB_SHA::12}"
-          git checkout -b "$BRANCH"
           # Strip verbose stderr_excerpt before appending to avoid unbounded
           # repository growth from fully-duplicated log blobs on every CI run.
           python3 - <<'PY'
@@ -152,12 +151,18 @@ jobs:
           with open('tests/benchmark/baselines/scenario_history.jsonl', 'a') as f:
               f.write(json.dumps(report, ensure_ascii=False) + '\n')
           PY
-          git config user.name "sparkleforge-bot"
-          git config user.email "actions@github.com"
-          git add tests/benchmark/baselines/scenario_history.jsonl
-          git commit -m "chore: record scenario-eval history for ${GITHUB_SHA::12}"
-          git push origin "$BRANCH"
-          gh pr create --repo "${{ github.repository }}" \
-            --title "chore: record scenario-eval history for ${GITHUB_SHA::12}" \
-            --body "Appends this merge's scenario-eval report to tests/benchmark/baselines/scenario_history.jsonl. Auto-merges via the existing fix/chore auto-merge automation once checks pass." \
-            --base main --head "$BRANCH"
+
+          # Mu-4: keep docs/BENCHMARK_REPORT.md's generated block in sync with
+          # the history file it's sourced from, in the same commit/PR.
+          python3 scripts/generate_benchmark_report.py
+
+          echo "Appends this merge's scenario-eval report to tests/benchmark/baselines/scenario_history.jsonl. Auto-merges via the existing fix/chore auto-merge automation once checks pass." > scenario-history-pr-body.md
+
+          uv run sparkleforge ci publish \
+            --repo "${{ github.repository }}" \
+            --branch "chore/scenario-history-${GITHUB_SHA::12}" \
+            --base main \
+            --commit-title "chore: record scenario-eval history for ${GITHUB_SHA::12}" \
+            --paths tests/benchmark/baselines/scenario_history.jsonl docs/BENCHMARK_REPORT.md \
+            --pr-title "chore: record scenario-eval history for ${GITHUB_SHA::12}" \
+            --pr-body-file scenario-history-pr-body.md

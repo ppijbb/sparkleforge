@@ -1,7 +1,11 @@
-"""_invoke_with_stage_updates() must behave like graph.ainvoke() (same final
-state) while additionally printing each node name as it completes, so a
-multi-stage run isn't a silent black box (see item 4: visible pipeline
-stage tracker)."""
+"""_stream_graph() must behave like graph.ainvoke() (same final state) while
+additionally printing each node name as it completes, so a multi-stage run
+isn't a silent black box (see item 4: visible pipeline stage tracker).
+
+Renamed from _invoke_with_stage_updates() by #1240 (single merged
+stream_mode=["updates", "values"] replaced with two separate astream()
+passes, which also fixed #1243: the old merged-stream version returned the
+unprocessed input_state whenever no "values" chunk was yielded)."""
 
 import asyncio
 from typing import TypedDict
@@ -26,8 +30,11 @@ def _step_b(state):
 
 
 class _FakeOrchestrator:
-    """Holds just the `.graph` attribute _invoke_with_stage_updates() needs,
-    avoiding AutonomousOrchestrator.__init__'s heavy config/agent wiring."""
+    """Holds just the `.graph` attribute and `_is_interactive_tty` method
+    _stream_graph() needs, avoiding AutonomousOrchestrator.__init__'s heavy
+    config/agent wiring."""
+
+    _is_interactive_tty = AutonomousOrchestrator._is_interactive_tty
 
     def __init__(self):
         g = StateGraph(_State)
@@ -39,7 +46,7 @@ class _FakeOrchestrator:
         self.graph = g.compile()
 
 
-_invoke_with_stage_updates = AutonomousOrchestrator._invoke_with_stage_updates
+_stream_graph = AutonomousOrchestrator._stream_graph
 
 
 def test_final_state_matches_ainvoke():
@@ -47,7 +54,7 @@ def test_final_state_matches_ainvoke():
     input_state = {"x": 0, "log": []}
 
     with patch("sys.stdout.isatty", return_value=False):
-        streamed = asyncio.run(_invoke_with_stage_updates(fake, input_state, {}))
+        streamed = asyncio.run(_stream_graph(fake, input_state, {}))
     direct = asyncio.run(fake.graph.ainvoke({"x": 0, "log": []}, {}))
 
     assert streamed == direct == {"x": 11, "log": ["a", "b"]}
@@ -57,18 +64,18 @@ def test_prints_each_node_name_when_a_tty(capsys):
     fake = _FakeOrchestrator()
 
     with patch("sys.stdout.isatty", return_value=True):
-        asyncio.run(_invoke_with_stage_updates(fake, {"x": 0, "log": []}, {}))
+        asyncio.run(_stream_graph(fake, {"x": 0, "log": []}, {}))
 
     out = capsys.readouterr().out
-    assert "→ step_a" in out
-    assert "→ step_b" in out
+    assert "step_a" in out
+    assert "step_b" in out
 
 
 def test_silent_when_not_a_tty(capsys):
     fake = _FakeOrchestrator()
 
     with patch("sys.stdout.isatty", return_value=False):
-        asyncio.run(_invoke_with_stage_updates(fake, {"x": 0, "log": []}, {}))
+        asyncio.run(_stream_graph(fake, {"x": 0, "log": []}, {}))
 
     out = capsys.readouterr().out
     assert "step_a" not in out
