@@ -468,3 +468,28 @@ jobs:
               --repo "${{ github.repository }}" \
               --reason "completed" || true
           done
+
+  sync-pr-branches-with-main:
+    # Every push to main leaves open PRs mergeStateStatus=BEHIND until someone
+    # manually updates them, which starves auto-merge-ready-fix-prs (it
+    # requires mergeStateStatus=CLEAN). Runs the GitHub "Update branch" API
+    # (a merge commit, not a rebase) so no force-push is involved.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Update behind PR branches to latest main
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh pr list --repo "${{ github.repository }}" --state open \
+            --json number,mergeStateStatus,isDraft \
+            --jq '.[] | select(.mergeStateStatus == "BEHIND" and .isDraft == false) | .number' |
+          while read -r NUMBER; do
+            [ -n "$NUMBER" ] || continue
+            echo "Updating PR #$NUMBER branch to latest main..."
+            gh api -X PUT "repos/${{ github.repository }}/pulls/$NUMBER/update-branch" \
+              --silent || echo "::warning::Failed to update branch for PR #$NUMBER (likely a real conflict, needs manual resolution)."
+          done
