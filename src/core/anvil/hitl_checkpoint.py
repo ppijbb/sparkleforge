@@ -15,6 +15,7 @@ import aiohttp
 from src.core.anvil.dynamic_checklist_generator import Checklist, ChecklistItem
 from src.core.anvil.request_analyzer import RequestAnalyzer
 from src.core.intervention_telemetry import InterventionTelemetryDaemon
+from src.core.llm_manager import TaskType, execute_llm_task
 from src.core.surface.notification_channel import NotificationChannel, Notification, NotificationLevel
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,34 @@ class HITLCheckpointManager:
         finally:
             os.close(dir_fd)
 
+    async def calculate_confidence(self, context: Dict[str, Any]) -> float:
+        """Calculate operational confidence score (0.0 to 1.0) for autonomous execution."""
+        prompt = f"""
+        Analyze the following context and determine an operational confidence score (0.0 to 1.0)
+        for autonomous agent execution.
+        
+        Context: {json.dumps(context, default=str)}
+        
+        Consider:
+        - Complexity of the task
+        - Clarity of requirements
+        - Risk of irreversible actions
+        - Historical success rate for similar tasks
+        
+        Return ONLY a float value between 0.0 and 1.0.
+        """
+        try:
+            result = await execute_llm_task(
+                prompt=prompt,
+                task_type=TaskType.ANALYSIS,
+                system_message="You are a risk assessment engine for autonomous agents.",
+            )
+            score = float(result.content.strip())
+            return max(0.0, min(1.0, score))
+        except Exception as e:
+            logger.warning("Confidence calculation failed, defaulting to 0.5: %s", e)
+            return 0.5
+
     async def checkpoint(
         self, stage: CheckpointStage, context: Dict[str, Any] | None = None
     ) -> CheckpointResult:
@@ -144,15 +173,25 @@ class HITLCheckpointManager:
         context = context or {}
 
         if self.feedback_provider is None:
-            result = CheckpointResult(
-                stage=stage, decision=CheckpointDecision.APPROVE, auto_resolved=True
-            )
-            logger.info("Checkpoint %s auto-approved (headless mode)", stage.value)
-            self.history.append(result)
-            self._record_telemetry(result, context)
-            return result
+            confidence = await self.calculate_confidence(context)
+            if confidence < 0.7:
+                logger.info("Confidence %.2f below threshold, forcing suspension", confidence)
+                # Fall through to suspension logic if confidence is low
+            else:
+                result = CheckpointResult(
+                    stage=stage, decision=CheckpointDecision.APPROVE, auto_resolved=True
+                )
+                logger.info("Checkpoint %s auto-approved (confidence %.2f)", stage.value, confidence)
+                self.history.append(result)
+                self._record_telemetry(result, context)
+                return result
 
+        # If provider exists or confidence was low, proceed to provider logic
         try:
+            outcome = self.feedback_provider(stage, context) if self.feedback_provider else None
+            if outcome is None:
+                # Trigger suspension if no provider or confidence was low
+                raise HITLSuspensionSignal("No provider or low confidence")
             outcome = self.feedback_provider(stage, context)
             if asyncio.iscoroutine(outcome):
                 outcome = await outcome

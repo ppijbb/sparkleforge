@@ -12,7 +12,8 @@
    → tests/ 디렉토리로 이동 권장
 
 [3] 프로덕션 코드의 테스트 함수 확인...
-✅ 프로덕션 코드에 테스트 함수 없음
+⚠️ 1개 테스트 함수가 프로덕션 코드에 발견됨:
+   - src/web/streamlit_app.py:1447 - test_sandbox_execution
 
 [4] async 테스트 함수의 @pytest.mark.asyncio 누락 확인...
 ⚠️ 29개 async 테스트 함수에 @pytest.mark.asyncio 누락:
