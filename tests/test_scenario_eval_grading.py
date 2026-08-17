@@ -131,6 +131,19 @@ class TestChecklistAdapter:
 
         assert score == 0.0
 
+    def test_checklist_item_check_scores_1_when_file_modified_in_place(self):
+        # Regression: checklist_item_check only looked at new_files/removed_files,
+        # so a scenario that edits an existing file (no create/delete) scored 0.0
+        # even though the checklist item was satisfied.
+        item = ChecklistItem(description="d", success_criteria="s")
+        before = {"a.txt": "hash1"}
+        after = {"a.txt": "hash2"}
+
+        score, reason = checklist_item_check(item, before, after)
+
+        assert score == 1.0
+        assert "1" in reason
+
 
 class TestJudgeScore:
     @pytest.mark.asyncio
