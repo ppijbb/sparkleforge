@@ -173,6 +173,10 @@ async def deny_command(cli, args: List[str]):
     _display_action_proposals(cli, result)
 
 
+async def work_command_from_query(args):
+    """`run --mode work`에서 진입하는 coworker 실행 경로 (query를 goal로 사용)."""
+    return await _execute_coworker_goal(getattr(args, "query", "") or "")
+
 def _display_action_proposals(cli, state):
     proposals = state.get("action_proposals", [])
     if not proposals:

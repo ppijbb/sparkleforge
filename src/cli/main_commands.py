@@ -105,7 +105,8 @@ def _persist_run_session(session_id: str, query: str, output_text: str | None) -
 async def handle_run_command(args, config):
     """연구 실행 커맨드 처리"""
     if getattr(args, "mode", "research") == "work":
-        return await handle_work_command_from_query(args)
+        from src.cli.commands.run import run_command as _run_command
+        return await _run_command(args, config)
 
     def _apply_runtime_overrides() -> None:
         model_override = getattr(args, "model", None)
