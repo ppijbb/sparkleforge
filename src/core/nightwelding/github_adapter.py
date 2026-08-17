@@ -2,7 +2,7 @@
 
 Consistent with the rest of this project: no GitHub API client is built here,
 just subprocess calls to the `gh` CLI and `git`, exactly like the existing
-GitHub Actions workflows and scripts/opencode_github_worker.py already do.
+GitHub Actions workflows and src/core/ci/fix_issue.py already do.
 
 The PR body always contains the literal substring "OpenCode-generated" and
 branches always use the "nightwelding/" prefix — both are load-bearing for
