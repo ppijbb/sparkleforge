@@ -17,7 +17,15 @@ import json
 
 import pytest
 
-from tests.benchmark.scenario_grading import INCONCLUSIVE_MARKER, judge_score, weighted_total
+from src.core.anvil.dynamic_checklist_generator import ChecklistItem, DynamicChecklistGenerator
+from src.core.anvil.request_analyzer import RequestAnalyzer
+from tests.benchmark.scenario_grading import (
+    INCONCLUSIVE_MARKER,
+    checklist_item_check,
+    checklist_to_weights,
+    judge_score,
+    weighted_total,
+)
 from tests.benchmark.run_scenarios import (
     _compare_scenarios,
     append_history,
@@ -71,6 +79,70 @@ class TestWeightedTotal:
 
         assert result["breakdown"]["a"]["inconclusive"] is False
         assert result["adjusted_total"] == 0.0
+
+    def test_judge_weight_over_cap_is_scaled_down(self):
+        """A judge_* check heavier than the 0.3 cap must not dominate the total (Anvil Mu-3)."""
+        scores = {"deterministic": (0.0, "failed"), "judge_quality": (1.0, "ok")}
+        weights = {"deterministic": 0.4, "judge_quality": 0.6}
+
+        result = weighted_total(scores, weights)
+
+        # Uncapped this would be 0.6; capped, judge_quality's weight share is <=0.3 of the total.
+        assert result["total"] < 0.31
+        assert result["breakdown"]["judge_quality"]["weight"] == pytest.approx(0.3)
+
+    def test_judge_weight_under_cap_is_unchanged(self):
+        """Existing scenario YAMLs already keep judge weight <=0.2 -- must not shift their totals."""
+        scores = {"a": (1.0, "ok"), "judge_quality": (1.0, "ok")}
+        weights = {"a": 0.8, "judge_quality": 0.2}
+
+        result = weighted_total(scores, weights)
+
+        assert result["total"] == pytest.approx(1.0)
+        assert result["breakdown"]["judge_quality"]["weight"] == pytest.approx(0.2)
+
+
+class TestChecklistAdapter:
+    """Mu-3 wiring: src/core/anvil (RequestAnalyzer/DynamicChecklistGenerator) -> scenario_grading."""
+
+    def test_checklist_to_weights_keys_by_item_id(self):
+        checklist = DynamicChecklistGenerator().generate(RequestAnalyzer().analyze("파일 정리하고 리포트 남겨줘"))
+
+        weights = checklist_to_weights(checklist)
+
+        assert set(weights) == {item.item_id for item in checklist.items}
+        assert all(w > 0 for w in weights.values())
+
+    def test_checklist_item_check_scores_1_when_workspace_changed(self):
+        item = ChecklistItem(description="d", success_criteria="s")
+        before = {"a.txt": "hash1"}
+        after = {"a.txt": "hash1", "b.txt": "hash2"}
+
+        score, reason = checklist_item_check(item, before, after)
+
+        assert score == 1.0
+        assert "1" in reason
+
+    def test_checklist_item_check_scores_0_when_no_change(self):
+        item = ChecklistItem(description="d", success_criteria="s")
+        same = {"a.txt": "hash1"}
+
+        score, reason = checklist_item_check(item, same, dict(same))
+
+        assert score == 0.0
+
+    def test_checklist_item_check_scores_1_when_file_modified_in_place(self):
+        # Regression: checklist_item_check only looked at new_files/removed_files,
+        # so a scenario that edits an existing file (no create/delete) scored 0.0
+        # even though the checklist item was satisfied.
+        item = ChecklistItem(description="d", success_criteria="s")
+        before = {"a.txt": "hash1"}
+        after = {"a.txt": "hash2"}
+
+        score, reason = checklist_item_check(item, before, after)
+
+        assert score == 1.0
+        assert "1" in reason
 
 
 class TestJudgeScore:

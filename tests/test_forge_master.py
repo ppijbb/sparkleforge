@@ -62,6 +62,16 @@ def test_router_fallbacks_are_relevance_gated_not_the_whole_pool():
     assert refactor_assignment.agent_name == "claude_code"
     assert refactor_assignment.fallback_agents == []
 
+def test_router_guarantees_fallback_coverage_on_zero_match():
+    """If no agent matches the relevance threshold, the router must provide
+    a safety-net fallback (broadest-capability agents) to ensure graceful
+    degradation."""
+    router = ForgeMasterRouter()
+    # Task with no keywords matching any capability
+    assignment = router.route_task("Perform an undefined, non-keyword task")
+    
+    # Assert that fallback_agents is not empty, providing a recovery path
+    assert len(assignment.fallback_agents) > 0
 
 def test_session_manager_lifecycle():
     mgr = ForgeMasterSessionManager()
@@ -101,6 +111,35 @@ async def test_controller_execution_with_mocked_cli():
         assert result["master_verdict"] == "PASSED"
         assert result["agent_used"] == "codex"
         assert result["adversarial_audit"]["passed"] is True
+
+
+@pytest.mark.asyncio
+async def test_controller_applies_persona_directive_to_dispatched_query():
+    """#1161: `persona` was threaded through the CLI/controller signature and
+    `apply_persona` was imported, but never actually called -- passing
+    `--persona ponytail` had zero effect on the dispatched goal text."""
+    controller = ForgeMasterController()
+
+    mock_cli_result = {"success": True, "response": "ok", "confidence": 0.9}
+    seen_query = {}
+
+    async def fake_execute_with_agent(agent_name, query, **kwargs):
+        seen_query["query"] = query
+        return mock_cli_result
+
+    with patch.object(
+        controller.session_manager.cli_manager,
+        "execute_with_agent",
+        new=AsyncMock(side_effect=fake_execute_with_agent),
+    ):
+        await controller.execute_task_with_master_control(
+            task_query="Write calculate function",
+            preferred_agent="codex",
+            persona="ponytail",
+        )
+
+    assert "[Persona: ponytail]" in seen_query["query"]
+    assert EXECUTION_PERSONAS["ponytail"] in seen_query["query"]
 
 
 @pytest.mark.parametrize(

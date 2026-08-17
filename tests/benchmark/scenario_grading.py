@@ -15,6 +15,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, Tuple
 
+from src.core.anvil.dynamic_checklist_generator import Checklist, ChecklistItem
+
 logger = logging.getLogger(__name__)
 
 # check name -> (score 0..1, human-readable reason)
@@ -80,6 +82,37 @@ def modified_files(before: Dict[str, str], after: Dict[str, str]) -> list[str]:
     return [
         p for p in common if before[p] != after[p] and not is_runtime_artifact(p)
     ]
+
+
+def checklist_to_weights(checklist: Checklist) -> Dict[str, float]:
+    """Convert an approved Anvil Checklist (src/core/anvil) into a scenario weights dict.
+
+    Part of the Mu-3 wiring: RequestAnalyzer/DynamicChecklistGenerator output
+    (see src.core.anvil.checklist_proposal) becomes the same weights shape
+    run_scenario() already expects from scenario YAML.
+    """
+    return {item.item_id: item.weight for item in checklist.items}
+
+
+def checklist_item_check(item: ChecklistItem, before: Dict[str, str], after: Dict[str, str]) -> GradeResult:
+    """Quantitative file-diff/existence check for one agent-proposed ChecklistItem.
+
+    ChecklistItem carries no structured target path, so this is the generic
+    signal a diff-based check can give without re-parsing free text back into a
+    path: did the workspace tree change at all while this item was open,
+    including files that were modified in place (not just created/removed).
+    Scenarios that need a stronger check still write a scenario-specific one.
+    """
+    added = new_files(before, after)
+    removed = removed_files(before, after)
+    modified = modified_files(before, after)
+    changed = bool(added or removed or modified)
+    reason = (
+        f"workspace changed: +{len(added)}/-{len(removed)}/~{len(modified)} file(s)"
+        if changed
+        else "no file changes observed for this checklist item"
+    )
+    return (1.0 if changed else 0.0), reason
 
 
 def unchanged(before: Dict[str, str], after: Dict[str, str], relpath: str) -> bool:
@@ -216,11 +249,11 @@ async def judge_score(rubric: str, transcript: str, context: str = "") -> GradeR
     except asyncio.TimeoutError:
         logger.warning("[ScenarioGrading] LLM judge timed out after %ss", JUDGE_TIMEOUT_S)
         score, reason = _rule_based_judge(rubric, transcript, context)
-        return score, f"{reason} (LLM judge timed out after {JUDGE_TIMEOUT_S}s)"
+        return score, f"{INCONCLUSIVE_MARKER}{reason} (LLM judge timed out after {JUDGE_TIMEOUT_S}s)"
     except Exception as e:  # noqa: BLE001 - judge must never crash grading
         logger.warning("[ScenarioGrading] LLM judge unavailable: %s", e)
         score, reason = _rule_based_judge(rubric, transcript, context)
-        return score, f"{reason} (LLM judge unavailable: {e})"
+        return score, f"{INCONCLUSIVE_MARKER}{reason} (LLM judge unavailable: {e})"
 
 
 async def _call_judge(rubric: str, transcript: str, context: str) -> GradeResult:
@@ -251,6 +284,23 @@ async def _call_judge(rubric: str, transcript: str, context: str) -> GradeResult
     return score, reason
 
 
+# judge_* checks are the only subjective axis (docs/ANVIL_PLAN.md SS5.3): left
+# uncapped, a single judge-API hiccup or harsh score can dominate an otherwise
+# passing scenario. Cap their combined share of the total weight.
+JUDGE_WEIGHT_CAP_RATIO = 0.3
+
+
+def _cap_judge_weights(weights: Dict[str, float]) -> Dict[str, float]:
+    total = sum(weights.values())
+    judge_names = [n for n in weights if n.startswith("judge_")]
+    judge_total = sum(weights[n] for n in judge_names)
+    cap = JUDGE_WEIGHT_CAP_RATIO * total
+    if not judge_names or total <= 0 or judge_total <= cap:
+        return weights
+    scale = cap / judge_total
+    return {n: (w * scale if n in judge_names else w) for n, w in weights.items()}
+
+
 def weighted_total(scores: Dict[str, GradeResult], weights: Dict[str, float]) -> Dict[str, Any]:
     """Combine named sub-scores with their configured weights into a scenario total.
 
@@ -261,7 +311,11 @@ def weighted_total(scores: Dict[str, GradeResult], weights: Dict[str, float]) ->
     it had no control over -- that's the number that should drive trend
     tracking and regression comparisons. `adjusted_total` is None only when
     every single check in the scenario was inconclusive.
+
+    Weights for any check named `judge_*` are capped at JUDGE_WEIGHT_CAP_RATIO
+    of the total before scoring (see _cap_judge_weights).
     """
+    weights = _cap_judge_weights(weights)
     total = 0.0
     conclusive_weight = 0.0
     conclusive_contribution = 0.0
