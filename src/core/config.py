@@ -114,6 +114,13 @@ class HTTPServerSpec(_BaseServer):
 ServerSpec = StdioServerSpec | HTTPServerSpec
 """Union of supported server specifications."""
 
+# Shared default model constants. Referenced by both the Pydantic default_factory
+# in researcher_config.py and load_config_from_env so a future model tier change
+# is a single edit.
+DEFAULT_COUNCIL_MODELS: List[str] = ["gpt-5-mini", "anthropic/claude-haiku-4.5"]
+DEFAULT_CHAIRMAN_MODEL: str = "gpt-5-mini"
+ALLOWED_MINI_MODELS: tuple[str, ...] = ("gpt-4o-mini", "gpt-5-mini")
+
 
 def servers_to_mcp_config(
     servers: Mapping[str, ServerSpec],

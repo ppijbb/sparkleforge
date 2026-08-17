@@ -26,6 +26,7 @@ from src.core.llm_manager import TaskType, get_llm_orchestrator
 from src.core.scheduler import get_scheduler, register_scheduler_tools
 from src.core.semantic_file_search import register_semantic_file_search_tool
 from src.core.prompt_builder import get_system_prompt
+from src.core.actuate.semantic_fs import SemanticFS
 from src.core.task_router import RoutePath, TaskRouter
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class AgentHarness:
             (register_semantic_file_search_tool, "semantic_file_search"),
             (register_security_tools, "security"),
             (register_iot_guard_tools, "iot_guard"),
+            (lambda: None, "semantic_fs"), # SemanticFS is wired via ActuationPlane
             (register_forge_master_dispatch_tool, "dispatch_batch_to_forge_master"),
         ]
         for func, name in registrars:
@@ -307,6 +309,7 @@ class AgentHarness:
 
         from src.core.mcp_integration import get_mcp_hub
         from src.core.parallel_agent_executor import ParallelAgentExecutor
+        from src.core.automation.automation_engine import AutomationEngine
 
         session_id = state["workflow"]["session_id"]
         # Ensure MCP Hub is initialized before execution
@@ -316,6 +319,12 @@ class AgentHarness:
             logger.info("[Harness] MCP Hub initialized")
         except Exception as e:
             logger.warning(f"[Harness] MCP Hub initialization failed: {e}")
+
+        # Wire subsystem tools (issue #1095)
+        self.subsystem_tools = {
+            "automation_schedule": AutomationEngine(),
+            "semantic_fs": SemanticFS(),
+        }
 
         tasks = state["workflow"]["tasks"]
 
