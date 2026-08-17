@@ -51,7 +51,7 @@ def test_commit_pushes_and_opens_new_pr(repo, monkeypatch):
             return subprocess.CompletedProcess(cmd, 0, "", "")
         if cmd[0] == "gh":
             gh_calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, 0, "https://github.com/acme/widgets/pull/1\n", "")
+            return subprocess.CompletedProcess(cmd, 0, "https://github.com/acme/widgets/pull/1", "")
         return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=check)
 
     monkeypatch.setattr("src.core.ci.publish._run", fake_run)
