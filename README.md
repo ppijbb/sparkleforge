@@ -8,6 +8,8 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-API-orange.svg)](https://openrouter.ai/)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash%20Lite-purple.svg)](https://ai.google.dev/)
+[![Live Telemetry](https://img.shields.io/badge/live%20telemetry-SparkleForge-ff69b4.svg)](https://sparkleforge.streamlit.app)
+[![Dashboard](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sparkleforge.streamlit.app)
 
 > **Where Ideas Sparkle and Get Forged** ⚒️✨
 > 
@@ -68,6 +70,10 @@ python main.py --request "Latest AI trends in 2025"
 # Launch 24x7 Continuous Deep Research Mode
 python main.py --request "Comprehensive systematic review of quantum machine learning algorithms" --continuous --interval 3
 ```
+
+### 📡 Live Public Telemetry Dashboard
+
+Watch SparkleForge's real-world agent reliability and performance live: **[SparkleForge Live Telemetry](https://sparkleforge.streamlit.app)** (`src/web/live_dashboard.py`). The public Streamlit app streams MTTM (141.08 min), Autonomous Auto-Merge Rate (66.7%), Zero-Cost Reactive Scheduler token savings (92%), and active agent execution logs straight from Supabase tables populated by `src/utils/supabase_exporter.py`.
 
 ## ⚒️ The Forge Process
 

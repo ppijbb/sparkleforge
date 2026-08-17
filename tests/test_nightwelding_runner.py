@@ -155,3 +155,44 @@ def test_open_draft_pr_returns_existing_pr_without_creating_a_new_one(monkeypatc
     )
 
     assert url == "https://github.com/acme/widgets/pull/99"
+
+
+def test_run_nightwelding_issue_accepts_provider_kwarg(monkeypatch, tmp_path) -> None:
+    # Regression test for #1431: run_nightwelding_issue() must accept a
+    # `provider` keyword argument so the sweep call site
+    # `run_nightwelding_issue(..., provider=provider)` does not raise
+    # `TypeError: ... got an unexpected keyword argument 'provider'`.
+    import asyncio
+    import inspect
+
+    from src.core.nightwelding import runner
+    from src.core.nightwelding.adapter import IssueContext
+
+    sig = inspect.signature(runner.run_nightwelding_issue)
+    assert "provider" in sig.parameters
+    assert sig.parameters["provider"].default is None
+
+    captured: dict[str, object] = {}
+
+    class _StubAdapter:
+        def fetch_issue_context(self, issue_ref):
+            captured["issue_ref"] = issue_ref
+            return IssueContext(
+                number=issue_ref,
+                title="fix: sample",
+                url="local://sample",
+                markdown="# fix: sample",
+            )
+
+    monkeypatch.setattr(runner, "_resolve_adapter", lambda *a, **kw: _StubAdapter())
+    monkeypatch.setattr(
+        runner.gate, "is_reproducible_bug_eligible", lambda md: (False, "stub-ineligible")
+    )
+
+    item = asyncio.run(
+        runner.run_nightwelding_issue(
+            "local-issue", repo_root=tmp_path, provider="local", adapter=_StubAdapter()
+        )
+    )
+    assert captured["issue_ref"] == "local-issue"
+    assert item.failure_reason == "stub-ineligible"
