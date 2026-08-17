@@ -65,9 +65,10 @@ class ActionJournal:
         if self._initialized and not _force_new:
             return
         if _force_new:
-            self._initialized = False
+            self._entries = []
+            self._snapshots = {}
         self._initialized = True
-        self._journal_path   = journal_path or str(_PROJECT_ROOT / "data" / "action_journal.jsonl")
+        self._journal_path = journal_path or str(_PROJECT_ROOT / "data" / "action_journal.jsonl")
         self._snapshots_path = self._journal_path.replace(".jsonl", "_snapshots.json")
         self._entries:   List[JournalEntry] = []
         self._snapshots: Dict[str, Snapshot] = {}
