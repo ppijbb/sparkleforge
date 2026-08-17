@@ -467,6 +467,7 @@ jobs:
             gh issue close "$ISSUE" \
               --repo "${{ github.repository }}" \
               --reason "completed" || true
+          done
 
   sync-pr-branches-with-main:
     # Every push to main leaves open PRs mergeStateStatus=BEHIND until someone
@@ -491,5 +492,4 @@ jobs:
             echo "Updating PR #$NUMBER branch to latest main..."
             gh api -X PUT "repos/${{ github.repository }}/pulls/$NUMBER/update-branch" \
               --silent || echo "::warning::Failed to update branch for PR #$NUMBER (likely a real conflict, needs manual resolution)."
-          done
           done
