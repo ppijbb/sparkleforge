@@ -556,18 +556,13 @@ Autonomous problem-solving contract:
                             self.mode_controller.record_success()
                         else:
                             self.mode_controller.record_failure()
-                        if (
-                            self.mode_controller.is_plan_first()
-                            and tool_succeeded
-                            and _infer_required_capability(tool_name) not in ("write_file", "execute_shell")
-                        ):
-                            # First successful investigative action satisfies
-                            # the planning step -- graduate to normal
-                            # execution instead of requiring a separate,
-                            # never-reachable human approval (autonomous
-                            # coworker sessions have no synchronous human to
-                            # approve a plan).
-                            self.mode_controller.submit_plan(approved=True)
+                        
+                        # PLAN_FIRST: Only explicit submit_plan() call approves the plan.
+                        # No implicit approval on investigative tool success.
+                        if self.mode_controller.is_plan_first() and tool_name == "submit_plan":
+                            # submit_plan() logic is handled by the tool executor;
+                            # here we just ensure we don't auto-approve.
+                            pass
                     await self._record_resolved_capability(tool_name, success=tool_succeeded)
                 except Exception as e:
                     logger.error(f"Tool execution failed: {tool_name} - {e}")
