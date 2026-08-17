@@ -640,6 +640,32 @@ EXAMPLES:
     ci_publish_parser.add_argument("--pr-body-file", required=True)
     ci_publish_parser.add_argument("--labels", nargs="*", default=None)
 
+    ci_select_issue_parser = ci_subparsers.add_parser("select-issue", help="Pick the next open issue eligible for the auto-fix sweep")
+    ci_select_issue_parser.add_argument("--issues-file", required=True, help="gh issue list --json number,labels output")
+    ci_select_issue_parser.add_argument("--open-prs-file", required=True, help="gh pr list --json headRefName,body output")
+
+    ci_classify_commit_parser = ci_subparsers.add_parser("classify-commit", help="Derive a Conventional Commit type + subject from an issue title")
+    ci_classify_commit_parser.add_argument("--title", required=True)
+
+    ci_assess_substantiality_parser = ci_subparsers.add_parser("assess-substantiality", help="Decide whether an auto-fix diff substantially implements the issue it targets")
+    ci_assess_substantiality_parser.add_argument("--issue-file", required=True)
+    ci_assess_substantiality_parser.add_argument("--range", required=True, help="git diff revision range, e.g. origin/main...HEAD")
+
+    ci_classify_scenario_parser = ci_subparsers.add_parser("classify-scenario-outcome", help="Decide whether a scenario-eval run reflects an infra outage rather than agent capability")
+    ci_classify_scenario_parser.add_argument("--report-file", default="tests/benchmark/reports/scenario_report_ci.json")
+
+    ci_stagnation_issue_parser = ci_subparsers.add_parser("stagnation-issue", help="Open a tracking issue when scenario-eval detects prolonged stagnation")
+    ci_stagnation_issue_parser.add_argument("--report", required=True, help="Path to scenario_report_ci.json")
+    ci_stagnation_issue_parser.add_argument("--history", required=True, help="Path to scenario_history.jsonl")
+    ci_stagnation_issue_parser.add_argument("--repo", default=None, help="Defaults to $GITHUB_REPOSITORY")
+
+    ci_collect_todos_parser = ci_subparsers.add_parser("collect-todos", help="Scan src/ for TODO/FIXME comments and write docs/todo_inventory.{md,json}")
+
+    ci_plan_todo_issues_parser = ci_subparsers.add_parser("plan-todo-issues", help="Plan which TODO-debt inventory items become new GitHub issues")
+    ci_plan_todo_issues_parser.add_argument("--inventory-file", default="docs/todo_inventory.json")
+    ci_plan_todo_issues_parser.add_argument("--existing-issues-file", required=True)
+    ci_plan_todo_issues_parser.add_argument("--plan-out", default="todo-issue-plan.json")
+
     # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
     autofix_parser = subparsers.add_parser(
         "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"

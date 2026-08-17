@@ -122,24 +122,22 @@ jobs:
           elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
             ISSUE_NUMBER="${{ github.event.issue.number }}"
           else
-            ISSUE_NUMBER=""
-            for candidate in $(gh issue list \
+            gh issue list \
               --repo "${{ github.repository }}" \
               --state open \
               --limit 100 \
               --json number,labels \
-              --jq '.[] | select(([.labels[].name] | any(. == "auto-fix-pr-opened" or . == "auto-fix-merged" or . == "auto-fix-failed")) | not) | .number'); do
-              HAS_PR=$(gh pr list \
-                --repo "${{ github.repository }}" \
-                --state open \
-                --limit 100 \
-                --json number,headRefName,body \
-                --jq '[.[] | select((.headRefName | startswith("fix/'"$candidate"'-")) or ((.body // "") | test("(?i)(close[sd]?|fix(e[sd])?|resolve[sd]?) #'"$candidate"'( |$|[^0-9])")))] | length')
-              if [ "$HAS_PR" -eq 0 ]; then
-                ISSUE_NUMBER="$candidate"
-                break
-              fi
-            done
+              > open-issue-candidates.json
+            gh pr list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --limit 100 \
+              --json number,headRefName,body \
+              > open-pr-candidates.json
+            uv run sparkleforge ci select-issue \
+              --issues-file open-issue-candidates.json \
+              --open-prs-file open-pr-candidates.json
+            ISSUE_NUMBER=$(cat selected_issue.txt)
           fi
 
           if [ -z "$ISSUE_NUMBER" ]; then
@@ -164,72 +162,13 @@ jobs:
             --repo "${{ github.repository }}" \
             --json title \
             --jq '.title')
-          NORMALIZED_TITLE=$(printf '%s\n' "$ISSUE_TITLE" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-          CONVENTIONAL_TYPE="fix"
-          BRACKET_TAG=$(printf '%s' "$NORMALIZED_TITLE" | sed -nE 's/^\[([^]]+)\].*/\1/p')
-          if [ -n "$BRACKET_TAG" ]; then
-            REST=$(printf '%s' "$NORMALIZED_TITLE" | sed -E 's/^\[[^]]+\][[:space:]]*//')
-            case "$BRACKET_TAG" in
-              feat|feature) CONVENTIONAL_TYPE="feat" ;;
-              fix) CONVENTIONAL_TYPE="fix" ;;
-              refactor) CONVENTIONAL_TYPE="refactor" ;;
-              chore) CONVENTIONAL_TYPE="chore" ;;
-              docs) CONVENTIONAL_TYPE="docs" ;;
-              test) CONVENTIONAL_TYPE="test" ;;
-              perf) CONVENTIONAL_TYPE="perf" ;;
-              ci) CONVENTIONAL_TYPE="ci" ;;
-              build) CONVENTIONAL_TYPE="build" ;;
-              style) CONVENTIONAL_TYPE="style" ;;
-              *) CONVENTIONAL_TYPE="chore" ;;
-            esac
-            NORMALIZED_TITLE="${CONVENTIONAL_TYPE}: ${REST}"
-          fi
-          case "$NORMALIZED_TITLE" in
-            "🔧 fix:"*)
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            "✨ feature:"*)
-              CONVENTIONAL_TYPE="feat"
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            "♻️ refactor:"*)
-              CONVENTIONAL_TYPE="refactor"
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            "🧹 chore:"*)
-              CONVENTIONAL_TYPE="chore"
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            "fix:"*|"Fix:"*)
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            "feat:"*|"Feat:"*|"feature:"*|"Feature:"*)
-              CONVENTIONAL_TYPE="feat"
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            "refactor:"*|"Refactor:"*)
-              CONVENTIONAL_TYPE="refactor"
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            "chore:"*|"Chore:"*)
-              CONVENTIONAL_TYPE="chore"
-              RAW_SUBJECT="${NORMALIZED_TITLE#*:}"
-              ;;
-            *)
-              RAW_SUBJECT="$NORMALIZED_TITLE"
-              ;;
-          esac
-          SUBJECT=$(printf '%s\n' "$RAW_SUBJECT" | sed -E \
-            -e 's/^[[:space:]]+|[[:space:]]+$//g' \
-            -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*-[[:space:]]*//' \
-            -e 's/[[:space:]]*\(#[0-9]+\)$//' \
-            -e 's/[[:space:]]+/ /g' \
-            -e 's/[[:space:]]+$//')
+          uv run sparkleforge ci classify-commit --title "$ISSUE_TITLE"
+          CONVENTIONAL_TYPE=$(jq -r '.type' commit_classification.json)
+          SUBJECT=$(jq -r '.subject' commit_classification.json)
           if [ -z "$SUBJECT" ]; then
             echo "::error::Unable to derive a specific commit subject from issue #$ISSUE_NUMBER."
             exit 1
           fi
-          SUBJECT=$(printf '%s\n' "$SUBJECT" | tr '[:upper:]' '[:lower:]')
           PR_TITLE=$(printf '%s: %s' "$CONVENTIONAL_TYPE" "$SUBJECT" | sed 's/"/\\"/g')
           COMMIT_TITLE="$PR_TITLE"
           if ! printf '%s' "$COMMIT_TITLE" | grep -Eq '^(feat|fix|refactor|chore|docs|test|perf|ci|build|style)(\(.+\))?!?: .+'; then
@@ -322,64 +261,18 @@ jobs:
           ISSUE_NUMBER="${{ steps.context.outputs.issue_number }}"
           BASE_BRANCH="${{ steps.context.outputs.base_branch }}"
 
-          # Guard against auto-closing issues that OpenCode didn't actually finish:
-          # if the issue still has unresolved acceptance-criteria checkboxes and the
-          # diff only touches workflow/docs files (or is trivially small), don't let
-          # this PR carry a closing keyword.
-          UNCHECKED=$(grep -c '^- \[ \]' issue-context.md 2>/dev/null || true)
-          UNCHECKED=${UNCHECKED:-0}
-
-          CHANGED_FILES=$(git diff --name-only "origin/$BASE_BRANCH...HEAD")
-          CHANGED_LINES=$(git diff --shortstat "origin/$BASE_BRANCH...HEAD" |
-            grep -Eo '[0-9]+ (insertion|deletion)' | grep -Eo '[0-9]+' |
-            awk '{s+=$1} END {print s+0}')
-
-          NON_TRIVIAL_FILE=0
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            case "$f" in
-              .github/workflows/*|*.md|docs/*) ;;
-              *) NON_TRIVIAL_FILE=1 ;;
-            esac
-          done <<< "$CHANGED_FILES"
-
-          SUBSTANTIAL=unknown
-          if [ "$UNCHECKED" -gt 0 ] && { [ "$NON_TRIVIAL_FILE" -eq 0 ] || [ "$CHANGED_LINES" -le 3 ]; }; then
-            SUBSTANTIAL=false
-          fi
-          if [ "$SUBSTANTIAL" = "unknown" ]; then
-            SUBSTANTIAL=true
-          fi
-
-          # Second, complementary signal (issue #511): the file-type/line-count
-          # check above misses stub diffs that touch real .py files with a
-          # handful of lines but implement none of the symbols the issue names
-          # (this is exactly how #509's first auto-fix attempt slipped through:
-          # two unused struct fields + a duplicate import, in real .py files,
-          # >3 lines changed). If the issue names concrete backticked symbols
-          # and the diff's added lines reference none of them, treat it as not
-          # substantial regardless of the file-type/line-count verdict above.
-          SCOPE_REASON=""
-            python3 scripts/check_issue_scope_overlap.py \
-              --issue-file issue-context.md \
-              --range "origin/$BASE_BRANCH...HEAD" > scope-overlap.log 2>&1
-            SCOPE_EXIT=$?
-            cat scope-overlap.log
-
-            # issue #521: exit 2 means the script ran successfully and
-            # confirmed the diff doesn't touch anything the issue names --
-            # exit 1 means the script itself crashed (bad args, git diff
-            # failure, unhandled exception) and must NOT be treated as a
-            # confirmed "not substantial" verdict, or a broken check would
-            # silently look identical to a passed one.
-            if [ "$SCOPE_EXIT" -eq 2 ]; then
-              SUBSTANTIAL=false
-              SCOPE_REASON=" and the diff never touches any of the symbols/paths the issue names"
-            elif [ "$SCOPE_EXIT" -ne 0 ]; then
-              echo "::error::check_issue_scope_overlap.py failed unexpectedly (exit $SCOPE_EXIT); treating as unverified rather than auto-closing"
-              SUBSTANTIAL=false
-              SCOPE_REASON=" and the scope-overlap check itself failed to run (exit $SCOPE_EXIT), so it could not be verified"
-            fi
+          # Guard against auto-closing issues that OpenCode didn't actually
+          # finish: assesses two complementary signals (issue #511's
+          # checklist/file-type/line-count heuristic, and issue #521's
+          # issue-symbol/diff-overlap check -- catches stub diffs that touch
+          # real .py files with a handful of lines but implement none of the
+          # symbols the issue names) and combines them into one verdict.
+          uv run sparkleforge ci assess-substantiality \
+            --issue-file issue-context.md \
+            --range "origin/$BASE_BRANCH...HEAD"
+          SUBSTANTIAL=$(jq -r '.substantial' substantiality_result.json)
+          SCOPE_REASON=$(jq -r '.reason' substantiality_result.json)
+          UNCHECKED=$(jq -r '.unchecked' substantiality_result.json)
 
           if [ "$SUBSTANTIAL" = "true" ]; then
             CLOSES_LINE="Closes #$ISSUE_NUMBER"

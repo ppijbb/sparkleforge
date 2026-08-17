@@ -1255,6 +1255,130 @@ async def handle_ci_command(args):
         else:
             print(f"ci publish: opened/reused {result.pr_url}")
         return 0
+    elif args.ci_command == "select-issue":
+        import json
+
+        from src.core.ci.issue_selection import select_fixable_issue
+
+        issues = json.loads(Path(args.issues_file).read_text(encoding="utf-8") or "[]")
+        open_prs = json.loads(Path(args.open_prs_file).read_text(encoding="utf-8") or "[]")
+        selected = select_fixable_issue(issues, open_prs)
+        # Write to a file rather than printing the number for `$(...)`
+        # capture -- a background init path unrelated to this command logs a
+        # stray line to stdout after the command "returns" (see the
+        # daily-roadmap-prompt handler above for the same issue), which would
+        # corrupt a direct stdout capture.
+        Path("selected_issue.txt").write_text(str(selected) if selected is not None else "", encoding="utf-8")
+        return 0
+    elif args.ci_command == "classify-commit":
+        import json
+
+        from src.core.ci.commit_classify import classify_conventional_commit
+
+        commit = classify_conventional_commit(args.title)
+        Path("commit_classification.json").write_text(
+            json.dumps({"type": commit.type, "subject": commit.subject}), encoding="utf-8"
+        )
+        return 0
+    elif args.ci_command == "assess-substantiality":
+        import json
+
+        from src.core.ci.fix_substantiality import (
+            SubstantialityVerdict,
+            assess_fix_substantiality,
+            count_unchecked,
+            gather_diff_stats,
+        )
+
+        issue_text = Path(args.issue_file).read_text(encoding="utf-8")
+        try:
+            diff_text, changed_files, changed_lines = gather_diff_stats(args.range)
+            verdict = assess_fix_substantiality(
+                issue_text=issue_text,
+                diff_text=diff_text,
+                changed_files=changed_files,
+                changed_lines=changed_lines,
+            )
+        except Exception as e:
+            logger.error(f"❌ assess-substantiality: diff gathering failed: {e}")
+            verdict = SubstantialityVerdict(
+                substantial=False,
+                reason=" and the scope-overlap check itself failed to run, so it could not be verified",
+                unchecked=count_unchecked(issue_text),
+            )
+        Path("substantiality_result.json").write_text(
+            json.dumps(
+                {"substantial": verdict.substantial, "reason": verdict.reason, "unchecked": verdict.unchecked}
+            ),
+            encoding="utf-8",
+        )
+        return 0
+    elif args.ci_command == "classify-scenario-outcome":
+        import json
+
+        from src.core.ci.scenario_classify import classify_scenario_outcome
+
+        report = json.loads(Path(args.report_file).read_text(encoding="utf-8"))
+        outcome = classify_scenario_outcome(report)
+        Path("scenario_outcome.json").write_text(
+            json.dumps(
+                {
+                    "overall_score": outcome.overall_score,
+                    "infra_failed": outcome.infra_failed,
+                    "total": outcome.total,
+                    "infra_ratio": outcome.infra_ratio,
+                    "is_infra_outage": outcome.is_infra_outage,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0
+    elif args.ci_command == "stagnation-issue":
+        import json
+        import os
+
+        from src.core.ci.stagnation_issue import build_stagnation_issue, create_github_issue, load_history
+
+        report = json.loads(Path(args.report).read_text(encoding="utf-8"))
+        history = load_history(Path(args.history))
+        issue = build_stagnation_issue(report, history)
+        if issue is None:
+            return 0
+
+        repo = args.repo or os.getenv("GITHUB_REPOSITORY", "")
+        if not repo:
+            logger.error("GITHUB_REPOSITORY not set; cannot create stagnation issue.")
+            return 0
+        create_github_issue(repo, issue)
+        return 0
+    elif args.ci_command == "collect-todos":
+        import json
+
+        from src.core.ci.todo_inventory import collect_todos, generate_inventory, generate_json_inventory
+
+        todos = collect_todos(project_root)
+        docs_dir = project_root / "docs"
+        docs_dir.mkdir(exist_ok=True)
+        (docs_dir / "todo_inventory.md").write_text(generate_inventory(todos), encoding="utf-8")
+        (docs_dir / "todo_inventory.json").write_text(
+            json.dumps(generate_json_inventory(todos), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f"Collected {len(todos)} TODO/FIXME item(s).")
+        return 0
+    elif args.ci_command == "plan-todo-issues":
+        import json
+
+        from src.core.ci.todo_issue_plan import known_anchors, plan_todo_issues
+
+        inventory = json.loads(Path(args.inventory_file).read_text(encoding="utf-8"))
+        existing_issues = json.loads(Path(args.existing_issues_file).read_text(encoding="utf-8"))
+        plan = plan_todo_issues(inventory, existing_issues)
+        Path(args.plan_out).write_text(
+            json.dumps([{"anchor": p.anchor, "title": p.title, "body": p.body} for p in plan]),
+            encoding="utf-8",
+        )
+        print(f"Planned {len(plan)} new todo-debt issue(s); {len(known_anchors(existing_issues))} already tracked.")
+        return 0
 
     logger.error(f"❌ Unknown ci command: {args.ci_command}")
     return 2
