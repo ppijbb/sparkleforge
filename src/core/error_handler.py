@@ -324,6 +324,8 @@ class ErrorHandler:
         # 로깅
         if self.log_errors:
             await self._log_error(error_info)
+            # Supabase historical error logging
+            await self._log_to_supabase(error_info)
 
         # 출력 매니저를 통한 사용자 표시
         await self._display_error(error_info)
@@ -353,6 +355,30 @@ class ErrorHandler:
             and error_info.stack_trace
         ):
             self.logger.error(f"Stack trace for {error_info.error_id}:\n{error_info.stack_trace}")
+
+    async def _log_to_supabase(self, error_info: ErrorInfo):
+        """Supabase agent_error_contexts 테이블에 에러 기록."""
+        try:
+            from src.core.db.database_driver import get_db_driver
+            db = get_db_driver()
+            await db.execute(
+                """
+                INSERT INTO agent_error_contexts 
+                (error_id, timestamp, category, severity, message, stack_trace, component, operation, agent_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """,
+                error_info.error_id,
+                error_info.timestamp,
+                error_info.category.value,
+                error_info.severity.value,
+                error_info.message,
+                error_info.stack_trace,
+                error_info.context.component if error_info.context else None,
+                error_info.context.operation if error_info.context else None,
+                error_info.context.agent_id if error_info.context else None
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to log error to Supabase: {e}")
 
     async def _display_error(self, error_info: ErrorInfo):
         """출력 매니저를 통한 에러 표시."""
