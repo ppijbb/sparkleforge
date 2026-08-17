@@ -202,7 +202,15 @@ async def _dispatch_batch_to_forge_master_tool(
     dispatch; only concurrency (and, when declared, dependency ordering)
     is new.
     """
-    controller = ForgeMasterController()
+    _controller_instance = None
+
+    def _get_controller():
+        nonlocal _controller_instance
+        if _controller_instance is None:
+            _controller_instance = ForgeMasterController()
+        return _controller_instance
+
+    controller = _get_controller()
     semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
     # Batch-scoped session grouping: tasks sharing an agent_name reuse one
