@@ -17,6 +17,7 @@ from typing import List
 
 from src.core.nightwelding import gate, github_adapter
 from src.core.nightwelding.adapter import BaseNightweldingAdapter
+from src.core.nightwelding.adapter import IssueContext  # noqa: F401  (re-exported for tests)
 from src.core.nightwelding.github_adapter import GitHubAdapter
 from src.core.nightwelding.implement import implement_until_green
 from src.core.nightwelding.local_adapter import LocalGitAdapter
@@ -165,7 +166,7 @@ async def run_nightwelding_issue(
         # Push branch if remote is configured
         push_ok = active_adapter.push_branch(repo_root, branch, base_branch)
         if not push_ok:
-            return _fail(queue, item, active_adapter, issue_number, "Nightwelding completed without commits.")
+            return _fail(queue, item, active_adapter, issue_number, "Nightwelding push failed.")
 
         published_ref = active_adapter.publish_draft_change(
             repo_root=repo_root,

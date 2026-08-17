@@ -513,7 +513,38 @@ def append_history(report: Dict[str, Any], history_path: Path) -> None:
     # Guard the history append: never record runs that never executed against an
     # LLM (total model outage). Such records are pure noise that pollute the
     # baseline and mask real regressions in future comparisons.
-    if any(r.get("critical_failure") for r in report.get("scenarios", {}).values()):
+    exhaustion_markers = (
+        "All fallback models failed",
+        "No available models",
+    )
+    scenarios = report.get("scenarios", {})
+    if any(r.get("critical_failure") for r in scenarios.values()):
+        print(
+            "[scenario-eval] skipping history append: one or more scenarios had a "
+            "total LLM infrastructure failure (no model available).",
+            file=sys.stderr,
+        )
+        return
+    # Defense-in-depth: even if critical_failure was not set, refuse to append
+    # records whose error logs indicate total fallback exhaustion — this catches
+    # detection-logic gaps so false-pass records never enter the baseline.
+    for r in scenarios.values():
+        combined = f"{r.get('stdout_excerpt', '')} {r.get('stderr_excerpt', '')}"
+        if not r.get("critical_failure") and any(marker in combined for marker in exhaustion_markers):
+            print(
+                "[scenario-eval] skipping history append: one or more scenarios "
+                "logged total LLM fallback exhaustion without critical_failure being set.",
+                file=sys.stderr,
+            )
+            return
+    if any(
+        (not r.get("critical_failure"))
+        and any(
+            marker in f"{r.get('stdout_excerpt', '')} {r.get('stderr_excerpt', '')}"
+            for marker in exhaustion_markers
+        )
+        for r in scenarios.values()
+    ):
         print(
             "[scenario-eval] skipping history append: one or more scenarios had a "
             "total LLM infrastructure failure (no model available).",
