@@ -1,20 +1,23 @@
 import ast
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from src.core.scheduler import get_scheduler
 from src.core.memory.semantic_memory import SemanticMemory
 
 logger = logging.getLogger(__name__)
 
+_REPO_ROOT = str(Path(__file__).resolve().parents[3])
+
 
 class ContextLane:
     """Consolidates conversational context, system executions logs, and AST-parsed codebase relations."""
 
     def __init__(
-        self, 
-        memory: Optional[SemanticMemory] = None, 
-        project_root: str = "/home/user/workspace/mcp_agent/primary/SparkleForge"
+        self,
+        memory: Optional[SemanticMemory] = None,
+        project_root: str = _REPO_ROOT
     ):
         self.memory = memory or SemanticMemory()
         self.project_root = os.path.abspath(project_root)
