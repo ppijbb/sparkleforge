@@ -4,7 +4,7 @@ fixture: build_env
 timeout_s: 300
 user_query: >-
   이 프로젝트 빌드 환경 세팅해줘. 프로젝트 경로는 {workspace}/project 야. 실행하면
-  잘 되는지 확인도 해줘.
+  잘 되는지 확인도 해줘. 특히 .env 파일을 생성하고 APP_ENV 환경 변수를 설정해야 해.
 weights:
   verify_runs: 0.45
   packages_declared: 0.2
