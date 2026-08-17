@@ -104,6 +104,8 @@ from src.cli.cli_result import cli_result_succeeded, extract_cli_result_content
 from src.cli.main_commands import (
     handle_actions_command,
     handle_approve_command,
+    handle_autofix_command,
+    handle_ci_command,
     handle_cli_command,
     handle_deny_command,
     handle_docker_command,
@@ -566,6 +568,117 @@ EXAMPLES:
     report_subparsers.add_parser("generate", help="Generate the daily metric evaluation report")
     report_subparsers.add_parser("history", help="Show history of past agent evaluation scores")
     report_subparsers.add_parser("aggregate", help="Aggregate all history entries into a release metrics summary")
+    daily_roadmap_prompt_parser = report_subparsers.add_parser(
+        "daily-roadmap-prompt", help="Print the daily roadmap mission-brief prompt template"
+    )
+    daily_roadmap_prompt_parser.add_argument("--today", default=None)
+
+    roadmap_target_parser = report_subparsers.add_parser(
+        "roadmap-target", help="Select the next open Anvil roadmap sub-issue and print its planning-context lines"
+    )
+    roadmap_target_parser.add_argument("--milestone-file", default="anvil-milestone.json")
+    roadmap_target_parser.add_argument("--subissue-status-file", default="anvil-subissue-status.json")
+    roadmap_target_parser.add_argument("--target-out", default="anvil-roadmap-target.md")
+
+    roadmap_fallback_parser = report_subparsers.add_parser(
+        "roadmap-fallback-issue", help="Render the fallback daily-roadmap issue body when the primary CLI research path fails"
+    )
+    roadmap_fallback_parser.add_argument("--context-file", default="github-planning-context.md")
+    roadmap_fallback_parser.add_argument("--anvil-target-file", default="anvil-roadmap-target.md")
+    roadmap_fallback_parser.add_argument("--rc", default="")
+    roadmap_fallback_parser.add_argument("--invalid-reason", default="")
+    roadmap_fallback_parser.add_argument("--output-bytes", default="0")
+    roadmap_fallback_parser.add_argument("--console-bytes", default="0")
+    roadmap_fallback_parser.add_argument("--error-bytes", default="0")
+
+    roadmap_issue_body_parser = report_subparsers.add_parser(
+        "roadmap-issue-body", help="Assemble the daily roadmap issue body, with occurrence-log dedup for recurring failures"
+    )
+    roadmap_issue_body_parser.add_argument("--today", required=True)
+    roadmap_issue_body_parser.add_argument("--status", required=True, choices=["generated", "fallback"])
+    roadmap_issue_body_parser.add_argument("--roadmap-file", default="sparkleforge-roadmap.md")
+    roadmap_issue_body_parser.add_argument("--previous-body-file", default="previous-issue-body.md")
+
+    sync_anvil_doc_parser = report_subparsers.add_parser(
+        "sync-anvil-doc", help="Recompute and rewrite the Anvil milestone's status cell in docs/ANVIL_PLAN.md"
+    )
+    sync_anvil_doc_parser.add_argument("--milestone-file", default="anvil-milestone.json")
+    sync_anvil_doc_parser.add_argument("--subissue-status-file", default="anvil-subissue-status.json")
+    sync_anvil_doc_parser.add_argument("--plan-file", default="docs/ANVIL_PLAN.md")
+
+    # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단/이슈수정)
+    ci_parser = subparsers.add_parser(
+        "ci", help="CI gate agents used by GitHub Actions (code review, issue triage, merge decision, issue fixing)"
+    )
+    ci_subparsers = ci_parser.add_subparsers(dest="ci_command", help="CI commands")
+
+    ci_code_review_parser = ci_subparsers.add_parser("code-review", help="Summarize a git diff for PR review")
+    ci_code_review_parser.add_argument("--diff-file", default="diff.txt")
+
+    ci_issue_triage_parser = ci_subparsers.add_parser("issue-triage", help="Decide whether a review finding warrants a new issue")
+    ci_issue_triage_parser.add_argument("--review-file", default="review_result.txt")
+    ci_issue_triage_parser.add_argument("--cerebras-file", default="cerebras_result.txt")
+    ci_issue_triage_parser.add_argument("--open-issues-file", default=None)
+
+    ci_merge_decision_parser = ci_subparsers.add_parser("merge-decision", help="Decide whether a reviewed PR should auto-merge")
+    ci_merge_decision_parser.add_argument("--pr-meta-file", default="pr_meta.json")
+    ci_merge_decision_parser.add_argument("--review-file", default="review_result.txt")
+    ci_merge_decision_parser.add_argument("--cerebras-file", default="cerebras_result.txt")
+
+    ci_fix_issue_parser = ci_subparsers.add_parser("fix-issue", help="Single-attempt LLM diff generation + apply for one issue context")
+    ci_fix_issue_parser.add_argument("--issue-context", default="issue-context.md")
+    ci_fix_issue_parser.add_argument("--extra-context", default=None)
+
+    ci_publish_parser = ci_subparsers.add_parser("publish", help="Commit given paths, push a branch, and open (or reuse) a PR")
+    ci_publish_parser.add_argument("--repo", required=True, help="owner/name, e.g. ${{ github.repository }}")
+    ci_publish_parser.add_argument("--branch", required=True)
+    ci_publish_parser.add_argument("--base", default="main")
+    ci_publish_parser.add_argument("--commit-title", required=True)
+    ci_publish_parser.add_argument("--commit-body-file", default=None)
+    ci_publish_parser.add_argument("--paths", nargs="+", required=True)
+    ci_publish_parser.add_argument("--pr-title", required=True)
+    ci_publish_parser.add_argument("--pr-body-file", required=True)
+    ci_publish_parser.add_argument("--labels", nargs="*", default=None)
+
+    ci_select_issue_parser = ci_subparsers.add_parser("select-issue", help="Pick the next open issue eligible for the auto-fix sweep")
+    ci_select_issue_parser.add_argument("--issues-file", required=True, help="gh issue list --json number,labels output")
+    ci_select_issue_parser.add_argument("--open-prs-file", required=True, help="gh pr list --json headRefName,body output")
+
+    ci_classify_commit_parser = ci_subparsers.add_parser("classify-commit", help="Derive a Conventional Commit type + subject from an issue title")
+    ci_classify_commit_parser.add_argument("--title", required=True)
+
+    ci_assess_substantiality_parser = ci_subparsers.add_parser("assess-substantiality", help="Decide whether an auto-fix diff substantially implements the issue it targets")
+    ci_assess_substantiality_parser.add_argument("--issue-file", required=True)
+    ci_assess_substantiality_parser.add_argument("--range", required=True, help="git diff revision range, e.g. origin/main...HEAD")
+
+    ci_classify_scenario_parser = ci_subparsers.add_parser("classify-scenario-outcome", help="Decide whether a scenario-eval run reflects an infra outage rather than agent capability")
+    ci_classify_scenario_parser.add_argument("--report-file", default="tests/benchmark/reports/scenario_report_ci.json")
+
+    ci_stagnation_issue_parser = ci_subparsers.add_parser("stagnation-issue", help="Open a tracking issue when scenario-eval detects prolonged stagnation")
+    ci_stagnation_issue_parser.add_argument("--report", required=True, help="Path to scenario_report_ci.json")
+    ci_stagnation_issue_parser.add_argument("--history", required=True, help="Path to scenario_history.jsonl")
+    ci_stagnation_issue_parser.add_argument("--repo", default=None, help="Defaults to $GITHUB_REPOSITORY")
+
+    ci_collect_todos_parser = ci_subparsers.add_parser("collect-todos", help="Scan src/ for TODO/FIXME comments and write docs/todo_inventory.{md,json}")
+
+    ci_plan_todo_issues_parser = ci_subparsers.add_parser("plan-todo-issues", help="Plan which TODO-debt inventory items become new GitHub issues")
+    ci_plan_todo_issues_parser.add_argument("--inventory-file", default="docs/todo_inventory.json")
+    ci_plan_todo_issues_parser.add_argument("--existing-issues-file", required=True)
+    ci_plan_todo_issues_parser.add_argument("--plan-out", default="todo-issue-plan.json")
+
+    # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
+    autofix_parser = subparsers.add_parser(
+        "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"
+    )
+    autofix_subparsers = autofix_parser.add_subparsers(dest="autofix_command", help="Autofix commands")
+    autofix_run_parser = autofix_subparsers.add_parser(
+        "run", help="Run the repair loop once against an already-checked-out issue context"
+    )
+    autofix_run_parser.add_argument("--issue-context", default="issue-context.md")
+    autofix_run_parser.add_argument("--commit-title", required=True)
+    autofix_run_parser.add_argument("--max-iterations", type=int, default=3)
+    autofix_run_parser.add_argument("--verify-command", default="python -m compileall -q src scripts")
+    autofix_run_parser.add_argument("--self-verify-command", default="")
 
     # 하위 호환성을 위한 기존 인자들 (deprecated)
     parser.add_argument(
@@ -768,6 +881,10 @@ EXAMPLES:
         cli_rc = await handle_nightwelding_command(args)
     elif cmd == "report":
         cli_rc = await handle_report_command(args)
+    elif cmd == "ci":
+        cli_rc = await handle_ci_command(args)
+    elif cmd == "autofix":
+        cli_rc = await handle_autofix_command(args)
     elif cmd == "interactive":
         cli_rc = await handle_interactive_command(args)
     elif cmd == "repl":
@@ -786,7 +903,7 @@ EXAMPLES:
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
     _STANDALONE_CLI = frozenset(
-        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding"}
+        {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding", "ci", "autofix"}
     )
     if cmd in _STANDALONE_CLI:
         return _exit_code(cli_rc)
