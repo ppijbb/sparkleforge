@@ -70,9 +70,43 @@ jobs:
         run: |
           git config --global user.name "ppijbb"
           git config --global user.email "45420008+ppijbb@users.noreply.github.com"
-          echo "Agent reports are now published as workflow artifacts instead of committed to the repository."
           if [ "$HAS_PAT" != "true" ]; then
             echo "::warning::PAT repository secret not set; skipping report PR."
             exit 0
           fi
+          echo "Agent reports are now published as workflow artifacts instead of committed to the repository."
           echo "Report artifacts uploaded; no repository commit required."
+          exit 0
+
+          # The steps below are retained for when report commits are re-enabled.
+          BRANCH="chore/agent-report-$(date -u +%Y%m%d)"
+          TITLE="chore: agent metric report $(date -u +%Y-%m-%d)"
+          BODY="Auto-generated agent metric report. Auto-merge automation will merge this once checks pass."
+          git checkout -B "$BRANCH"
+          git add results/agent_reports/ || true
+          if git diff --cached --quiet; then
+            echo "No report changes to commit; skipping PR."
+            exit 0
+          fi
+          git commit -m "$TITLE"
+          git push --force-with-lease origin "$BRANCH"
+
+          EXISTING_PR=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "$BRANCH" \
+            --base main \
+            --state open \
+            --json number,url \
+            --jq '.[0] // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Existing PR found for $BRANCH; skipping PR creation."
+            exit 0
+          fi
+
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --base main \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --label "automerge"

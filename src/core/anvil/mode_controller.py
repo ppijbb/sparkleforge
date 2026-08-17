@@ -121,7 +121,7 @@ class ModeController:
         approved=True 이면 AUTONOMOUS 또는 HITL_COLLABORATIVE 로 전환해 실행 시작.
         approved=False 이면 PLAN_FIRST 를 유지하며 계획을 다시 만들어 재승인받는다.
         """
-        if self.mode != ExecutionMode.PLAN_FIRST:
+        if not self.is_plan_first():
             return self.mode
 
         if approved:
