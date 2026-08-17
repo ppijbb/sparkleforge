@@ -10,6 +10,7 @@ AdversarialEvaluator(zero-trust 검증기)에 통과시키고, 제안 세션과 
 """
 
 from dataclasses import dataclass, field
+
 from typing import List
 
 from src.core.anvil.dynamic_checklist_generator import (
@@ -39,9 +40,14 @@ async def propose_checklist(request: str, proposer_session_id: str) -> Checklist
     """요청을 분석해 체크리스트를 제안하고, 항목별로 적대적 검증을 거쳐 거른다."""
     analysis = RequestAnalyzer().analyze(request)
     checklist = DynamicChecklistGenerator().generate(analysis)
-    proposal = ChecklistProposal(checklist=checklist, proposer_session_id=proposer_session_id)
 
     evaluator = AdversarialEvaluator()
+    # Enforce conflict-of-interest gate: a session must never grade its own
+    # proposal. assert_session_separation raises when the two session ids match,
+    # preventing the adversarial evaluation architecture from being bypassed.
+    assert_session_separation(proposer_session_id, evaluator.session_id)
+    proposal = ChecklistProposal(checklist=checklist, proposer_session_id=proposer_session_id)
+
     for item in checklist.items:
         result = await evaluator.evaluate_output(
             task_query=request,
