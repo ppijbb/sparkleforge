@@ -264,11 +264,11 @@ async def test_dispatch_batch_to_forge_master_executes_each_task_with_its_chosen
             "success": True,
             "response": f"{agent_name} handled: {query}",
             "confidence": 0.9,
+            "agent_used": agent_name,
         }
 
     with patch(
-        "src.core.forge_master.tools.ForgeMasterController",
-        return_value=controller,
+        "src.core.forge_master.tools.ForgeMasterController", return_value=controller
     ), patch.object(
         controller.session_manager.cli_manager,
         "execute_with_agent",
@@ -318,11 +318,10 @@ async def test_dispatch_batch_to_forge_master_reuses_session_per_agent_and_close
         return real_close_session(session_id)
 
     async def fake_execute_with_agent(agent_name, query, **kwargs):
-        return {"success": True, "response": f"{agent_name} handled: {query}", "confidence": 0.9}
+        return {"success": True, "response": f"{agent_name} handled: {query}", "confidence": 0.9, "agent_used": agent_name}
 
     with patch(
-        "src.core.forge_master.tools.ForgeMasterController",
-        return_value=controller,
+        "src.core.forge_master.tools.ForgeMasterController", return_value=controller
     ), patch.object(
         controller.session_manager.cli_manager,
         "execute_with_agent",
@@ -363,11 +362,10 @@ async def test_dispatch_batch_to_forge_master_runs_dependent_task_after_its_depe
 
     async def fake_execute_with_agent(agent_name, query, **kwargs):
         call_order.append(query)
-        return {"success": True, "response": f"done: {query}", "confidence": 0.9}
+        return {"success": True, "response": f"done: {query}", "confidence": 0.9, "agent_used": agent_name}
 
     with patch(
-        "src.core.forge_master.tools.ForgeMasterController",
-        return_value=controller,
+        "src.core.forge_master.tools.ForgeMasterController", return_value=controller
     ), patch.object(
         controller.session_manager.cli_manager,
         "execute_with_agent",
@@ -407,12 +405,11 @@ async def test_dispatch_batch_to_forge_master_passes_prerequisite_output_to_depe
     async def fake_execute_with_agent(agent_name, query, **kwargs):
         seen_contexts[query] = kwargs.get("context", "")
         if "task-0" in query:
-            return {"success": True, "response": "PREREQUISITE_OUTPUT_MARKER", "confidence": 0.9}
-        return {"success": True, "response": "dependent task done", "confidence": 0.9}
+            return {"success": True, "response": "PREREQUISITE_OUTPUT_MARKER", "confidence": 0.9, "agent_used": agent_name}
+        return {"success": True, "response": "dependent task done", "confidence": 0.9, "agent_used": agent_name}
 
     with patch(
-        "src.core.forge_master.tools.ForgeMasterController",
-        return_value=controller,
+        "src.core.forge_master.tools.ForgeMasterController", return_value=controller
     ), patch.object(
         controller.session_manager.cli_manager,
         "execute_with_agent",
@@ -450,12 +447,11 @@ async def test_dispatch_batch_to_forge_master_missing_dependency_does_not_crash(
     async def fake_execute_with_agent(agent_name, query, **kwargs):
         seen_contexts[query] = kwargs.get("context", "") or ""
         if "task-0" in query:
-            return {"success": False, "response": "", "error": "boom"}
-        return {"success": True, "response": "dependent task done", "confidence": 0.9}
+            return {"success": False, "response": "", "error": "boom", "agent_used": agent_name}
+        return {"success": True, "response": "dependent task done", "confidence": 0.9, "agent_used": agent_name}
 
     with patch(
-        "src.core.forge_master.tools.ForgeMasterController",
-        return_value=controller,
+        "src.core.forge_master.tools.ForgeMasterController", return_value=controller
     ), patch.object(
         controller.session_manager.cli_manager,
         "execute_with_agent",

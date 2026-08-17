@@ -70,6 +70,20 @@ def removed_files(before: Dict[str, str], after: Dict[str, str]) -> list[str]:
     return [p for p in before if p not in after]
 
 
+def modified_files(before: Dict[str, str], after: Dict[str, str]) -> list[str]:
+    """Relative paths present in both snapshots whose content hash changed.
+
+    Excludes known agent-runtime artifacts (see RUNTIME_ARTIFACT_PREFIXES) so
+    side-effect files from the process running aren't miscounted as scenario
+    work. Detecting modifications is required for scenarios that expect an
+    existing file to be edited in place rather than created or deleted.
+    """
+    common = before.keys() & after.keys()
+    return [
+        p for p in common if before[p] != after[p] and not is_runtime_artifact(p)
+    ]
+
+
 def checklist_to_weights(checklist: Checklist) -> Dict[str, float]:
     """Convert an approved Anvil Checklist (src/core/anvil) into a scenario weights dict.
 
@@ -85,14 +99,16 @@ def checklist_item_check(item: ChecklistItem, before: Dict[str, str], after: Dic
 
     ChecklistItem carries no structured target path, so this is the generic
     signal a diff-based check can give without re-parsing free text back into a
-    path: did the workspace tree change at all while this item was open.
+    path: did the workspace tree change at all while this item was open,
+    including files that were modified in place (not just created/removed).
     Scenarios that need a stronger check still write a scenario-specific one.
     """
     added = new_files(before, after)
     removed = removed_files(before, after)
-    changed = bool(added or removed)
+    modified = modified_files(before, after)
+    changed = bool(added or removed or modified)
     reason = (
-        f"workspace changed: +{len(added)}/-{len(removed)} file(s)"
+        f"workspace changed: +{len(added)}/-{len(removed)}/~{len(modified)} file(s)"
         if changed
         else "no file changes observed for this checklist item"
     )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import yaml
 import subprocess
 from pathlib import Path
 from typing import List
@@ -20,6 +21,9 @@ from src.core.nightwelding.adapter import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
 class LocalGitAdapter(BaseNightweldingAdapter):
@@ -73,12 +77,25 @@ class LocalGitAdapter(BaseNightweldingAdapter):
         if path.is_file():
             content = path.read_text(encoding="utf-8")
             title = self._extract_title(content, default=path.stem)
+            content = self._strip_frontmatter(content)
             return IssueContext(
                 number=ref_str,
                 title=title,
                 url=f"file://{path.resolve()}",
                 markdown=content,
             )
+
+    @staticmethod
+    def _strip_frontmatter(content: str) -> str:
+        """Remove leading YAML frontmatter so body-level ``---`` rules survive."""
+        match = FRONTMATTER_RE.match(content)
+        if not match:
+            return content
+        try:
+            yaml.safe_load(match.group(1))
+        except yaml.YAMLError:
+            return content
+        return content[match.end():]
 
         # 2. Raw text prompt / issue description
         title = self._extract_title(ref_str, default="local-issue")
@@ -134,7 +151,13 @@ class LocalGitAdapter(BaseNightweldingAdapter):
         return candidates
 
     def push_branch(self, repo_root: Path, branch: str, base_branch: str) -> bool:
-        return True
+        # Attempt to push to origin. If no remote 'origin' is configured, this will fail.
+        proc = subprocess.run(
+            ["git", "push", "origin", branch],
+            cwd=repo_root,
+            capture_output=True,
+        )
+        return proc.returncode == 0
 
     def commit_changes(self, repo_root: Path, message: str) -> None:
         subprocess.run(["git", "add", "-u"], cwd=repo_root, capture_output=True, text=True, check=False)
