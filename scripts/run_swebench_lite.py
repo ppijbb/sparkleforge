@@ -1,8 +1,8 @@
 """Generate SWE-bench Lite predictions using SparkleForge's own fix-issue path.
 
 This does not reimplement patch generation: each instance is a real git
-checkout of its repo at `base_commit`, and `scripts/opencode_github_worker.py`'s
-`fix-issue` subcommand -- the same production entrypoint Nightwelding and
+checkout of its repo at `base_commit`, and `sparkleforge ci fix-issue`
+(src/core/ci/fix_issue.py) -- the same production entrypoint Nightwelding and
 `.github/workflows/opencode-auto-fix.yml` use for real GitHub issues -- is
 invoked against it with the SWE-bench `problem_statement` as the issue
 context. Whatever `opencode.patch` it produces (or nothing, on failure)
@@ -27,7 +27,7 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WORKER_SCRIPT = REPO_ROOT / "scripts" / "opencode_github_worker.py"
+SPARKLEFORGE_ENTRYPOINT = REPO_ROOT / "main.py"
 
 # All 6 psf/requests instances in SWE-bench Lite. Same repo -> their
 # environment images share layers, which keeps the first weekly run's Docker
@@ -82,7 +82,8 @@ def _generate_patch(checkout: Path, problem_statement: str, timeout: int) -> str
             subprocess.run(
                 [
                     sys.executable,
-                    str(WORKER_SCRIPT),
+                    str(SPARKLEFORGE_ENTRYPOINT),
+                    "ci",
                     "fix-issue",
                     "--issue-context",
                     str(context_path),
