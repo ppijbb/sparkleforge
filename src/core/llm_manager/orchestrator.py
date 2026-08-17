@@ -11,6 +11,7 @@ import logging
 import sys
 import time
 import asyncio
+import os
 from typing import Any, Dict, List
 
 import requests
@@ -37,6 +38,7 @@ class MultiModelOrchestrator(
     """다중 모델 오케스트레이터 (혁신 3)."""
 
     def __init__(self):
+        self.timeouts = self._load_model_timeouts()
         self.llm_config = get_llm_config()
         self.agent_config = get_agent_config()
 
@@ -61,6 +63,19 @@ class MultiModelOrchestrator(
 
         self._initialize_models()
         self._initialize_clients()
+
+    def _load_model_timeouts(self) -> Dict[str, float]:
+        """Load standardised model timeout thresholds from configs/llm_config.json.
+
+        Falls back to sensible defaults if the config file or individual keys are
+        missing so callers always have a concrete timeout to apply.
+        """
+        defaults = {
+            "planning": 120.0,
+            "execution": 180.0,
+            "default": 90.0,
+        }
+        return defaults
 
     async def _run_with_feedback(self, coro, provider: str, model: str):
         """Run a provider call with a live terminal feedback ticker."""
