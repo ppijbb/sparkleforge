@@ -1201,6 +1201,215 @@ async def handle_nightwelding_command(args):
     return 0
 
 
+async def handle_ci_command(args):
+    """CI 게이트 커맨드 처리 (code-review / issue-triage / merge-decision / fix-issue)."""
+    from pathlib import Path
+
+    if args.ci_command == "code-review":
+        from src.core.ci.code_review import code_review
+
+        return await code_review(Path(args.diff_file))
+    elif args.ci_command == "issue-triage":
+        from src.core.ci.issue_triage import issue_triage
+
+        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
+        open_issues_file = Path(args.open_issues_file) if args.open_issues_file else None
+        return await issue_triage(Path(args.review_file), cerebras_file, open_issues_file)
+    elif args.ci_command == "merge-decision":
+        from src.core.ci.merge_decision import merge_decision
+
+        cerebras_file = Path(args.cerebras_file) if args.cerebras_file else None
+        return await merge_decision(Path(args.pr_meta_file), Path(args.review_file), cerebras_file)
+    elif args.ci_command == "fix-issue":
+        from src.core.ci.fix_issue import fix_issue
+
+        extra_context = Path(args.extra_context) if args.extra_context else None
+        return await fix_issue(Path(args.issue_context), extra_context)
+    elif args.ci_command == "publish":
+        import json
+
+        from src.core.ci.publish import commit_push_and_open_pr
+
+        commit_body = Path(args.commit_body_file).read_text(encoding="utf-8") if args.commit_body_file else None
+        pr_body = Path(args.pr_body_file).read_text(encoding="utf-8")
+        try:
+            result = commit_push_and_open_pr(
+                repo=args.repo,
+                repo_root=Path.cwd(),
+                branch=args.branch,
+                base_branch=args.base,
+                commit_title=args.commit_title,
+                commit_body=commit_body,
+                paths=args.paths,
+                pr_title=args.pr_title,
+                pr_body=pr_body,
+                labels=args.labels,
+            )
+        except RuntimeError as e:
+            logger.error(f"❌ ci publish failed: {e}")
+            return 1
+        Path("publish_result.json").write_text(
+            json.dumps(result.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        if result.skipped_reason:
+            print(f"ci publish: {result.skipped_reason}")
+        else:
+            print(f"ci publish: opened/reused {result.pr_url}")
+        return 0
+    elif args.ci_command == "select-issue":
+        import json
+
+        from src.core.ci.issue_selection import select_fixable_issue
+
+        issues = json.loads(Path(args.issues_file).read_text(encoding="utf-8") or "[]")
+        open_prs = json.loads(Path(args.open_prs_file).read_text(encoding="utf-8") or "[]")
+        selected = select_fixable_issue(issues, open_prs)
+        # Write to a file rather than printing the number for `$(...)`
+        # capture -- a background init path unrelated to this command logs a
+        # stray line to stdout after the command "returns" (see the
+        # daily-roadmap-prompt handler above for the same issue), which would
+        # corrupt a direct stdout capture.
+        Path("selected_issue.txt").write_text(str(selected) if selected is not None else "", encoding="utf-8")
+        return 0
+    elif args.ci_command == "classify-commit":
+        import json
+
+        from src.core.ci.commit_classify import classify_conventional_commit
+
+        commit = classify_conventional_commit(args.title)
+        Path("commit_classification.json").write_text(
+            json.dumps({"type": commit.type, "subject": commit.subject}), encoding="utf-8"
+        )
+        return 0
+    elif args.ci_command == "assess-substantiality":
+        import json
+
+        from src.core.ci.fix_substantiality import (
+            SubstantialityVerdict,
+            assess_fix_substantiality,
+            count_unchecked,
+            gather_diff_stats,
+        )
+
+        issue_text = Path(args.issue_file).read_text(encoding="utf-8")
+        try:
+            diff_text, changed_files, changed_lines = gather_diff_stats(args.range)
+            verdict = assess_fix_substantiality(
+                issue_text=issue_text,
+                diff_text=diff_text,
+                changed_files=changed_files,
+                changed_lines=changed_lines,
+            )
+        except Exception as e:
+            logger.error(f"❌ assess-substantiality: diff gathering failed: {e}")
+            verdict = SubstantialityVerdict(
+                substantial=False,
+                reason=" and the scope-overlap check itself failed to run, so it could not be verified",
+                unchecked=count_unchecked(issue_text),
+            )
+        Path("substantiality_result.json").write_text(
+            json.dumps(
+                {"substantial": verdict.substantial, "reason": verdict.reason, "unchecked": verdict.unchecked}
+            ),
+            encoding="utf-8",
+        )
+        return 0
+    elif args.ci_command == "classify-scenario-outcome":
+        import json
+
+        from src.core.ci.scenario_classify import classify_scenario_outcome
+
+        report = json.loads(Path(args.report_file).read_text(encoding="utf-8"))
+        outcome = classify_scenario_outcome(report)
+        Path("scenario_outcome.json").write_text(
+            json.dumps(
+                {
+                    "overall_score": outcome.overall_score,
+                    "infra_failed": outcome.infra_failed,
+                    "total": outcome.total,
+                    "infra_ratio": outcome.infra_ratio,
+                    "is_infra_outage": outcome.is_infra_outage,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0
+    elif args.ci_command == "stagnation-issue":
+        import json
+        import os
+
+        from src.core.ci.stagnation_issue import build_stagnation_issue, create_github_issue, load_history
+
+        report = json.loads(Path(args.report).read_text(encoding="utf-8"))
+        history = load_history(Path(args.history))
+        issue = build_stagnation_issue(report, history)
+        if issue is None:
+            return 0
+
+        repo = args.repo or os.getenv("GITHUB_REPOSITORY", "")
+        if not repo:
+            logger.error("GITHUB_REPOSITORY not set; cannot create stagnation issue.")
+            return 0
+        create_github_issue(repo, issue)
+        return 0
+    elif args.ci_command == "collect-todos":
+        import json
+
+        from src.core.ci.todo_inventory import collect_todos, generate_inventory, generate_json_inventory
+
+        todos = collect_todos(project_root)
+        docs_dir = project_root / "docs"
+        docs_dir.mkdir(exist_ok=True)
+        (docs_dir / "todo_inventory.md").write_text(generate_inventory(todos), encoding="utf-8")
+        (docs_dir / "todo_inventory.json").write_text(
+            json.dumps(generate_json_inventory(todos), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        print(f"Collected {len(todos)} TODO/FIXME item(s).")
+        return 0
+    elif args.ci_command == "plan-todo-issues":
+        import json
+
+        from src.core.ci.todo_issue_plan import known_anchors, plan_todo_issues
+
+        inventory = json.loads(Path(args.inventory_file).read_text(encoding="utf-8"))
+        existing_issues = json.loads(Path(args.existing_issues_file).read_text(encoding="utf-8"))
+        plan = plan_todo_issues(inventory, existing_issues)
+        Path(args.plan_out).write_text(
+            json.dumps([{"anchor": p.anchor, "title": p.title, "body": p.body} for p in plan]),
+            encoding="utf-8",
+        )
+        print(f"Planned {len(plan)} new todo-debt issue(s); {len(known_anchors(existing_issues))} already tracked.")
+        return 0
+
+    logger.error(f"❌ Unknown ci command: {args.ci_command}")
+    return 2
+
+
+async def handle_autofix_command(args):
+    """OpenCode repair-loop 커맨드 처리 (opencode-auto-fix.yml의 bash 재시도 루프를 내재화)."""
+    from pathlib import Path
+
+    if args.autofix_command == "run":
+        from src.core.autofix.runner import run_autofix_repair_loop
+
+        result = run_autofix_repair_loop(
+            issue_context_path=Path(args.issue_context),
+            repo_root=Path.cwd(),
+            commit_title=args.commit_title,
+            max_iterations=args.max_iterations,
+            verify_command=args.verify_command,
+            self_verify_command=args.self_verify_command or None,
+        )
+        if result.success:
+            logger.info(f"✅ Autofix repair loop succeeded after {result.attempts} attempt(s).")
+            return 0
+        logger.error(f"❌ Autofix repair loop failed: {result.reason}")
+        return 1
+
+    logger.error(f"❌ Unknown autofix command: {args.autofix_command}")
+    return 2
+
+
 async def handle_interactive_command(args):
     """인터랙티브 모드 처리"""
     logger.info("💬 Starting interactive mode...")
@@ -1379,6 +1588,122 @@ async def handle_cli_command(args):
 
 async def handle_report_command(args):
     """보고서 및 에이전트 평가 명령어 처리."""
+    if getattr(args, "report_command", None) == "daily-roadmap-prompt":
+        # Piped straight into a file by the daily-roadmap workflow -- must be plain
+        # text, so this bypasses the rich Console(force_terminal=True) shim below
+        # (that would emit ANSI escape codes into the redirected file).
+        import datetime
+        import os
+        import sys
+        from zoneinfo import ZoneInfo
+
+        from src.core.daily_roadmap import build_daily_roadmap_mission_brief
+
+        today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+        sys.stdout.write(build_daily_roadmap_mission_brief(today) + "\n")
+        sys.stdout.flush()
+        # Some background init path (unrelated to this subcommand -- reproduces even on
+        # `sparkleforge health`) logs a stray line to stdout after the command "returns".
+        # This command's whole job is printing static text for a workflow to redirect to
+        # a file, so exit immediately rather than risk that noise corrupting the output.
+        os._exit(0)
+
+    report_command_name = getattr(args, "report_command", None)
+    if report_command_name in (
+        "roadmap-target",
+        "roadmap-fallback-issue",
+        "roadmap-issue-body",
+        "sync-anvil-doc",
+    ):
+        # Same stray-stdout-log concern as daily-roadmap-prompt above: these are
+        # all piped straight into a file (or captured via `$(...)`) by the
+        # workflow, so bypass the rich Console shim and exit immediately.
+        import json as json_module
+        import os
+        import sys
+        from pathlib import Path
+
+        if report_command_name == "roadmap-target":
+            from src.core.roadmap.target_selection import (
+                render_planning_context,
+                select_anvil_target,
+                target_file_contents,
+            )
+
+            milestone_file = Path(args.milestone_file)
+            raw = milestone_file.read_text(encoding="utf-8").strip() if milestone_file.exists() else ""
+            milestone = json_module.loads(raw) if raw else None
+            status_file = Path(args.subissue_status_file)
+            sub_status = json_module.loads(status_file.read_text(encoding="utf-8") or "[]") if status_file.exists() else []
+
+            sys.stdout.write(render_planning_context(milestone, sub_status) + "\n")
+            sys.stdout.flush()
+            target = select_anvil_target(milestone, sub_status)
+            Path(args.target_out).write_text(target_file_contents(target), encoding="utf-8")
+            os._exit(0)
+
+        if report_command_name == "roadmap-fallback-issue":
+            from src.core.roadmap.planning import build_fallback_roadmap
+
+            context_file = Path(args.context_file)
+            context_md = context_file.read_text(encoding="utf-8") if context_file.exists() else ""
+            target_file = Path(args.anvil_target_file)
+            anvil_target = target_file.read_text(encoding="utf-8").strip() if target_file.exists() else ""
+
+            sys.stdout.write(
+                build_fallback_roadmap(
+                    context_md=context_md,
+                    anvil_target=anvil_target,
+                    rc=args.rc,
+                    invalid_reason=args.invalid_reason,
+                    output_bytes=args.output_bytes,
+                    console_bytes=args.console_bytes,
+                    error_bytes=args.error_bytes,
+                )
+            )
+            sys.stdout.flush()
+            os._exit(0)
+
+        if report_command_name == "roadmap-issue-body":
+            from src.core.roadmap.planning import build_issue_body
+
+            roadmap_file = Path(args.roadmap_file)
+            roadmap_text = roadmap_file.read_text(encoding="utf-8") if roadmap_file.exists() else ""
+            previous_file = Path(args.previous_body_file)
+            previous_body = previous_file.read_text(encoding="utf-8") if previous_file.exists() else ""
+
+            sys.stdout.write(
+                build_issue_body(
+                    today=args.today,
+                    status=args.status,
+                    roadmap_text=roadmap_text,
+                    previous_body=previous_body,
+                )
+            )
+            sys.stdout.flush()
+            os._exit(0)
+
+        if report_command_name == "sync-anvil-doc":
+            from src.core.roadmap.anvil_doc_sync import sync_anvil_doc
+
+            milestone_file = Path(args.milestone_file)
+            raw = milestone_file.read_text(encoding="utf-8").strip() if milestone_file.exists() else ""
+            milestone = json_module.loads(raw) if raw else None
+            status_file = Path(args.subissue_status_file)
+            sub_status = json_module.loads(status_file.read_text(encoding="utf-8") or "[]") if status_file.exists() else []
+
+            if not milestone:
+                sys.stdout.write("nochange\n")
+                sys.stdout.flush()
+                os._exit(0)
+
+            total = len(sub_status)
+            closed = sum(1 for item in sub_status if item.get("state") == "CLOSED")
+            changed = sync_anvil_doc(Path(args.plan_file), milestone["number"], closed, total)
+            sys.stdout.write(("changed" if changed else "nochange") + "\n")
+            sys.stdout.flush()
+            os._exit(0)
+
     from src.cli.commands.report import report_command
     from rich.console import Console
 
