@@ -1,29 +1,21 @@
-#!/usr/bin/env python3
-"""TODO/FIXME 주석 수집 및 분류 스크립트
+"""Scan src/ for TODO/FIXME/HACK/XXX/NOTE/BUG/WARNING comments and classify them.
 
-모든 TODO/FIXME 주석을 수집하고 우선순위별로 분류합니다.
+Moved verbatim from scripts/collect_todos.py: priority/category classifiers
+are keyword-based heuristics, moved as-is (same keyword lists, same
+precedence order) rather than rewritten.
 """
 
-import re
-import sys
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# Ensure docs directory exists
-docs_dir = project_root / "docs"
-docs_dir.mkdir(exist_ok=True)
+import re
 
 
 class Priority(Enum):
-    """TODO 우선순위."""
-
     CRITICAL = "Critical"
     HIGH = "High"
     MEDIUM = "Medium"
@@ -32,8 +24,6 @@ class Priority(Enum):
 
 @dataclass
 class TodoItem:
-    """TODO 항목."""
-
     file_path: str
     line_number: int
     content: str
@@ -43,7 +33,6 @@ class TodoItem:
 
 
 def find_python_files(directory: Path) -> List[Path]:
-    """Find all Python files in directory."""
     python_files = []
     for path in directory.rglob("*.py"):
         if "__pycache__" not in str(path) and ".pyc" not in str(path):
@@ -52,57 +41,29 @@ def find_python_files(directory: Path) -> List[Path]:
 
 
 def determine_priority(content: str, file_path: str) -> Priority:
-    """Determine priority based on content and context."""
     content_lower = content.lower()
 
-    # Critical indicators
     critical_keywords = [
-        "security",
-        "vulnerability",
-        "data loss",
-        "crash",
-        "hang",
-        "memory leak",
-        "race condition",
-        "deadlock",
-        "critical bug",
-        "production",
-        "breaking change",
+        "security", "vulnerability", "data loss", "crash", "hang",
+        "memory leak", "race condition", "deadlock", "critical bug",
+        "production", "breaking change",
     ]
     if any(keyword in content_lower for keyword in critical_keywords):
         return Priority.CRITICAL
 
-    # High priority indicators
     high_keywords = [
-        "performance",
-        "slow",
-        "optimization",
-        "scalability",
-        "integration",
-        "api",
-        "interface",
-        "protocol",
-        "error handling",
-        "exception",
-        "failure",
+        "performance", "slow", "optimization", "scalability", "integration",
+        "api", "interface", "protocol", "error handling", "exception", "failure",
     ]
     if any(keyword in content_lower for keyword in high_keywords):
         return Priority.HIGH
 
-    # Medium priority indicators
     medium_keywords = [
-        "refactor",
-        "cleanup",
-        "improve",
-        "enhance",
-        "documentation",
-        "test",
-        "validation",
+        "refactor", "cleanup", "improve", "enhance", "documentation", "test", "validation",
     ]
     if any(keyword in content_lower for keyword in medium_keywords):
         return Priority.MEDIUM
 
-    # Check file location
     if "core" in file_path or "orchestrator" in file_path:
         return Priority.HIGH
 
@@ -110,7 +71,6 @@ def determine_priority(content: str, file_path: str) -> Priority:
 
 
 def categorize_todo(content: str) -> str:
-    """Categorize TODO based on content."""
     content_lower = content.lower()
 
     if "memory" in content_lower or "storage" in content_lower:
@@ -135,8 +95,7 @@ def categorize_todo(content: str) -> str:
         return "Other"
 
 
-def extract_todos(file_path: Path) -> List[TodoItem]:
-    """Extract TODO/FIXME comments from a file."""
+def extract_todos(file_path: Path, project_root: Path) -> List[TodoItem]:
     todos = []
 
     try:
@@ -144,7 +103,6 @@ def extract_todos(file_path: Path) -> List[TodoItem]:
             lines = f.readlines()
 
         for line_num, line in enumerate(lines, 1):
-            # Match TODO, FIXME, HACK, XXX, NOTE patterns
             patterns = [
                 (r"#\s*(TODO|FIXME|HACK|XXX|NOTE|BUG|WARNING):\s*(.+)", "TODO"),
                 (r"#\s*(TODO|FIXME|HACK|XXX|NOTE|BUG|WARNING)\s+(.+)", "TODO"),
@@ -157,7 +115,6 @@ def extract_todos(file_path: Path) -> List[TodoItem]:
                     content = match.group(2) if len(match.groups()) > 1 else match.group(1)
                     content = content.strip()
 
-                    # Determine priority and category
                     priority = determine_priority(content, str(file_path))
                     category = categorize_todo(content)
 
@@ -177,13 +134,11 @@ def extract_todos(file_path: Path) -> List[TodoItem]:
 
 
 def generate_inventory(todos: List[TodoItem]) -> str:
-    """Generate TODO inventory markdown."""
     report = []
     report.append("# TODO/FIXME 인벤토리\n")
     report.append(f"생성일: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     report.append(f"총 TODO/FIXME 항목: {len(todos)}\n")
 
-    # Group by priority
     by_priority = {}
     for priority in Priority:
         by_priority[priority] = [t for t in todos if t.priority == priority]
@@ -193,7 +148,6 @@ def generate_inventory(todos: List[TodoItem]) -> str:
         count = len(by_priority[priority])
         report.append(f"- **{priority.value}**: {count}개\n")
 
-    # Group by category
     by_category = {}
     for todo in todos:
         if todo.category not in by_category:
@@ -205,7 +159,6 @@ def generate_inventory(todos: List[TodoItem]) -> str:
         count = len(by_category[category])
         report.append(f"- **{category}**: {count}개\n")
 
-    # Detailed list by priority
     report.append("\n## 상세 목록 (우선순위순)\n")
 
     for priority in [Priority.CRITICAL, Priority.HIGH, Priority.MEDIUM, Priority.LOW]:
@@ -215,7 +168,6 @@ def generate_inventory(todos: List[TodoItem]) -> str:
 
         report.append(f"\n### {priority.value} Priority ({len(priority_todos)}개)\n")
 
-        # Group by file
         by_file = {}
         for todo in priority_todos:
             if todo.file_path not in by_file:
@@ -229,11 +181,10 @@ def generate_inventory(todos: List[TodoItem]) -> str:
             for todo in file_todos:
                 report.append(f"- **Line {todo.line_number}** ({todo.category}): {todo.content}\n")
 
-    # Issue tracking format
     report.append("\n## 이슈 트래킹 형식\n")
     report.append("각 TODO를 GitHub Issues로 등록할 때 사용할 형식:\n\n")
 
-    for todo in todos[:20]:  # Show first 20 as examples
+    for todo in todos[:20]:
         report.append(f"### {todo.file_path}:{todo.line_number}\n")
         report.append(f"- **Priority**: {todo.priority.value}\n")
         report.append(f"- **Category**: {todo.category}\n")
@@ -248,7 +199,6 @@ def generate_inventory(todos: List[TodoItem]) -> str:
 
 
 def generate_json_inventory(todos: List[TodoItem]) -> Dict:
-    """Generate JSON inventory for programmatic access."""
     return {
         "total_count": len(todos),
         "generated_at": datetime.now().isoformat(),
@@ -294,79 +244,12 @@ def generate_json_inventory(todos: List[TodoItem]) -> Dict:
     }
 
 
-def main():
-    """Main function."""
-    print("=" * 80)
-    print("TODO/FIXME Collection and Classification")
-    print("=" * 80)
-
+def collect_todos(project_root: Path) -> List[TodoItem]:
     src_dir = project_root / "src"
-
     if not src_dir.exists():
-        print(f"❌ Source directory not found: {src_dir}")
-        return
+        return []
 
-    # Find all Python files
-    print("\n[1] Finding Python files...")
-    python_files = find_python_files(src_dir)
-    print(f"✅ Found {len(python_files)} Python files")
-
-    # Extract TODOs
-    print("\n[2] Extracting TODO/FIXME comments...")
-    all_todos = []
-    for file_path in python_files:
-        todos = extract_todos(file_path)
-        all_todos.extend(todos)
-
-    print(f"✅ Found {len(all_todos)} TODO/FIXME items")
-
-    # Classify by priority
-    print("\n[3] Classifying by priority...")
-    by_priority = {}
-    for priority in Priority:
-        count = len([t for t in all_todos if t.priority == priority])
-        by_priority[priority] = count
-        print(f"   {priority.value}: {count}개")
-
-    # Classify by category
-    print("\n[4] Classifying by category...")
-    by_category = {}
-    for todo in all_todos:
-        if todo.category not in by_category:
-            by_category[todo.category] = 0
-        by_category[todo.category] += 1
-
-    for category in sorted(by_category.keys()):
-        print(f"   {category}: {by_category[category]}개")
-
-    # Generate inventory
-    print("\n[5] Generating inventory...")
-    inventory_md = generate_inventory(all_todos)
-    inventory_json = generate_json_inventory(all_todos)
-
-    # Save files
-    md_file = docs_dir / "todo_inventory.md"
-    with open(md_file, "w", encoding="utf-8") as f:
-        f.write(inventory_md)
-    print(f"✅ Markdown inventory saved to: {md_file}")
-
-    json_file = docs_dir / "todo_inventory.json"
-    import json
-
-    with open(json_file, "w", encoding="utf-8") as f:
-        json.dump(inventory_json, f, indent=2, ensure_ascii=False)
-    print(f"✅ JSON inventory saved to: {json_file}")
-
-    print("\n" + "=" * 80)
-    print("✅ TODO collection complete!")
-    print("=" * 80)
-    print("\nSummary:")
-    print(f"  - Total TODOs: {len(all_todos)}")
-    print(f"  - Critical: {by_priority.get(Priority.CRITICAL, 0)}")
-    print(f"  - High: {by_priority.get(Priority.HIGH, 0)}")
-    print(f"  - Medium: {by_priority.get(Priority.MEDIUM, 0)}")
-    print(f"  - Low: {by_priority.get(Priority.LOW, 0)}")
-
-
-if __name__ == "__main__":
-    main()
+    all_todos: List[TodoItem] = []
+    for file_path in find_python_files(src_dir):
+        all_todos.extend(extract_todos(file_path, project_root))
+    return all_todos
