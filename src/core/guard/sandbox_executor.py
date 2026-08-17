@@ -112,8 +112,10 @@ class SandboxExecutor:
         parts = [
             "docker", "run", "--rm",
             "--network", "none" if not self.network_access else "bridge",
-            "--memory", "256m",
+            "--memory", os.getenv("SPARKLEFORGE_SANDBOX_MEMORY_LIMIT", "512m"),
+            "--memory-swap", os.getenv("SPARKLEFORGE_SANDBOX_MEMORY_LIMIT", "512m"),
             "--cpus", "0.5",
+            "--log-driver", "none",
             "--read-only",
             "python:3.12-slim",
             "bash", "-c", cmd,
@@ -205,12 +207,23 @@ class SandboxExecutor:
                 result = subprocess.run(
                     exec_cmd,
                     capture_output=True,
-                    text=True,
+                    text=False,
                     timeout=self.timeout,
                     env={**os.environ, "HOME": home_dir},
                 )
             finally:
                 shutil.rmtree(home_dir, ignore_errors=True)
+
+            # OOM Detection (Exit code 137 is SIGKILL, often OOM in Docker)
+            if result.returncode == 137:
+                logger.error("Sandbox OOM or SIGKILL detected (exit 137) for: %s", command)
+                return SandboxResult(
+                    command=command, returncode=137,
+                    stdout=result.stdout.decode(errors="replace"),
+                    stderr="SandboxMemoryExceededError: Container exceeded memory limits.",
+                    duration_ms=(time.monotonic() - start) * 1000,
+                    sandbox_type=sandbox_type, killed=True)
+
             stdout   = result.stdout
             stderr   = result.stderr
             returncode = result.returncode

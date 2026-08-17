@@ -32,10 +32,13 @@ def resolve_tools_config_path() -> Path:
     runner workspace. This resolver checks, in order:
 
     1. The ``TOOLS_CONFIG_PATH`` environment variable override.
-    2. A path relative to the package root via ``__file__``.
-    3. A well-known system config directory (``/etc/sparkleforge``).
+    2. The repository root (``<repo>/tools_config.json``).
+    3. The historical ``src/`` subpath (``<repo>/src/tools_config.json``)
+       so a checked-in config under ``src/`` -- the path the CI runner
+       historically expected -- is still located after the packaging fix.
+    4. A well-known system config directory (``/etc/sparkleforge``).
 
-    Returns the first existing candidate, or the package-root default so
+    Returns the first existing candidate, or the repository-root default so
     callers can still emit a clear "not found" diagnostic.
     """
     candidates: list[Path] = []
@@ -44,6 +47,10 @@ def resolve_tools_config_path() -> Path:
         candidates.append(Path(env_override).expanduser())
     package_default = project_root / "tools_config.json"
     candidates.append(package_default)
+    # Historical location: the CI runner workspace and older checkouts
+    # placed tools_config.json under src/. Keep probing it so a config
+    # committed there is still discovered (issue #913).
+    candidates.append(project_root / "src" / "tools_config.json")
     candidates.append(Path("/etc/sparkleforge/tools_config.json"))
     for candidate in candidates:
         if candidate.is_file():
