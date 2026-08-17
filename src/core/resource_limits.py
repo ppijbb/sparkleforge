@@ -12,11 +12,17 @@ MAX_INPUT_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_OUTPUT_SIZE = 50 * 1024 * 1024  # 50MB
 MAX_CODE_SIZE = 1 * 1024 * 1024  # 1MB
 
+# Watchdog thresholds for long-running 24x7 research sessions.
+MAX_RSS_BYTES = 2 * 1024 * 1024 * 1024  # 2GB RSS heap ceiling
+MAX_TEMP_ARTIFACT_BYTES = 5 * 1024 * 1024 * 1024  # 5GB temp artifact bloat ceiling
+WATCHDOG_POLL_INTERVAL_SECONDS = 60  # how often the watchdog samples
+
 # Human-readable sizes for error messages
 MAX_INPUT_SIZE_HUMAN = "10MB"
 MAX_OUTPUT_SIZE_HUMAN = "50MB"
 MAX_CODE_SIZE_HUMAN = "1MB"
-
+MAX_RSS_SIZE_HUMAN = "2GB"
+MAX_TEMP_ARTIFACT_SIZE_HUMAN = "5GB"
 
 class StdinSizeLimitError(Exception):
     """Error thrown when stdin input exceeds the size limit"""
