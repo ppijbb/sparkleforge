@@ -59,7 +59,7 @@ def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
     assert "RC=$?\n          set -e" in workflow
     assert "--model google/gemini-2.0-flash-exp" in workflow
     assert "Collect GitHub planning context" in workflow
-    assert "SparkleForge CLI fallback metadata" in workflow
+    assert "sparkleforge report roadmap-fallback-issue" in workflow
     assert "gh pr list" in workflow
     assert "gh issue list" in workflow
     assert "github-planning-context.md" in workflow
