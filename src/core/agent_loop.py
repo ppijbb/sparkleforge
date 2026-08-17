@@ -203,6 +203,9 @@ Autonomous problem-solving contract:
         stagnant_iterations = 0
         MOMENTUM_STAGNATION_THRESHOLD = 2
 
+        # Circuit breaker for repetitive non-productive loops
+        consecutive_stagnant_cycles = 0
+
         # Ensure MCP is initialized
         try:
             await self.mcp_hub.initialize_mcp()
@@ -583,14 +586,25 @@ Autonomous problem-solving contract:
 
             if new_signature_this_iteration:
                 stagnant_iterations = 0
+                consecutive_stagnant_cycles = 0
             else:
                 stagnant_iterations += 1
+                consecutive_stagnant_cycles += 1
                 logger.warning(
                     "[AgentLoop] Zero-momentum iteration %d/%d: every tool call this "
                     "turn repeats a signature already seen earlier in the run",
                     stagnant_iterations,
                     MOMENTUM_STAGNATION_THRESHOLD,
                 )
+                if consecutive_stagnant_cycles >= 4:
+                    logger.error("[AgentLoop] Circuit breaker triggered: excessive stagnation. Resetting context.")
+                    history = await self.compressor.compress_by_summarization(history)
+                    history.append({
+                        "role": "system",
+                        "content": "Circuit breaker triggered: loop was stuck in a non-productive cycle. Context has been reset to force a new approach."
+                    })
+                    consecutive_stagnant_cycles = 0
+
                 if stagnant_iterations >= MOMENTUM_STAGNATION_THRESHOLD:
                     stagnant_iterations = 0
                     history.append(
