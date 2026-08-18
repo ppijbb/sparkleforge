@@ -1,0 +1,37 @@
+name: Reset Stale Auto-Fix-Failed Labels
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+
+jobs:
+  reset-auto-fix-failed:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Clear auto-fix-failed so the sweep can retry these issues
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required to reset auto-fix-failed labels."
+            exit 1
+          fi
+
+          gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label auto-fix-failed \
+            --limit 100 \
+            --json number \
+            --jq '.[].number' |
+          while read -r NUMBER; do
+            [ -n "$NUMBER" ] || continue
+            echo "Clearing auto-fix-failed on #$NUMBER."
+            gh issue edit "$NUMBER" \
+              --repo "${{ github.repository }}" \
+              --remove-label auto-fix-failed || true
+          done
