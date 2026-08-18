@@ -11,16 +11,6 @@ prompt_toolkit 기반의 완전한 REPL 환경 제공.
 import locale
 import logging
 import shlex
-        
-        # REPL 모드에서는 기본 로깅 레벨을 WARNING으로 설정하고
-        # src.cli 네임스페이스만 INFO 레벨을 허용하여 로그 누출 방지
-        logging.getLogger().setLevel(logging.WARNING)
-        for name in logging.root.manager.loggerDict:
-            if not name.startswith("src.cli"):
-                logging.getLogger(name).setLevel(logging.WARNING)
-import sys
-from datetime import datetime
-
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from rich import get_console
@@ -32,6 +22,16 @@ from src.cli.history import SparkleForgeHistory
 from src.core.execution_registry import ExecutionRegistry, RegisteredCommand
 from src.core.prompt_router import PromptRouter, RouteTargetType
 from src.core.trust_gate import get_current_trust_context
+
+# REPL 모드에서는 기본 로깅 레벨을 WARNING으로 설정하고
+# src.cli 네임스페이스만 INFO 레벨을 허용하여 로그 누출 방지
+logging.getLogger().setLevel(logging.WARNING)
+for name in logging.root.manager.loggerDict:
+    if not name.startswith("src.cli"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+import sys
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

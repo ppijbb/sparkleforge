@@ -13,7 +13,7 @@
 
 [3] 프로덕션 코드의 테스트 함수 확인...
 ⚠️ 1개 테스트 함수가 프로덕션 코드에 발견됨:
-   - src/web/streamlit_app.py:1447 - test_sandbox_execution
+   - src/web/streamlit_app.py:1460 - test_sandbox_execution
 
 [4] async 테스트 함수의 @pytest.mark.asyncio 누락 확인...
 ⚠️ 29개 async 테스트 함수에 @pytest.mark.asyncio 누락:
@@ -21,6 +21,7 @@
    - tests/test_parallel_execution.py:98 - test_agent_pool
    - tests/test_parallel_execution.py:138 - test_parallel_executor_basic
    - tests/test_parallel_execution.py:171 - test_integration
+   - tests/test_ci_code_review.py:4 - test_code_review_soft_fails_when_all_model_providers_are_unavailable
    - tests/test_enhanced_systems.py:41 - test_output_manager
    - tests/test_enhanced_systems.py:79 - test_error_handler
    - tests/test_enhanced_systems.py:107 - test_progress_tracker
@@ -45,10 +46,9 @@
    - tests/test_smithery_mcp.py:632 - test_all_servers
    - tests/test_smithery_mcp.py:660 - test_http_with_semaphore
    - tests/test_smithery_mcp.py:664 - test_stdio_with_semaphore
-   - tests/test_opencode_github_worker.py:383 - test_code_review_soft_fails_when_all_model_providers_are_unavailable
 
 ================================================================================
 점검 결과 요약
 ================================================================================
-⚠️ 31개 이슈 발견 - 위의 상세 내용 참조
+⚠️ 32개 이슈 발견 - 위의 상세 내용 참조
 ================================================================================
