@@ -371,7 +371,10 @@ jobs:
             NUMBER=$(echo "$PR" | jq -r '.number')
             TITLE=$(echo "$PR" | jq -r '.title // empty')
             BASE_BRANCH=$(echo "$PR" | jq -r '.baseRefName')
-            MERGE_SUBJECT=$(python scripts/validate_commit_messages.py --normalize-title "$TITLE")
+            if ! MERGE_SUBJECT=$(python scripts/validate_commit_messages.py --normalize-title "$TITLE"); then
+              echo "Skipping #$NUMBER: title fails commit message policy."
+              continue
+            fi
 
             echo "$PR" > current-pr.json
             python scripts/check_pr_mergeability.py --pr-json-file current-pr.json
