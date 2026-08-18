@@ -1,1 +1,1 @@
-{"type": "fix", "subject": "unblock pull request 1453"}
+{"type": "fix", "subject": "improve pagination, rate limiting, and error handling in github actions workflow"}
