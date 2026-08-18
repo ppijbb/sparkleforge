@@ -1,1 +1,1 @@
-{"type": "fix", "subject": "prevent attributeerror from decoding subprocess output when text mode is used"}
+{"type": "fix", "subject": "triage issue 1411"}
