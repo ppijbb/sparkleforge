@@ -1,1 +1,1 @@
-{"type": "fix", "subject": "lfdb dogfooding: dx/ux audit findings (12 items) for follow-up fix pass"}
+{"type": "fix", "subject": "agentharness token budget double-counts tokens_used from both task result and exec_result"}
