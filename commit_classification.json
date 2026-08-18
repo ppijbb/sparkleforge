@@ -1,1 +1,1 @@
-{"type": "fix", "subject": "lfdb dogfooding: dx/ux audit findings (12 items) for follow-up fix pass"}
+{"type": "chore", "subject": "resolve todo at src/core/autonomous_orchestrator.py:277"}

@@ -1,1 +1,1 @@
-[]
+[{"body":"OpenCode-generated fix for https://github.com/ppijbb/sparkleforge/issues/1485.\n\nRefs #1485 (not auto-closed: diff only touches workflow/docs files and the issue still has 4 unresolved checklist item(s) and the diff never touches any of the symbols/paths the issue names — needs a real follow-up implementation)\n\nSource run: https://github.com/ppijbb/sparkleforge/actions/runs/32157456840","headRefName":"fix/1485-32157456840","number":1487}]
