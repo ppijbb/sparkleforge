@@ -34,7 +34,7 @@ concurrency:
       github.event.inputs.issue_number ||
       github.run_id
     }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   actions: write
@@ -58,6 +58,7 @@ jobs:
          github.event.label.name == 'triage-needed')) ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode'))
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
       pr_url: ${{ steps.pr.outputs.pr_url }}
@@ -125,13 +126,12 @@ jobs:
             gh issue list \
               --repo "${{ github.repository }}" \
               --state open \
-              --limit 100 \
-              --json number,labels \
-              > open-issue-candidates.json
+              --limit 1000 \
+              --json number,labels > open-issue-candidates.json
             gh pr list \
               --repo "${{ github.repository }}" \
               --state open \
-              --limit 100 \
+              --limit 1000 \
               --json number,headRefName,body \
               > open-pr-candidates.json
             uv run sparkleforge ci select-issue \
@@ -221,7 +221,7 @@ jobs:
         run: |
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
-            --remove-label auto-fix-failed,auto-fix-pr-opened,auto-fix-requested || true
+            --remove-label auto-fix-failed,auto-fix-pr-opened,auto-fix-requested 2>/dev/null || true
 
       - name: OpenCode repair loop
         if: steps.context.outputs.skip != 'true'
