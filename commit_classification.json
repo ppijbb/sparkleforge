@@ -1,1 +1,1 @@
-{"type": "fix", "subject": "improve pagination, rate limiting, and error handling in github actions workflow"}
+{"type": "fix", "subject": "prevent attributeerror from decoding subprocess output when text mode is used"}

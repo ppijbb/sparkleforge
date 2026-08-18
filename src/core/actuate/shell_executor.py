@@ -24,6 +24,12 @@ class SecureShellExecutor:
         self.blacklist = blacklist if blacklist is not None else COMMAND_BLACKLIST
         self.remote_session = remote_session
 
+    def _safe_decode(self, data: Any) -> str:
+        """Safely decode bytes to string, or return string as-is."""
+        if isinstance(data, bytes):
+            return data.decode(errors="replace")
+        return str(data) if data is not None else ""
+
     def _is_safe(self, command: str) -> bool:
         """Check if command contains blacklisted items."""
         cmd_lower = command.strip().lower()
@@ -69,17 +75,17 @@ class SecureShellExecutor:
             proc = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
             
             # Await with timeout
             try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                out, err = await asyncio.wait_for(
                     proc.communicate(), 
                     timeout=timeout
                 )
-                stdout = stdout_bytes.decode(errors="replace")
-                stderr = stderr_bytes.decode(errors="replace")
+                stdout = self._safe_decode(out)
+                stderr = self._safe_decode(err)
                 returncode = proc.returncode
                 
                 status = "success" if returncode == 0 else "failed"
