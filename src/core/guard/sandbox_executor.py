@@ -224,8 +224,8 @@ class SandboxExecutor:
                     duration_ms=(time.monotonic() - start) * 1000,
                     sandbox_type=sandbox_type, killed=True)
 
-            stdout   = result.stdout
-            stderr   = result.stderr
+            stdout   = result.stdout.decode(errors="replace")
+            stderr   = result.stderr.decode(errors="replace")
             returncode = result.returncode
 
             signature = self._detect_intrusion(stdout, stderr)
