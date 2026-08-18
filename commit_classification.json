@@ -1,1 +1,1 @@
-{"type": "fix", "subject": "lfdb dogfooding: dx/ux audit findings (12 items) for follow-up fix pass"}
+{"type": "fix", "subject": "edit_file fuzzy match uses char-level sequencematcher on full file content \u2014 o(n*m) blocking in async path"}
