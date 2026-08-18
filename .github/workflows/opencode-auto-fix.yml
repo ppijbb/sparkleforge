@@ -27,13 +27,13 @@ on:
 concurrency:
   group: >-
     opencode-auto-fix-${{
-      (github.event_name == 'issue_comment' &&
+      github.event_name == 'issue_comment' &&
       !contains(github.event.comment.body, '@opencode') &&
       github.run_id ||
       github.event.issue.number ||
       github.event.inputs.issue_number ||
       github.run_id
-    })
+    }}
   cancel-in-progress: false
 
 permissions:
@@ -125,7 +125,7 @@ jobs:
           else
             gh issue list \
               --repo "${{ github.repository }}" \
-              --state open --label auto-fix-failed \
+              --state open \
               --limit 1000 \
               --json number,labels > open-issue-candidates.json
             gh pr list \
@@ -256,6 +256,7 @@ jobs:
         id: pr
         if: steps.commit.outputs.has_changes == 'true'
         env:
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           ISSUE_NUMBER="${{ steps.context.outputs.issue_number }}"
           BASE_BRANCH="${{ steps.context.outputs.base_branch }}"
@@ -439,7 +440,7 @@ jobs:
             --force >/dev/null 2>&1 || true
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
-            --remove-label auto-fix-pr-opened 2>/dev/null || true
+            --remove-label auto-fix-pr-opened \
             --add-label auto-fix-failed || true
           {
             echo "OpenCode auto-fix failed before a PR could be created."
