@@ -1,1 +1,1 @@
-{"type": "fix", "subject": "prevent attributeerror from decoding subprocess output when text mode is used"}
+{"type": "fix", "subject": "lfdb dogfooding: dx/ux audit findings (12 items) for follow-up fix pass"}
