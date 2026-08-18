@@ -1,3 +1,4 @@
+import logging
 """SparkleForge REPL CLI (완전 CLI 환경)
 
 prompt_toolkit 기반의 완전한 REPL 환경 제공.
@@ -10,6 +11,13 @@ prompt_toolkit 기반의 완전한 REPL 환경 제공.
 import locale
 import logging
 import shlex
+        
+        # REPL 모드에서는 기본 로깅 레벨을 WARNING으로 설정하고
+        # src.cli 네임스페이스만 INFO 레벨을 허용하여 로그 누출 방지
+        logging.getLogger().setLevel(logging.WARNING)
+        for name in logging.root.manager.loggerDict:
+            if not name.startswith("src.cli"):
+                logging.getLogger(name).setLevel(logging.WARNING)
 import sys
 from datetime import datetime
 
