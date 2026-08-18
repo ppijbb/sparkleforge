@@ -174,7 +174,7 @@ jobs:
             echo "- Only if no Anvil roadmap sub-issue is open: if a PR is open and blocked by a workflow or review failure, prefer a roadmap item that unblocks it."
             echo "- Only if neither of the above applies: propose a new item, but justify it against docs/ANVIL_PLAN.md section 4 so it extends the existing phase structure instead of ignoring it."
             echo "- If repeated daily-roadmap failure issues are open, prefer a roadmap item that restores daily roadmap generation/update reliability."
-            echo "- Do not create a generic trend-only item when a concrete open issue, PR, or Anvil roadmap sub-issue is more actionable."
+            echo "- If PR #1453 is open, prioritize unblocking it."
           } >> github-planning-context.md
 
           {
