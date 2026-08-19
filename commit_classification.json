@@ -1,1 +1,0 @@
-{"type": "fix", "subject": "agentharness token budget double-counts tokens_used from both task result and exec_result"}

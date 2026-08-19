@@ -34,7 +34,33 @@ opencode-worker-error.log
 opencode.patch
 opencode-extra-context.md
 opencode-verify.log
+opencode-self-verify.log
 issue-context.md
+
+# CI/automation scratch state: written fresh by each workflow run, never
+# meant to be committed. Being tracked in git made every auto-fix PR carry
+# a diff to these shared files, so any two open fix PRs always conflicted.
+commit_classification.json
+selected_issue.txt
+open-issue-candidates.json
+open-pr-candidates.json
+current-pr.json
+pr_meta.json
+merge_decision.json
+mergeability_result.json
+substantiality_result.json
+triage_result.json
+review_result.txt
+merge-decision-comment.md
+review-comment.md
+gemini-review-feedback.md
+diff.txt
+open_issues.json
+existing-todo-issues.json
+anvil-milestone.json
+anvil-subissue-status.json
+sparkleforge-roadmap-console.log
+sparkleforge-roadmap-error.log
 .checkpoints/
 /data/
 scratch/
