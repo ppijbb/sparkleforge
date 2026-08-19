@@ -389,5 +389,5 @@ jobs:
           gh workflow run opencode-auto-fix.yml \
             --repo "${{ github.repository }}" \
             --field issue_number="${{ steps.create_issue.outputs.issue_number }}" \
-            --field max_iterations="${{ github.event.inputs.max_iterations || '3' }}" || true
+            --field max_iterations="${{ github.event.inputs.max_iterations || '3' }}"
           echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created and dispatched to opencode-auto-fix.yml."

@@ -14,6 +14,7 @@ Robust patch application strategy (src/core/patch_ops.py):
 
 from __future__ import annotations
 
+import asyncio
 import re
 import sys
 from pathlib import Path
@@ -378,7 +379,10 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     before_signature = repository_change_signature()
     patch_path.write_text(diff, encoding="utf-8")
 
-    success, err = _apply_patch(patch_path)
+    # Offload patch application to executor to avoid blocking the event loop
+    # during potentially expensive character-level fuzzy matching in _apply_patch.
+    loop = asyncio.get_event_loop()
+    success, err = await loop.run_in_executor(None, _apply_patch, patch_path)
     if not success:
         print(err, file=sys.stderr)
         print("--- Failed Patch ---", file=sys.stderr)

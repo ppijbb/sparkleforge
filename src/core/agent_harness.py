@@ -583,8 +583,11 @@ class AgentHarness:
         tokens_this_pass = 0
         for task in tasks:
             result = task.get("result")
-            if isinstance(result, dict):
+            # Canonical source: task["result"]["tokens_used"]
+            # If exec_result was already merged into result, we only count it once.
+            if isinstance(result, dict) and "tokens_used" in result:
                 tokens_this_pass += result.get("tokens_used", 0) or 0
+                result.pop("tokens_used", None) # Prevent double-counting if re-processed
 
         state["meta"]["total_tokens_used"] = (
             state["meta"].get("total_tokens_used", 0) + tokens_this_pass
