@@ -107,6 +107,28 @@ def test_module_entrypoint_delegates_to_real_repository_cli() -> None:
     assert "Generated roadmap based on:" not in entrypoint
 
 
+def test_main_entry_does_not_chdir_to_the_package_install_dir(tmp_path, monkeypatch, capsys) -> None:
+    # Regression test for #1222: the installed `sparkleforge`/`sparkle` command
+    # used to unconditionally os.chdir() to its own package install directory
+    # before dispatching, so running it from another project's directory
+    # silently operated on SparkleForge's own repo instead -- unlike git, npx,
+    # or eslint, which respect the caller's cwd. `main_entry()` chdir's (if at
+    # all) before any argparse dispatch, so even `--help` exercises the bug.
+    from src.cli import entry
+
+    other_project = tmp_path / "other-project"
+    other_project.mkdir()
+    monkeypatch.chdir(other_project)
+    monkeypatch.setattr(sys, "argv", ["sparkleforge", "--help"])
+
+    try:
+        entry.main_entry()
+    except SystemExit:
+        pass  # argparse --help exits 0 after printing
+
+    assert Path.cwd() == other_project
+
+
 def test_report_generator_history_prunes_to_cap(tmp_path, monkeypatch) -> None:
     from src.generation import report_generator
 
