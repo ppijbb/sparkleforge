@@ -102,6 +102,15 @@ class GreedyOverseerAgent:
     async def evaluate_results(
         self, user_request: str, execution_results: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
+        """Compatibility wrapper used by the orchestrator verification node.
+        
+        Note: For code-based tasks, the overseer's academic/verified source
+        requirements are relaxed to avoid blocking progress on non-research tasks.
+        """
+        is_code_task = any(
+            "code" in r.get("task_type", "").lower() or "implement" in r.get("task_type", "").lower()
+            for r in execution_results
+        )
         """Compatibility wrapper used by the orchestrator verification node."""
         state = {
             "user_request": user_request,
@@ -112,6 +121,7 @@ class GreedyOverseerAgent:
             "overseer_requirements": [],
             "overseer_iterations": 0,
             "completeness_scores": {},
+            "is_code_task": is_code_task,
         }
         updated = await self.evaluate_execution_results(state)
         return {"decision": updated.get("overseer_decision", "proceed")}
@@ -279,6 +289,11 @@ class GreedyOverseerAgent:
             # Count sources by type
             academic_sources = self._count_academic_sources(verified_results)
             verified_sources = len([r for r in verified_results if r.get("status") == "verified"])
+            
+            # Relax requirements for code tasks
+            if state.get("is_code_task", False):
+                academic_sources = self.min_academic_sources
+                verified_sources = self.min_verified_sources
 
             # Make decision
             (
