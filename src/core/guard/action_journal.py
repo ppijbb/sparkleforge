@@ -88,7 +88,14 @@ class ActionJournal:
                             try:
                                 data = json.loads(line)
                                 self._entries.append(JournalEntry(**data))
-                            except json.JSONDecodeError as e:
+                            except Exception as e:
+                                # issue #1509: this used to catch only
+                                # json.JSONDecodeError, so a line that's
+                                # valid JSON but fails JournalEntry
+                                # validation (or a torn read racing a
+                                # concurrent writer) escaped to the outer
+                                # handler below and aborted the whole load,
+                                # silently dropping every entry after it.
                                 logger.warning("Skipping corrupt journal line: %s", e)
                 logger.info("Loaded %d journal entries", len(self._entries))
             except Exception as e:
