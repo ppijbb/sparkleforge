@@ -232,12 +232,17 @@ jobs:
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
           OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
         run: |
+          set +e
           uv run sparkleforge autofix run \
             --issue-context issue-context.md \
             --commit-title "${{ steps.context.outputs.commit_title }}" \
             --max-iterations "${{ github.event.inputs.max_iterations || '3' }}" \
             --verify-command "${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall -q src scripts' }}" \
-            --self-verify-command "${{ vars.OPENCODE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}"
+            --self-verify-command "${{ vars.OPENCODE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}" \
+            > opencode-worker-error.log 2>&1
+          EXIT_CODE=$?
+          set -e
+          exit $EXIT_CODE
 
       - name: Push OpenCode changes
         id: commit
