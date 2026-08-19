@@ -28,14 +28,28 @@ class GuardPlane:
     def __init__(self) -> None:
         self.capability_manager = CapabilityManager()
         self.sandbox_executor   = SandboxExecutor()
-        self.action_journal     = ActionJournal()
-        self.anomaly_detector   = AnomalyDetector()
-        self.credential_vault   = CredentialVault()
+        self._action_journal    = None
+        self._anomaly_detector  = None
+        self._credential_vault  = None
 
-        # Wire anomaly alerts to journal
-        self.anomaly_detector.register_alert_callback(self._on_anomaly)
+    @property
+    def action_journal(self) -> ActionJournal:
+        if self._action_journal is None:
+            self._action_journal = ActionJournal()
+        return self._action_journal
 
-        logger.info("GuardPlane initialized with all security subsystems")
+    @property
+    def anomaly_detector(self) -> AnomalyDetector:
+        if self._anomaly_detector is None:
+            self._anomaly_detector = AnomalyDetector()
+            self._anomaly_detector.register_alert_callback(self._on_anomaly)
+        return self._anomaly_detector
+
+    @property
+    def credential_vault(self) -> CredentialVault:
+        if self._credential_vault is None:
+            self._credential_vault = CredentialVault()
+        return self._credential_vault
 
     def _on_anomaly(self, event: Any) -> None:
         """Log anomaly events to the action journal."""
