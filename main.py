@@ -503,7 +503,6 @@ EXAMPLES:
     cli_run_parser = cli_subparsers.add_parser("run", help="Run query with CLI agent")
     cli_run_parser.add_argument("agent_name", help="CLI agent name")
     cli_run_parser.add_argument("query", help="Query to execute")
-    cli_run_parser.add_argument("--mode", help="Execution mode")
     cli_run_parser.add_argument("--files", nargs="*", help="Related files")
 
     # nightwelding 커맨드 (재현-우선 자율 이슈 수정 파이프라인)

@@ -1428,8 +1428,6 @@ async def handle_cli_command(args):
         try:
             # 실행 옵션 준비
             kwargs = {}
-            if hasattr(args, "mode") and args.mode:
-                kwargs["mode"] = args.mode
             if hasattr(args, "files") and args.files:
                 kwargs["files"] = args.files
 
