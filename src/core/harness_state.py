@@ -122,29 +122,6 @@ def check_token_budget(meta: "MetaState", session_token_limit: int) -> str | Non
     return None
 
 
-def _detect_interaction_mode() -> str:
-    """실행 환경을 감지하여 HIL interaction mode를 결정합니다.
-
-    Returns:
-        'interactive': UI/Streamlit 환경에서 사용자와 상호작용 가능
-        'autonomous': CLI/batch/background 환경에서 LLM이 자율 추론
-    """
-    import os
-    import sys
-
-    # Streamlit UI 환경
-    if "streamlit" in sys.modules:
-        return "interactive"
-    # Jupyter/IPython 환경
-    if hasattr(sys, "ps1"):
-        return "interactive"
-    # 명시적 interactive 모드 환경변수
-    if os.getenv("SPARKLE_INTERACTIVE", "").lower() in ("true", "1", "yes"):
-        return "interactive"
-    # 그 외는 autonomous
-    return "autonomous"
-
-
 def create_initial_harness_state(
     session_id: str | None, user_query: str, max_iterations: int = 10,
     identity: str = "researcher",
@@ -195,7 +172,7 @@ def create_initial_harness_state(
             "observation_snapshot": {},
         },
         "hil": {
-            "interaction_mode": _detect_interaction_mode(),
+            "interaction_mode": "autonomous",
             "pending_questions": [],
             "resolved_clarifications": {},
             "inference_log": [],

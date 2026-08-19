@@ -320,12 +320,6 @@ class AgentHarness:
         except Exception as e:
             logger.warning(f"[Harness] MCP Hub initialization failed: {e}")
 
-        # Wire subsystem tools (issue #1095)
-        self.subsystem_tools = {
-            "automation_schedule": AutomationEngine(),
-            "semantic_fs": SemanticFS(),
-        }
-
         tasks = state["workflow"]["tasks"]
 
         # --- Anvil Engine 경로: 핸들러가 등록된 태스크가 있으면 Anvil로 실행 ---
