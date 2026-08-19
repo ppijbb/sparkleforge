@@ -1,4 +1,4 @@
-name: Reset Stale Auto-Fix-Failed Labels
+name: Reset Stale Auto-Fix/Nightwelding-Failed Labels
 
 on:
   schedule:
@@ -6,32 +6,34 @@ on:
   workflow_dispatch:
 
 jobs:
-  reset-auto-fix-failed:
+  reset-failed-labels:
     runs-on: ubuntu-latest
     permissions:
       issues: write
     steps:
-      - name: Clear auto-fix-failed so the sweep can retry these issues
+      - name: Clear auto-fix-failed/nightwelding-failed so the sweeps can retry these issues
         env:
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
-            echo "::error::PAT repository secret is required to reset auto-fix-failed labels."
+            echo "::error::PAT repository secret is required to reset auto-fix-failed/nightwelding-failed labels."
             exit 1
           fi
 
-          gh issue list \
-            --repo "${{ github.repository }}" \
-            --state open \
-            --label auto-fix-failed \
-            --limit 100 \
-            --json number \
-            --jq '.[].number' |
-          while read -r NUMBER; do
-            [ -n "$NUMBER" ] || continue
-            echo "Clearing auto-fix-failed on #$NUMBER."
-            gh issue edit "$NUMBER" \
+          for LABEL in auto-fix-failed nightwelding-failed; do
+            gh issue list \
               --repo "${{ github.repository }}" \
-              --remove-label auto-fix-failed || true
+              --state open \
+              --label "$LABEL" \
+              --limit 100 \
+              --json number \
+              --jq '.[].number' |
+            while read -r NUMBER; do
+              [ -n "$NUMBER" ] || continue
+              echo "Clearing $LABEL on #$NUMBER."
+              gh issue edit "$NUMBER" \
+                --repo "${{ github.repository }}" \
+                --remove-label "$LABEL" || true
+            done
           done
