@@ -28,6 +28,23 @@ When asked to fix an issue:
 4. Run relevant lightweight tests or checks when practical.
 5. Leave unrelated files untouched.
 
+## Dogfooding Duty
+
+SparkleForge gets dogfooded by running it against real external target repos
+(e.g. lfdb) — this is how its own rough edges surface. This applies in every
+SparkleForge session that involves dogfooding, not just ad hoc ones.
+
+- Improving the external target repo is SparkleForge's own pipeline's job
+  (nightwelding, etc.). Don't hand-craft target-repo fixes or issues by hand
+  unless a session is specifically scoped to do a one-off.
+- While using SparkleForge against a target, watch for SparkleForge's own
+  friction: confusing output, slow steps, hardcoded assumptions, anything
+  that made the run harder than it should've been.
+- When you notice one, file it as an issue in this repo (ppijbb/SparkleForge),
+  not the target repo. This is a judgment call made in the moment — do not
+  encode "detect this kind of friction" as automation logic in SparkleForge's
+  own code; the noticing is the agent's job, every session.
+
 ## Repository Conventions
 
 - Python code should follow the style already used in the surrounding module.
