@@ -111,7 +111,7 @@ class AgentOrchestrator:
     async def execute(
         self,
         request: str | None = None,
-        session_id: str | None = "default_session",
+        session_id: str | None = None,
         max_iterations: int | None = None,
         heat_seconds: float | None = None,
         **kwargs,
