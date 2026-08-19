@@ -276,8 +276,7 @@ class AutonomousOrchestrator:
         objective_id = objective_id or f"research_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         config = {"configurable": {"thread_id": objective_id}}
 
-        # Setup Supabase Real-time Logging Handler
-        # Isolated session logging is handled by the SupabaseRealtimeHandler instance per objective_id.
+        # Setup Supabase Real-time Logging Handler for isolated session logging per objective_id.
         supabase_handler = None
         root_logger = logging.getLogger()
         try:
