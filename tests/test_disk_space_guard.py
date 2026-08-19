@@ -77,3 +77,51 @@ def test_execute_coworker_goal_rejects_before_orchestrator_init(monkeypatch):
 
     result = asyncio.run(main_commands._execute_coworker_goal("do something"))
     assert result == 1
+
+
+def test_execute_coworker_goal_returns_nonzero_and_prints_error_on_failure(monkeypatch, capsys):
+    """Issue #1506: the harness catches its own failures (e.g. an LLM
+    provider exhausting rate-limit retries) and returns
+    {"success": False, "error": ...} instead of raising. This used to fall
+    straight through to `return 0`, so a totally failed run exited clean
+    with nothing printed and no way to tell it had failed."""
+    captured_kwargs = {}
+
+    async def fake_orchestrator_execute(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {"success": False, "error": "NVIDIA NIM model z-ai/glm-5.2 failed: 429"}
+
+    monkeypatch.setattr(
+        "src.core.agent_orchestrator.get_orchestrator",
+        lambda: SimpleNamespace(execute=fake_orchestrator_execute),
+    )
+
+    result = asyncio.run(main_commands._execute_coworker_goal("do something"))
+
+    assert result == 1
+    assert "NVIDIA NIM model z-ai/glm-5.2 failed: 429" in capsys.readouterr().out
+
+
+def test_execute_coworker_goal_uses_a_unique_session_id_per_invocation(monkeypatch):
+    """Issue #1508: session_id wasn't passed at all, so AgentOrchestrator's
+    default ("default_session") was used for every `work` invocation --
+    concurrent runs collided on the same session state."""
+    captured_kwargs = {}
+
+    async def fake_orchestrator_execute(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {"success": True, "content": "ok"}
+
+    monkeypatch.setattr(
+        "src.core.agent_orchestrator.get_orchestrator",
+        lambda: SimpleNamespace(execute=fake_orchestrator_execute),
+    )
+
+    asyncio.run(main_commands._execute_coworker_goal("do something"))
+    first_session_id = captured_kwargs["session_id"]
+
+    asyncio.run(main_commands._execute_coworker_goal("do something"))
+    second_session_id = captured_kwargs["session_id"]
+
+    assert first_session_id != "default_session"
+    assert first_session_id != second_session_id
