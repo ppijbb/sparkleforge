@@ -785,7 +785,11 @@ class ProviderAdaptersMixin:
                         await asyncio.sleep(wait_time)
                         continue
                     raise
-
+            
+            if response is None:
+                logger.error(f"NVIDIA NIM model {model_name} failed to return a response after {max_retries} attempts.")
+                raise RuntimeError(f"NVIDIA NIM model {model_name} failed: No response received.")
+                
             content = response.choices[0].message.content
             tool_calls = getattr(response.choices[0].message, "tool_calls", [])
 
