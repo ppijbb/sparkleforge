@@ -415,6 +415,9 @@ async def handle_work_command(args):
             logger.error(str(e))
             print(f"❌ {e}")
             return 1
+    
+    # Generate a unique session ID for this work invocation
+    session_id = f"work_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     return await _execute_coworker_goal(" ".join(args.goal), heat_seconds=heat_seconds)
 
 
