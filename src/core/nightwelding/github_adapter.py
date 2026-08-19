@@ -64,8 +64,22 @@ class GitHubAdapter(BaseNightweldingAdapter):
         issue_num = int(issue_ref) if str(issue_ref).isdigit() else issue_ref
         return fetch_issue_context(self._get_repo(), issue_num)
 
+    def _get_pr_repo(self) -> str:
+        """Repo a Draft PR should target: the upstream parent if `_get_repo()`
+        is a fork, otherwise the same repo. Detected via `gh`'s own fork
+        metadata (`isFork`/`parent`), so this isn't specific to any one repo.
+        """
+        repo = self._get_repo()
+        proc = _run(
+            ["gh", "repo", "view", repo, "--json", "isFork,parent",
+             "--jq", 'if .isFork then .parent.owner.login + "/" + .parent.name else empty end'],
+            check=False,
+        )
+        parent = proc.stdout.strip() if proc.returncode == 0 else ""
+        return parent or repo
+
     def default_base_branch(self) -> str:
-        return default_base_branch(self._get_repo())
+        return default_base_branch(self._get_pr_repo())
 
     def list_candidate_issues(
         self,
@@ -101,10 +115,22 @@ class GitHubAdapter(BaseNightweldingAdapter):
                 f"issue_ref {issue_ref!r} is not a numeric GitHub issue number; "
                 "cannot open a PR with a 'Closes #N' keyword or apply issue labels."
             )
+        fork_repo = self._get_repo()
+        pr_repo = self._get_pr_repo()
+        head = branch
+        if pr_repo != fork_repo:
+            # Cross-repo PR (fork -> upstream): head needs the fork owner
+            # prefix, and a bare "Closes #N" would target the wrong repo's
+            # issue N -- qualify it so it links instead of misfiring, and
+            # skip label/milestone lookup since those live on fork_repo.
+            head = f"{fork_repo.split('/')[0]}:{branch}"
+            if issue_num is not None:
+                body = body.replace(f"Closes #{issue_num}", f"Closes {fork_repo}#{issue_num}")
+            issue_num = None
         return open_draft_pr(
-            self._get_repo(),
+            pr_repo,
             base_branch,
-            branch,
+            head,
             title,
             body,
             issue_number=issue_num,
