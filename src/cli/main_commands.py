@@ -104,7 +104,12 @@ def _persist_run_session(session_id: str, query: str, output_text: str | None) -
 
 async def handle_run_command(args, config):
     """연구 실행 커맨드 처리"""
-    if getattr(args, "mode", "research") == "work":
+    # --mode research를 명시한 경우만 이 아래의 AutonomousOrchestrator 리서치
+    # 파이프라인으로 직행한다. mode 미지정(기본값) 또는 --mode work는 동일하게
+    # 에이전트의 classify/planner 노드(_execute_coworker_goal -> AgentHarness)로
+    # 보내 research/work 여부를 LLM이 쿼리별로 직접 판단하게 한다 -- CLI가
+    # 정적 플래그로 미리 결정해버리지 않는다.
+    if getattr(args, "mode", None) != "research":
         from src.cli.commands.run import run_command as _run_command
         return await _run_command(args, config)
 
@@ -357,8 +362,17 @@ def parse_heat_duration(duration: str) -> float:
     return value * units[unit]
 
 
-async def _execute_coworker_goal(goal: str, heat_seconds: float | None = None) -> int:
-    """Coworker(tool-use) 모드로 목표를 실행하는 공통 경로."""
+async def _execute_coworker_goal(
+    goal: str, heat_seconds: float | None = None, force_coworker: bool = True
+) -> int:
+    """목표를 실행하는 공통 경로.
+
+    force_coworker=True(기본, `work` 커맨드/명시적 `--mode work`): identity를
+    "coder"로 고정해 곧장 autonomous Hermes 루프로 보낸다.
+    force_coworker=False(`run` 기본 경로, --mode 미지정): identity/mode를
+    강제하지 않고 AgentHarness의 classify/TaskRouter(LLM) 노드가 이 목표가
+    research인지 실제 작업인지 요청마다 직접 판단하게 한다.
+    """
     from src.core.observe.system_collector import (
         check_disk_space_safety,
         check_network_connectivity,
@@ -373,19 +387,44 @@ async def _execute_coworker_goal(goal: str, heat_seconds: float | None = None) -
     if not network_ok:
         logger.warning(network_message)
 
-    logger.info(f"🤝 Starting coworker session for: {goal}")
+    if force_coworker:
+        logger.info(f"🤝 Starting coworker session for: {goal}")
+    else:
+        logger.info(f"🧭 Letting the agent classify and route: {goal}")
     from rich import get_console
 
     from src.cli.ui.spinner import stage_status
     from src.core.agent_orchestrator import get_orchestrator
 
+    custom_state = {"current_goal": goal}
+    if force_coworker:
+        custom_state["mode"] = "coworker"
+
+    # issue #1508: without an explicit session_id, AgentOrchestrator.execute()
+    # defaults every `work` invocation to the literal "default_session", so
+    # concurrent runs collide on the same session state. Generate a unique id
+    # per invocation, mirroring _resolve_run_session's pattern for `run`.
+    session_id = f"work_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+
     with stage_status(get_console(), "Working...", ("src.core.agent_harness", "src.core.agent_loop")):
         orchestrator = get_orchestrator()
         result = await orchestrator.execute(
             goal,
-            custom_state={"mode": "coworker", "current_goal": goal},
+            session_id=session_id,
+            custom_state=custom_state,
             heat_seconds=heat_seconds,
         )
+
+    # issue #1506: the harness catches its own failures internally and
+    # returns {"success": False, "error": ...} instead of raising, so this
+    # was falling through to `return 0` unconditionally -- a rate-limited or
+    # otherwise failed run exited clean with no visible error at all.
+    if not result.get("success", True):
+        error_message = result.get("error") or "coworker session failed for an unknown reason"
+        logger.error(f"Coworker session failed: {error_message}")
+        print(f"❌ Coworker session failed: {error_message}")
+        return 1
+
     print(result.get("content", ""))
 
     heat_report = result.get("metadata", {}).get("heat_report")
