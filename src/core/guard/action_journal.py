@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import fcntl
 import os
 import threading
 import time
@@ -84,8 +85,11 @@ class ActionJournal:
                     for line in f:
                         line = line.strip()
                         if line:
-                            data = json.loads(line)
-                            self._entries.append(JournalEntry(**data))
+                            try:
+                                data = json.loads(line)
+                                self._entries.append(JournalEntry(**data))
+                            except json.JSONDecodeError as e:
+                                logger.warning("Skipping corrupt journal line: %s", e)
                 logger.info("Loaded %d journal entries", len(self._entries))
             except Exception as e:
                 logger.warning("Failed to load journal: %s", e)
@@ -103,7 +107,10 @@ class ActionJournal:
         """Append entry to JSONL file."""
         try:
             with open(self._journal_path, "a") as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
                 f.write(json.dumps(asdict(entry)) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
         except Exception as e:
             logger.error("Failed to append journal entry: %s", e)
 
