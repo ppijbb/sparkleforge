@@ -157,6 +157,83 @@ def test_open_draft_pr_returns_existing_pr_without_creating_a_new_one(monkeypatc
     assert url == "https://github.com/acme/widgets/pull/99"
 
 
+def test_publish_draft_change_targets_upstream_parent_when_repo_is_a_fork(monkeypatch) -> None:
+    # Nightwelding used to open the Draft PR against `self.repo` unconditionally,
+    # so dogfooding a fork (e.g. ppijbb/lfdb, forked from qwp0905/lfdb) only ever
+    # produced PRs inside the fork itself -- never a contribution upstream. A PR
+    # against a fork must instead target the fork's parent, with the fork owner
+    # prefixed onto --head, and a bare "Closes #N" rewritten to a fully-qualified
+    # cross-repo reference so it can't accidentally reference an unrelated issue
+    # number in the upstream repo.
+    monkeypatch.setattr(github_adapter, "find_open_pr", lambda repo, branch, base: None)
+
+    calls = []
+
+    def fake_run(cmd, cwd=None, check=True):
+        calls.append(cmd)
+        if cmd[:3] == ["gh", "repo", "view"]:
+            return _FakeCompleted(returncode=0, stdout="qwp0905/lfdb\n", stderr="")
+        if cmd[:3] == ["gh", "pr", "create"]:
+            return _FakeCompleted(returncode=0, stdout="https://github.com/qwp0905/lfdb/pull/300\n", stderr="")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(github_adapter, "_run", fake_run)
+
+    adapter = github_adapter.GitHubAdapter(repo="ppijbb/lfdb")
+    url = adapter.publish_draft_change(
+        repo_root=Path("/repo"),
+        base_branch="main",
+        branch="nightwelding/42-abc",
+        title="fix: something",
+        body="OpenCode-generated fix.\n\nCloses #42",
+        issue_ref=42,
+    )
+
+    assert url == "https://github.com/qwp0905/lfdb/pull/300"
+    create_cmd = next(cmd for cmd in calls if cmd[:3] == ["gh", "pr", "create"])
+    assert "--repo" in create_cmd and create_cmd[create_cmd.index("--repo") + 1] == "qwp0905/lfdb"
+    assert "--head" in create_cmd and create_cmd[create_cmd.index("--head") + 1] == "ppijbb:nightwelding/42-abc"
+    body_arg = create_cmd[create_cmd.index("--body") + 1]
+    assert "Closes ppijbb/lfdb#42" in body_arg
+    assert "Closes #42" not in body_arg
+    # issue_number must not be forwarded cross-repo: labels/milestones live on
+    # the fork, not the upstream repo, and `gh issue view 42 --repo qwp0905/lfdb`
+    # would look up the wrong issue entirely.
+    assert "--label" not in create_cmd
+
+
+def test_publish_draft_change_stays_same_repo_when_not_a_fork(monkeypatch) -> None:
+    monkeypatch.setattr(github_adapter, "find_open_pr", lambda repo, branch, base: None)
+
+    calls = []
+
+    def fake_run(cmd, cwd=None, check=True):
+        calls.append(cmd)
+        if cmd[:3] == ["gh", "repo", "view"]:
+            return _FakeCompleted(returncode=0, stdout="\n", stderr="")  # not a fork -> empty
+        if cmd[:3] == ["gh", "issue", "view"]:
+            return _FakeCompleted(returncode=0, stdout="{}", stderr="")
+        if cmd[:3] == ["gh", "pr", "create"]:
+            return _FakeCompleted(returncode=0, stdout="https://github.com/acme/widgets/pull/1\n", stderr="")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(github_adapter, "_run", fake_run)
+
+    adapter = github_adapter.GitHubAdapter(repo="acme/widgets")
+    adapter.publish_draft_change(
+        repo_root=Path("/repo"),
+        base_branch="main",
+        branch="nightwelding/7-abc",
+        title="fix: something",
+        body="OpenCode-generated fix.\n\nCloses #7",
+        issue_ref=7,
+    )
+
+    create_cmd = next(cmd for cmd in calls if cmd[:3] == ["gh", "pr", "create"])
+    assert create_cmd[create_cmd.index("--head") + 1] == "nightwelding/7-abc"
+    assert "Closes #7" in create_cmd[create_cmd.index("--body") + 1]
+
+
 def test_run_nightwelding_issue_accepts_provider_kwarg(monkeypatch, tmp_path) -> None:
     # Regression test for #1431: run_nightwelding_issue() must accept a
     # `provider` keyword argument so the sweep call site
