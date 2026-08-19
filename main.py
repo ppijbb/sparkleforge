@@ -283,16 +283,6 @@ EXAMPLES:
 
     def add_research_command_options(command_parser):
         command_parser.add_argument("query", help="Research query")
-        command_parser.add_argument("--output", "-o", help="Output file path")
-        command_parser.add_argument(
-            "--format",
-            choices=["json", "markdown", "html"],
-            default="markdown",
-            help="Output format",
-        )
-        command_parser.add_argument(
-            "--streaming", action="store_true", help="Enable streaming output"
-        )
         command_parser.add_argument(
             "--max-tokens",
             type=int,
@@ -322,13 +312,6 @@ EXAMPLES:
             dest="continue_session",
             action="store_true",
             help="Resume the most recently active session",
-        )
-        command_parser.add_argument(
-            "--mode",
-            choices=["research", "work"],
-            default="research",
-            help="Execution mode: 'research' (default, one-shot research query) or "
-            "'work' (coworker/tool-use goal execution, same path as the 'work' command)",
         )
 
     # run 커맨드
