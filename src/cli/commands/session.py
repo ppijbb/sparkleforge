@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 from typing import List
+import shutil
 
 from rich.panel import Panel
 from rich.table import Table
@@ -57,12 +58,14 @@ async def session_list_command(cli, args: List[str]):
             cli.console.print("[yellow]No sessions found[/yellow]")
             return
 
+        terminal_width = shutil.get_terminal_size().columns
+        is_tty = terminal_width > 80
         table = Table(title="Sessions", show_header=True, header_style="bold cyan")
-        table.add_column("Status", style="cyan", width=10)
-        table.add_column("Session ID", style="green", width=30)
-        table.add_column("Progress", justify="right", width=10)
-        table.add_column("Last Activity", width=20)
-        table.add_column("Query", style="dim", width=40)
+        table.add_column("Status", style="cyan", width=10 if is_tty else None)
+        table.add_column("Session ID", style="green", min_width=20 if is_tty else 36)
+        table.add_column("Progress", justify="right", width=10 if is_tty else None)
+        table.add_column("Last Activity", width=20 if is_tty else None)
+        table.add_column("Query", style="dim", width=40 if is_tty else None)
 
         status_icons = {
             SessionStatus.ACTIVE: "[green]🟢 ACTIVE[/green]",
@@ -75,7 +78,7 @@ async def session_list_command(cli, args: List[str]):
 
         for s in sessions:
             status = status_icons.get(s.status, "[dim]⚪ UNKNOWN[/dim]")
-            session_id = s.session_id[:28] + "..." if len(s.session_id) > 28 else s.session_id
+            session_id = s.session_id if is_tty else s.session_id
             progress = f"{s.progress_percentage:.1f}%"
             last_activity = _format_activity(s.last_activity)
             query = (
