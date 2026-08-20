@@ -433,8 +433,77 @@ jobs:
             --repo "${{ github.repository }}" \
             --reason "completed" || true
 
+      - name: Requeue issue after PR check failure
+        # A PR got opened but its checks failed (or merge errored out). The
+        # generic failure handler below marks the issue auto-fix-failed,
+        # which select_fixable_issue() (src/core/ci/issue_selection.py)
+        # treats as a permanent skip -- the issue then sits forever until a
+        # human manually clears the label (see PR #1512 "unblock PR 1507").
+        # Give it one automated retry with the failing checks as context
+        # instead. A still-open failed PR would also block re-selection
+        # (_pr_references_issue), so close it first.
+        if: failure() && steps.pr.outputs.pr_number != ''
+        id: requeue
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          ALREADY_REQUEUED=$(gh issue view "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --json labels --jq '[.labels[].name] | contains(["auto-fix-requeued"])')
+
+          CHECKS_SUMMARY=$(gh pr checks "${{ steps.pr.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" 2>&1 || true)
+
+          gh pr close "${{ steps.pr.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --comment "Closing: checks failed. See issue #${{ steps.context.outputs.issue_number }} for what happens next." \
+            --delete-branch || true
+          gh issue edit "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --remove-label auto-fix-pr-opened || true
+
+          # ponytail: caps retries at one requeue per issue via the
+          # auto-fix-requeued label; a repeatedly-failing fix falls through
+          # to the terminal auto-fix-failed path below instead of looping
+          # forever on cron. Raise the cap if that proves too eager.
+          if [ "$ALREADY_REQUEUED" = "true" ]; then
+            echo "requeue=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "Automated fix PR ${{ steps.pr.outputs.pr_url }} failed its checks again after one automated retry. Not requeuing further -- needs a human."
+              echo
+              echo '```text'
+              echo "$CHECKS_SUMMARY"
+              echo '```'
+            } > pr-check-failure-comment.md
+          else
+            echo "requeue=true" >> "$GITHUB_OUTPUT"
+            gh label create auto-fix-requeued \
+              --repo "${{ github.repository }}" \
+              --color FBCA04 \
+              --description "This issue's fix PR failed checks once and was automatically requeued." \
+              --force >/dev/null 2>&1 || true
+            gh issue edit "${{ steps.context.outputs.issue_number }}" \
+              --repo "${{ github.repository }}" \
+              --add-label auto-fix-requeued || true
+            {
+              echo "Automated fix PR ${{ steps.pr.outputs.pr_url }} failed its checks and was closed."
+              echo
+              echo '```text'
+              echo "$CHECKS_SUMMARY"
+              echo '```'
+              echo
+              echo "Requeuing this issue for one more automated attempt with this failure as context."
+            } > pr-check-failure-comment.md
+          fi
+
+          gh issue comment "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file pr-check-failure-comment.md
+
       - name: Report auto-fix failure on issue
-        if: failure() && steps.context.outputs.issue_number != ''
+        if: >-
+          failure() && steps.context.outputs.issue_number != '' &&
+          (steps.pr.outputs.pr_number == '' || steps.requeue.outputs.requeue == 'false')
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
