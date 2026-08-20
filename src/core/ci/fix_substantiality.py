@@ -116,7 +116,7 @@ def assess_fix_substantiality(
     reason = ""
     if overlap["substantial"] is False:
         substantial = False
-        reason = " and the diff never touches any of the symbols/paths the issue names"
+        reason = " (the diff never touches any of the symbols/paths the issue names)"
 
     return SubstantialityVerdict(substantial=substantial, reason=reason, unchecked=unchecked)
 
