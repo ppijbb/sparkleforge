@@ -10,6 +10,7 @@ No fallback or dummy code - production-level autonomous analysis only.
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 from datetime import datetime
@@ -36,11 +37,14 @@ class TaskAnalyzerAgent:
         self.llm_config = get_llm_config()
         self.agent_config = get_agent_config()
 
-        # Initialize Gemini
-        if not self.llm_config.api_key:
+        # Initialize Gemini. llm_config.api_key tracks LLM_PROVIDER's key (e.g.
+        # NVIDIA_API_KEY when LLM_PROVIDER=nvidia), not necessarily Google's --
+        # the Gemini SDK needs an actual Google key regardless of primary provider.
+        google_api_key = os.getenv("GOOGLE_API_KEY") or self.llm_config.api_key
+        if not google_api_key:
             raise ValueError("GOOGLE_API_KEY environment variable is required")
 
-        genai.configure(api_key=self.llm_config.api_key)
+        genai.configure(api_key=google_api_key)
         # LLMConfig (src/core/researcher_config.py) exposes the model name as
         # ``primary_model`` (and ``llm_model``), not ``model``. Fall back across
         # the known attribute names so this constructor no longer crashes for

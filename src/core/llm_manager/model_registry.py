@@ -80,7 +80,7 @@ class ModelRegistryMixin:
             logger.warning("OPENROUTER_API_KEY not found - OpenRouter models will be unavailable")
         if not os.getenv("GROQ_API_KEY"):
             logger.warning("GROQ_API_KEY not found - Groq models will be unavailable")
-        if not self.llm_config.api_key:
+        if not (os.getenv("GOOGLE_API_KEY") or self.llm_config.api_key):
             logger.warning("GOOGLE_API_KEY not found - Gemini models will be unavailable")
         if not os.getenv("OPENAI_API_KEY"):
             logger.warning("OPENAI_API_KEY not found - GPT models will be unavailable")
@@ -676,7 +676,10 @@ class ModelRegistryMixin:
         """모델 클라이언트 초기화."""
         try:
             if genai is not None:
-                genai.configure(api_key=self.llm_config.api_key)
+                # llm_config.api_key tracks LLM_PROVIDER's key (e.g. NVIDIA_API_KEY when
+                # LLM_PROVIDER=nvidia), not necessarily Google's -- the Gemini SDK needs
+                # an actual Google key regardless of which provider is primary (#1517-class bug).
+                genai.configure(api_key=os.getenv("GOOGLE_API_KEY") or self.llm_config.api_key)
             else:
                 logger.warning(
                     "google-generativeai library not installed. Install with: pip install google-generativeai"
