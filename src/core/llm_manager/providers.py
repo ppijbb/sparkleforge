@@ -106,6 +106,28 @@ class ProviderAdaptersMixin:
         }
 
 
+    # JSON Schema keywords the harness's tool definitions carry that Gemini's
+    # (much smaller) OpenAPI-subset Schema proto rejects outright ("Unknown
+    # field for Schema: ...") rather than ignoring.
+    _GEMINI_UNSUPPORTED_SCHEMA_KEYS = {"default", "additionalProperties", "$schema", "examples", "title"}
+
+    def _clean_gemini_schema(self, schema: Any) -> Any:
+        """Recursively drop JSON Schema keywords Gemini's Schema proto doesn't accept."""
+        if isinstance(schema, dict):
+            cleaned = {
+                k: self._clean_gemini_schema(v)
+                for k, v in schema.items()
+                if k not in self._GEMINI_UNSUPPORTED_SCHEMA_KEYS
+            }
+            if "properties" in cleaned and isinstance(cleaned["properties"], dict):
+                cleaned["properties"] = {
+                    k: self._clean_gemini_schema(v) for k, v in cleaned["properties"].items()
+                }
+            return cleaned
+        if isinstance(schema, list):
+            return [self._clean_gemini_schema(item) for item in schema]
+        return schema
+
     def _build_gemini_tools(self, tools: Any) -> list | None:
         """Convert OpenAI-style tool schemas to Gemini's function_declarations shape."""
         if not tools:
@@ -115,11 +137,12 @@ class ProviderAdaptersMixin:
             fn = tool.get("function", tool) if isinstance(tool, dict) else None
             if not fn or not fn.get("name"):
                 continue
+            parameters = fn.get("parameters") or {"type": "object", "properties": {}}
             declarations.append(
                 {
                     "name": fn["name"],
                     "description": fn.get("description", ""),
-                    "parameters": fn.get("parameters") or {"type": "object", "properties": {}},
+                    "parameters": self._clean_gemini_schema(parameters),
                 }
             )
         return [{"function_declarations": declarations}] if declarations else None
