@@ -928,13 +928,14 @@ class AgentHarness:
                 logger.info(f"✅ Autonomous Harness completed in {time.time() - start_time:.2f}s")
 
                 return {
-                    "success": True,
+                    "success": result.get("success", True),
                     "session_id": session_id,
                     "mode": "autonomous",
                     "results": result.get("content", ""),
                     "metadata": result.get("metadata", {}),
                     "iterations": result.get("iterations", 0),
                     "execution_time": time.time() - start_time,
+                    **({"error": result["error"]} if result.get("error") else {}),
                 }
             except Exception as e:
                 logger.error(f"❌ Autonomous Harness failed: {e}", exc_info=True)
