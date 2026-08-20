@@ -42,14 +42,14 @@ class TestProductionUpgrade:
                 "OPENROUTER_API_KEY": "sk-or-test_key",
                 "GOOGLE_API_KEY": "test_google_key",
                 "LLM_PROVIDER": "openrouter",
-                "LLM_MODEL": "google/gemini-3.1-flash-lite-preview",
+                "LLM_MODEL": "google/gemini-3.5-flash-lite",
                 "LLM_TEMPERATURE": "0.1",
                 "LLM_MAX_TOKENS": "4000",
-                "PLANNING_MODEL": "google/gemini-3.1-flash-lite-preview",
-                "REASONING_MODEL": "google/gemini-3.1-flash-lite-preview",
-                "VERIFICATION_MODEL": "google/gemini-3.1-flash-lite-preview",
-                "GENERATION_MODEL": "google/gemini-3.1-flash-lite-preview",
-                "COMPRESSION_MODEL": "google/gemini-3.1-flash-lite-preview",
+                "PLANNING_MODEL": "google/gemini-3.5-flash-lite",
+                "REASONING_MODEL": "google/gemini-3.5-flash-lite",
+                "VERIFICATION_MODEL": "google/gemini-3.5-flash-lite",
+                "GENERATION_MODEL": "google/gemini-3.5-flash-lite",
+                "COMPRESSION_MODEL": "google/gemini-3.5-flash-lite",
                 "BUDGET_LIMIT": "0.0",
                 "ENABLE_COST_OPTIMIZATION": "true",
                 "MCP_ENABLED": "true",
@@ -140,7 +140,7 @@ class TestProductionUpgrade:
         )
 
     def test_openrouter_gemini_integration(self, llm_orchestrator):
-        """OpenRouter + Gemini 2.5 Flash Lite 통합 확인."""
+        """OpenRouter + Gemini 3.5 Flash Lite 통합 확인."""
         # Gemini 모델들이 로드되었는지 확인
         gemini_models = [
             name
@@ -149,10 +149,10 @@ class TestProductionUpgrade:
         ]
         assert len(gemini_models) > 0, "No Gemini models loaded"
 
-        # Gemini 2.5 Flash Lite가 기본 모델인지 확인
-        assert "gemini-2.5-flash-lite" in [
+        # Gemini 3.5 Flash Lite가 기본 모델인지 확인
+        assert "gemini-3.5-flash-lite" in [
             config.model_id for config in llm_orchestrator.models.values()
-        ], "Gemini 2.5 Flash Lite should be loaded"
+        ], "Gemini 3.5 Flash Lite should be loaded"
 
     @pytest.mark.asyncio
     async def test_enhanced_health_check(self, mcp_hub):
@@ -289,7 +289,7 @@ class TestProductionUpgrade:
             assert "OPENROUTER_API_KEY" in content, (
                 "env.example should include OpenRouter API key"
             )
-            assert "google/gemini-3.1-flash-lite-preview" in content, (
+            assert "google/gemini-3.5-flash-lite" in content, (
                 "env.example should use Gemini 2.5 Flash Lite"
             )
 

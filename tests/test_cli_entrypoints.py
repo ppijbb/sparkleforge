@@ -57,7 +57,7 @@ def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
     assert "timeout-minutes: 35" in workflow
     assert "set +e\n          timeout 10m uv run python -m src.cli.entry run" in workflow
     assert "RC=$?\n          set -e" in workflow
-    assert "--model google/gemini-2.0-flash-exp" in workflow
+    assert "--model google/gemini-3.5-flash-lite" in workflow
     assert "Collect GitHub planning context" in workflow
     assert "sparkleforge report roadmap-fallback-issue" in workflow
     assert "gh pr list" in workflow
@@ -82,7 +82,7 @@ def test_module_entrypoint_injects_piped_run_query(monkeypatch) -> None:
             "--max-tokens",
             "64",
             "--model",
-            "google/gemini-2.0-flash-exp",
+            "google/gemini-3.5-flash-lite",
             "--output",
             "roadmap.md",
             "--format",

@@ -16,17 +16,17 @@ sys.path.insert(0, str(project_root))
 # Note: OPENROUTER_API_KEY must be set via environment variable
 if not os.getenv("OPENROUTER_API_KEY"):
     raise ValueError("OPENROUTER_API_KEY environment variable is required")
-os.environ.setdefault("LLM_MODEL", "google/gemini-3.1-flash-lite-preview")
+os.environ.setdefault("LLM_MODEL", "google/gemini-3.5-flash-lite")
 os.environ.setdefault("LLM_TEMPERATURE", "0.7")
 os.environ.setdefault("LLM_MAX_TOKENS", "4000")
 # Note: GOOGLE_API_KEY must be set via environment variable
 if not os.getenv("GOOGLE_API_KEY"):
     raise ValueError("GOOGLE_API_KEY environment variable is required")
-os.environ.setdefault("PLANNING_MODEL", "google/gemini-3.1-flash-lite-preview")
-os.environ.setdefault("REASONING_MODEL", "google/gemini-3.1-flash-lite-preview")
-os.environ.setdefault("VERIFICATION_MODEL", "google/gemini-3.1-flash-lite-preview")
-os.environ.setdefault("GENERATION_MODEL", "google/gemini-3.1-flash-lite-preview")
-os.environ.setdefault("COMPRESSION_MODEL", "google/gemini-3.1-flash-lite-preview")
+os.environ.setdefault("PLANNING_MODEL", "google/gemini-3.5-flash-lite")
+os.environ.setdefault("REASONING_MODEL", "google/gemini-3.5-flash-lite")
+os.environ.setdefault("VERIFICATION_MODEL", "google/gemini-3.5-flash-lite")
+os.environ.setdefault("GENERATION_MODEL", "google/gemini-3.5-flash-lite")
+os.environ.setdefault("COMPRESSION_MODEL", "google/gemini-3.5-flash-lite")
 os.environ.setdefault("BUDGET_LIMIT", "10.0")
 os.environ.setdefault("ENABLE_COST_OPTIMIZATION", "true")
 os.environ.setdefault("MAX_RESEARCHERS", "3")

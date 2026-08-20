@@ -315,18 +315,18 @@ class HealthMonitor:
         """Get Multi-Model Orchestration (Innovation 3) metrics."""
         return {
             "primary_model": getattr(
-                self.config.llm, "primary_model", "gemini-3.1-flash-lite-preview"
+                self.config.llm, "primary_model", "gemini-3.5-flash-lite"
             ),
             "planning_model": getattr(
-                self.config.llm, "planning_model", "gemini-3.1-flash-lite-preview"
+                self.config.llm, "planning_model", "gemini-3.5-flash-lite"
             ),
-            "reasoning_model": getattr(self.config.llm, "reasoning_model", "gemini-2.5-pro"),
+            "reasoning_model": getattr(self.config.llm, "reasoning_model", "gemini-3.5-flash-lite"),
             "verification_model": getattr(self.config.llm, "verification_model", "claude-sonnet-4"),
             "generation_model": getattr(
-                self.config.llm, "generation_model", "gemini-3.1-flash-lite-preview"
+                self.config.llm, "generation_model", "gemini-3.5-flash-lite"
             ),
             "compression_model": getattr(
-                self.config.llm, "compression_model", "gemini-3.1-flash-lite-preview"
+                self.config.llm, "compression_model", "gemini-3.5-flash-lite"
             ),
             "cost_optimization_enabled": getattr(self.config.llm, "enable_cost_optimization", True),
             "budget_limit": getattr(self.config.llm, "budget_limit", 100.0),

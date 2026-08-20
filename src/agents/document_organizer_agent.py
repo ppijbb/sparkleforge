@@ -567,7 +567,7 @@ Original document ({from_format}):
 Converted document ({to_format}):"""
 
         response = await mcp_hub.call_llm_async(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.5-flash-lite",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=4000,

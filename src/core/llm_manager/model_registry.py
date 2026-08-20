@@ -160,7 +160,7 @@ class ModelRegistryMixin:
         self.models["gemini-flash-lite"] = ModelConfig(
             name="gemini-flash-lite",
             provider="google",
-            model_id="gemini-2.5-flash-lite",
+            model_id="gemini-3.5-flash-lite",
             temperature=0.1,
             max_tokens=2000,
             cost_per_token=0.0001,
@@ -173,7 +173,7 @@ class ModelRegistryMixin:
         self.models["gemini-pro"] = ModelConfig(
             name="gemini-pro",
             provider="google",
-            model_id="gemini-2.5-pro",
+            model_id="gemini-3.5-flash-lite",
             temperature=0.2,
             max_tokens=4000,
             cost_per_token=0.0005,
@@ -190,7 +190,7 @@ class ModelRegistryMixin:
         self.models["gemini-flash"] = ModelConfig(
             name="gemini-flash",
             provider="google",
-            model_id="gemini-2.5-flash",
+            model_id="gemini-3.5-flash-lite",
             temperature=0.1,
             max_tokens=2000,
             cost_per_token=0.0002,

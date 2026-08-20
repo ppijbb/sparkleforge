@@ -26,7 +26,7 @@ def test_open_code_agent_keeps_openrouter_model_for_openrouter(monkeypatch):
     agent = OpenCodeAgent(model_path="moonshotai/kimi-k2.5")
 
     assert agent._model == "moonshotai/kimi-k2.5"
-    assert agent._google_model() == "gemini-3.1-flash-lite-preview"
+    assert agent._google_model() == "gemini-3.5-flash-lite"
     assert agent._max_tokens == 4096
 
 

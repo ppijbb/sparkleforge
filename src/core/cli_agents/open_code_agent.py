@@ -26,9 +26,9 @@ OPENROUTER_FALLBACKS = [
     "minimax/minimax-m3",
     "qwen/qwen3.7-plus",
     "deepseek/deepseek-v4-flash",
-    "google/gemini-3.1-flash-lite",
+    "google/gemini-3.5-flash-lite",
 ]
-GOOGLE_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
+GOOGLE_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_CONTEXT_WINDOW = 128_000
 GOOGLE_GEMINI_CONTEXT_WINDOW = 1_000_000
 MODEL_CONTEXT_WINDOWS = {

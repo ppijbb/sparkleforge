@@ -116,7 +116,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.5-flash-lite' }}
         run: uv run sparkleforge ci code-review --diff-file diff.txt
 
       - name: Leave PR review summary
@@ -184,7 +184,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.5-flash-lite' }}
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
@@ -276,7 +276,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
-          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.1-flash-lite-preview' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL || 'google/gemini-3.5-flash-lite' }}
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
