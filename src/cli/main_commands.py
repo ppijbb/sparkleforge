@@ -21,26 +21,13 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List
 
-from src.cli.cli_result import cli_result_succeeded, extract_cli_result_content
 from src.core.autonomous_research_system import (
     WebAppManager,
-    _load_autonomous_orchestrator,
     project_root,
 )
 from src.monitoring.system_monitor import HealthMonitor
 
 logger = logging.getLogger(__name__)
-
-
-def _ensure_database_driver_for_cli() -> None:
-    """Initialize SQLite driver for lightweight CLI commands if needed."""
-    from src.core.db.database_driver import get_database_driver, set_database_driver
-    from src.core.db.sqlite_driver import SQLiteDriver
-
-    if get_database_driver() is None:
-        sqlite_db_path = project_root / "data" / "sparkleforge.db"
-        set_database_driver(SQLiteDriver(str(sqlite_db_path)))
-        logger.info("✅ SQLite database driver initialized: %s", sqlite_db_path)
 
 
 async def _resolve_run_session(args) -> tuple[str, str | None]:
@@ -85,33 +72,14 @@ async def _resolve_run_session(args) -> tuple[str, str | None]:
     return target_id, None
 
 
-def _persist_run_session(session_id: str, query: str, output_text: str | None) -> None:
-    """연구 실행 완료 후 세션을 저장해 이후 --session/--continue로 이어갈 수 있게 함."""
-    try:
-        from src.core.session_manager import get_session_manager
-
-        get_session_manager().save_session(
-            session_id,
-            agent_state={
-                "user_query": query,
-                "last_output_preview": (output_text or "")[:2000],
-            },
-            metadata={"tags": ["cli-run"]},
-        )
-    except Exception:
-        logger.debug("Session persistence skipped for %s", session_id, exc_info=True)
-
-
 async def handle_run_command(args, config):
-    """연구 실행 커맨드 처리"""
-    # --mode research를 명시한 경우만 이 아래의 AutonomousOrchestrator 리서치
-    # 파이프라인으로 직행한다. mode 미지정(기본값) 또는 --mode work는 동일하게
-    # 에이전트의 classify/planner 노드(_execute_coworker_goal -> AgentHarness)로
-    # 보내 research/work 여부를 LLM이 쿼리별로 직접 판단하게 한다 -- CLI가
-    # 정적 플래그로 미리 결정해버리지 않는다.
-    if getattr(args, "mode", None) != "research":
-        from src.cli.commands.run import run_command as _run_command
-        return await _run_command(args, config)
+    """실행 커맨드 처리.
+
+    research/work 여부는 CLI 플래그가 아니라 AgentHarness의 classify/
+    TaskRouter(LLM) 노드가 요청마다 직접 판단한다 (`--mode` 플래그 자체를
+    제거함). 세션 동시성 쿼터 등록/해제(issue #685)와 실패 시 슬롯 반드시
+    해제(issue #763)는 그대로 유지한다.
+    """
 
     def _apply_runtime_overrides() -> None:
         model_override = getattr(args, "model", None)
@@ -144,17 +112,13 @@ async def handle_run_command(args, config):
     def _sanitize_embedded_cli_flags(query: str) -> tuple[str, bool]:
         """Query 문자열에 잘못 포함된 CLI 플래그를 제거.
 
-        예: "질문 ... --format markdown --output out.md"
+        예: "질문 ... --max-tokens 500 --model foo"
         """
         if not query:
             return query, False
         markers = (
-            " --format ",
-            " --output ",
-            " --streaming",
             " --max-tokens ",
             " --model ",
-            " -o ",
         )
         cut_positions = [query.find(m) for m in markers if query.find(m) != -1]
         if not cut_positions:
@@ -174,9 +138,7 @@ async def handle_run_command(args, config):
                 "Aborting run to avoid executing a misleading/empty request."
             )
             return 1
-        logger.warning(
-            "Detected embedded CLI flags inside query text; sanitized query for research execution."
-        )
+        logger.warning("Detected embedded CLI flags inside query text; sanitized query.")
         args.query = sanitized_query
 
     task_label = getattr(args, "task", None)
@@ -209,134 +171,16 @@ async def handle_run_command(args, config):
             logger.warning(network_message)
 
         _apply_runtime_overrides()
-        logger.info(f"🔬 Starting research: {args.query}")
 
-        _ensure_database_driver_for_cli()
-        # Autonomous Orchestrator 초기화
-        AutonomousOrchestrator = _load_autonomous_orchestrator()
-        orchestrator = AutonomousOrchestrator()
+        from src.cli.commands.run import run_command as _run_command
 
-        # CLI에서 추가 단서를 즉시 받아 재시도할지 여부
-        # - 인터랙티브(실제 콘솔 입력 가능)일 때만 사용
-        # - stdin이 TTY가 아니면 자동으로 기존 비대화형 동작으로 폴백
-        should_interact = (
-            hasattr(sys, "stdin")
-            and hasattr(sys, "stdout")
-            and sys.stdin is not None
-            and sys.stdout is not None
-            and sys.stdin.isatty()
-            and sys.stdout.isatty()
-            and os.getenv("SPARKLEFORGE_CLI_INTERACTIVE", "true").lower() == "true"
-        )
-
-        def _needs_clarification(content: str) -> bool:
-            if not content:
-                return False
-            # "리포트에 질문을 넣는" 기존 패턴을 감지
-            keywords = (
-                "추가로 사용자가 제공해야 할 단서",
-                "후보 확정을 위한 추가 정보 요청",
-                "추가 질문",
-                "추가 단서",
-                "식별을 위해",
-            )
-            return any(k in content for k in keywords) and (
-                "확정" in content or "단정" in content or "미확정" in content
-            )
-
-        def _extract_clarification_block(content: str) -> str:
-            # 콘솔 표시용: 특정 섹션 헤딩 주변만 보여준다.
-            markers = (
-                "추가로 사용자가 제공해야 할 단서",
-                "후보 확정을 위한 추가 정보 요청",
-            )
-            for m in markers:
-                idx = content.find(m)
-                if idx != -1:
-                    # 다음 '---'까지 대략 잘라냄
-                    end = content.find("\n---", idx)
-                    if end == -1:
-                        end = min(len(content), idx + 1400)
-                    return content[idx : end].strip()
-            return ""
-
-        # 연구 실행 (run_research 사용)
-        base_query = args.query
-        user_addendum = ""
-        max_rounds = 3 if should_interact else 1
-
-        result: dict[str, Any] | None = None
-        for round_idx in range(max_rounds):
-            active_query = base_query if not user_addendum else f"{base_query}\n\n{user_addendum}"
-            result = await orchestrator.run_research(
-                user_request=active_query,
-                context={},
-            )
-
-            # 추가 단서가 필요하면 콘솔에서 받아서 이어가기
-            content = extract_cli_result_content(result)
-            if should_interact and _needs_clarification(content) and round_idx < max_rounds - 1:
-                clarification_block = _extract_clarification_block(content)
-                if clarification_block:
-                    print("\n[추가 단서 요청 감지]\n")
-                    print(clarification_block)
-
-                prompt = (
-                    "\n위 요청에 맞는 추가 단서(자유 입력)를 넣고 Enter를 누르면 "
-                    "SparkleForge가 이어서 재시도합니다. (원하면 빈 입력으로 건너뜁니다): "
-                )
-                try:
-                    user_input = input(prompt).strip()
-                except EOFError:
-                    user_input = ""
-
-                if not user_input:
-                    break
-
-                # 다음 라운드에서 프롬프트에 사용자 단서 반영
-                user_addendum = f"[사용자 추가 단서]\n{user_input}"
-                continue
-
-            break
-
-        # 결과 출력/저장 (output 미지정 시 output/ 아래 기본 파일 생성)
-        output_path = args.output
-        if not output_path:
-            output_dir = project_root / "output"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            ext = ".json" if args.format == "json" else ".md"
-            output_path = str(output_dir / f"query_{ts}{ext}")
-
-        text = extract_cli_result_content(result)
-        succeeded = cli_result_succeeded(result, text)
-        _persist_run_session(session_id, base_query, text)
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            if args.format == "json":
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            else:
-                f.write(text)
-        logger.info(f"✅ Results saved to {output_path}")
-
-        if text:
-            print(text)
-        else:
-            print(result)
-
-        # 실행 성공/실패를 결과 페이로드 기준으로 일관되게 반환
-        if not succeeded:
-            logger.error("❌ Research completed with failure state")
-            if not text:
-                logger.error("❌ Research produced no deliverable content")
-            return 1
+        return await _run_command(args, config)
 
     except Exception as e:
-        logger.error(f"❌ Research failed: {e}")
+        logger.error(f"❌ Run failed: {e}")
         return 1
     finally:
         get_session_control().release_active_session(session_id)
-    return 0
 
 
 def parse_heat_duration(duration: str) -> float:
@@ -367,11 +211,12 @@ async def _execute_coworker_goal(
 ) -> int:
     """목표를 실행하는 공통 경로.
 
-    force_coworker=True(기본, `work` 커맨드/명시적 `--mode work`): identity를
-    "coder"로 고정해 곧장 autonomous Hermes 루프로 보낸다.
-    force_coworker=False(`run` 기본 경로, --mode 미지정): identity/mode를
-    강제하지 않고 AgentHarness의 classify/TaskRouter(LLM) 노드가 이 목표가
-    research인지 실제 작업인지 요청마다 직접 판단하게 한다.
+    force_coworker=True(기본, `work` 커맨드): identity를 "coder"로 고정해
+    곧장 autonomous Hermes 루프로 보낸다.
+    force_coworker=False(`run` 커맨드): identity/mode를 강제하지 않고
+    AgentHarness의 classify/TaskRouter(LLM) 노드가 이 목표가 research인지
+    실제 작업인지 요청마다 직접 판단하게 한다. `run`에는 이를 우회하는
+    CLI 플래그가 없다 -- 판단은 항상 agent가 한다.
     """
     from src.core.observe.system_collector import (
         check_disk_space_safety,
@@ -506,13 +351,14 @@ async def _resolve_actions_session(args) -> tuple[str | None, bool]:
     """--session이 없으면 가장 최근 활성 세션으로 대체 (handle_run_command의 --continue와 동일한 패턴).
 
     Returns (session_id, was_inferred). KNOWN LIMITATION: AgentOrchestrator.execute()
-    (the coworker/`work` path) never persists its session state via
-    SessionManager.save_session -- only `run`/`query` does (see
-    _persist_run_session). So when session_id isn't given explicitly, "most
-    recently active session" may resolve to an unrelated research session
-    that happens to be the newest thing in that store, not the coworker
-    session that actually produced the pending actions. `was_inferred` lets
-    callers surface that assumption instead of silently acting on it.
+    only persists session state via SessionManager.save_session when
+    identity=="coder" (explicit `work`/coworker path) -- a `run` invocation
+    that the agent's own classify node routed to a research-shaped answer
+    is never saved there. So when session_id isn't given explicitly, "most
+    recently active session" may resolve to an unrelated session that
+    happens to be the newest thing in that store, not the coworker session
+    that actually produced the pending actions. `was_inferred` lets callers
+    surface that assumption instead of silently acting on it.
     """
     session_id = getattr(args, "session_id", None)
     if session_id:
@@ -1582,8 +1428,6 @@ async def handle_cli_command(args):
         try:
             # 실행 옵션 준비
             kwargs = {}
-            if hasattr(args, "mode") and args.mode:
-                kwargs["mode"] = args.mode
             if hasattr(args, "files") and args.files:
                 kwargs["files"] = args.files
 
