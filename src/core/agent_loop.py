@@ -849,7 +849,7 @@ Autonomous problem-solving contract:
         return normalized
 
 
-    TOOL_CAPABLE_PROVIDERS = ("nvidia", "openrouter", "groq", "openai")
+    TOOL_CAPABLE_PROVIDERS = ("nvidia", "openrouter", "groq", "openai", "google")
 
     def _is_tool_capable_result(self, result: Any) -> bool:
         """응답을 생성한 모델이 tool_calls를 반환할 수 있는 provider인지 확인."""
