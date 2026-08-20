@@ -4,6 +4,7 @@ Split out of the former monolithic llm_manager.py (issue #582).
 """
 
 import asyncio
+import json
 import logging
 import os
 import warnings
@@ -105,6 +106,47 @@ class ProviderAdaptersMixin:
         }
 
 
+    def _build_gemini_tools(self, tools: Any) -> list | None:
+        """Convert OpenAI-style tool schemas to Gemini's function_declarations shape."""
+        if not tools:
+            return None
+        declarations = []
+        for tool in tools:
+            fn = tool.get("function", tool) if isinstance(tool, dict) else None
+            if not fn or not fn.get("name"):
+                continue
+            declarations.append(
+                {
+                    "name": fn["name"],
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters") or {"type": "object", "properties": {}},
+                }
+            )
+        return [{"function_declarations": declarations}] if declarations else None
+
+    def _extract_gemini_tool_calls(self, response: Any) -> list[Dict[str, Any]]:
+        """Pull function_call parts out of a Gemini response into OpenAI-like tool_calls."""
+        tool_calls = []
+        candidates = getattr(response, "candidates", None) or []
+        for candidate in candidates:
+            content = getattr(candidate, "content", None)
+            parts = getattr(content, "parts", None) or []
+            for part in parts:
+                function_call = getattr(part, "function_call", None)
+                if not function_call or not getattr(function_call, "name", None):
+                    continue
+                tool_calls.append(
+                    {
+                        "id": f"call_{len(tool_calls)}",
+                        "type": "function",
+                        "function": {
+                            "name": function_call.name,
+                            "arguments": json.dumps(dict(function_call.args or {})),
+                        },
+                    }
+                )
+        return tool_calls
+
     async def _execute_gemini_model(
         self, model_name: str, prompt: str, system_message: str = None, **kwargs
     ) -> Dict[str, Any]:
@@ -114,6 +156,12 @@ class ProviderAdaptersMixin:
 
         # Context ordering for caching: static (system) first, then dynamic (prompt)
         full_prompt = self._build_gemini_prompt_ordered(system_message, prompt)
+
+        # Convert OpenAI-style tool schemas (what the harness/other providers use)
+        # into Gemini's function_declarations shape. Without this, gemini-flash was
+        # never given any tools at all, so it could only ever answer in prose --
+        # unrelated to the model's actual function-calling capability.
+        gemini_tools = self._build_gemini_tools(kwargs.get("tools"))
 
         # Optional: explicit prompt caching when google-genai and env are set
         if (
@@ -142,6 +190,7 @@ class ProviderAdaptersMixin:
                                 temperature=model_config.temperature,
                                 max_output_tokens=model_config.max_tokens,
                             ),
+                            tools=gemini_tools,
                             request_options={"timeout": 60},
                         ),
                     ),
@@ -166,6 +215,22 @@ class ProviderAdaptersMixin:
                 else:
                     # Rate limit이 아니거나 최대 재시도 횟수 초과
                     raise
+
+        # Function-call turn: response.text raises when the only parts are
+        # function_call (no text part), so handle this before any text extraction.
+        tool_calls = self._extract_gemini_tool_calls(response)
+        if tool_calls:
+            return {
+                "content": "",
+                "confidence": 0.8,
+                "quality_score": 0.8,
+                "metadata": {
+                    "model": model_name,
+                    "temperature": model_config.temperature,
+                    "max_tokens": model_config.max_tokens,
+                    "tool_calls": tool_calls,
+                },
+            }
 
         # finish_reason 체크 및 안전한 응답 처리
         finish_reason = None
