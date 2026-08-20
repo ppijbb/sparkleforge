@@ -278,7 +278,7 @@ def test_benchmark_runner():
         # Test production environment settings
         env_config = runner.config.get("environment", {})
         assert env_config.get("llm_provider") == "openrouter"
-        assert env_config.get("llm_model") == "google/gemini-3.1-flash-lite-preview"
+        assert env_config.get("llm_model") == "google/gemini-3.5-flash-lite"
         assert env_config.get("enable_auto_fallback") == False
         print("✓ Production environment configuration verified")
 

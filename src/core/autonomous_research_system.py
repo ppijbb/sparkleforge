@@ -178,7 +178,7 @@ class AutonomousResearchSystem:
             )
             logger.info("\nRequired environment variables:")
             logger.info(
-                "  - LLM_MODEL: LLM model identifier (e.g., google/gemini-3.1-flash-lite-preview)"
+                "  - LLM_MODEL: LLM model identifier (e.g., google/gemini-3.5-flash-lite)"
             )
             logger.info("  - GOOGLE_API_KEY: Your Google or Vertex AI API key")
             logger.info("  - LLM_PROVIDER: Provider name (e.g., google)")
