@@ -173,9 +173,18 @@ async def deny_command(cli, args: List[str]):
     _display_action_proposals(cli, result)
 
 
-async def work_command_from_query(args):
-    """`run --mode work`에서 진입하는 coworker 실행 경로 (query를 goal로 사용)."""
-    return await _execute_coworker_goal(getattr(args, "query", "") or "")
+async def work_command_from_query(args, force_coworker: bool = True):
+    """`run <query>`에서 진입하는 실행 경로 (query를 goal로 사용).
+
+    force_coworker=False(`run`의 기본 호출)면 identity/mode를 강제하지 않고
+    AgentHarness의 classify/TaskRouter(LLM) 노드가 research vs work 여부를
+    직접 판단하게 한다.
+    """
+    from src.cli.main_commands import _execute_coworker_goal
+
+    return await _execute_coworker_goal(
+        getattr(args, "query", "") or "", force_coworker=force_coworker
+    )
 
 def _display_action_proposals(cli, state):
     proposals = state.get("action_proposals", [])

@@ -46,6 +46,7 @@ class SparkleForgeCompleter(Completer):
                 "disable",
             ],
             "config": ["show", "set", "get"],
+            "mcp": ["attach", "detach", "list"],
             "help": [],
             "exit": [],
             "quit": [],
