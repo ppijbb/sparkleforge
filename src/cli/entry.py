@@ -47,6 +47,11 @@ def _inject_stdin_query_for_run() -> None:
 def main_entry() -> None:
     """Run the repository-level CLI entry point from an installed script."""
     os.environ.setdefault("SPARKLEFORGE_ENV", "development")
+
+    # Load .env file before any other logic to ensure consistent config
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+
     project_root = Path(__file__).resolve().parent.parent.parent
     # Do NOT chdir here (issue #1222): the installed sparkleforge/sparkle
     # command must operate on the caller's cwd, like git/npx/eslint do.
