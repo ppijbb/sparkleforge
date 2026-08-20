@@ -121,6 +121,11 @@ class REPLCLI:
             forge_master_command,
         )
         from src.cli.commands.help import help_command
+        from src.cli.commands.mcp import (
+            mcp_attach_command,
+            mcp_detach_command,
+            mcp_list_command,
+        )
         from src.cli.commands.nightwelding import (
             nightwelding_list_command,
             nightwelding_run_command,
@@ -215,6 +220,11 @@ class REPLCLI:
                 "run": nightwelding_run_command,
                 "status": nightwelding_status_command,
                 "list": nightwelding_list_command,
+            },
+            "mcp": {
+                "attach": mcp_attach_command,
+                "detach": mcp_detach_command,
+                "list": mcp_list_command,
             },
             "help": help_command,
             "exit": self._handle_exit,

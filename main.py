@@ -283,16 +283,6 @@ EXAMPLES:
 
     def add_research_command_options(command_parser):
         command_parser.add_argument("query", help="Research query")
-        command_parser.add_argument("--output", "-o", help="Output file path")
-        command_parser.add_argument(
-            "--format",
-            choices=["json", "markdown", "html"],
-            default="markdown",
-            help="Output format",
-        )
-        command_parser.add_argument(
-            "--streaming", action="store_true", help="Enable streaming output"
-        )
         command_parser.add_argument(
             "--max-tokens",
             type=int,
@@ -322,13 +312,6 @@ EXAMPLES:
             dest="continue_session",
             action="store_true",
             help="Resume the most recently active session",
-        )
-        command_parser.add_argument(
-            "--mode",
-            choices=["research", "work"],
-            default="research",
-            help="Execution mode: 'research' (default, one-shot research query) or "
-            "'work' (coworker/tool-use goal execution, same path as the 'work' command)",
         )
 
     # run 커맨드
@@ -520,7 +503,6 @@ EXAMPLES:
     cli_run_parser = cli_subparsers.add_parser("run", help="Run query with CLI agent")
     cli_run_parser.add_argument("agent_name", help="CLI agent name")
     cli_run_parser.add_argument("query", help="Query to execute")
-    cli_run_parser.add_argument("--mode", help="Execution mode")
     cli_run_parser.add_argument("--files", nargs="*", help="Related files")
 
     # nightwelding 커맨드 (재현-우선 자율 이슈 수정 파이프라인)
