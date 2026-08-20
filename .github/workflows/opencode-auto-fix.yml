@@ -107,16 +107,17 @@ jobs:
             TARGET_REPO="${{ github.repository }}"
           fi
           echo "target_repo=$TARGET_REPO" >> "$GITHUB_OUTPUT"
-          if [ "$TARGET_REPO" != "${{ github.repository }}" ]; then
-            echo "Cross-repo dogfooding target detected ($TARGET_REPO). Cloning external checkout."
-            EXTERNAL_WORK_DIR="$RUNNER_TEMP/target-repo"
-            rm -rf "$EXTERNAL_WORK_DIR"
-            mkdir -p "$EXTERNAL_WORK_DIR"
-            gh repo clone "$TARGET_REPO" "$EXTERNAL_WORK_DIR" -- --depth=1 --no-tags
-            echo "target_path=$EXTERNAL_WORK_DIR" >> "$GITHUB_OUTPUT"
-          else
-            echo "target_path=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
-          fi
+          
+          # Always isolate execution to an independent work directory to prevent
+          # mutating a shared local working directory (fixes issue #1524).
+          WORK_DIR="$RUNNER_TEMP/autofix-workspace"
+          rm -rf "$WORK_DIR"
+          mkdir -p "$WORK_DIR"
+          echo "Cloning $TARGET_REPO into isolated worktree $WORK_DIR"
+          gh repo clone "$TARGET_REPO" "$WORK_DIR" -- --depth=1 --no-tags
+          cd "$WORK_DIR"
+          
+          echo "target_path=$WORK_DIR" >> "$GITHUB_OUTPUT"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
