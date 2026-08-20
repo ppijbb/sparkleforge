@@ -123,6 +123,10 @@ class ProviderAdaptersMixin:
                 cleaned["properties"] = {
                     k: self._clean_gemini_schema(v) for k, v in cleaned["properties"].items()
                 }
+            # Gemini requires "items" on any array-typed schema; plain JSON Schema
+            # doesn't (an itemless array just means "any type").
+            if cleaned.get("type") == "array" and "items" not in cleaned:
+                cleaned["items"] = {"type": "string"}
             return cleaned
         if isinstance(schema, list):
             return [self._clean_gemini_schema(item) for item in schema]
@@ -147,6 +151,17 @@ class ProviderAdaptersMixin:
             )
         return [{"function_declarations": declarations}] if declarations else None
 
+    def _proto_to_python(self, value: Any) -> Any:
+        """Recursively convert protobuf MapComposite/RepeatedComposite values
+        (e.g. FunctionCall.args) into plain dict/list/scalar so json.dumps works."""
+        if hasattr(value, "items"):
+            return {k: self._proto_to_python(v) for k, v in value.items()}
+        if isinstance(value, (str, bytes)):
+            return value
+        if hasattr(value, "__iter__"):
+            return [self._proto_to_python(v) for v in value]
+        return value
+
     def _extract_gemini_tool_calls(self, response: Any) -> list[Dict[str, Any]]:
         """Pull function_call parts out of a Gemini response into OpenAI-like tool_calls."""
         tool_calls = []
@@ -164,7 +179,7 @@ class ProviderAdaptersMixin:
                         "type": "function",
                         "function": {
                             "name": function_call.name,
-                            "arguments": json.dumps(dict(function_call.args or {})),
+                            "arguments": json.dumps(self._proto_to_python(function_call.args or {})),
                         },
                     }
                 )
