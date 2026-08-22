@@ -26,11 +26,8 @@ DEFAULT_MODEL = "z-ai/glm-5.2:free"
 OPENROUTER_FALLBACKS = [
     "z-ai/glm-5.2:free",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "poolside/laguna-s-2.1:free",
     "google/gemma-4-31b-it:free",
-    "cohere/north-mini-code:free",
     "dots-studio/dots-3-note-preview:free",
-    "liquid/lfm-2.5-2.6b:free",
 ]
 GOOGLE_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_CONTEXT_WINDOW = 128_000
@@ -51,12 +48,9 @@ MODEL_CONTEXT_WINDOWS = {
     "z-ai/": 131_072,
     "glm-": 131_072,
     "nvidia/nemotron-3-ultra-550b-a55b": 1_000_000,
-    "poolside/laguna-s-2.1": 262_144,
     "google/gemma-4-31b-it": 262_144,
     "google/gemma-4": 262_144,
-    "cohere/north-mini-code": 256_000,
     "dots-studio/dots-3-note-preview": 512_000,
-    "liquid/lfm-2.5-2.6b": 65_536,
 }
 
 
