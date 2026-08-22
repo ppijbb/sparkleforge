@@ -84,7 +84,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
-          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'minimax/minimax-m2.5:free' }}
+          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'z-ai/glm-5.2:free' }}
         run: |
           echo "Resolved Nightwelding base branch: ${NIGHTWELDING_BASE_BRANCH}"
           ARGS=(nightwelding run --max-iterations "${{ github.event.inputs.max_iterations || '4' }}")

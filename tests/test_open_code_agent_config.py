@@ -1,4 +1,4 @@
-from src.core.cli_agents.open_code_agent import OpenCodeAgent
+from src.core.cli_agents.open_code_agent import DEFAULT_MODEL, OPENROUTER_FALLBACKS, OpenCodeAgent
 
 
 def test_open_code_agent_uses_cli_model_override_for_google_api(monkeypatch):
@@ -48,6 +48,13 @@ def test_open_code_agent_context_window_honors_env_override(monkeypatch):
     agent = OpenCodeAgent(model_path="google/gemini-2.0-flash-exp")
 
     assert agent.context_window() == 64_000
+
+
+def test_openrouter_fallback_chain_is_all_free_tier():
+    # A paid model id here 402s: OPENROUTER_API_KEY on this account has never
+    # purchased credits, so the fallback chain must stay free-tier-only.
+    assert DEFAULT_MODEL.endswith(":free")
+    assert all(model.endswith(":free") for model in OPENROUTER_FALLBACKS)
 
 
 def test_open_code_agent_prompt_budget_reserves_output(monkeypatch):
