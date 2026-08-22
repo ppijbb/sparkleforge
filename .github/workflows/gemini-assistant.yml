@@ -46,7 +46,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
-            echo "::error::PAT repository secret is required to route Gemini review feedback to OpenCode."
+            echo "::error::PAT repository secret is required to route Gemini review feedback to SparkleForge."
             exit 1
           fi
 
@@ -66,7 +66,7 @@ jobs:
 
           for ISSUE in $ISSUES; do
             {
-              echo "@opencode"
+              echo "@sparkleforge"
               echo
               echo "Gemini Code Assist left review feedback on PR #$PR_NUMBER that should be incorporated into the next automated fix attempt."
               echo

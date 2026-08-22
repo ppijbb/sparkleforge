@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       max_iterations:
-        description: 'Maximum OpenCode repair attempts after the issue is created'
+        description: 'Maximum SparkleForge repair attempts after the issue is created'
         required: false
         default: '3'
         type: string
@@ -381,7 +381,7 @@ jobs:
 
           git checkout main
 
-      - name: Dispatch OpenCode follow-up
+      - name: Dispatch SparkleForge follow-up
         if: steps.create_issue.outputs.created == 'true'
         env:
           GH_TOKEN: ${{ secrets.PAT }}
