@@ -226,6 +226,7 @@ jobs:
 
       - name: OpenCode repair loop
         if: steps.context.outputs.skip != 'true'
+        working-directory: ${{ steps.context.outputs.target_path }}
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -248,6 +249,7 @@ jobs:
       - name: Push OpenCode changes
         id: commit
         if: steps.context.outputs.skip != 'true'
+        working-directory: ${{ steps.context.outputs.target_path }}
         run: |
           if ! git rev-parse --verify HEAD >/dev/null 2>&1 ||
              [ -z "$(git log --oneline origin/${{ steps.context.outputs.base_branch }}..HEAD)" ]; then
@@ -261,6 +263,7 @@ jobs:
       - name: Open or find pull request
         id: pr
         if: steps.commit.outputs.has_changes == 'true'
+        working-directory: ${{ steps.context.outputs.target_path }}
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
@@ -505,6 +508,7 @@ jobs:
         if: >-
           failure() && steps.context.outputs.issue_number != '' &&
           (steps.pr.outputs.pr_number == '' || steps.requeue.outputs.requeue == 'false')
+        working-directory: ${{ steps.context.outputs.target_path }}
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
