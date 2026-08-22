@@ -59,3 +59,19 @@ def test_strips_trailing_issue_reference():
 def test_collapses_internal_whitespace():
     result = classify_conventional_commit("fix:   too    many     spaces")
     assert result.subject == "too many spaces"
+
+
+def test_strips_embedded_issue_reference_not_just_trailing():
+    result = classify_conventional_commit(
+        "pre-existing test failures on main (baseline, unrelated to #1365)"
+    )
+    assert "#" not in result.subject
+
+
+def test_strips_leading_quote_punctuation():
+    result = classify_conventional_commit(
+        "'Failed to load journal: Expecting value...' warning prints on every "
+        "single CLI invocation before any real output"
+    )
+    assert result.subject[0].isalnum()
+    assert result.subject.startswith("failed to load journal")

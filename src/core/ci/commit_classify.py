@@ -84,7 +84,17 @@ def classify_conventional_commit(issue_title: str) -> ConventionalCommit:
     subject = raw_subject.strip()
     subject = re.sub(r"^\d{4}-\d{2}-\d{2}\s*-\s*", "", subject)
     subject = re.sub(r"\s*\(#\d+\)$", "", subject)
+    # Issue titles sometimes reference another issue/PR mid-sentence (e.g.
+    # "... (baseline, unrelated to #1365)"), which the trailing-only strip
+    # above doesn't catch. The commit-message policy bans any "#<number>"
+    # anywhere in the subject, so remove it wherever it appears.
+    subject = re.sub(r"#\d+", "", subject)
+    subject = re.sub(r"\(\s*\)", "", subject)
     subject = re.sub(r"\s+", " ", subject)
-    subject = subject.rstrip().lower()
+    subject = subject.strip().lower()
+    # Issue titles quoted verbatim (e.g. "'Failed to load journal...' warning
+    # prints ...") can start with punctuation the commit-message policy
+    # rejects as a subject opener. Drop it rather than failing downstream.
+    subject = re.sub(r"^[^a-z0-9`_(-]+", "", subject)
 
     return ConventionalCommit(type=conventional_type, subject=subject)
