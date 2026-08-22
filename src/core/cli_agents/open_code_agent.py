@@ -18,15 +18,16 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GOOGLE_GENAI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "moonshotai/kimi-k3"
+DEFAULT_MODEL = "z-ai/glm-5.2:free"
+# OpenRouter :free variants only -- the OPENROUTER_API_KEY on this account has
+# never purchased credits, so a paid model id here 402s instead of falling
+# through. Verified against https://openrouter.ai/api/v1/models on 2026-08-22;
+# re-check that endpoint if these start 404ing (free listings rotate).
 OPENROUTER_FALLBACKS = [
-    "tencent/hy3",
-    "z-ai/glm-5.2",
-    "moonshotai/kimi-k2.5",
-    "minimax/minimax-m3",
-    "qwen/qwen3.7-plus",
-    "deepseek/deepseek-v4-flash",
-    "google/gemini-3.5-flash-lite",
+    "z-ai/glm-5.2:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-31b-it:free",
+    "dots-studio/dots-3-note-preview:free",
 ]
 GOOGLE_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_CONTEXT_WINDOW = 128_000
@@ -42,9 +43,14 @@ MODEL_CONTEXT_WINDOWS = {
     "qwen/": 128_000,
     "deepseek/deepseek-v4": 1_048_576,
     "deepseek/": 163_840,
+    "z-ai/glm-5.2:free": 256_000,
     "z-ai/glm-5.2": 1_048_576,
     "z-ai/": 131_072,
     "glm-": 131_072,
+    "nvidia/nemotron-3-ultra-550b-a55b": 1_000_000,
+    "google/gemma-4-31b-it": 262_144,
+    "google/gemma-4": 262_144,
+    "dots-studio/dots-3-note-preview": 512_000,
 }
 
 
