@@ -1,4 +1,4 @@
-name: OpenCode Auto Fix PR
+name: SparkleForge Auto Fix PR
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ on:
         default: ''
         type: string
       issue_number:
-        description: 'GitHub issue number to fix with OpenCode'
+        description: 'GitHub issue number to fix with SparkleForge'
         required: false
         type: string
       max_iterations:
-        description: 'Maximum OpenCode repair attempts before opening the PR'
+        description: 'Maximum SparkleForge repair attempts before opening the PR'
         required: false
         default: '3'
         type: string
@@ -26,9 +26,9 @@ on:
 
 concurrency:
   group: >-
-    opencode-auto-fix-${{
+    sparkleforge-auto-fix-${{
       github.event_name == 'issue_comment' &&
-      !contains(github.event.comment.body, '@opencode') &&
+      !contains(github.event.comment.body, '@sparkleforge') &&
       github.run_id ||
       github.event.issue.number ||
       github.event.inputs.issue_number ||
@@ -56,7 +56,7 @@ jobs:
          github.event.action == 'reopened' ||
          github.event.label.name == 'auto-fix-requested' ||
          github.event.label.name == 'triage-needed')) ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode'))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@sparkleforge'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -215,7 +215,7 @@ jobs:
         if: >-
           steps.context.outputs.skip != 'true' &&
           (github.event_name == 'workflow_dispatch' ||
-          (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@opencode')) ||
+          (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@sparkleforge')) ||
           (github.event_name == 'issues' && github.event.label.name == 'auto-fix-requested'))
         env:
           GH_TOKEN: ${{ secrets.PAT }}
@@ -224,7 +224,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --remove-label auto-fix-failed,auto-fix-pr-opened,auto-fix-requested 2>/dev/null || true
 
-      - name: OpenCode repair loop
+      - name: SparkleForge repair loop
         if: steps.context.outputs.skip != 'true'
         working-directory: ${{ steps.context.outputs.target_path }}
         env:
@@ -246,14 +246,14 @@ jobs:
           set -e
           exit $EXIT_CODE
 
-      - name: Push OpenCode changes
+      - name: Push SparkleForge changes
         id: commit
         if: steps.context.outputs.skip != 'true'
         working-directory: ${{ steps.context.outputs.target_path }}
         run: |
           if ! git rev-parse --verify HEAD >/dev/null 2>&1 ||
              [ -z "$(git log --oneline origin/${{ steps.context.outputs.base_branch }}..HEAD)" ]; then
-            echo "::error::OpenCode completed without commits for issue #${{ steps.context.outputs.issue_number }}."
+            echo "::error::SparkleForge completed without commits for issue #${{ steps.context.outputs.issue_number }}."
             exit 1
           fi
 
@@ -270,7 +270,7 @@ jobs:
           ISSUE_NUMBER="${{ steps.context.outputs.issue_number }}"
           BASE_BRANCH="${{ steps.context.outputs.base_branch }}"
 
-          # Guard against auto-closing issues that OpenCode didn't actually
+          # Guard against auto-closing issues that SparkleForge didn't actually
           # finish: assesses two complementary signals (issue #511's
           # checklist/file-type/line-count heuristic, and issue #521's
           # issue-symbol/diff-overlap check -- catches stub diffs that touch
@@ -323,7 +323,7 @@ jobs:
 
           gh issue comment "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
-            --body "OpenCode auto-fix PR: $PR_URL"
+            --body "SparkleForge auto-fix PR: $PR_URL"
           gh label create auto-fix-pr-opened \
             --repo "${{ github.repository }}" \
             --color 0E8A16 \
@@ -432,7 +432,7 @@ jobs:
             --add-label auto-fix-merged || true
           gh issue comment "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
-            --body "OpenCode auto-fix PR merged: ${{ steps.pr.outputs.pr_url }}. This issue has been automatically closed."
+            --body "SparkleForge auto-fix PR merged: ${{ steps.pr.outputs.pr_url }}. This issue has been automatically closed."
           gh issue close "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
             --reason "completed" || true
@@ -515,14 +515,14 @@ jobs:
           gh label create auto-fix-failed \
             --repo "${{ github.repository }}" \
             --color B60205 \
-            --description "Automated OpenCode fix failed before PR creation." \
+            --description "Automated SparkleForge fix failed before PR creation." \
             --force >/dev/null 2>&1 || true
           gh issue edit "${{ steps.context.outputs.issue_number }}" \
             --repo "${{ github.repository }}" \
             --remove-label auto-fix-pr-opened \
             --add-label auto-fix-failed || true
           {
-            echo "OpenCode auto-fix failed before a PR could be created."
+            echo "SparkleForge auto-fix failed before a PR could be created."
             echo
             echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Workflow: ${{ github.workflow }}"
