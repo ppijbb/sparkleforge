@@ -89,7 +89,7 @@ def test_execute_coworker_goal_returns_nonzero_and_prints_error_on_failure(monke
 
     async def fake_orchestrator_execute(*args, **kwargs):
         captured_kwargs.update(kwargs)
-        return {"success": False, "error": "NVIDIA NIM model z-ai/glm-5.2 failed: 429"}
+        return {"success": False, "error": "NVIDIA NIM model nvidia/nemotron-3-ultra-550b-a55b failed: 429"}
 
     monkeypatch.setattr(
         "src.core.agent_orchestrator.get_orchestrator",
@@ -99,7 +99,7 @@ def test_execute_coworker_goal_returns_nonzero_and_prints_error_on_failure(monke
     result = asyncio.run(main_commands._execute_coworker_goal("do something"))
 
     assert result == 1
-    assert "NVIDIA NIM model z-ai/glm-5.2 failed: 429" in capsys.readouterr().out
+    assert "NVIDIA NIM model nvidia/nemotron-3-ultra-550b-a55b failed: 429" in capsys.readouterr().out
 
 
 def test_execute_coworker_goal_uses_a_unique_session_id_per_invocation(monkeypatch):

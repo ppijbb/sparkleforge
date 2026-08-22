@@ -578,10 +578,12 @@ class ModelRegistryMixin:
         """NVIDIA NIM 모델 로딩."""
         # 주의: 동일 model_id를 별명으로 중복 등록하면 provider cascade가
         # 같은 모델을 연달아 호출해 429를 자초하므로 단일 항목만 유지한다.
+        # z-ai/glm-5.2는 2026-08-21 NVIDIA NIM에서 EOL(410 Gone)되어 카탈로그에서
+        # 완전히 제거됨 (https://integrate.api.nvidia.com/v1/models, 2026-08-22 확인).
         nvidia_models = [
             {
-                "name": "z-ai/glm-5.2",
-                "model_id": "z-ai/glm-5.2",
+                "name": "nvidia/nemotron-3-ultra-550b-a55b",
+                "model_id": "nvidia/nemotron-3-ultra-550b-a55b",
                 "speed_rating": 8.5,
                 "quality_rating": 9.0,
                 "capabilities": [

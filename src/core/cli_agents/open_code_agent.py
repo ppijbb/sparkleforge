@@ -30,6 +30,12 @@ OPENROUTER_FALLBACKS = [
     "dots-studio/dots-3-note-preview:free",
 ]
 GOOGLE_FALLBACK_MODEL = "gemini-3.5-flash-lite"
+# z-ai/glm-5.2 (the previous pin) reached end of life on NVIDIA NIM on
+# 2026-08-21 (410 Gone) and was removed from NIM's catalog entirely --
+# confirmed against https://integrate.api.nvidia.com/v1/models on 2026-08-22.
+# nemotron-3-ultra is NVIDIA's own model, so it's far less likely to be
+# pulled out from under this pin by a third-party partner's decision.
+NVIDIA_NIM_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
 DEFAULT_CONTEXT_WINDOW = 128_000
 GOOGLE_GEMINI_CONTEXT_WINDOW = 1_000_000
 MODEL_CONTEXT_WINDOWS = {
@@ -320,8 +326,8 @@ class OpenCodeAgent(BaseCLIAgent):
             "Content-Type": "application/json",
         }
         model = self._model
-        if not model.startswith("z-ai/") and model != "glm-5.2":
-            model = "z-ai/glm-5.2"
+        if not model.startswith("nvidia/"):
+            model = NVIDIA_NIM_MODEL
         payload = {
             "model": model,
             "messages": [

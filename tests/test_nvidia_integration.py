@@ -14,7 +14,7 @@ from src.core.llm_manager import MultiModelOrchestrator, Provider, TaskType
 
 
 class TestNvidiaIntegration:
-    """NVIDIA NIM provider 및 z-ai/glm-5.2 모델 통합 검증 테스트."""
+    """NVIDIA NIM provider 및 nvidia/nemotron-3-ultra-550b-a55b 모델 통합 검증 테스트."""
 
     @pytest.fixture
     def mock_env_vars(self):
@@ -30,7 +30,7 @@ class TestNvidiaIntegration:
         env_dict = {
             "NVIDIA_API_KEY": "nvapi-test_key",
             "LLM_PROVIDER": "nvidia",
-            "LLM_MODEL": "z-ai/glm-5.2",
+            "LLM_MODEL": "nvidia/nemotron-3-ultra-550b-a55b",
             "OPENROUTER_API_KEY": orig_or or "or-test_key",
             "OPENAI_API_KEY": "openai-test_key",
             "GROQ_API_KEY": "groq-test_key",
@@ -45,11 +45,11 @@ class TestNvidiaIntegration:
         orchestrator = MultiModelOrchestrator()
         
         # 모델 목록에 등록되었는지 확인
-        assert "z-ai/glm-5.2" in orchestrator.models
+        assert "nvidia/nemotron-3-ultra-550b-a55b" in orchestrator.models
         
-        config = orchestrator.models["z-ai/glm-5.2"]
+        config = orchestrator.models["nvidia/nemotron-3-ultra-550b-a55b"]
         assert config.provider == "nvidia"
-        assert config.model_id == "z-ai/glm-5.2"
+        assert config.model_id == "nvidia/nemotron-3-ultra-550b-a55b"
         assert TaskType.DEEP_REASONING in config.capabilities
 
     @pytest.mark.asyncio
@@ -59,8 +59,8 @@ class TestNvidiaIntegration:
         
         # mock 클라이언트 직접 주입
         mock_client = MagicMock()
-        orchestrator.model_clients["z-ai/glm-5.2"] = mock_client
-        orchestrator.model_clients["glm-5.2"] = mock_client
+        orchestrator.model_clients["nvidia/nemotron-3-ultra-550b-a55b"] = mock_client
+        orchestrator.model_clients["nemotron-3-ultra-550b-a55b"] = mock_client
         
         # API 응답 모킹
         mock_response = MagicMock()
@@ -79,17 +79,17 @@ class TestNvidiaIntegration:
         result = await orchestrator.execute_with_model(
             prompt="Hello, GLM!",
             task_type=TaskType.DEEP_REASONING,
-            model_name="z-ai/glm-5.2",
+            model_name="nvidia/nemotron-3-ultra-550b-a55b",
             use_cascade=False
         )
 
         assert result.content == "NVIDIA GLM Response"
         assert result.metadata["provider"] == "nvidia"
-        assert result.metadata["model"] == "z-ai/glm-5.2"
+        assert result.metadata["model"] == "nvidia/nemotron-3-ultra-550b-a55b"
         
         # completions.create가 올바른 파라미터로 호출되었는지 검증
         mock_client.chat.completions.create.assert_called_once_with(
-            model="z-ai/glm-5.2",
+            model="nvidia/nemotron-3-ultra-550b-a55b",
             messages=[{"role": "user", "content": "Hello, GLM!"}],
             temperature=0.2,
             max_tokens=16384
@@ -103,8 +103,8 @@ class TestNvidiaIntegration:
         # mock_clients에 Mock 클라이언트 주입 (두 앨리어스 모두 등록)
         mock_nvidia_client = MagicMock()
         mock_nvidia_client.chat.completions.create.side_effect = Exception("API Error")
-        orchestrator.model_clients["z-ai/glm-5.2"] = mock_nvidia_client
-        orchestrator.model_clients["glm-5.2"] = mock_nvidia_client
+        orchestrator.model_clients["nvidia/nemotron-3-ultra-550b-a55b"] = mock_nvidia_client
+        orchestrator.model_clients["nemotron-3-ultra-550b-a55b"] = mock_nvidia_client
         
         # _try_fallback_models 자체를 모킹하여 진입 확인 및 가짜 결과 반환
         mock_fallback = AsyncMock()
@@ -121,11 +121,11 @@ class TestNvidiaIntegration:
         )
         orchestrator._try_fallback_models = mock_fallback
         
-        # execute 실행 (z-ai/glm-5.2 호출 실패 -> fallback 호출 유도)
+        # execute 실행 (nvidia/nemotron-3-ultra-550b-a55b 호출 실패 -> fallback 호출 유도)
         result = await orchestrator.execute_with_model(
             prompt="Try fallback",
             task_type=TaskType.GENERATION,
-            model_name="z-ai/glm-5.2",
+            model_name="nvidia/nemotron-3-ultra-550b-a55b",
             use_cascade=False
         )
         

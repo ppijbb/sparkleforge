@@ -2,7 +2,7 @@
 whole capability-search maze to the hardcoded "gemini-flash-lite" default --
 that fallback crashes with "Model gemini-flash-lite not found" in any
 deployment where Gemini isn't loaded (see PR #1226 review). The configured
-primary model (nvidia z-ai/glm-5.2) must declare CREATIVE itself so the
+primary model (nvidia/nemotron-3-ultra-550b-a55b) must declare CREATIVE itself so the
 select_model() fast path can return it directly, and at least one other
 provider must declare it too so _try_fallback_models() has somewhere to go
 if the primary model fails.
@@ -21,7 +21,7 @@ def test_nvidia_primary_model_declares_creative():
     registry = _Registry()
     registry._load_nvidia_models()
 
-    assert TaskType.CREATIVE in registry.models["z-ai/glm-5.2"].capabilities
+    assert TaskType.CREATIVE in registry.models["nvidia/nemotron-3-ultra-550b-a55b"].capabilities
 
 
 def test_creative_has_a_fallback_candidate_outside_nvidia():
@@ -32,7 +32,7 @@ def test_creative_has_a_fallback_candidate_outside_nvidia():
     fallback_providers = {
         config.provider
         for name, config in registry.models.items()
-        if name != "z-ai/glm-5.2" and TaskType.CREATIVE in config.capabilities
+        if name != "nvidia/nemotron-3-ultra-550b-a55b" and TaskType.CREATIVE in config.capabilities
     }
 
     assert fallback_providers, "CREATIVE needs a fallback candidate outside nvidia"
