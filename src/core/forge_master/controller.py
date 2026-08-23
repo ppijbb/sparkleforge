@@ -101,15 +101,6 @@ class ForgeMasterController:
         assigned_goal = apply_persona(assignment.assigned_goal, persona)
         fallback_candidates = assignment.fallback_agents.copy()
 
-        # Local-first 라우팅 정책: 프론티어 API 폴백은 로컬 CLI 함대 전원이
-        # 실패/미가용일 때만 최후 수단으로 선택된다. 정책 결정 로그는
-        # stdout 노이즈를 만들지 않도록 DEBUG 레벨로만 남긴다 (CLAUDE.md 준수).
-        if current_agent == "frontier_api":
-            logger.debug(
-                "ForgeMaster local-first policy: all local CLI agents unavailable/failed; "
-                "selecting frontier API fallback as last resort"
-            )
-
         # 2. 토큰 최소화 및 문맥 압축
         compact_prompt = self.token_minimizer.compact_prompt(assigned_goal)
         compact_ctx = self.token_minimizer.compact_prompt(context or "")
