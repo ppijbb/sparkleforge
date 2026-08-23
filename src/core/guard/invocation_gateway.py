@@ -14,6 +14,14 @@ forgetting to wire it in, and every decision (allowed or denied) lands in
 `ActionJournal` regardless of outcome -- so `action_journal.jsonl` alone is
 enough to reconstruct any invocation's history.
 
+`authorize()` also runs every call through `AnomalyDetector.observe()`
+(rate-limit and forbidden-pattern rules). Before this, the detector had no
+reachable call site in the single-node path this repo ships -- it was only
+invoked via `GuardPlane.check_and_execute()` through `WorkerNode`, which is
+never constructed outside `tests/test_coordinator.py`. Checking here instead
+of adding a separate opt-in call site gives it real coverage over both
+delegation and MCP tool execution at once.
+
 Credential delegation (the third path #568 names) has no real implementation
 yet -- `CredentialVault` is local secret storage with no delegation concept.
 `InvocationKind.CREDENTIAL_DELEGATION` is reserved here for whenever that
@@ -44,6 +52,7 @@ from enum import Enum
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from src.core.guard.action_journal import ActionJournal
+from src.core.guard.anomaly_detector import AnomalyDetector
 from src.core.guard.capability_manager import CapabilityManager
 
 if TYPE_CHECKING:
@@ -85,9 +94,11 @@ class InvocationGateway:
         capability_manager: CapabilityManager | None = None,
         action_journal: ActionJournal | None = None,
         identity_manager: "AgentIdentityManager | None" = None,
+        anomaly_detector: AnomalyDetector | None = None,
     ):
         self.capability_manager = capability_manager or CapabilityManager()
         self.action_journal = action_journal or ActionJournal()
+        self.anomaly_detector = anomaly_detector or AnomalyDetector()
         if identity_manager is not None:
             self.identity_manager = identity_manager
         else:
@@ -182,6 +193,20 @@ class InvocationGateway:
                 allowed = False
                 reasons.append(f"missing capability '{required_capability}'")
 
+        # AnomalyDetector.observe() previously had no reachable call site in the
+        # single-node path this repo ships (it was only ever invoked from
+        # GuardPlane.check_and_execute() via WorkerNode.handle_execute(), and
+        # WorkerNode is only ever constructed in tests/test_coordinator.py --
+        # see tests/test_os_plane_integrity.py). This gateway is the one real
+        # mandatory choke point every agent delegation and MCP tool call
+        # already routes through, so checking here (rather than adding a new
+        # opt-in call site) gives anomaly detection actual production coverage
+        # instead of a second path agents have to remember to use.
+        anomalies = self.anomaly_detector.observe(actor, description or target)
+        if any(a.severity == "critical" for a in anomalies):
+            allowed = False
+            reasons.append(f"critical anomaly detected: {anomalies[-1].reason}")
+
         if intent_guardrail is not None:
             try:
                 assessment = intent_guardrail.evaluate(description)
@@ -211,6 +236,8 @@ class InvocationGateway:
         }
         if mandate_info is not None:
             journal_metadata["mandate"] = mandate_info
+        if anomalies:
+            journal_metadata["anomalies"] = [a.reason for a in anomalies]
 
         self.action_journal.record(
             agent_id=actor,
