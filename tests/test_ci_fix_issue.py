@@ -5,9 +5,11 @@ from src.core.ci.fix_issue import (
     _apply_patch,
     _budgeted_relevant_file_contents,
     _budgeted_requested_tool_context,
+    _build_agent,
     _per_file_context_limit,
     _prompt_fits_budget,
 )
+from src.core.cli_agents.open_code_agent import OpenCodeAgent
 from src.core.patch_ops import _normalize_diff, _split_multifile_patch, _validate_patch_paths
 
 
@@ -20,6 +22,18 @@ class DummyOpenCodeAgent:
 
     def prompt_context_budget(self) -> int:
         return self.prompt_budget
+
+
+def test_build_agent_defaults_to_open_code(monkeypatch) -> None:
+    monkeypatch.delenv("AUTOFIX_CLI_AGENT", raising=False)
+    assert isinstance(_build_agent(), OpenCodeAgent)
+
+
+def test_build_agent_falls_back_to_open_code_for_unknown_name(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AUTOFIX_CLI_AGENT", "not-a-real-agent")
+    agent = _build_agent()
+    assert isinstance(agent, OpenCodeAgent)
+    assert "not-a-real-agent" in capsys.readouterr().err
 
 
 def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:

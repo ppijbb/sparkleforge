@@ -215,3 +215,19 @@ class BaseCLIAgent(ABC):
             "timeout": self.config.timeout,
             "output_format": self.config.output_format,
         }
+
+    def context_window(self) -> int:
+        """Best-known input+output context window for the active model.
+
+        Real agentic CLIs (claude, codex) manage their own repo/file context
+        internally and don't need this -- callers that pre-budget prompt
+        content (fix_issue.py) still need a safe number to call regardless of
+        which concrete agent they got, so this generic default exists for
+        agents that don't override it with a precise, model-aware value
+        (see OpenCodeAgent.context_window).
+        """
+        return 128_000
+
+    def prompt_context_budget(self, reserve_output_tokens: int = 4_096) -> int:
+        """Conservative prompt-input token budget for one agent call."""
+        return max(1_000, self.context_window() - reserve_output_tokens - 4_000)

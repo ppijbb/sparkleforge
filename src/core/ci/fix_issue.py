@@ -15,11 +15,13 @@ Robust patch application strategy (src/core/patch_ops.py):
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 from pathlib import Path
 
-from src.core.cli_agents.open_code_agent import OpenCodeAgent
+from src.core.cli_agents.base_cli_agent import BaseCLIAgent
+from src.core.cli_agents.cli_agent_manager import get_cli_agent_manager
 
 from src.core.patch_ops import (
     extract_diff,
@@ -75,7 +77,7 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _available_file_context_chars(
-    agent: OpenCodeAgent,
+    agent: BaseCLIAgent,
     *,
     snapshot: str,
     status: str,
@@ -105,7 +107,7 @@ def _available_file_context_chars(
 
 
 def _per_file_context_limit(
-    agent: OpenCodeAgent,
+    agent: BaseCLIAgent,
     file_count: int,
     *,
     snapshot: str,
@@ -134,7 +136,7 @@ def _per_file_context_limit(
 
 
 def _prompt_fits_budget(
-    agent: OpenCodeAgent,
+    agent: BaseCLIAgent,
     *,
     snapshot: str,
     status: str,
@@ -201,7 +203,7 @@ def _shrink_limit(limit: int) -> int:
 
 
 def _budgeted_relevant_file_contents(
-    agent: OpenCodeAgent,
+    agent: BaseCLIAgent,
     paths: list[str],
     *,
     snapshot: str,
@@ -236,7 +238,7 @@ def _budgeted_relevant_file_contents(
 
 
 def _budgeted_requested_tool_context(
-    agent: OpenCodeAgent,
+    agent: BaseCLIAgent,
     paths: list[str],
     *,
     snapshot: str,
@@ -273,6 +275,29 @@ def _budgeted_requested_tool_context(
     return ""
 
 
+def _build_agent() -> BaseCLIAgent:
+    """Construct the repair-loop's coding agent through CLIAgentManager so
+    opencode/claude_code/codex are all equally controllable registered
+    targets, instead of hardcoding one class here.
+
+    AUTOFIX_CLI_AGENT selects which one (default: open_code, the only one
+    with working credentials configured in opencode-auto-fix.yml today).
+    Set it to "claude_code" or "codex" once ANTHROPIC_API_KEY/OPENAI_API_KEY
+    and the corresponding CLI binary are available in the runner.
+    """
+    requested = os.getenv("AUTOFIX_CLI_AGENT", "open_code")
+    agent = get_cli_agent_manager().create_agent(requested)
+    if agent is not None:
+        return agent
+    print(
+        f"AUTOFIX_CLI_AGENT={requested!r} is not a usable agent; falling back to open_code.",
+        file=sys.stderr,
+    )
+    fallback = get_cli_agent_manager().create_agent("open_code")
+    assert fallback is not None, "open_code agent must always be constructible"
+    return fallback
+
+
 async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = None) -> int:
     issue_context = issue_context_path.read_text(encoding="utf-8")
     extra_context = ""
@@ -282,7 +307,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     status = run(["git", "status", "--short"]).stdout
 
     all_files = snapshot.splitlines()
-    agent = OpenCodeAgent()
+    agent = _build_agent()
 
     # Provide relevant files within the active model's prompt budget.
     relevant_files = _infer_relevant_files(issue_context, all_files)
