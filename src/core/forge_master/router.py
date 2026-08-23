@@ -79,14 +79,6 @@ class ForgeMasterRouter:
             "local": True,
             "priority": 6,
         },
-        # 프론티어 API는 로컬 CLI 함대 전원이 실패/미가용일 때만 최후 수단.
-        "frontier_api": {
-            "strengths": ["remote_llm", "broad_synthesis"],
-            "score": 0.50,
-            "cost_tier": "high",
-            "local": False,
-            "priority": 99,
-        },
     }
 
     def route_task(
@@ -118,20 +110,23 @@ class ForgeMasterRouter:
         # 기본 에이전트 풀
         pool = available_agents or list(self.CAPABILITY_MATRIX.keys())
 
-        # Local-first 정책: 로컬 CLI 에이전트가 하나라도 사용 가능하면
-        # 프론티어 API는 후보에서 제외한다. 프론팅 API 폴백은 로컬 함대가
-        # 전원 미가용일 때만 최후 수단으로 고려된다.
+        # Local-first 정책: 이 함대엔 원격 종량제 프론티어 API 항목이 없다
+        # (있었던 "frontier_api" 최후-수단 항목은 CLIAgentManager에 실제로
+        # 등록된 적이 없어 선택돼도 항상 실패했으므로 제거했다). 이 필터는
+        # 앞으로 누군가 non-local 항목을 다시 추가하더라도 로컬 CLI가 하나라도
+        # 있으면 자동으로 후순위로 밀어내는 안전장치로 남겨둔다.
         local_pool = [
             agent for agent in pool
             if self.CAPABILITY_MATRIX.get(agent, {}).get("local", False)
         ]
         if local_pool:
             effective_pool = local_pool
-            logger.debug(
-                "ForgeMaster local-first routing: local CLI agents available (%s); "
-                "frontier API excluded from selection",
-                local_pool,
-            )
+            if len(local_pool) != len(pool):
+                logger.debug(
+                    "ForgeMaster local-first routing: local CLI agents available (%s); "
+                    "non-local candidates excluded from selection",
+                    local_pool,
+                )
         else:
             effective_pool = pool
 
@@ -176,8 +171,6 @@ class ForgeMasterRouter:
             return f"[Gemini CLI Dedicated Goal] Synthesize wide context and document insights efficiently: {task_description}"
         elif agent_name == "hermes":
             return f"[Hermes Dedicated Goal] Execute autonomous workflow step-by-step: {task_description}"
-        elif agent_name == "frontier_api":
-            return f"[Frontier API Last-Resort Goal] Local CLI fleet unavailable; use remote frontier model as final fallback: {task_description}"
         else:
             return f"[{agent_name} Dedicated Goal] {task_description}"
 
