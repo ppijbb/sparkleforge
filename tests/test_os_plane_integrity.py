@@ -189,41 +189,40 @@ async def test_agent_harness_constructs_real_wiring(monkeypatch, tmp_path):
         await harness.aclose()
 
 
-def test_anomaly_detector_has_no_reachable_single_node_entrypoint():
-    """Known, tracked gap (found while building this suite, not yet fixed):
-    AnomalyDetector.observe() is only ever called from
-    GuardPlane.check_and_execute(), whose only in-repo caller is
+def test_invocation_gateway_authorize_reaches_anomaly_detector(tmp_path):
+    """Was a known, tracked gap: AnomalyDetector.observe() was only ever
+    called from GuardPlane.check_and_execute(), whose only in-repo caller is
     WorkerNode.handle_execute() -- and WorkerNode is only ever instantiated in
     tests/test_coordinator.py, never in production code. In a single-node run
     (the CLI / AgentHarness / AgentLoop path this repo actually ships),
-    nothing calls AnomalyDetector.observe() at all.
+    nothing called AnomalyDetector.observe() at all.
 
-    This pins that fact as a scan over `src/`, not a docstring claim: it
-    fails the day a real (non-test) call site constructs a WorkerNode, which
-    is exactly when someone should come update this test (and the anomaly
-    detector's reachability) instead of the gap silently persisting or
-    silently closing unnoticed.
+    Fixed by wiring the anomaly check into InvocationGateway.authorize()
+    instead of adding another opt-in call site: it's the one real mandatory
+    choke point every agent delegation (delegate_to_agent) and MCP tool call
+    (execute_tool) already routes through, so this closes the gap for both
+    real call paths at once. This proves it fires on a real authorize() call
+    -- not GuardPlane in isolation, not WorkerNode -- using the actual
+    production entrypoint.
     """
-    import ast
-    from pathlib import Path
+    gateway, _, journal = _real_gateway(tmp_path)
 
-    src_root = Path(__file__).resolve().parent.parent / "src"
-    real_instantiation_sites = []
+    decision = gateway.authorize(
+        kind=InvocationKind.MCP_TOOL,
+        actor=SYSTEM_ACTOR,
+        target="execute_shell",
+        description="rm -rf /tmp/whatever — forbidden pattern smoke check",
+    )
 
-    for path in src_root.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "WorkerNode"
-            ):
-                real_instantiation_sites.append(f"{path}:{node.lineno}")
+    assert decision.allowed is False, (
+        "authorize() allowed a command matching a forbidden pattern -- "
+        "AnomalyDetector.observe() is still not reachable from the real "
+        "production path"
+    )
+    assert "anomaly" in decision.reason.lower()
 
-    assert real_instantiation_sites == [], (
-        "WorkerNode is now constructed in production code "
-        f"({real_instantiation_sites}) -- GuardPlane.check_and_execute() and "
-        "AnomalyDetector may have gained a real single-node entrypoint; "
-        "update/replace this test to exercise it directly instead of "
-        "asserting it stays unreachable."
+    recent = journal.recent(limit=1)
+    assert recent, "authorize() did not journal the denied invocation"
+    assert "anomalies" in recent[0].metadata, (
+        "denied invocation was journaled but without the anomaly detail"
     )
