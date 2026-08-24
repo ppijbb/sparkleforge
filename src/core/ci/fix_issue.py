@@ -346,6 +346,9 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             force_diff=is_final_attempt,
         )
         result = await agent.execute_query(prompt, system_message=system_message)
+        backend = result.get("metadata", {}).get("backend")
+        if backend:
+            print(f"LLM backend: {backend}", file=sys.stderr)
         if not result.get("success"):
             print(
                 result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr

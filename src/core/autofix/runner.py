@@ -132,7 +132,13 @@ def run_autofix_repair_loop(
                 reason=f"Derived commit title failed validation: {commit_title!r}",
                 attempts=attempt,
             )
-        _run(["git", "commit", "-m", commit_title], cwd=repo_root)
+        commit = _run(["git", "commit", "-m", commit_title], cwd=repo_root)
+        if commit.returncode != 0:
+            return AutofixResult(
+                success=False,
+                reason=f"git commit failed: {(commit.stderr or commit.stdout or '').strip()}",
+                attempts=attempt,
+            )
 
         if self_verify_command:
             print(f"Running self-verification: {self_verify_command}")

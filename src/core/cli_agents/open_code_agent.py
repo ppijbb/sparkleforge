@@ -60,6 +60,15 @@ MODEL_CONTEXT_WINDOWS = {
 }
 
 
+def _describe_exc(exc: BaseException) -> str:
+    """Render an exception for logs/traces even when str(exc) is empty
+    (e.g. asyncio.TimeoutError), so a failed call never surfaces as a bare
+    "[ERROR]" with no indication of what actually went wrong or which
+    backend it came from."""
+    text = str(exc)
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 def _positive_int_env(name: str) -> int | None:
     raw = os.getenv(name)
     if not raw:
@@ -95,6 +104,12 @@ class OpenCodeAgent(BaseCLIAgent):
         self._nvidia_key = os.getenv("NVIDIA_API_KEY", "")
         self._primary = _primary_provider()
         self._max_tokens = int(os.getenv("LLM_MAX_TOKENS", "4096"))
+        # Which backend actually served the most recent successful call
+        # (e.g. "nvidia:<model>", "openrouter:<model>", "google:<model>") --
+        # surfaced in execute_query()'s metadata so callers/logs can tell
+        # which of the nvidia/openrouter/google fallback chain really ran,
+        # instead of guessing from branding alone.
+        self._last_backend = ""
         config = CLIAgentConfig(
             name="open_code",
             command="opencode",
@@ -150,6 +165,7 @@ class OpenCodeAgent(BaseCLIAgent):
                 "metadata": {
                     "agent": "open_code",
                     "model": self._model,
+                    "backend": self._last_backend or "unknown",
                     "max_tokens": max_tokens,
                     "execution_time": elapsed,
                 },
@@ -157,17 +173,18 @@ class OpenCodeAgent(BaseCLIAgent):
             }
         except Exception as e:
             elapsed = time.time() - start
-            logger.error("OpenCodeAgent API call failed: %s", e)
+            err_detail = _describe_exc(e)
+            logger.error("OpenCodeAgent API call failed: %s", err_detail)
             return {
                 "success": False,
-                "response": f"[ERROR] {e}",
+                "response": f"[ERROR] {err_detail}",
                 "confidence": 0.0,
                 "metadata": {
                     "agent": "open_code",
                     "model": self._model,
                     "max_tokens": max_tokens,
                     "execution_time": elapsed,
-                    "error": str(e),
+                    "error": err_detail,
                 },
                 "usage": {},
             }
@@ -204,20 +221,23 @@ class OpenCodeAgent(BaseCLIAgent):
         if self._api_key:
             try:
                 return await self._call_openrouter_chain(user_msg, system_msg, max_tokens)
-            except RuntimeError as e:
+            except Exception as e:
+                tried = [f"openrouter: {_describe_exc(e)}"]
                 if self._nvidia_key:
                     logger.info("OpenRouter failed, falling back to NVIDIA NIM")
                     try:
                         return await self._call_nvidia_nim(user_msg, system_msg, max_tokens)
                     except Exception as ne:
                         logger.warning("NVIDIA NIM fallback also failed: %s", ne)
+                        tried.append(f"nvidia: {_describe_exc(ne)}")
                 if self._google_key:
                     logger.info("OpenRouter chain failed, falling back to Google Gemini")
                     try:
                         return await self._call_google_genai(user_msg, system_msg, max_tokens)
                     except Exception as ge:
                         logger.warning("Google Gemini fallback also failed: %s", ge)
-                raise e
+                        tried.append(f"google: {_describe_exc(ge)}")
+                raise RuntimeError("; ".join(tried)) from e
         if self._nvidia_key:
             return await self._call_nvidia_nim(user_msg, system_msg, max_tokens)
         if self._google_key:
@@ -284,6 +304,7 @@ class OpenCodeAgent(BaseCLIAgent):
                 choices = body.get("choices", [])
                 if not choices:
                     raise RuntimeError("OpenRouter returned no choices")
+                self._last_backend = f"openrouter:{model}"
                 return choices[0].get("message", {}).get("content", "")
 
     async def _call_google_genai(
@@ -316,6 +337,7 @@ class OpenCodeAgent(BaseCLIAgent):
                 if not candidates:
                     raise RuntimeError("Google Gemini returned no candidates")
                 parts = candidates[0].get("content", {}).get("parts", [])
+                self._last_backend = f"google:{self._google_model()}"
                 return parts[0].get("text", "") if parts else ""
 
     async def _call_nvidia_nim(
@@ -358,6 +380,7 @@ class OpenCodeAgent(BaseCLIAgent):
                 choices = body.get("choices", [])
                 if not choices:
                     raise RuntimeError("NVIDIA NIM returned no choices")
+                self._last_backend = f"nvidia:{model}"
                 return choices[0].get("message", {}).get("content", "")
 
     def parse_output(self, result: CLIExecutionResult) -> Dict[str, Any]:
