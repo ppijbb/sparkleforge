@@ -181,9 +181,17 @@ def end_history_session(
 
 
 def stop_history_worker() -> None:
-    """Stop the background worker thread. For tests / graceful shutdown."""
+    """Stop the background worker thread.
+
+    Waits for everything already queued to be processed first (via
+    queue.join(), matched by _worker_loop calling task_done() on every item
+    it dequeues) so a stop doesn't strand pending history unwritten. For
+    tests / graceful shutdown.
+    """
     global _worker_thread
+    if _worker_thread and _worker_thread.is_alive():
+        _queue.join()
     _stop_event.set()
     if _worker_thread:
-        _worker_thread.join(timeout=1.0)
+        _worker_thread.join(timeout=_BATCH_MAX_WAIT_S + 1.0)
         _worker_thread = None
