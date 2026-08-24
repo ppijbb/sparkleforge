@@ -22,6 +22,11 @@ from src.cli.history import SparkleForgeHistory
 from src.core.execution_registry import ExecutionRegistry, RegisteredCommand
 from src.core.prompt_router import PromptRouter, RouteTargetType
 from src.core.trust_gate import get_current_trust_context
+from src.utils.sparkleforge_history import (
+    end_history_session,
+    log_history_event,
+    start_history_session,
+)
 
 # REPL 모드에서는 기본 로깅 레벨을 WARNING으로 설정하고
 # src.cli 네임스페이스만 INFO 레벨을 허용하여 로그 누출 방지
@@ -65,6 +70,11 @@ class REPLCLI:
         # calls never showed up during a turn -- output_manager was writing
         # through a completely separate Console the whole time).
         self.console = get_console()
+
+        # Supabase 작업 히스토리 세션 -- run()이 실제 세션을 시작하기 전까지의
+        # 기본값. run() 없이 handle_command()가 직접 호출되는 경로(테스트 등)를
+        # 위해 getattr(..., None)로 방어적으로 읽는다.
+        self._history_session_id = None
 
         # 히스토리 초기화
         self.history_manager = SparkleForgeHistory()
@@ -234,6 +244,8 @@ class REPLCLI:
 
     async def run(self):
         """REPL 루프 실행."""
+        self._history_session_id = start_history_session("repl")
+
         # 시작 배너
         await self._show_banner()
 
@@ -283,6 +295,8 @@ class REPLCLI:
             except Exception as e:
                 logger.error(f"Error in REPL CLI: {e}", exc_info=True)
                 self.console.print(f"[red]❌ Error: {e}[/red]")
+
+        end_history_session(self._history_session_id, "succeeded")
 
         # 루프 종료 후 정리 작업
         try:
@@ -390,6 +404,9 @@ class REPLCLI:
 
     async def handle_command(self, text: str):
         """명령어 처리."""
+        history_session_id = getattr(self, "_history_session_id", None)
+        if history_session_id:
+            log_history_event(history_session_id, "message", text, role="user")
         try:
             # shlex로 파싱 (따옴표 처리)
             parts = shlex.split(text)

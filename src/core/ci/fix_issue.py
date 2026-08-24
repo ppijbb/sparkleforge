@@ -34,6 +34,7 @@ from src.core.patch_ops import (
     run,
 )
 from src.core.ci.response_parsing import _strip_fenced_response
+from src.utils.sparkleforge_history import log_history_event
 
 _CHARS_PER_TOKEN = 3
 _PROMPT_SAFETY_TOKENS = 1_000
@@ -349,6 +350,16 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         backend = result.get("metadata", {}).get("backend")
         if backend:
             print(f"LLM backend: {backend}", file=sys.stderr)
+        history_session_id = os.getenv("SPARKLEFORGE_HISTORY_SESSION_ID")
+        if history_session_id:
+            log_history_event(
+                history_session_id,
+                "llm_call",
+                result.get("response", ""),
+                role="assistant",
+                backend=backend,
+                level=None if result.get("success") else "error",
+            )
         if not result.get("success"):
             print(
                 result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr

@@ -24,7 +24,7 @@ class ScriptedRun:
         self.self_verify_outcomes = list(self_verify_outcomes or [_proc(0)])
         self.calls = []
 
-    def __call__(self, cmd, cwd, timeout=None):
+    def __call__(self, cmd, cwd, timeout=None, env=None):
         self.calls.append(cmd)
         if "fix-issue" in cmd:
             return self.fix_issue_outcomes.pop(0) if len(self.fix_issue_outcomes) > 1 else self.fix_issue_outcomes[0]
@@ -132,10 +132,10 @@ def test_silent_commit_failure_is_reported_not_swallowed(tmp_path, issue_context
     that as success and letting a later step discover "no commits" instead."""
 
     class CommitFailingRun(ScriptedRun):
-        def __call__(self, cmd, cwd, timeout=None):
+        def __call__(self, cmd, cwd, timeout=None, env=None):
             if cmd[:2] == ["git", "commit"]:
                 return _proc(1, stderr="pre-commit hook rejected commit")
-            return super().__call__(cmd, cwd, timeout=timeout)
+            return super().__call__(cmd, cwd, timeout=timeout, env=env)
 
     scripted = CommitFailingRun(verify_outcomes=[_proc(0)])
     monkeypatch.setattr(autofix_runner, "_run", scripted)
