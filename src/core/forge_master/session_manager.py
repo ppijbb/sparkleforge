@@ -167,9 +167,10 @@ class ForgeMasterSessionManager:
         """세션 종료 및 자원 정리"""
         if session_id in self.sessions:
             session = self.sessions.pop(session_id)
+            status = "succeeded" if all(turn.get("success", False) for turn in session.history) else "failed"
             end_history_session(
                 session.history_session_id,
-                "succeeded",
+                status,
                 metadata={"turns": len(session.history)},
             )
             logger.info(f"Closed ForgeMaster session: {session_id}")
