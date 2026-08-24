@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from src.core.cli_agents.cli_agent_manager import get_cli_agent_manager
+from src.utils.sparkleforge_history import (
+    end_history_session,
+    log_history_event,
+    start_history_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,7 @@ class AgentSession:
     last_active_at: float
     history: List[Dict[str, Any]] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    history_session_id: str = ""
 
 
 class ForgeMasterSessionManager:
@@ -59,6 +65,9 @@ class ForgeMasterSessionManager:
             created_at=now,
             last_active_at=now,
             metadata=metadata or {},
+            history_session_id=start_history_session(
+                "forge_master", external_ref=session_id, title=agent_name, metadata=metadata or {}
+            ),
         )
         self.sessions[session_id] = session
         logger.info(
@@ -117,6 +126,15 @@ class ForgeMasterSessionManager:
                 "response_summary": result.get("response", "")[:200],
             }
         )
+        log_history_event(session.history_session_id, "message", query, role="user")
+        log_history_event(
+            session.history_session_id,
+            "message",
+            result.get("response", ""),
+            role="assistant",
+            backend=result.get("metadata", {}).get("backend"),
+            level=None if result.get("success", False) else "error",
+        )
 
         return result
 
@@ -148,7 +166,12 @@ class ForgeMasterSessionManager:
     def close_session(self, session_id: str) -> bool:
         """세션 종료 및 자원 정리"""
         if session_id in self.sessions:
-            del self.sessions[session_id]
+            session = self.sessions.pop(session_id)
+            end_history_session(
+                session.history_session_id,
+                "succeeded",
+                metadata={"turns": len(session.history)},
+            )
             logger.info(f"Closed ForgeMaster session: {session_id}")
             return True
         return False

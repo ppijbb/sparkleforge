@@ -129,3 +129,63 @@ DROP POLICY IF EXISTS "Authenticated users can update agent error contexts" ON p
 CREATE POLICY "Authenticated users can update agent error contexts"
     ON public.agent_error_contexts FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
+-- 5. SparkleForge-wide work/conversation history (autofix CI, REPL, forge_master
+--    sessions). A dedicated pair of tables rather than folding into
+--    agent_logs/logs -- those are a live broadcast backup for the research
+--    orchestrator specifically, whereas this exists to let any subsystem
+--    persist "what happened" as a first-class session with a defined
+--    start/end, independent of whether real-time streaming is involved.
+CREATE TABLE IF NOT EXISTS public.sparkleforge_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source TEXT NOT NULL,                    -- autofix | repl | forge_master | autonomous_orchestrator
+    external_ref TEXT,                       -- e.g. GitHub issue number/URL, REPL session id
+    title TEXT,
+    status TEXT NOT NULL DEFAULT 'running',  -- running, succeeded, failed
+    metadata JSONB DEFAULT '{}'::jsonb,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    ended_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS public.sparkleforge_history_events (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES public.sparkleforge_sessions(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,                -- message | log | llm_call | tool_call | commit | error
+    role TEXT,                               -- user | assistant | system | tool
+    backend TEXT,                            -- e.g. "nvidia:nemotron-3-ultra-550b-a55b", "openrouter:z-ai/glm-5.2:free"
+    level TEXT,                              -- info | warning | error (for log-shaped events)
+    content TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sparkleforge_sessions_source ON public.sparkleforge_sessions(source);
+CREATE INDEX IF NOT EXISTS idx_sparkleforge_sessions_started_at ON public.sparkleforge_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_sparkleforge_history_events_session_id ON public.sparkleforge_history_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_sparkleforge_history_events_created_at ON public.sparkleforge_history_events(created_at);
+
+ALTER TABLE public.sparkleforge_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sparkleforge_history_events ENABLE ROW LEVEL SECURITY;
+
+-- Work/conversation history can contain repository content, diffs, and
+-- internal reasoning -- authenticated-only, no anonymous read (unlike the
+-- intentionally-public reports/forge_jobs/agent_logs tables above).
+DROP POLICY IF EXISTS "Authenticated can read sparkleforge sessions" ON public.sparkleforge_sessions;
+CREATE POLICY "Authenticated can read sparkleforge sessions"
+    ON public.sparkleforge_sessions FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Authenticated can insert sparkleforge sessions" ON public.sparkleforge_sessions;
+CREATE POLICY "Authenticated can insert sparkleforge sessions"
+    ON public.sparkleforge_sessions FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated can update sparkleforge sessions" ON public.sparkleforge_sessions;
+CREATE POLICY "Authenticated can update sparkleforge sessions"
+    ON public.sparkleforge_sessions FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated can read sparkleforge history events" ON public.sparkleforge_history_events;
+CREATE POLICY "Authenticated can read sparkleforge history events"
+    ON public.sparkleforge_history_events FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Authenticated can insert sparkleforge history events" ON public.sparkleforge_history_events;
+CREATE POLICY "Authenticated can insert sparkleforge history events"
+    ON public.sparkleforge_history_events FOR INSERT TO authenticated WITH CHECK (true);
+
