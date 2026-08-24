@@ -176,9 +176,25 @@ def run_autofix_repair_loop(
             )
         commit = _run(["git", "commit", "-m", commit_title], cwd=repo_root)
         if commit.returncode != 0:
-            reason = f"git commit failed: {(commit.stderr or commit.stdout or '').strip()}"
+            commit_error = (commit.stderr or commit.stdout or "").strip()
+            reason = f"git commit failed: {commit_error}"
             log_history_event(history_session_id, "error", reason, level="error")
-            return _finish(AutofixResult(success=False, reason=reason, attempts=attempt))
+            # Unlike a bad commit *title* (fixed for the whole loop, so retrying
+            # can't fix it), a commit failure is usually the staged *diff*
+            # tripping a pre-commit hook -- and the diff is regenerated fresh
+            # by the LLM on each attempt, so a later attempt can plausibly
+            # produce a diff that passes. Retry like the other patch-dependent
+            # failure branches above instead of aborting immediately.
+            extra_context_path.write_text(
+                "Previous attempt's changes were staged but `git commit` failed "
+                "(a pre-commit hook likely rejected the diff).\n\n"
+                f"Error:\n{commit_error}\n\n"
+                "Regenerate a patch that addresses this.",
+                encoding="utf-8",
+            )
+            if is_last_attempt:
+                return _finish(AutofixResult(success=False, reason=reason, attempts=attempt))
+            continue
         log_history_event(history_session_id, "commit", commit_title)
 
         if self_verify_command:

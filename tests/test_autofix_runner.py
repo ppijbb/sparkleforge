@@ -129,11 +129,20 @@ def test_writes_worker_error_and_verify_logs_to_disk(tmp_path, issue_context, mo
 def test_silent_commit_failure_is_reported_not_swallowed(tmp_path, issue_context, monkeypatch):
     """git commit can fail after staging succeeds (pre-commit hook rejection,
     identity misconfiguration, etc.). Regression test for the loop treating
-    that as success and letting a later step discover "no commits" instead."""
+    that as success and letting a later step discover "no commits" instead.
+    A commit failure retries like the other patch-dependent failure branches
+    (the diff is regenerated per attempt, unlike the fixed commit title), so
+    with every attempt's commit failing, the loop should exhaust all 3
+    attempts before reporting failure."""
 
     class CommitFailingRun(ScriptedRun):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.commit_attempts = 0
+
         def __call__(self, cmd, cwd, timeout=None, env=None):
             if cmd[:2] == ["git", "commit"]:
+                self.commit_attempts += 1
                 return _proc(1, stderr="pre-commit hook rejected commit")
             return super().__call__(cmd, cwd, timeout=timeout, env=env)
 
@@ -150,7 +159,43 @@ def test_silent_commit_failure_is_reported_not_swallowed(tmp_path, issue_context
     )
 
     assert result.success is False
+    assert result.attempts == 3
     assert "pre-commit hook rejected commit" in result.reason
+    assert scripted.commit_attempts == 3
     # No verification should run against a commit that was never made.
     verify_calls = [c for c in scripted.calls if c[:2] == ["bash", "-lc"] and c[2] == "verify"]
     assert verify_calls == []
+
+
+def test_commit_failure_on_early_attempt_retries_and_can_still_succeed(tmp_path, issue_context, monkeypatch):
+    """A commit failure on attempt 1 must not abort the whole loop -- a later
+    attempt's regenerated diff can pass the same pre-commit hook."""
+
+    class FlakyCommitRun(ScriptedRun):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.commit_attempts = 0
+
+        def __call__(self, cmd, cwd, timeout=None, env=None):
+            if cmd[:2] == ["git", "commit"]:
+                self.commit_attempts += 1
+                if self.commit_attempts == 1:
+                    return _proc(1, stderr="pre-commit hook rejected commit")
+                return _proc(0)
+            return super().__call__(cmd, cwd, timeout=timeout, env=env)
+
+    scripted = FlakyCommitRun(verify_outcomes=[_proc(0)])
+    monkeypatch.setattr(autofix_runner, "_run", scripted)
+    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+
+    result = run_autofix_repair_loop(
+        issue_context_path=issue_context,
+        repo_root=tmp_path,
+        commit_title="fix: something",
+        max_iterations=3,
+        verify_command="verify",
+    )
+
+    assert result.success is True
+    assert result.attempts == 2
+    assert scripted.commit_attempts == 2
