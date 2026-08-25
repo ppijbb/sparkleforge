@@ -22,7 +22,7 @@ def test_implement_until_green_invokes_sparkleforge_ci_fix_issue(tmp_path, monke
         return _proc(returncode=0)
 
     monkeypatch.setattr(implement, "_run", fake_run)
-    monkeypatch.setattr(implement.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+    monkeypatch.setattr(implement.patch_ops, "repository_change_signature", lambda cwd=None: ("M foo.py",))
 
     result = implement.implement_until_green(
         issue_context="fix the bug",

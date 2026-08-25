@@ -72,7 +72,7 @@ def implement_until_green(
         )
 
     for attempt in range(1, max_iterations + 1):
-        before_sig = patch_ops.repository_change_signature()
+        before_sig = patch_ops.repository_change_signature(cwd=repo_root)
 
         # Issue #917: validate the synthetic schema of the worker's diff before
         # attempting to apply it, so malformed LLM output fails fast with a clear
@@ -122,7 +122,7 @@ def implement_until_green(
                 )
             continue
 
-        after_sig = patch_ops.repository_change_signature()
+        after_sig = patch_ops.repository_change_signature(cwd=repo_root)
         if after_sig == before_sig:
             extra_context_path.write_text(
                 "Previous attempt produced no repository changes. The response either "

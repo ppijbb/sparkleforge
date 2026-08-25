@@ -7,8 +7,12 @@ apply LLM-generated diffs without duplicating the patch-application strategy:
   2. patch --fuzz=3 -p1                   (fallback: tolerates +/-3 lines of offset)
   3. fail with full diagnostics
 
-All functions here are pure / CWD-relative (they shell out to git against the
-current working directory) and carry no module-level state.
+All functions here shell out to git against an explicit `cwd` (defaulting to
+the caller's current working directory when omitted) and carry no
+module-level state. Passing the target repo root explicitly matters whenever
+the caller operates against a different checkout than the process's own cwd
+(e.g. Nightwelding's disposable worktrees) -- omitting it silently applies
+patches to and reads status from the wrong repository.
 """
 
 from __future__ import annotations
@@ -19,18 +23,21 @@ import sys
 from pathlib import Path
 
 
-def run(cmd: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+def run(
+    cmd: list[str], *, input_text: str | None = None, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         input=input_text,
         text=True,
         capture_output=True,
         check=False,
+        cwd=cwd,
     )
 
 
-def repo_snapshot() -> str:
-    files = run(["git", "ls-files"]).stdout.splitlines()
+def repo_snapshot(cwd: Path | None = None) -> str:
+    files = run(["git", "ls-files"], cwd=cwd).stdout.splitlines()
     keep = [
         path
         for path in files
@@ -40,7 +47,7 @@ def repo_snapshot() -> str:
     return "\n".join(keep[:600])
 
 
-def repository_change_signature() -> tuple[str, ...]:
+def repository_change_signature(cwd: Path | None = None) -> tuple[str, ...]:
     """Return meaningful git status lines, excluding worker runtime files."""
     ignored_runtime_files = {
         "issue-context.md",
@@ -50,7 +57,9 @@ def repository_change_signature() -> tuple[str, ...]:
         "opencode-worker-error.log",
     }
     status_lines = []
-    for line in run(["git", "status", "--porcelain", "--untracked-files=all"]).stdout.splitlines():
+    for line in run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=cwd
+    ).stdout.splitlines():
         path = line[3:] if len(line) > 3 else ""
         if path in ignored_runtime_files or path.endswith((".orig", ".rej")):
             continue
@@ -354,13 +363,13 @@ def _split_multifile_patch(diff_text: str) -> list[tuple[str, str]]:
     return segments
 
 
-def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
+def _apply_single_patch(diff_text: str, label: str = "", cwd: Path | None = None) -> tuple[bool, str]:
     """Apply a single-file patch using all available strategies.
 
     Returns (success, error_summary).
     """
-    # Write to a temp file
-    tmp = Path("opencode-single.patch")
+    # Write to a temp file, inside `cwd` so a relative git-apply target resolves.
+    tmp = (cwd or Path.cwd()) / "opencode-single.patch"
     diff_text = _normalize_diff(diff_text)
     path_error = _validate_patch_paths(diff_text)
     if path_error:
@@ -384,7 +393,8 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
                 "--ignore-whitespace",
                 "--whitespace=nowarn",
                 str(tmp),
-            ]
+            ],
+            cwd=cwd,
         )
         if proc.returncode == 0:
             tmp.unlink(missing_ok=True)
@@ -399,6 +409,7 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
             proc2 = run(
                 ["patch", f"--strip={p}", "--fuzz=3", "--batch", "--forward"],
                 input_text=diff_text,
+                cwd=cwd,
             )
             if proc2.returncode == 0:
                 print(f"[{label}][patch --strip={p}] succeeded.", file=sys.stderr)
@@ -412,7 +423,7 @@ def _apply_single_patch(diff_text: str, label: str = "") -> tuple[bool, str]:
     return False, "\n".join(errors)
 
 
-def _apply_patch(patch_path: Path) -> tuple[bool, str]:
+def _apply_patch(patch_path: Path, cwd: Path | None = None) -> tuple[bool, str]:
     """Apply a (possibly multi-file) patch robustly.
 
     Strategy:
@@ -450,7 +461,8 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
                 "--ignore-whitespace",
                 "--whitespace=nowarn",
                 str(patch_path),
-            ]
+            ],
+            cwd=cwd,
         )
         if proc.returncode == 0:
             print("[patch] Whole-patch git apply succeeded.", file=sys.stderr)
@@ -462,7 +474,7 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
     segments = _split_multifile_patch(diff_text)
     if len(segments) <= 1:
         # Single file -- surface all errors clearly
-        ok, errs = _apply_single_patch(diff_text, label="single")
+        ok, errs = _apply_single_patch(diff_text, label="single", cwd=cwd)
         return ok, errs
 
     print(
@@ -474,7 +486,7 @@ def _apply_patch(patch_path: Path) -> tuple[bool, str]:
     all_errors: list[str] = []
 
     for filepath, seg in segments:
-        ok, errs = _apply_single_patch(seg, label=filepath)
+        ok, errs = _apply_single_patch(seg, label=filepath, cwd=cwd)
         if ok:
             succeeded.append(filepath)
             print(f"  ✅ {filepath}", file=sys.stderr)

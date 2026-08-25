@@ -173,8 +173,8 @@ async def write_reproduction_test(
     repo_root: Path | None = None,
 ) -> ReproResult:
     repo_root = repo_root or Path.cwd()
-    snapshot = patch_ops.repo_snapshot()
-    status = patch_ops.run(["git", "status", "--short"]).stdout
+    snapshot = patch_ops.repo_snapshot(cwd=repo_root)
+    status = patch_ops.run(["git", "status", "--short"], cwd=repo_root).stdout
 
     agent = OpenCodeAgent()
     extra_context = ""
@@ -204,7 +204,7 @@ async def write_reproduction_test(
 
         patch_path = repo_root / "opencode.patch"
         patch_path.write_text(diff, encoding="utf-8")
-        applied, err = patch_ops._apply_patch(patch_path)
+        applied, err = patch_ops._apply_patch(patch_path, cwd=repo_root)
         if not applied:
             extra_context = f"Previous diff failed to apply:\n{err}\n\nRegenerate a minimal diff that only adds/modifies tests/test_*.py files."
             continue
