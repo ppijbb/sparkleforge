@@ -129,7 +129,7 @@ def run_autofix_repair_loop(
         # old bash step already agreed on (issue-context.md, opencode.patch,
         # opencode-extra-context.md, opencode-verify.log, opencode-worker-error.log,
         # *.orig/*.rej) -- reuse it instead of reimplementing the pathspec exclude list.
-        changed = bool(patch_ops.repository_change_signature())
+        changed = bool(patch_ops.repository_change_signature(cwd=repo_root))
         if not changed:
             message = f"OpenCode produced no repository changes on attempt {attempt}."
             print(message)

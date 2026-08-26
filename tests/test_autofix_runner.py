@@ -55,7 +55,7 @@ def issue_context(tmp_path):
 def test_self_verify_failure_aborts_immediately_without_retry(tmp_path, issue_context, monkeypatch):
     scripted = ScriptedRun(self_verify_outcomes=[_proc(1, stderr="tests failed")])
     monkeypatch.setattr(autofix_runner, "_run", scripted)
-    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda cwd=None: ("M foo.py",))
 
     result = run_autofix_repair_loop(
         issue_context_path=issue_context,
@@ -74,7 +74,7 @@ def test_self_verify_failure_aborts_immediately_without_retry(tmp_path, issue_co
 def test_verify_command_failure_retries_then_fails_at_max_iterations(tmp_path, issue_context, monkeypatch):
     scripted = ScriptedRun(verify_outcomes=[_proc(1, stdout="still broken")] * 3)
     monkeypatch.setattr(autofix_runner, "_run", scripted)
-    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda cwd=None: ("M foo.py",))
 
     result = run_autofix_repair_loop(
         issue_context_path=issue_context,
@@ -93,7 +93,7 @@ def test_verify_command_failure_retries_then_fails_at_max_iterations(tmp_path, i
 def test_success_short_circuits_before_max_iterations(tmp_path, issue_context, monkeypatch):
     scripted = ScriptedRun(verify_outcomes=[_proc(0)])
     monkeypatch.setattr(autofix_runner, "_run", scripted)
-    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda cwd=None: ("M foo.py",))
 
     result = run_autofix_repair_loop(
         issue_context_path=issue_context,
@@ -110,7 +110,7 @@ def test_success_short_circuits_before_max_iterations(tmp_path, issue_context, m
 def test_writes_worker_error_and_verify_logs_to_disk(tmp_path, issue_context, monkeypatch):
     scripted = ScriptedRun(verify_outcomes=[_proc(0, stdout="all good")])
     monkeypatch.setattr(autofix_runner, "_run", scripted)
-    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda cwd=None: ("M foo.py",))
 
     result = run_autofix_repair_loop(
         issue_context_path=issue_context,
@@ -148,7 +148,7 @@ def test_silent_commit_failure_is_reported_not_swallowed(tmp_path, issue_context
 
     scripted = CommitFailingRun(verify_outcomes=[_proc(0)])
     monkeypatch.setattr(autofix_runner, "_run", scripted)
-    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda cwd=None: ("M foo.py",))
 
     result = run_autofix_repair_loop(
         issue_context_path=issue_context,
@@ -186,7 +186,7 @@ def test_commit_failure_on_early_attempt_retries_and_can_still_succeed(tmp_path,
 
     scripted = FlakyCommitRun(verify_outcomes=[_proc(0)])
     monkeypatch.setattr(autofix_runner, "_run", scripted)
-    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda: ("M foo.py",))
+    monkeypatch.setattr(autofix_runner.patch_ops, "repository_change_signature", lambda cwd=None: ("M foo.py",))
 
     result = run_autofix_repair_loop(
         issue_context_path=issue_context,
