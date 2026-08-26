@@ -47,21 +47,34 @@ def repo_snapshot(cwd: Path | None = None) -> str:
     return "\n".join(keep[:600])
 
 
-def repository_change_signature(cwd: Path | None = None) -> tuple[str, ...]:
-    """Return meaningful git status lines, excluding worker runtime files."""
-    ignored_runtime_files = {
+# Scratch files SparkleForge itself writes into repo_root while working
+# (prompts, patches, logs) -- never meaningful repository content, and must
+# never be `git add`ed into a commit that ends up in someone else's repo.
+RUNTIME_SCRATCH_FILES = frozenset(
+    {
         "issue-context.md",
         "opencode.patch",
+        "opencode-single.patch",
         "opencode-extra-context.md",
         "opencode-verify.log",
         "opencode-worker-error.log",
+        "opencode-self-verify.log",
     }
+)
+
+
+def is_runtime_scratch_path(path: str) -> bool:
+    return path in RUNTIME_SCRATCH_FILES or path.endswith((".orig", ".rej"))
+
+
+def repository_change_signature(cwd: Path | None = None) -> tuple[str, ...]:
+    """Return meaningful git status lines, excluding worker runtime files."""
     status_lines = []
     for line in run(
         ["git", "status", "--porcelain", "--untracked-files=all"], cwd=cwd
     ).stdout.splitlines():
         path = line[3:] if len(line) > 3 else ""
-        if path in ignored_runtime_files or path.endswith((".orig", ".rej")):
+        if is_runtime_scratch_path(path):
             continue
         status_lines.append(line)
     return tuple(sorted(status_lines))

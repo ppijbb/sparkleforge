@@ -140,7 +140,7 @@ def implement_until_green(
 
         _run(["git", "add", "-u"], cwd=repo_root)
         ls = _run(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=repo_root)
-        untracked = [p for p in ls.stdout.split("\0") if p]
+        untracked = [p for p in ls.stdout.split("\0") if p and not patch_ops.is_runtime_scratch_path(p)]
         if untracked:
             _run(["git", "add", "--", *untracked], cwd=repo_root)
 

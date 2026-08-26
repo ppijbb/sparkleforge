@@ -146,9 +146,11 @@ def run_autofix_repair_loop(
             continue
 
         _run(["git", "add", "-u", "."], cwd=repo_root)
-        untracked = _run(
-            ["git", "ls-files", "--others", "--exclude-standard"], cwd=repo_root
-        ).stdout.splitlines()
+        untracked = [
+            p
+            for p in _run(["git", "ls-files", "--others", "--exclude-standard"], cwd=repo_root).stdout.splitlines()
+            if not patch_ops.is_runtime_scratch_path(p)
+        ]
         if untracked:
             _run(["git", "add", "--", *untracked], cwd=repo_root)
 
