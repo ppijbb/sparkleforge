@@ -64,7 +64,12 @@ RUNTIME_SCRATCH_FILES = frozenset(
 
 
 def is_runtime_scratch_path(path: str) -> bool:
-    return path in RUNTIME_SCRATCH_FILES or path.endswith((".orig", ".rej"))
+    if path in RUNTIME_SCRATCH_FILES or path.endswith((".orig", ".rej", ".pyc")):
+        return True
+    # Bytecode caches produced by *running* the reproduction test itself
+    # (e.g. tests/__pycache__/...) -- build/test artifacts, never intended
+    # repository content, regardless of the target repo's own .gitignore.
+    return "__pycache__" in Path(path).parts
 
 
 def repository_change_signature(cwd: Path | None = None) -> tuple[str, ...]:

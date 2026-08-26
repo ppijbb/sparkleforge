@@ -23,6 +23,9 @@ def test_scratch_files_are_recognized():
         "opencode-self-verify.log",
         "foo.patch.orig",
         "bar.rej",
+        "tests/__pycache__/test_readme.cpython-313-pytest-9.0.2.pyc",
+        "src/__pycache__/foo.pyc",
+        "standalone.pyc",
     ):
         assert patch_ops.is_runtime_scratch_path(name), name
 
