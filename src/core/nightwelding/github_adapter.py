@@ -16,6 +16,7 @@ branch prefixes.
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 import shutil
 import subprocess
@@ -28,6 +29,8 @@ from src.core.nightwelding.adapter import (
     IssueContext,
     NightweldingAdapterError,
 )
+
+logger = logging.getLogger(__name__)
 
 NIGHTWELDING_DRAFT_LABEL = ("nightwelding-draft-opened", "5319E7", "Nightwelding opened a Draft PR; human must review and mark it ready before it can merge.")
 NIGHTWELDING_FAILED_LABEL = ("nightwelding-failed", "B60205", "Nightwelding could not reproduce the issue, or could not make the reproduction test pass.")
@@ -159,20 +162,19 @@ class GitHubAdapter(BaseNightweldingAdapter):
         reason: str,
         log: str = "",
     ) -> None:
+        # Failure/error detail is never posted to the issue -- it's an internal
+        # diagnostic, not something to surface on someone else's public repo.
+        # It stays in our own logs (and the local NightweldingQueue) only; only
+        # the `nightwelding-failed` label (state, not text) is visible on GitHub.
+        logger.warning("Nightwelding failed for issue #%s: %s", issue_ref, reason)
+        if log:
+            logger.debug("Nightwelding failure log for issue #%s:\n%s", issue_ref, log)
         if str(issue_ref).isdigit():
             repo = self._get_repo()
             num = int(issue_ref)
             ensure_label(repo, NIGHTWELDING_FAILED_LABEL[0], NIGHTWELDING_FAILED_LABEL[1], NIGHTWELDING_FAILED_LABEL[2])
             add_labels(repo, num, [NIGHTWELDING_FAILED_LABEL[0]])
             remove_labels(repo, num, [NIGHTWELDING_QUEUE_LABEL[0]])
-            comment = (
-                "Nightwelding could not complete this issue overnight.\n\n"
-                f"Reason: {reason}\n\n"
-            )
-            if log:
-                comment += f"Log (tail):\n```text\n{log[-3000:]}\n```\n\n"
-            comment += "Re-add the `nightwelding-queue` label to retry after addressing the root cause."
-            comment_on_issue(repo, num, comment)
 
 
 def _run(cmd: List[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
