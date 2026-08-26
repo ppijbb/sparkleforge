@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.core import patch_ops
 from src.core.nightwelding.adapter import (
     BaseNightweldingAdapter,
     IssueContext,
@@ -302,12 +303,16 @@ def remove_worktree(repo_root: Path | str, worktree_dir: Path | None = None) -> 
 
 
 def commit_changes(repo_root: Path, message: str) -> None:
-    """Stage all changes (tracked modifications + untracked files) and commit."""
+    """Stage all changes (tracked modifications + untracked files) and commit.
+
+    Never stages SparkleForge's own runtime scratch files (issue-context.md,
+    opencode.patch, logs, ...) -- they must not leak into a real repo's history.
+    """
     _run(["git", "add", "-u"], cwd=repo_root, check=False)
     untracked = _run(
         ["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=repo_root, check=False
     ).stdout.split("\0")
-    untracked = [p for p in untracked if p]
+    untracked = [p for p in untracked if p and not patch_ops.is_runtime_scratch_path(p)]
     if untracked:
         _run(["git", "add", "--", *untracked], cwd=repo_root, check=False)
     _run(["git", "commit", "-m", message], cwd=repo_root)

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List
 import yaml
 
+from src.core import patch_ops
 from src.core.nightwelding.adapter import (
     BaseNightweldingAdapter,
     IssueContext,
@@ -165,7 +166,7 @@ class LocalGitAdapter(BaseNightweldingAdapter):
             ["git", "ls-files", "--others", "--exclude-standard", "-z"],
             cwd=repo_root, capture_output=True, text=True, check=False,
         ).stdout.split("\0")
-        untracked = [p for p in untracked if p]
+        untracked = [p for p in untracked if p and not patch_ops.is_runtime_scratch_path(p)]
         if untracked:
             subprocess.run(["git", "add", "--", *untracked], cwd=repo_root, capture_output=True, text=True, check=False)
         subprocess.run(["git", "commit", "-m", message], cwd=repo_root, capture_output=True, text=True, check=False)
