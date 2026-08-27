@@ -87,8 +87,12 @@ jobs:
         run: |
           ACTOR_LOGIN=$(gh api user --jq '.login')
           ACTOR_ID=$(gh api user --jq '.id')
-          git config user.name "$ACTOR_LOGIN"
-          git config user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
+          # --global: "Resolve issue and branch" clones the repo into an
+          # isolated $RUNNER_TEMP worktree (issue #1524) to avoid mutating
+          # this checkout, so a local (repo-scoped) identity here never
+          # reaches the repo that actually gets committed to.
+          git config --global user.name "$ACTOR_LOGIN"
+          git config --global user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
 
       - uses: actions/setup-python@v5
         with:
