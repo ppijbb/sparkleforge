@@ -19,7 +19,7 @@ from typing import List, Optional
 from src.core import patch_ops
 from src.core.cli_agents.open_code_agent import OpenCodeAgent
 
-REPRO_TEST_PATTERN = re.compile(r"^tests/test_[^/]+\.py$")
+REPRO_TEST_PATTERN = re.compile(r"^tests/(?:[^/]+/)*test_[^/]+\.py$")
 
 # Runtime scratch files this module (or patch_ops) writes to the working tree,
 
@@ -53,7 +53,7 @@ writing a test that fails today.
 
 Rules:
 - Add or modify ONLY test file(s) matching the path pattern `tests/test_*.py`
-  (directly under tests/, not a subdirectory).
+  (under tests/, including subdirectories like tests/unit/ or tests/integration/).
 - Do NOT create, modify, or touch `tests/conftest.py`, anything under
   `tests/benchmark/`, anything under `tests/baselines/`, or any file outside
   `tests/`.
@@ -185,7 +185,7 @@ async def write_reproduction_test(
             system_message=(
                 "You are a careful coding agent working against a real repository. "
                 "Output ONLY a git-apply compatible unified diff that adds or modifies "
-                "tests/test_*.py files. No prose, no other files."
+                "tests/test_*.py files (including subdirectories under tests/). No prose, no other files."
             ),
         )
         if not result.get("success"):

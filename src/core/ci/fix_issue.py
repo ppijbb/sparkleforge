@@ -358,7 +358,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
                 result.get("response", ""),
                 role="assistant",
                 backend=backend,
-                level=None if result.get("success") else "error",
+                level="info" if result.get("success") else "error",
             )
         if not result.get("success"):
             print(
