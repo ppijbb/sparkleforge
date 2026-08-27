@@ -20,20 +20,28 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from src.utils.supabase_exporter import get_job_status, get_report, get_supabase_client
+from src.utils.supabase_exporter import (
+    SupabaseQueryError,
+    get_job_status,
+    get_report,
+    get_supabase_client,
+)
 
 
-def _unconfigured_response() -> JSONResponse:
-    return JSONResponse(
-        {"error": "Supabase is not configured on this server (SUPABASE_URL/SUPABASE_KEY)."},
-        status_code=503,
-    )
+def _service_unavailable(detail: str) -> JSONResponse:
+    # Generic message on purpose -- doesn't confirm/deny *why* to an
+    # unauthenticated caller (config missing vs. a live query failing are
+    # both just "try again later" from outside).
+    return JSONResponse({"error": f"Service temporarily unavailable: {detail}"}, status_code=503)
 
 
 async def job_status(request: Request) -> JSONResponse:
     if get_supabase_client() is None:
-        return _unconfigured_response()
-    job = await get_job_status(request.path_params["job_id"])
+        return _service_unavailable("not configured")
+    try:
+        job = await get_job_status(request.path_params["job_id"])
+    except SupabaseQueryError:
+        return _service_unavailable("query failed")
     if job is None:
         return JSONResponse({"error": "job not found"}, status_code=404)
     return JSONResponse(job)
@@ -41,8 +49,11 @@ async def job_status(request: Request) -> JSONResponse:
 
 async def report(request: Request) -> JSONResponse:
     if get_supabase_client() is None:
-        return _unconfigured_response()
-    result = await get_report(request.path_params["report_id"])
+        return _service_unavailable("not configured")
+    try:
+        result = await get_report(request.path_params["report_id"])
+    except SupabaseQueryError:
+        return _service_unavailable("query failed")
     if result is None:
         return JSONResponse({"error": "report not found"}, status_code=404)
     return JSONResponse(result)

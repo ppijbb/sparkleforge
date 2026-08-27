@@ -157,36 +157,68 @@ async def update_job_status(
         return False
 
 
+class SupabaseQueryError(Exception):
+    """Raised when a configured Supabase query itself fails (network, auth, etc).
+
+    Distinct from returning None, which means "not configured" or "no such
+    row" -- callers (e.g. the status API) need to tell those apart to return
+    503 vs 404 instead of treating every failure as "not found".
+    """
+
+
+_JOB_STATUS_COLUMNS = "id,topic,status,user_id,error_message,created_at,updated_at"
+_REPORT_COLUMNS = (
+    "id,topic,summary,full_report,confidence_score,source_count,sources,"
+    "keywords,user_id,created_at"
+)
+
+
 async def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:
-    """Fetch one research job's row from Supabase by id, or None if not found/unconfigured."""
+    """Fetch one research job's row from Supabase by id, or None if unconfigured/not found.
+
+    Raises SupabaseQueryError if the query itself fails (row not present is
+    not a failure -- that's a None return).
+    """
     client = get_supabase_client()
     if not client:
         return None
 
     try:
         response = await asyncio.to_thread(
-            lambda: client.table("forge_jobs").select("*").eq("id", job_id).limit(1).execute()
+            lambda: client.table("forge_jobs")
+            .select(_JOB_STATUS_COLUMNS)
+            .eq("id", job_id)
+            .limit(1)
+            .execute()
         )
-        return response.data[0] if response.data else None
     except Exception as e:
         logger.error(f"Failed to fetch job status from Supabase: {e}")
-        return None
+        raise SupabaseQueryError(str(e)) from e
+    return response.data[0] if response.data else None
 
 
 async def get_report(report_id: str) -> Optional[Dict[str, Any]]:
-    """Fetch one published report row from Supabase by id, or None if not found/unconfigured."""
+    """Fetch one published report row from Supabase by id, or None if unconfigured/not found.
+
+    Raises SupabaseQueryError if the query itself fails (row not present is
+    not a failure -- that's a None return).
+    """
     client = get_supabase_client()
     if not client:
         return None
 
     try:
         response = await asyncio.to_thread(
-            lambda: client.table("reports").select("*").eq("id", report_id).limit(1).execute()
+            lambda: client.table("reports")
+            .select(_REPORT_COLUMNS)
+            .eq("id", report_id)
+            .limit(1)
+            .execute()
         )
-        return response.data[0] if response.data else None
     except Exception as e:
         logger.error(f"Failed to fetch report from Supabase: {e}")
-        return None
+        raise SupabaseQueryError(str(e)) from e
+    return response.data[0] if response.data else None
 
 
 class SupabaseExporter:

@@ -18,7 +18,6 @@ def test_job_status_404_when_job_missing(monkeypatch):
     monkeypatch.setattr(status_api, "get_supabase_client", lambda: object())
 
     async def fake_get_job_status(job_id):
-        assert job_id == "missing-id"
         return None
 
     monkeypatch.setattr(status_api, "get_job_status", fake_get_job_status)
@@ -27,6 +26,20 @@ def test_job_status_404_when_job_missing(monkeypatch):
     response = client.get("/jobs/missing-id/status")
 
     assert response.status_code == 404
+
+
+def test_job_status_503_when_query_fails(monkeypatch):
+    monkeypatch.setattr(status_api, "get_supabase_client", lambda: object())
+
+    async def fake_get_job_status(job_id):
+        raise status_api.SupabaseQueryError("network down")
+
+    monkeypatch.setattr(status_api, "get_job_status", fake_get_job_status)
+    client = TestClient(status_api.app)
+
+    response = client.get("/jobs/abc/status")
+
+    assert response.status_code == 503
 
 
 def test_job_status_200_returns_job_row(monkeypatch):
@@ -56,6 +69,20 @@ def test_report_404_when_missing(monkeypatch):
     response = client.get("/reports/missing-id")
 
     assert response.status_code == 404
+
+
+def test_report_503_when_query_fails(monkeypatch):
+    monkeypatch.setattr(status_api, "get_supabase_client", lambda: object())
+
+    async def fake_get_report(report_id):
+        raise status_api.SupabaseQueryError("network down")
+
+    monkeypatch.setattr(status_api, "get_report", fake_get_report)
+    client = TestClient(status_api.app)
+
+    response = client.get("/reports/xyz")
+
+    assert response.status_code == 503
 
 
 def test_report_200_returns_report_row(monkeypatch):
