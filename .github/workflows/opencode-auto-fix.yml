@@ -87,8 +87,12 @@ jobs:
         run: |
           ACTOR_LOGIN=$(gh api user --jq '.login')
           ACTOR_ID=$(gh api user --jq '.id')
-          git config user.name "$ACTOR_LOGIN"
-          git config user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
+          # --global: "Resolve issue and branch" clones the repo into an
+          # isolated $RUNNER_TEMP worktree (issue #1524) to avoid mutating
+          # this checkout, so a local (repo-scoped) identity here never
+          # reaches the repo that actually gets committed to.
+          git config --global user.name "$ACTOR_LOGIN"
+          git config --global user.email "$ACTOR_ID+$ACTOR_LOGIN@users.noreply.github.com"
 
       - uses: actions/setup-python@v5
         with:
@@ -248,6 +252,16 @@ jobs:
             --self-verify-command "${{ vars.OPENCODE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}" \
             > opencode-worker-error.log 2>&1
           EXIT_CODE=$?
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            # Worker error is otherwise written only to the job summary (never to
+            # an issue comment, by design). Also echo it into this step's own log
+            # so `gh run view --log`/the Actions UI shows the real failure inline
+            # instead of a bare "exit code 1" -- diagnosing this used to require
+            # a job summary, which isn't reachable via the GitHub REST API.
+            echo "::group::opencode-worker-error.log (tail)"
+            tail -n 120 opencode-worker-error.log
+            echo "::endgroup::"
+          fi
           set -e
           exit $EXIT_CODE
 
