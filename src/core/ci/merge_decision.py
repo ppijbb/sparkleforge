@@ -27,7 +27,22 @@ async def merge_decision(pr_meta_path: Path, review_path: Path, cerebras_path: P
 
     ensure_config_loaded()
     orchestrator = MultiModelOrchestrator()
-    prompt = f"""You are the final merge gate for a dev branch. Return a JSON object with keys should_merge and reason. Set should_merge to true only when the reviews do not identify concrete correctness, security, workflow, packaging, or test failures that require code changes. Set should_merge to false for unresolved risks, failing checks, unclear generated changes, or any concrete issue. Do not block solely because one provider skipped or returned no content if another review is available. A finding prefixed "UNVERIFIED (needs source check):" is the reviewer's own admission it could not confirm the claim against code outside the diff -- do not treat it as a concrete issue on its own; only block on it if another part of the review independently confirms the same problem. Keep reason concise.
+    instructions = (
+        "You are the final merge gate for a dev branch. Return a JSON object "
+        "with keys should_merge and reason. Set should_merge to true only "
+        "when the reviews do not identify concrete correctness, security, "
+        "workflow, packaging, or test failures that require code changes. "
+        "Set should_merge to false for unresolved risks, failing checks, "
+        "unclear generated changes, or any concrete issue. Do not block "
+        "solely because one provider skipped or returned no content if "
+        "another review is available. A finding prefixed \"UNVERIFIED "
+        "(needs source check):\" is the reviewer's own admission it could "
+        "not confirm the claim against code outside the diff -- do not "
+        "treat it as a concrete issue on its own; only block on it if "
+        "another part of the review independently confirms the same "
+        "problem. Keep reason concise."
+    )
+    prompt = f"""{instructions}
 
 PR Metadata:
 {pr_meta}
