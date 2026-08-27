@@ -137,6 +137,7 @@ CREATE POLICY "Authenticated users can update agent error contexts"
 --    start/end, independent of whether real-time streaming is involved.
 CREATE TABLE IF NOT EXISTS public.sparkleforge_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     source TEXT NOT NULL,                    -- autofix | repl | forge_master | autonomous_orchestrator
     external_ref TEXT,                       -- e.g. GitHub issue number/URL, REPL session id
     title TEXT,
@@ -149,6 +150,7 @@ CREATE TABLE IF NOT EXISTS public.sparkleforge_sessions (
 CREATE TABLE IF NOT EXISTS public.sparkleforge_history_events (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES public.sparkleforge_sessions(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     event_type TEXT NOT NULL,                -- message | log | llm_call | tool_call | commit | error
     role TEXT,                               -- user | assistant | system | tool
     backend TEXT,                            -- e.g. "nvidia:nemotron-3-ultra-550b-a55b", "openrouter:z-ai/glm-5.2:free"
@@ -160,32 +162,32 @@ CREATE TABLE IF NOT EXISTS public.sparkleforge_history_events (
 
 CREATE INDEX IF NOT EXISTS idx_sparkleforge_sessions_source ON public.sparkleforge_sessions(source);
 CREATE INDEX IF NOT EXISTS idx_sparkleforge_sessions_started_at ON public.sparkleforge_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_sparkleforge_sessions_user_id ON public.sparkleforge_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sparkleforge_history_events_session_id ON public.sparkleforge_history_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_sparkleforge_history_events_created_at ON public.sparkleforge_history_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_sparkleforge_history_events_user_id ON public.sparkleforge_history_events(user_id);
 
 ALTER TABLE public.sparkleforge_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sparkleforge_history_events ENABLE ROW LEVEL SECURITY;
 
 -- Work/conversation history can contain repository content, diffs, and
--- internal reasoning -- authenticated-only, no anonymous read (unlike the
--- intentionally-public reports/forge_jobs/agent_logs tables above).
+-- internal reasoning -- authenticated-only, scoped to the owning user or unassigned (user_id IS NULL).
+-- Background workers (autofix runner, history worker) using service_role
+-- bypass RLS automatically.
 DROP POLICY IF EXISTS "Authenticated can read sparkleforge sessions" ON public.sparkleforge_sessions;
-CREATE POLICY "Authenticated can read sparkleforge sessions"
-    ON public.sparkleforge_sessions FOR SELECT TO authenticated USING (true);
-
 DROP POLICY IF EXISTS "Authenticated can insert sparkleforge sessions" ON public.sparkleforge_sessions;
-CREATE POLICY "Authenticated can insert sparkleforge sessions"
-    ON public.sparkleforge_sessions FOR INSERT TO authenticated WITH CHECK (true);
-
 DROP POLICY IF EXISTS "Authenticated can update sparkleforge sessions" ON public.sparkleforge_sessions;
-CREATE POLICY "Authenticated can update sparkleforge sessions"
-    ON public.sparkleforge_sessions FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Users can manage own sparkleforge sessions" ON public.sparkleforge_sessions;
+CREATE POLICY "Users can manage own sparkleforge sessions"
+    ON public.sparkleforge_sessions FOR ALL TO authenticated
+    USING (auth.uid() = user_id OR user_id IS NULL)
+    WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
 
 DROP POLICY IF EXISTS "Authenticated can read sparkleforge history events" ON public.sparkleforge_history_events;
-CREATE POLICY "Authenticated can read sparkleforge history events"
-    ON public.sparkleforge_history_events FOR SELECT TO authenticated USING (true);
-
 DROP POLICY IF EXISTS "Authenticated can insert sparkleforge history events" ON public.sparkleforge_history_events;
-CREATE POLICY "Authenticated can insert sparkleforge history events"
-    ON public.sparkleforge_history_events FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "Users can manage own sparkleforge history events" ON public.sparkleforge_history_events;
+CREATE POLICY "Users can manage own sparkleforge history events"
+    ON public.sparkleforge_history_events FOR ALL TO authenticated
+    USING (auth.uid() = user_id OR user_id IS NULL)
+    WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
 
