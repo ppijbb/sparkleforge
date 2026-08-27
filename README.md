@@ -73,8 +73,12 @@ sparkleforge run "Latest AI trends in 2025"
 
 # Headless mode for scripts/pipelines (no interactive session)
 sparkleforge --prompt "Comprehensive systematic review of quantum machine learning algorithms"
+```
 
-# Web dashboard (secondary surface; the REPL above is the primary UX)
+The `sparkleforge` command above is the primary interface. A Streamlit
+web dashboard also exists as a secondary, browser-based surface:
+
+```bash
 streamlit run src/web/streamlit_app.py
 ```
 
