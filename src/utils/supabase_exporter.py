@@ -157,6 +157,38 @@ async def update_job_status(
         return False
 
 
+async def get_job_status(job_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch one research job's row from Supabase by id, or None if not found/unconfigured."""
+    client = get_supabase_client()
+    if not client:
+        return None
+
+    try:
+        response = await asyncio.to_thread(
+            lambda: client.table("forge_jobs").select("*").eq("id", job_id).limit(1).execute()
+        )
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logger.error(f"Failed to fetch job status from Supabase: {e}")
+        return None
+
+
+async def get_report(report_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch one published report row from Supabase by id, or None if not found/unconfigured."""
+    client = get_supabase_client()
+    if not client:
+        return None
+
+    try:
+        response = await asyncio.to_thread(
+            lambda: client.table("reports").select("*").eq("id", report_id).limit(1).execute()
+        )
+        return response.data[0] if response.data else None
+    except Exception as e:
+        logger.error(f"Failed to fetch report from Supabase: {e}")
+        return None
+
+
 class SupabaseExporter:
     """Publishes reports to Supabase without blocking the event loop."""
 
