@@ -151,3 +151,34 @@ def test_end_to_end_helpers_enqueue_expected_shapes(monkeypatch):
         name == "sparkleforge_history_events" and op == "insert" and payload["role"] == "user"
         for name, op, payload, _f in client.calls
     )
+
+
+def test_user_id_propagation_in_session_and_events(monkeypatch):
+    client = _FakeClient()
+    monkeypatch.setattr(history, "_BATCH_MAX_WAIT_S", 0.1)
+    history._queue = queue.Queue()
+    history._stop_event = threading.Event()
+    monkeypatch.setattr(history, "get_supabase_client", lambda: client)
+
+    thread = threading.Thread(target=history._worker_loop, daemon=True)
+    thread.start()
+
+    user_uuid = "12345678-1234-5678-1234-567812345678"
+    session_id = history.start_history_session("forge_master", user_id=user_uuid)
+    history.log_history_event(session_id, "llm_call", "test output", user_id=user_uuid)
+    history.end_history_session(session_id, "succeeded")
+
+    history._queue.join()
+    time.sleep(0.3)
+    history._stop_event.set()
+    thread.join(timeout=2.0)
+
+    session_insert = next(
+        payload for name, op, payload, _f in client.calls if name == "sparkleforge_sessions" and op == "insert"
+    )
+    assert session_insert["user_id"] == user_uuid
+
+    event_insert = next(
+        payload for name, op, payload, _f in client.calls if name == "sparkleforge_history_events" and op == "insert"
+    )
+    assert event_insert["user_id"] == user_uuid
