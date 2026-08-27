@@ -75,6 +75,16 @@ sparkleforge run "Latest AI trends in 2025"
 sparkleforge --prompt "Comprehensive systematic review of quantum machine learning algorithms"
 ```
 
+Embedding SparkleForge in your own Python pipeline (no subprocess) is also
+possible via `src/sdk.py`:
+
+```python
+import asyncio
+from src.sdk import run
+
+result = asyncio.run(run("Latest AI trends in 2025"))
+```
+
 The `sparkleforge` command above is the primary interface. A Streamlit
 web dashboard also exists as a secondary, browser-based surface:
 

@@ -1015,13 +1015,11 @@ EXAMPLES:
                 logger.error(f"❌ Failed to restore checkpoint: {args.restore}")
                 return
 
-        # Headless 모드 (비대화형)
+        # Headless 모드 (비대화형) -- src.sdk.run()과 동일 경로 (SDK 임베딩용 진입점)
         if args.prompt:
-            from src.core.autonomous_orchestrator import AutonomousOrchestrator
+            from src.sdk import run as sdk_run
 
-            orchestrator = AutonomousOrchestrator()
-
-            result = await orchestrator.run_research(args.prompt)
+            result = await sdk_run(args.prompt)
 
             # 출력 형식에 따라 결과 출력
             if args.output_format == "json":

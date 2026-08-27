@@ -26,9 +26,12 @@
 - **목표**: 에이전트 행동을 감사 가능하게, 권한을 통제 가능하게
   (`capability_manager`, `sandbox_executor`, `action_journal`).
 - **현재 상태**: 탐색은 인터랙티브 세션, 자동화는 `sparkleforge
-  --prompt "..."`(헤드리스, `main.py:700`)로 이미 가능.
-- **남은 갭**: 서브프로세스 스폰 없이 라이브러리로 import하는 SDK —
-  코드에 없음. 컴포넌트가 "존재함"과 "실제 호출됨"이 다른 경우도 있음
+  --prompt "..."`(헤드리스, `main.py:700`)로 이미 가능. 서브프로세스
+  스폰 없이 라이브러리로 import하는 길도 이제 있음 — `src/sdk.py::run()`
+  (`AutonomousOrchestrator`가 `researcher_config.config` 전역 상태에
+  암묵적으로 의존해서 bare import만으론 못 썼던 걸, config 로딩까지
+  같이 감싸서 노출).
+- **남은 갭**: 컴포넌트가 "존재함"과 "실제 호출됨"이 다른 경우가 있음
   (`ANVIL_PLAN.md` §3 AnomalyDetector 사례) — `test_os_plane_integrity.py`
   같은 배선 검증 테스트가 이 페르소나에게 중요.
 - **한 줄**: "모듈 있다고 안심 안 함. 콜 그래프로 증명해라."
@@ -46,5 +49,6 @@
 
 ---
 
-로드맵 매핑: 1→README 수정(PR #1565) + 모바일/웹 API(이슈 #1564),
-2→SDK 노출(신규 이슈 필요) + Τ/Π 배선 검증, 3→Nightwelding 재현 게이트.
+로드맵 매핑: 1→README 수정(PR #1565) + 모바일/웹 API(이슈 #1564, 첫
+조각 PR #1570), 2→SDK 노출(`src/sdk.py`) + Τ/Π 배선 검증,
+3→Nightwelding 재현 게이트.
