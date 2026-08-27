@@ -17,20 +17,34 @@ loads it first if nothing else already has.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict
 
+_config_load_lock = asyncio.Lock()
 
-def _ensure_config_loaded() -> None:
+
+async def _ensure_config_loaded() -> None:
     from src.core import researcher_config
 
-    if researcher_config.config is None:
-        researcher_config.load_config_from_env()
+    async with _config_load_lock:
+        if researcher_config.config is None:
+            researcher_config.load_config_from_env()
 
 
 async def run(prompt: str) -> Dict[str, Any]:
-    """Run one research request and return its result dict."""
-    _ensure_config_loaded()
+    """Run one research request and return its result dict.
 
+    Exceptions from the underlying orchestrator (including provider/config
+    errors) propagate as-is rather than being wrapped -- the same behavior
+    main.py's own `--prompt` headless path already has.
+    """
+    await _ensure_config_loaded()
+
+    # Local import: avoids loading AutonomousOrchestrator's (and its
+    # dependencies') full import graph for callers who only need e.g. the
+    # status API. Patch target for tests is src.sdk.AutonomousOrchestrator
+    # only if imported at module level here; as-is, patch
+    # src.core.autonomous_orchestrator.AutonomousOrchestrator instead.
     from src.core.autonomous_orchestrator import AutonomousOrchestrator
 
     orchestrator = AutonomousOrchestrator()
