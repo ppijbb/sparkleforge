@@ -61,14 +61,25 @@ initializes the environment.
 ### Basic Usage (PC-first; web + mobile cross-platform access tracked in #1136)
 
 ```bash
-# Start the forge web interface
+# Launch the interactive agent session (Claude Code / Codex CLI-style REPL)
+sparkleforge
+
+# Inside the session, just talk to it naturally:
+#   > Latest AI trends in 2025
+#   > keep researching quantum machine learning algorithms every 3 hours
+
+# One-shot query without entering the REPL
+sparkleforge run "Latest AI trends in 2025"
+
+# Headless mode for scripts/pipelines (no interactive session)
+sparkleforge --prompt "Comprehensive systematic review of quantum machine learning algorithms"
+```
+
+The `sparkleforge` command above is the primary interface. A Streamlit
+web dashboard also exists as a secondary, browser-based surface:
+
+```bash
 streamlit run src/web/streamlit_app.py
-
-# Run a single query via CLI
-python main.py --request "Latest AI trends in 2025"
-
-# Launch 24x7 Continuous Deep Research Mode
-python main.py --request "Comprehensive systematic review of quantum machine learning algorithms" --continuous --interval 3
 ```
 
 ### 📡 Live Public Telemetry Dashboard
