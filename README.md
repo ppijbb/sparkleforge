@@ -135,6 +135,21 @@ start until the API/service boundary is resolved, since every other candidate
 approach (responsive PWA, mobile-as-monitor-only, read-only status page) depends
 on it. See the issue for the full candidate-approaches discussion.
 
+**First shipped slice** ([#1564](https://github.com/ppijbb/sparkleforge/issues/1564)):
+a minimal read-only status/report API, for deployments with Supabase configured
+(the same tables `src/web/live_dashboard.py` already reads for the public
+telemetry dashboard):
+
+```bash
+uvicorn src.web.status_api:app --port 8502
+```
+
+- `GET /jobs/{job_id}/status` — a `forge_jobs` row
+- `GET /reports/{report_id}` — a `reports` row
+
+This covers hosted/Supabase-backed deployments only, not purely local runs —
+run-trigger and a Supabase-free local mode are still open.
+
 ## ✨ Core Innovations
 
 ### 1. **24x7 Continuous Research Engine**
