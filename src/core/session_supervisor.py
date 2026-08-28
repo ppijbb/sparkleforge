@@ -50,14 +50,14 @@ def file_crash_exhausted_issue(session_id: str, exc: BaseException, max_restarts
         proc = subprocess.run(
             ["gh", "issue", "create", "--repo", repo, "--title", title, "--body", body,
              "--label", CRASH_EXHAUSTED_LABEL],
-            text=True, capture_output=True, check=False,
+            text=True, capture_output=True, check=False, timeout=30,
         )
         if proc.returncode == 0:
             logger.info("[SessionSupervisor] filed crash issue: %s", proc.stdout.strip())
             return proc.stdout.strip()
         logger.warning("[SessionSupervisor] failed to file crash issue: %s", proc.stderr)
     except Exception:
-        logger.debug("[SessionSupervisor] gh issue create unavailable", exc_info=True)
+        logger.warning("[SessionSupervisor] gh issue create unavailable", exc_info=True)
     return None
 
 
