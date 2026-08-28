@@ -18,7 +18,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List, Set, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +75,7 @@ class MCPServerInfo(BaseModel):
     categories: List[ToolCategory] = Field(default_factory=list, description="서버 카테고리")
     priority: int = Field(default=5, ge=1, le=10, description="우선순위 (1=최고)")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class ToolInfo(BaseModel):
@@ -112,8 +111,7 @@ class ToolInfo(BaseModel):
             return 1.0
         return self.success_count / self.call_count
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class ToolRecommendation(BaseModel):
