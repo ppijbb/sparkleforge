@@ -17,7 +17,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +54,7 @@ class TopicSegment(BaseModel):
     child_segment_ids: List[str] = Field(default_factory=list, description="자식 세그먼트들")
     related_segment_ids: List[str] = Field(default_factory=list, description="관련 세그먼트들")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class SensoryBuffer:

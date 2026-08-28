@@ -18,7 +18,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List
 
 from src.agents.creativity_agent import CreativityAgent
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +98,7 @@ class RoundState(BaseModel):
     started_at: datetime = Field(default_factory=datetime.now)
     completed_at: datetime | None = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class IterativeResearchState(BaseModel):
@@ -130,8 +129,7 @@ class IterativeResearchState(BaseModel):
     # 현재 라운드 상태
     current_round_state: RoundState | None = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 @dataclass

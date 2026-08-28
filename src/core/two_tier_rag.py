@@ -17,7 +17,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Set, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,7 @@ class MemoryEntry(BaseModel):
     parent_entry: str | None = Field(default=None, description="부모 엔트리 ID")
     child_entries: List[str] = Field(default_factory=list, description="자식 엔트리 ID들")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class TierOneCache:

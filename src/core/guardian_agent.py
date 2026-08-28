@@ -19,7 +19,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +71,7 @@ class AgentHealthMetrics(BaseModel):
     idle_time_seconds: float = 0.0
     stuck_threshold_seconds: float = 300.0  # 5분
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class HealthCheckResult(BaseModel):
