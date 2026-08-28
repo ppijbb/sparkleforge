@@ -1,0 +1,15 @@
+{
+  "name": "sparkleforge",
+  "description": "Run SparkleForge research/coworker requests as a tool from another Claude Code session (Anvil Phase B-1).",
+  "version": "1.0.0",
+  "author": { "name": "ppijbb" },
+  "mcpServers": {
+    "sparkleforge": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.sparkleforge_server"],
+      "env": {
+        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}"
+      }
+    }
+  }
+}
