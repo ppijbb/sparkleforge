@@ -21,6 +21,24 @@ STAGNATION_LABEL = "scenario-stagnation"
 EXEMPT_LABELS = ["no-auto-fix", "nightwelding-queue"]
 
 
+def maybe_auto_rollback(storage_dir: Path = Path("storage/skills")):
+    """Anvil N-2: on stagnation, undo the most recently re-distilled skill.
+
+    Best-effort heuristic -- rolls back whichever saved skill has the most
+    recent created_at among those with version > 1 (i.e. was re-saved at
+    least once). Returns the rolled-back Skill, or None if there was no
+    re-distilled skill to blame.
+    """
+    from src.core.anvil.skill_repository import SkillRepository
+
+    repo = SkillRepository(storage_dir=str(storage_dir))
+    name = repo.most_recently_modified_skill()
+    if name is None:
+        return None
+    current = repo.get_skill(name)
+    return repo.rollback_skill(name, current.version - 1)
+
+
 def load_history(history_path: Path, n: int = 5) -> list[dict]:
     if not history_path.exists():
         return []
@@ -71,8 +89,15 @@ class StagnationIssue:
     labels: list[str]
 
 
-def build_stagnation_issue(report: dict, history: list[dict]) -> StagnationIssue | None:
-    """Returns None when the report doesn't confirm stagnation_detected=True."""
+def build_stagnation_issue(
+    report: dict, history: list[dict], rolled_back=None
+) -> StagnationIssue | None:
+    """Returns None when the report doesn't confirm stagnation_detected=True.
+
+    `rolled_back`, if given, is the Skill (see skill_repository.Skill) that
+    was auto-rolled-back (Anvil N-2) because it was the most recently
+    re-distilled skill at the time stagnation was detected.
+    """
     if report.get("stagnation_detected") is not True:
         return None
 
@@ -93,6 +118,17 @@ def build_stagnation_issue(report: dict, history: list[dict]) -> StagnationIssue
             "inconclusive — this masks stagnation behind coin-flip judge axes."
         )
 
+    rollback_note = ""
+    if rolled_back is not None:
+        rollback_note = (
+            f"\n\n### Auto-rollback (Anvil Ν-2)\n\n"
+            f"Skill `{rolled_back.name}` was the most recently re-distilled skill, "
+            f"so it was auto-rolled-back to v{rolled_back.metadata.get('rollback_to_version')} "
+            f"(now recorded as v{rolled_back.version}). If this wasn't the cause of the "
+            "stagnation, re-distill it again -- the rollback itself is just another "
+            "version and does not delete history."
+        )
+
     title = "scenario-eval: stagnation detected (Anvil Μ-2)"
     body = (
         "## Scenario-eval stagnation gate\n\n"
@@ -101,7 +137,8 @@ def build_stagnation_issue(report: dict, history: list[dict]) -> StagnationIssue
         f"### Lowest-scoring breakdown item\n\n`{worst_str}`\n\n"
         "### Recent history\n\n"
         f"{trend_lines}\n\n"
-        f"{inconclusive_note}\n\n"
+        f"{inconclusive_note}"
+        f"{rollback_note}\n\n"
         "This issue is intentionally excluded from the opencode-auto-fix.yml "
         "auto-scan/auto-merge pipeline (labeled `no-auto-fix`) per the "
         "CLAUDE.md principle that merges require an explicit in-session human "

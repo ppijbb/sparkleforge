@@ -1226,11 +1226,17 @@ async def handle_ci_command(args):
         import json
         import os
 
-        from src.core.ci.stagnation_issue import build_stagnation_issue, create_github_issue, load_history
+        from src.core.ci.stagnation_issue import (
+            build_stagnation_issue,
+            create_github_issue,
+            load_history,
+            maybe_auto_rollback,
+        )
 
         report = json.loads(Path(args.report).read_text(encoding="utf-8"))
         history = load_history(Path(args.history))
-        issue = build_stagnation_issue(report, history)
+        rolled_back = maybe_auto_rollback() if report.get("stagnation_detected") is True else None
+        issue = build_stagnation_issue(report, history, rolled_back=rolled_back)
         if issue is None:
             return 0
 
