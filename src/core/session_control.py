@@ -561,6 +561,22 @@ class SessionControl:
 
         return True
 
+    def record_usage(self, session_id: str, cost: float = 0.0, tokens: int = 0) -> None:
+        """Anvil Phase A-1: accumulate real $ cost (and, if known, tokens) against
+        a session's quota, so cost_incurred/tokens_used stop being permanently
+        zero (they were tracked in the quota state but never written to --
+        check_quotas' cost/token thresholds could never actually trip).
+
+        Best-effort: a session_id with no tracked quota is a no-op (debug-logged,
+        not raised -- callers on the hot LLM-call path must never fail on this).
+        """
+        q = self._session_quotas.get(session_id)
+        if q is None:
+            logger.debug("[SessionControl] record_usage: no tracked quota for session %s", session_id)
+            return
+        q["cost_incurred"] += cost
+        q["tokens_used"] += tokens
+
     def get_quota_usage(self, session_id: str) -> Dict[str, Any] | None:
         """세션의 쿼터 사용량(잔여 토큰/비용, 남은 시간)을 조회.
 
@@ -586,6 +602,13 @@ class SessionControl:
             "tokens": _usage(q["tokens_used"], q["max_tokens"]),
             "cost": _usage(q["cost_incurred"], q["budget"]),
             "time": _usage(elapsed, q["timeout"]),
+        }
+
+    def get_all_quota_usage(self) -> Dict[str, Dict[str, Any]]:
+        """Anvil Phase A-2: cost/token/time usage for every currently tracked session."""
+        return {
+            session_id: self.get_quota_usage(session_id)
+            for session_id in self._session_quotas
         }
 
     def update_session_quota(

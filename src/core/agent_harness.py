@@ -163,6 +163,7 @@ class AgentHarness:
             task_type=TaskType.GENERATION if identity == "coder" else TaskType.RESEARCH,
             max_iterations=5,
             system_message=get_system_prompt(identity),
+            session_id=state["workflow"].get("session_id"),
         )
 
         state["workflow"]["phase"] = "execute"
@@ -923,6 +924,7 @@ class AgentHarness:
                     task_type=TaskType.GENERATION if custom_state.get("mode") == "coworker" else TaskType.RESEARCH,
                     system_message=sys_prompt,
                     heat_seconds=heat_seconds,
+                    session_id=session_id,
                 )
 
                 logger.info(f"✅ Autonomous Harness completed in {time.time() - start_time:.2f}s")

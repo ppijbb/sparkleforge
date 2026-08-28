@@ -436,3 +436,43 @@ async def session_quota_command(cli, args: List[str]):
     except Exception as e:
         logger.error(f"Failed to handle session quota: {e}", exc_info=True)
         cli.console.print(f"[red]❌ Failed to handle session quota: {e}[/red]")
+
+
+async def session_cost_command(cli, args: List[str]):
+    """모든 추적 중인 세션의 $ 비용을 표로 표시 (Anvil Phase A-2).
+
+    Usage: session cost
+    """
+    if not cli.session_control:
+        cli.console.print("[red]❌ Session control not available[/red]")
+        return
+
+    try:
+        all_usage = cli.session_control.get_all_quota_usage()
+        if not all_usage:
+            cli.console.print("[yellow]No tracked sessions.[/yellow]")
+            return
+
+        table = Table(title="Session cost ledger")
+        table.add_column("Session ID", style="cyan")
+        table.add_column("Cost used", justify="right")
+        table.add_column("Cost budget", justify="right")
+        table.add_column("% used", justify="right")
+
+        total_cost = 0.0
+        for session_id, usage in all_usage.items():
+            cost = usage["cost"]
+            total_cost += cost["used"]
+            table.add_row(
+                session_id,
+                f"${cost['used']:.4f}",
+                f"${cost['limit']:.4f}",
+                f"{cost['pct_used']:.1f}%",
+            )
+
+        cli.console.print(table)
+        cli.console.print(f"[bold]Total across all tracked sessions: ${total_cost:.4f}[/bold]")
+
+    except Exception as e:
+        logger.error(f"Failed to get session cost: {e}", exc_info=True)
+        cli.console.print(f"[red]❌ Failed to get session cost: {e}[/red]")
