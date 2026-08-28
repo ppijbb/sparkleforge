@@ -295,7 +295,7 @@ Autonomous problem-solving contract:
 
                         get_session_control().record_usage(session_id, cost=result.cost)
                     except Exception:
-                        logger.debug("[AgentLoop] usage recording skipped", exc_info=True)
+                        logger.warning("[AgentLoop] usage recording failed", exc_info=True)
 
             except Exception as e:
                 category = ErrorClassifier.classify(e)

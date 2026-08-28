@@ -567,10 +567,12 @@ class SessionControl:
         zero (they were tracked in the quota state but never written to --
         check_quotas' cost/token thresholds could never actually trip).
 
-        Best-effort: a session_id with no tracked quota is a silent no-op.
+        Best-effort: a session_id with no tracked quota is a no-op (debug-logged,
+        not raised -- callers on the hot LLM-call path must never fail on this).
         """
         q = self._session_quotas.get(session_id)
         if q is None:
+            logger.debug("[SessionControl] record_usage: no tracked quota for session %s", session_id)
             return
         q["cost_incurred"] += cost
         q["tokens_used"] += tokens
