@@ -240,6 +240,11 @@ async def _execute_coworker_goal(
 
     from src.cli.ui.spinner import stage_status
     from src.core.agent_orchestrator import get_orchestrator
+    from src.core.session_supervisor import (
+        DEFAULT_MAX_RESTARTS,
+        file_crash_exhausted_issue,
+        run_with_crash_supervision,
+    )
 
     custom_state = {"current_goal": goal}
     if force_coworker:
@@ -253,11 +258,21 @@ async def _execute_coworker_goal(
 
     with stage_status(get_console(), "Working...", ("src.core.agent_harness", "src.core.agent_loop")):
         orchestrator = get_orchestrator()
-        result = await orchestrator.execute(
-            goal,
+        # Anvil Phase O: an unhandled crash (not the harness's own
+        # success=False reporting, an actual escaped exception) restarts the
+        # same session_id up to a few times with backoff, instead of just
+        # ending the process.
+        result = await run_with_crash_supervision(
+            lambda: orchestrator.execute(
+                goal,
+                session_id=session_id,
+                custom_state=custom_state,
+                heat_seconds=heat_seconds,
+            ),
             session_id=session_id,
-            custom_state=custom_state,
-            heat_seconds=heat_seconds,
+            on_exhausted=lambda sid, exc: file_crash_exhausted_issue(
+                sid, exc, max_restarts=DEFAULT_MAX_RESTARTS
+            ),
         )
 
     # issue #1506: the harness catches its own failures internally and
