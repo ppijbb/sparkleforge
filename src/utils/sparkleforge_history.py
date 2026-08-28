@@ -98,7 +98,6 @@ def start_history_session(
     *,
     external_ref: Optional[str] = None,
     title: Optional[str] = None,
-    user_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Begin a new history session and return its id.
@@ -108,21 +107,22 @@ def start_history_session(
             "repl", "forge_master".
         external_ref: an external identifier for correlation, e.g. a GitHub
             issue number/URL or a REPL session id.
-        user_id: optional UUID of the owning user for RLS tenancy scoping.
     """
     session_id = str(uuid.uuid4())
     _ensure_worker()
-    payload: Dict[str, Any] = {
-        "id": session_id,
-        "source": source,
-        "external_ref": external_ref,
-        "title": title,
-        "status": "running",
-        "metadata": metadata or {},
-    }
-    if user_id is not None:
-        payload["user_id"] = user_id
-    _queue.put(("session_start", payload))
+    _queue.put(
+        (
+            "session_start",
+            {
+                "id": session_id,
+                "source": source,
+                "external_ref": external_ref,
+                "title": title,
+                "status": "running",
+                "metadata": metadata or {},
+            },
+        )
+    )
     return session_id
 
 
@@ -134,7 +134,6 @@ def log_history_event(
     role: Optional[str] = None,
     backend: Optional[str] = None,
     level: Optional[str] = None,
-    user_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Append one event to a session's history.
@@ -146,21 +145,22 @@ def log_history_event(
             content; omit for non-conversational events.
         backend: which LLM backend actually served this event, if any, e.g.
             "nvidia:nemotron-3-ultra-550b-a55b" or "openrouter:z-ai/glm-5.2:free".
-        user_id: optional UUID of the owning user for RLS tenancy scoping.
     """
     _ensure_worker()
-    payload: Dict[str, Any] = {
-        "session_id": session_id,
-        "event_type": event_type,
-        "role": role,
-        "backend": backend,
-        "level": level,
-        "content": content,
-        "metadata": metadata or {},
-    }
-    if user_id is not None:
-        payload["user_id"] = user_id
-    _queue.put(("event", payload))
+    _queue.put(
+        (
+            "event",
+            {
+                "session_id": session_id,
+                "event_type": event_type,
+                "role": role,
+                "backend": backend,
+                "level": level,
+                "content": content,
+                "metadata": metadata or {},
+            },
+        )
+    )
 
 
 def end_history_session(
