@@ -7,6 +7,7 @@
 import importlib.util
 import json
 import logging
+import re
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,6 +15,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+_VERSION_FILE_RE = re.compile(r"\.v\d+$")
 
 
 @dataclass
@@ -25,6 +28,7 @@ class Skill:
     description: str = ""
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     metadata: Dict[str, Any] = field(default_factory=dict)
+    version: int = 1
 
 
 class SkillRepository:
@@ -55,17 +59,70 @@ class SkillRepository:
         description: str = "",
         metadata: Dict[str, Any] | None = None,
     ) -> Skill:
-        """스킬을 메모리와 디스크에 저장."""
+        """스킬을 메모리와 디스크에 저장. 동일 이름 재저장 시 버전 증가, 이전 버전은 보존."""
+        prev = self.skills.get(name)
+        version = (prev.version + 1) if prev else 1
         skill = Skill(
             name=name,
             code=code,
             description=description,
             metadata=metadata or {},
+            version=version,
         )
         self.skills[name] = skill
         self._persist_to_disk(skill)
-        logger.info(f"[SkillRepo] Skill saved: {name}")
+        logger.info(f"[SkillRepo] Skill saved: {name} v{version}")
         return skill
+
+    def list_skill_versions(self, name: str) -> List[int]:
+        """이름으로 저장된 모든 버전 번호 반환 (오름차순)."""
+        versions = []
+        for meta_file in self.storage_dir.glob(f"{name}.v*.json"):
+            try:
+                versions.append(int(meta_file.stem.rsplit(".v", 1)[1]))
+            except (IndexError, ValueError):
+                continue
+        return sorted(versions)
+
+    def get_skill_version(self, name: str, version: int) -> Skill | None:
+        """특정 버전의 스킬을 디스크에서 조회 (메모리 최신본과 무관)."""
+        meta_path = self.storage_dir / f"{name}.v{version}.json"
+        code_path = self.storage_dir / f"{name}.v{version}.py"
+        if not meta_path.exists():
+            return None
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        code = code_path.read_text(encoding="utf-8") if code_path.exists() else ""
+        return Skill(
+            name=meta["name"],
+            code=code,
+            description=meta.get("description", ""),
+            created_at=meta.get("created_at", ""),
+            metadata=meta.get("metadata", {}),
+            version=meta.get("version", version),
+        )
+
+    def most_recently_modified_skill(self) -> Optional[str]:
+        """version > 1(최근 재증류/수정된) 스킬 중 created_at이 가장 최근인 이름. 없으면 None."""
+        candidates = [s for s in self.skills.values() if s.version > 1]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda s: s.created_at).name
+
+    def rollback_skill(self, name: str, version: int) -> Skill:
+        """지정 버전의 코드로 되돌린다. git revert처럼 새 버전으로 기록되어 이력은 보존된다."""
+        target = self.get_skill_version(name, version)
+        if target is None:
+            raise ValueError(f"Skill '{name}' has no version {version}")
+        metadata = dict(target.metadata)
+        metadata["rollback_from_version"] = self.skills.get(name).version if name in self.skills else None
+        metadata["rollback_to_version"] = version
+        return self.save_skill(
+            name=name,
+            code=target.code,
+            description=target.description,
+            metadata=metadata,
+        )
 
     def get_skill(self, name: str) -> Skill | None:
         """이름으로 스킬 조회."""
@@ -162,25 +219,22 @@ class SkillRepository:
                 pass
 
     def _persist_to_disk(self, skill: Skill) -> None:
-        """스킬을 디스크에 저장 (메타데이터 JSON + 코드 .py)."""
-        meta_path = self.storage_dir / f"{skill.name}.json"
-        code_path = self.storage_dir / f"{skill.name}.py"
-
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "name": skill.name,
-                    "description": skill.description,
-                    "created_at": skill.created_at,
-                    "metadata": skill.metadata,
-                },
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
-
-        with open(code_path, "w", encoding="utf-8") as f:
-            f.write(skill.code)
+        """스킬을 디스크에 저장 (버전별 파일 + 최신본 별칭)."""
+        meta = {
+            "name": skill.name,
+            "description": skill.description,
+            "created_at": skill.created_at,
+            "metadata": skill.metadata,
+            "version": skill.version,
+        }
+        # 버전별 파일 (이력 보존, 롤백용)
+        for prefix in (skill.name, f"{skill.name}.v{skill.version}"):
+            meta_path = self.storage_dir / f"{prefix}.json"
+            code_path = self.storage_dir / f"{prefix}.py"
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+            with open(code_path, "w", encoding="utf-8") as f:
+                f.write(skill.code)
 
     def _load_from_disk(self) -> None:
         """디스크에서 기존 스킬을 복원."""
@@ -188,6 +242,8 @@ class SkillRepository:
             return
 
         for meta_file in self.storage_dir.glob("*.json"):
+            if _VERSION_FILE_RE.search(meta_file.stem):
+                continue  # 버전별 이력 파일(name.vN.json)은 최신본 로드 시 건너뜀
             try:
                 with open(meta_file, encoding="utf-8") as f:
                     meta = json.load(f)
@@ -203,6 +259,7 @@ class SkillRepository:
                     description=meta.get("description", ""),
                     created_at=meta.get("created_at", ""),
                     metadata=meta.get("metadata", {}),
+                    version=meta.get("version", 1),
                 )
                 self.skills[skill.name] = skill
             except Exception as e:
