@@ -1264,6 +1264,32 @@ async def handle_ci_command(args):
             return 0
         create_github_issue(repo, issue)
         return 0
+    elif args.ci_command == "issue-digest":
+        import os
+
+        from src.core.ci.issue_digest import apply_digest, build_digest, fetch_open_issues
+
+        repo = args.repo or os.getenv("GITHUB_REPOSITORY", "")
+        if not repo:
+            logger.error("GITHUB_REPOSITORY not set; cannot fetch issues.")
+            return 0
+
+        issues = fetch_open_issues(repo)
+        digest = build_digest(issues, min_similarity=args.min_similarity, stale_days=args.stale_days)
+
+        print(f"[issue-digest] {len(issues)} open issue(s) scanned.")
+        print(f"[issue-digest] {len(digest.recurring_groups)} recurring group(s):")
+        for group in digest.recurring_groups:
+            print("  - " + ", ".join(f"#{i['number']} {i['title']}" for i in group))
+        print(f"[issue-digest] {len(digest.stale_issues)} stale issue(s):")
+        for issue in digest.stale_issues:
+            print(f"  - #{issue['number']} {issue['title']} (updated {issue.get('updatedAt')})")
+
+        if args.dry_run:
+            print("[issue-digest] --dry-run: skipping comments/labels.")
+        else:
+            apply_digest(repo, digest)
+        return 0
     elif args.ci_command == "collect-todos":
         import json
 

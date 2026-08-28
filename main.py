@@ -644,6 +644,12 @@ EXAMPLES:
     ci_stagnation_issue_parser.add_argument("--history", required=True, help="Path to scenario_history.jsonl")
     ci_stagnation_issue_parser.add_argument("--repo", default=None, help="Defaults to $GITHUB_REPOSITORY")
 
+    ci_issue_digest_parser = ci_subparsers.add_parser("issue-digest", help="Group recurring open issues and flag stale ones (Anvil Phase Gamma)")
+    ci_issue_digest_parser.add_argument("--repo", default=None, help="Defaults to $GITHUB_REPOSITORY")
+    ci_issue_digest_parser.add_argument("--min-similarity", type=float, default=0.5)
+    ci_issue_digest_parser.add_argument("--stale-days", type=int, default=14)
+    ci_issue_digest_parser.add_argument("--dry-run", action="store_true", help="Print the digest without commenting/labeling on GitHub")
+
     ci_collect_todos_parser = ci_subparsers.add_parser("collect-todos", help="Scan src/ for TODO/FIXME comments and write docs/todo_inventory.{md,json}")
 
     ci_plan_todo_issues_parser = ci_subparsers.add_parser("plan-todo-issues", help="Plan which TODO-debt inventory items become new GitHub issues")
