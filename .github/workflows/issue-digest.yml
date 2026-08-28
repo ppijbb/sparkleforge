@@ -1,0 +1,38 @@
+name: Nightwelding issue digest (Anvil Phase Γ)
+
+# Weekly triage pass over the open issue backlog: groups issues that look
+# like the same recurring root cause (comments linking siblings) and flags
+# issues with no activity in 14+ days (nightwelding-stale label). See
+# docs/ANVIL_PLAN.md section 3 -- open auto-fix issues were piling up with
+# no triage signal at all.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Monday 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+
+jobs:
+  issue-digest:
+    name: Group recurring issues + flag stale ones
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge
+        run: uv sync
+
+      - name: Run issue digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run sparkleforge ci issue-digest --repo "${{ github.repository }}"
