@@ -141,11 +141,14 @@ a minimal read-only status/report API, for deployments with Supabase configured
 telemetry dashboard):
 
 ```bash
-uvicorn src.web.status_api:app --port 8502
+STATUS_API_TOKEN=... uvicorn src.web.status_api:app --port 8502
 ```
 
 - `GET /jobs/{job_id}/status` — a `forge_jobs` row
 - `GET /reports/{report_id}` — a `reports` row
+
+Both routes require `Authorization: Bearer <STATUS_API_TOKEN>`; without the
+env var set, they reject every request instead of serving data unguarded.
 
 This covers hosted/Supabase-backed deployments only, not purely local runs —
 run-trigger and a Supabase-free local mode are still open.

@@ -8,12 +8,19 @@ covers deployments with Supabase configured; it does not cover purely local,
 same-machine runs (``src/core/session_control.py``'s in-process session
 state, or ``src/storage/hybrid_storage.py``'s local file store).
 
+Requires a bearer token: set STATUS_API_TOKEN and send
+``Authorization: Bearer <token>`` on every request. Without the env var set,
+both routes reject every request (503) rather than serving data unguarded.
+
 Run with::
 
-    uvicorn src.web.status_api:app --port 8502
+    STATUS_API_TOKEN=... uvicorn src.web.status_api:app --port 8502
 """
 
 from __future__ import annotations
+
+import os
+import secrets
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -35,7 +42,26 @@ def _service_unavailable(detail: str) -> JSONResponse:
     return JSONResponse({"error": f"Service temporarily unavailable: {detail}"}, status_code=503)
 
 
+def _check_auth(request: Request) -> JSONResponse | None:
+    """Return an error response if the request isn't authorized, else None.
+
+    Fails closed: if STATUS_API_TOKEN isn't set, every request is rejected
+    (503) rather than silently serving job/report rows -- job_id/report_id
+    are UUIDs, not secrets, so this endpoint must not be reachable without a
+    configured token.
+    """
+    expected = os.environ.get("STATUS_API_TOKEN")
+    if not expected:
+        return _service_unavailable("auth not configured")
+    got = request.headers.get("authorization", "")
+    if not got.startswith("Bearer ") or not secrets.compare_digest(got[len("Bearer "):], expected):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return None
+
+
 async def job_status(request: Request) -> JSONResponse:
+    if (err := _check_auth(request)) is not None:
+        return err
     if get_supabase_client() is None:
         return _service_unavailable("not configured")
     try:
@@ -48,6 +74,8 @@ async def job_status(request: Request) -> JSONResponse:
 
 
 async def report(request: Request) -> JSONResponse:
+    if (err := _check_auth(request)) is not None:
+        return err
     if get_supabase_client() is None:
         return _service_unavailable("not configured")
     try:
