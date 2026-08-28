@@ -161,8 +161,12 @@ Autonomous problem-solving contract:
         max_iterations: int = 20,
         system_message: str | None = None,
         heat_seconds: float | None = None,
+        session_id: str | None = None,
     ) -> Dict[str, Any]:
         """Runs the autonomous loop.
+
+        session_id: when given, each model call's real $ cost (Anvil Phase A-1)
+        is recorded against that session's SessionControl quota.
 
         heat_seconds: optional wall-clock time budget ("Heat", issue #585).
         When set, the loop stops starting new iterations once
@@ -284,6 +288,14 @@ Autonomous problem-solving contract:
 
                 # Success - reset retry count
                 retry_count = 0
+
+                if session_id:
+                    try:
+                        from src.core.session_control import get_session_control
+
+                        get_session_control().record_usage(session_id, cost=result.cost)
+                    except Exception:
+                        logger.debug("[AgentLoop] usage recording skipped", exc_info=True)
 
             except Exception as e:
                 category = ErrorClassifier.classify(e)

@@ -353,6 +353,9 @@ EXAMPLES:
     session_quota_parser.add_argument(
         "--timeout", type=int, default=None, help="New wall-clock timeout in seconds"
     )
+    session_subparsers.add_parser(
+        "cost", help="Show $ cost incurred across all currently tracked sessions (Anvil Phase A)"
+    )
 
     # actions 커맨드
     actions_parser = subparsers.add_parser("actions", help="List pending actions")

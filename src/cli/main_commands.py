@@ -330,6 +330,7 @@ async def handle_session_command(args):
     from rich.console import Console
 
     from src.cli.commands.session import (
+        session_cost_command,
         session_list_command,
         session_quota_command,
         session_show_command,
@@ -357,6 +358,8 @@ async def handle_session_command(args):
         if args.timeout is not None:
             quota_args += ["--timeout", str(args.timeout)]
         await session_quota_command(shim, quota_args)
+    elif sub == "cost":
+        await session_cost_command(shim, [])
     else:
         await session_list_command(shim, [str(getattr(args, "limit", 20))])
     return 0
