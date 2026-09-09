@@ -42,6 +42,61 @@ class ProviderAdaptersMixin:
             return prompt
         return f"{system_message}\n\n{prompt}"
 
+    def _gemini_role_and_parts(self, msg: Dict[str, Any]) -> tuple[str, list]:
+        """Map one OpenAI-style harness history message to a Gemini (role, parts) turn.
+
+        Gemini's chat API only knows "user"/"model" roles; assistant tool_calls
+        become model function_call parts, and tool results become user
+        function_response parts (matching google.generativeai's own convention,
+        see responder.py's use of the user role for FunctionResponse).
+        """
+        role = msg.get("role")
+        if role == "assistant":
+            tool_calls = msg.get("tool_calls") or []
+            if tool_calls:
+                parts = []
+                for tc in tool_calls:
+                    fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                    raw_args = fn.get("arguments") or "{}"
+                    try:
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    parts.append({"function_call": {"name": fn.get("name", ""), "args": args}})
+                return "model", parts
+            return "model", [{"text": msg.get("content") or ""}]
+        if role == "tool":
+            raw_content = msg.get("content") or "{}"
+            try:
+                response = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+            except (json.JSONDecodeError, TypeError):
+                response = {"result": raw_content}
+            if not isinstance(response, dict):
+                response = {"result": response}
+            return "user", [{"function_response": {"name": msg.get("name") or "unknown_tool", "response": response}}]
+        # "user"/"system"/anything else: Gemini has no mid-conversation system
+        # role, so fold it into a plain user text turn.
+        return "user", [{"text": msg.get("content") or ""}]
+
+    def _build_gemini_contents(
+        self, history_messages: list, prompt: str, system_message: str | None
+    ) -> list[Dict[str, Any]]:
+        """Convert the harness's OpenAI-style history into Gemini's turn-based
+        `contents` shape, preserving prior tool calls/results (#1530) instead of
+        dropping them -- gemini-flash-lite has no other way to know a tool call
+        already happened and keeps re-issuing it otherwise."""
+        turns = list(history_messages) + [{"role": "user", "content": prompt}]
+        contents: list[Dict[str, Any]] = []
+        for msg in turns:
+            role, parts = self._gemini_role_and_parts(msg)
+            if contents and contents[-1]["role"] == role:
+                contents[-1]["parts"].extend(parts)
+            else:
+                contents.append({"role": role, "parts": parts})
+        if system_message and contents:
+            contents[0]["parts"].insert(0, {"text": f"{system_message}\n\n"})
+        return contents
+
 
     async def _execute_gemini_with_cached_content(
         self,
@@ -195,6 +250,14 @@ class ProviderAdaptersMixin:
         # Context ordering for caching: static (system) first, then dynamic (prompt)
         full_prompt = self._build_gemini_prompt_ordered(system_message, prompt)
 
+        # #1530: build proper multi-turn contents from the harness's history
+        # instead of only ever sending the latest message -- without this,
+        # gemini-flash-lite has no way to know it already called a tool and
+        # got a result, so it keeps re-issuing the identical call until the
+        # harness's stuck-loop detector kills the session.
+        history_messages = kwargs.pop("history_messages", [])
+        gemini_contents = self._build_gemini_contents(history_messages, prompt, system_message)
+
         # Convert OpenAI-style tool schemas (what the harness/other providers use)
         # into Gemini's function_declarations shape. Without this, gemini-flash was
         # never given any tools at all, so it could only ever answer in prose --
@@ -223,7 +286,7 @@ class ProviderAdaptersMixin:
                     asyncio.get_running_loop().run_in_executor(
                         None,
                         lambda: client.generate_content(
-                            full_prompt,
+                            gemini_contents,
                             generation_config=genai.types.GenerationConfig(
                                 temperature=model_config.temperature,
                                 max_output_tokens=model_config.max_tokens,
