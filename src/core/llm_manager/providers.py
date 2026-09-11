@@ -45,10 +45,15 @@ class ProviderAdaptersMixin:
     def _gemini_role_and_parts(self, msg: Dict[str, Any]) -> tuple[str, list]:
         """Map one OpenAI-style harness history message to a Gemini (role, parts) turn.
 
-        Gemini's chat API only knows "user"/"model" roles; assistant tool_calls
-        become model function_call parts, and tool results become user
-        function_response parts (matching google.generativeai's own convention,
-        see responder.py's use of the user role for FunctionResponse).
+        Prior tool calls/results are rendered as plain text (not the native
+        function_call/function_response Part types) deliberately: replaying a
+        real function_call part back to Gemini 3.x requires a thought_signature
+        the response carried, and the pinned (EOL, upstream-frozen)
+        google-generativeai SDK has no field to capture or resend it --
+        replaying one without it is rejected outright with
+        "InvalidArgument: 400 Function call is missing a thought_signature".
+        Plain text still gives the model the memory it needs (#1530) without
+        depending on that unavailable machinery.
         """
         role = msg.get("role")
         if role == "assistant":
@@ -57,23 +62,15 @@ class ProviderAdaptersMixin:
                 parts = []
                 for tc in tool_calls:
                     fn = tc.get("function", {}) if isinstance(tc, dict) else {}
-                    raw_args = fn.get("arguments") or "{}"
-                    try:
-                        args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                    except (json.JSONDecodeError, TypeError):
-                        args = {}
-                    parts.append({"function_call": {"name": fn.get("name", ""), "args": args}})
+                    parts.append(
+                        {"text": f"[Called tool: {fn.get('name', '')}({fn.get('arguments') or '{}'})]"}
+                    )
                 return "model", parts
             return "model", [{"text": msg.get("content") or ""}]
         if role == "tool":
-            raw_content = msg.get("content") or "{}"
-            try:
-                response = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
-            except (json.JSONDecodeError, TypeError):
-                response = {"result": raw_content}
-            if not isinstance(response, dict):
-                response = {"result": response}
-            return "user", [{"function_response": {"name": msg.get("name") or "unknown_tool", "response": response}}]
+            name = msg.get("name") or "unknown_tool"
+            content = msg.get("content") or ""
+            return "user", [{"text": f"[Result of {name}: {content}]"}]
         # "user"/"system"/anything else: Gemini has no mid-conversation system
         # role, so fold it into a plain user text turn.
         return "user", [{"text": msg.get("content") or ""}]

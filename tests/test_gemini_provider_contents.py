@@ -1,6 +1,14 @@
 """#1530: Gemini calls must carry prior tool calls/results as real turns,
 not drop them -- gemini-flash-lite re-issues identical tool calls when it
-has no memory of having already called them."""
+has no memory of having already called them.
+
+Prior tool calls/results are rendered as plain text turns, not the native
+function_call/function_response Part types -- replaying a real function_call
+part back to Gemini 3.x requires a thought_signature the response carried,
+and the pinned (EOL) google-generativeai SDK has no way to capture or resend
+it; doing so anyway gets the request rejected with
+"InvalidArgument: 400 Function call is missing a thought_signature"
+(confirmed live against the real API, not just a hypothetical)."""
 
 from src.core.llm_manager.providers import ProviderAdaptersMixin
 
@@ -9,7 +17,7 @@ def _adapter():
     return ProviderAdaptersMixin()
 
 
-def test_tool_call_and_result_round_trip_as_function_turns():
+def test_tool_call_and_result_round_trip_as_text_turns():
     history = [
         {"role": "user", "content": "list the files"},
         {
@@ -27,20 +35,16 @@ def test_tool_call_and_result_round_trip_as_function_turns():
     contents = _adapter()._build_gemini_contents(history, "what next?", system_message=None)
 
     roles = [c["role"] for c in contents]
-    # trailing "what next?" prompt merges into the preceding function_response
-    # turn since both are role "user" -- Gemini requires strict alternation.
+    # trailing "what next?" prompt merges into the preceding tool-result turn
+    # since both are role "user" -- Gemini requires strict alternation.
     assert roles == ["user", "model", "user"]
 
-    function_call_turn = contents[1]
-    assert function_call_turn["parts"][0]["function_call"] == {
-        "name": "filesystem",
-        "args": {"path": "."},
-    }
+    call_turn = contents[1]
+    assert call_turn["parts"][0]["text"] == '[Called tool: filesystem({"path": "."})]'
 
-    function_response_turn = contents[2]
-    assert function_response_turn["parts"][0]["function_response"]["name"] == "filesystem"
-    assert function_response_turn["parts"][0]["function_response"]["response"]["files"] == ["a.py"]
-    assert function_response_turn["parts"][1] == {"text": "what next?"}
+    result_turn = contents[2]
+    assert result_turn["parts"][0]["text"] == '[Result of filesystem: {"success": true, "files": ["a.py"]}]'
+    assert result_turn["parts"][1] == {"text": "what next?"}
 
 
 def test_consecutive_same_role_turns_are_merged():
@@ -50,9 +54,9 @@ def test_consecutive_same_role_turns_are_merged():
     ]
     contents = _adapter()._build_gemini_contents(history, "final message", system_message=None)
 
-    # tool result (user/function_response) + system nudge (user/text) +
-    # trailing prompt (user/text) must collapse into one alternating turn,
-    # not three consecutive "user" turns -- Gemini's API rejects non-alternating roles.
+    # tool result (user/text) + system nudge (user/text) + trailing prompt
+    # (user/text) must collapse into one alternating turn, not three
+    # consecutive "user" turns -- Gemini's API rejects non-alternating roles.
     assert [c["role"] for c in contents] == ["user"]
     assert len(contents[0]["parts"]) == 3
 
@@ -73,11 +77,11 @@ def test_malformed_tool_arguments_do_not_raise():
         }
     ]
     contents = _adapter()._build_gemini_contents(history, "next", system_message=None)
-    assert contents[0]["parts"][0]["function_call"] == {"name": "x", "args": {}}
+    assert contents[0]["parts"][0]["text"] == "[Called tool: x(not json)]"
 
 
 if __name__ == "__main__":
-    test_tool_call_and_result_round_trip_as_function_turns()
+    test_tool_call_and_result_round_trip_as_text_turns()
     test_consecutive_same_role_turns_are_merged()
     test_system_message_prefixed_onto_first_turn_only()
     test_malformed_tool_arguments_do_not_raise()
