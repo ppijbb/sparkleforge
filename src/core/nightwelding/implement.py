@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from src.core import patch_ops
+from src.utils.sparkleforge_history import log_history_event
 
 _FIX_ISSUE_TIMEOUT_SECONDS = 600
 _PYTEST_TIMEOUT_SECONDS = 300
@@ -74,6 +75,7 @@ def implement_until_green(
     for attempt in range(1, max_iterations + 1):
         before_sig = patch_ops.repository_change_signature(cwd=repo_root)
 
+        history_session_id = os.getenv("SPARKLEFORGE_HISTORY_SESSION_ID")
         # Issue #917: validate the synthetic schema of the worker's diff before
         # attempting to apply it, so malformed LLM output fails fast with a clear
         # reason instead of an opaque `git apply` failure deep in patch_ops.
@@ -96,6 +98,17 @@ def implement_until_green(
         if proc.returncode != 0:
             candidate_diff = patch_ops.extract_diff(proc.stdout or "")
             if candidate_diff.strip():
+                if history_session_id:
+                    pt = len(candidate_diff) // 3
+                    usage = {"prompt_tokens": pt, "completion_tokens": pt, "total_tokens": pt * 2}
+                    cost = pt * 0.00001
+                    log_history_event(
+                        history_session_id,
+                        "llm_call",
+                        candidate_diff,
+                        role="assistant",
+                        metadata={"token_usage": usage, "estimated_cost": cost},
+                    )
                 schema_ok, schema_reason = _validate_repro_diff_schema(candidate_diff)
                 if not schema_ok:
                     extra_context_path.write_text(

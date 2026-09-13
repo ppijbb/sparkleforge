@@ -107,7 +107,7 @@ def _render_header() -> None:
 
 
 def _render_metric_cards(metrics: Dict[str, Any]) -> None:
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric(
         "Mean Time to Merge (MTTM)",
         f"{metrics['mttm_minutes']:.2f} min",
@@ -122,6 +122,11 @@ def _render_metric_cards(metrics: Dict[str, Any]) -> None:
         "Zero-Cost Reactive Scheduler Token Savings",
         _format_percent(metrics["token_savings"]),
         help="Token cost reduction during async waiting.",
+    )
+    col4.metric(
+        "CI Auto-Fix Cumulative Cost",
+        f"${metrics.get('ci_cumulative_cost_usd', 0.0):.4f}",
+        help="Cumulative LLM token consumption cost for CI auto-fix sessions.",
     )
     st.caption(f"Metric source: `{metrics.get('source', 'baseline')}`")
 
@@ -158,6 +163,22 @@ def _render_footer() -> None:
 def main() -> None:
     _render_header()
     metrics = _fetch_metrics()
+    
+    # Compute CI Auto-Fix Cumulative Cost from sparkleforge_history_events or sessions if available
+    session_rows = _safe_select("sparkleforge_sessions", columns="metadata", limit=200)
+    total_ci_cost = 0.0
+    for row in session_rows:
+        meta = row.get("metadata") or {}
+        if "total_cost_usd" in meta:
+            total_ci_cost += float(meta["total_cost_usd"])
+    if total_ci_cost == 0.0:
+        history_events = _safe_select("sparkleforge_history_events", columns="metadata", limit=500)
+        for ev in history_events:
+            meta = ev.get("metadata") or {}
+            if "estimated_cost" in meta:
+                total_ci_cost += float(meta["estimated_cost"])
+    metrics["ci_cumulative_cost_usd"] = total_ci_cost
+
     _render_metric_cards(metrics)
     col_a, col_b = st.columns(2)
     with col_a:
