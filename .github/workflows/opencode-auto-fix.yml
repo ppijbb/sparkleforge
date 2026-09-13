@@ -120,7 +120,15 @@ jobs:
           echo "Cloning $TARGET_REPO into isolated worktree $WORK_DIR"
           gh repo clone "$TARGET_REPO" "$WORK_DIR" -- --depth=1 --no-tags
           cd "$WORK_DIR"
-          
+
+          # `gh repo clone` only authenticates its own clone subprocess -- it
+          # leaves no git credential behind in $WORK_DIR/.git/config, unlike
+          # actions/checkout@v4's persistent http.extraheader on the main
+          # workspace. Without this, the later plain `git push` in the "Push
+          # SparkleForge changes" step fails with "could not read Username"
+          # regardless of whether PAT is valid (issue #1629).
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(printf '%s' "x-access-token:$GH_TOKEN" | base64 -w0)"
+
           echo "target_path=$WORK_DIR" >> "$GITHUB_OUTPUT"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.issue_number }}" ]; then
