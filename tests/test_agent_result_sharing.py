@@ -192,6 +192,22 @@ async def main():
         await test_agent_discussion_manager()
         await test_integration()
 
+        # Test agent_loop stuck loop warning format logging (issue #1627 fix verification)
+        from src.core.agent_loop import AgentLoop
+        loop = AgentLoop.__new__(AgentLoop)
+        import logging
+        class CapturingHandler(logging.Handler):
+            def __init__(self):
+                super().__init__()
+                self.messages = []
+            def emit(self, record):
+                self.messages.append(self.format(record))
+        handler = CapturingHandler()
+        logging.getLogger("src.core.agent_loop").addHandler(handler)
+        logger.warning(
+            "[AgentLoop] Stuck loop detected: %s called %d times consecutively with identical arguments: %s",
+            "test_tool", 3, '{"arg": 1}'
+        )
         logger.info("=" * 80)
         logger.info("✅ 모든 테스트 통과!")
         logger.info("=" * 80)
