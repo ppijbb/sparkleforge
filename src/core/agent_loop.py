@@ -474,7 +474,7 @@ Autonomous problem-solving contract:
 
                 if stuck_repeat_count >= MAX_STUCK_TOOL_REPEATS:
                     logger.warning(
-                        "[AgentLoop] Stuck loop detected: %s called %d times consecutively "
+                        "[AgentLoop] Stuck loop detected: %s called %s times consecutively "
                         "with identical arguments: %s",
                         tool_name,
                         stuck_repeat_count + 1,
