@@ -157,6 +157,28 @@ async def update_job_status(
         return False
 
 
+async def update_session_tokens(session_id: str, total_tokens: int, total_cost_usd: float) -> bool:
+    """Update session metadata with token usage and cost."""
+    client = get_supabase_client()
+    if not client:
+        return False
+
+    data = {
+        "total_tokens": int(total_tokens),
+        "total_cost_usd": float(total_cost_usd),
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+    try:
+        response = await asyncio.to_thread(
+            lambda: client.table("sparkleforge_sessions").update(data).eq("id", session_id).execute()
+        )
+        return bool(response.data)
+    except Exception as e:
+        logger.error(f"Failed to update session tokens in Supabase: {e}")
+        return False
+
+
 class SupabaseQueryError(Exception):
     """Raised when a configured Supabase query itself fails (network, auth, etc).
 

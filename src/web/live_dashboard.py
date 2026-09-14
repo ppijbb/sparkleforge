@@ -89,6 +89,20 @@ def _fetch_jobs(limit: int = 25) -> List[Dict[str, Any]]:
     return rows[:limit]
 
 
+def _fetch_cumulative_ci_cost() -> Dict[str, Any]:
+    """Fetch cumulative token usage and cost for CI Auto-Fix sessions."""
+    rows = _safe_select("sparkleforge_sessions", columns="total_tokens,total_cost_usd", limit=500)
+    total_tokens = 0
+    total_cost = 0.0
+    for r in rows:
+        total_tokens += int(r.get("total_tokens") or 0)
+        total_cost += float(r.get("total_cost_usd") or 0.0)
+    return {
+        "total_tokens": total_tokens,
+        "total_cost_usd": total_cost,
+    }
+
+
 def _format_percent(value: float) -> str:
     return f"{value * 100:.1f}%"
 
@@ -146,6 +160,16 @@ def _render_jobs(jobs: List[Dict[str, Any]]) -> None:
     st.dataframe(jobs, use_container_width=True)
 
 
+def _render_ci_cost_widget() -> None:
+    st.subheader("🤖 CI Auto-Fix Cumulative Cost")
+    cost_data = _fetch_cumulative_ci_cost()
+    col1, col2 = st.columns(2)
+    col1.metric("Cumulative CI Tokens", f"{cost_data['total_tokens']:,}", help="Total tokens consumed across GitHub Actions / Nightwelding auto-fix runs.")
+    col2.metric("Cumulative CI Cost (USD)", f"${cost_data['total_cost_usd']:.4f}", help="Estimated API cost for CI auto-fixes.")
+    with st.expander("View raw session telemetry records"):
+        st.json(cost_data)
+
+
 def _render_footer() -> None:
     st.divider()
     st.caption(
@@ -164,6 +188,7 @@ def main() -> None:
         _render_agent_logs(_fetch_agent_logs())
     with col_b:
         _render_jobs(_fetch_jobs())
+    _render_ci_cost_widget()
     _render_footer()
 
 

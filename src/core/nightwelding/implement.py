@@ -18,6 +18,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+import os
 
 from src.core import patch_ops
 
@@ -81,6 +82,10 @@ def implement_until_green(
 
         proc = _run(
             [
+                sys.executable,
+                str(sparkleforge_entrypoint),
+                "ci",
+                "fix-issue",
                 sys.executable,
                 str(sparkleforge_entrypoint),
                 "ci",
@@ -159,6 +164,23 @@ def implement_until_green(
             timeout=_PYTEST_TIMEOUT_SECONDS,
         )
         if verify.returncode == 0:
+            history_session_id = os.getenv("SPARKLEFORGE_HISTORY_SESSION_ID")
+            if history_session_id:
+                from src.utils.sparkleforge_history import get_history_events
+                events = get_history_events(history_session_id, event_type="llm_call")
+                total_tokens = 0
+                total_cost = 0.0
+                for ev in events:
+                    meta = ev.get("metadata") or {}
+                    usage = meta.get("token_usage") or {}
+                    total_tokens += usage.get("total_tokens", 0)
+                    total_cost += meta.get("estimated_cost", 0.0)
+                from src.utils.supabase_exporter import update_session_tokens
+                try:
+                    import asyncio
+                    asyncio.run(update_session_tokens(history_session_id, total_tokens, total_cost))
+                except Exception:
+                    pass
             return ImplementResult(
                 success=True,
                 green_output=(verify.stdout + verify.stderr)[-4000:],
