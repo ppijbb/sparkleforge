@@ -352,6 +352,11 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             print(f"LLM backend: {backend}", file=sys.stderr)
         history_session_id = os.getenv("SPARKLEFORGE_HISTORY_SESSION_ID")
         if history_session_id:
+            prompt_tokens = _estimate_tokens(prompt)
+            completion_tokens = _estimate_tokens(result.get("response", ""))
+            total_tokens = prompt_tokens + completion_tokens
+            # Estimate cost (approx $0.00001 per token as a baseline or based on common tier)
+            estimated_cost = float(total_tokens) * 0.00001
             log_history_event(
                 history_session_id,
                 "llm_call",
@@ -359,7 +364,17 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
                 role="assistant",
                 backend=backend,
                 level="info" if result.get("success") else "error",
+                metadata={
+                    "token_usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": total_tokens,
+                    },
+                    "estimated_cost": estimated_cost,
+                },
             )
+            from src.utils.supabase_exporter import update_session_tokens
+            await update_session_tokens(history_session_id, total_tokens, estimated_cost)
         if not result.get("success"):
             print(
                 result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr

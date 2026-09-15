@@ -74,6 +74,9 @@ def implement_until_green(
     for attempt in range(1, max_iterations + 1):
         before_sig = patch_ops.repository_change_signature(cwd=repo_root)
 
+        import uuid
+        session_id = f"nightwelding-{uuid.uuid4()}"
+
         # Issue #917: validate the synthetic schema of the worker's diff before
         # attempting to apply it, so malformed LLM output fails fast with a clear
         # reason instead of an opaque `git apply` failure deep in patch_ops.
@@ -92,6 +95,10 @@ def implement_until_green(
             ],
             cwd=repo_root,
             timeout=_FIX_ISSUE_TIMEOUT_SECONDS,
+            env={
+                **dict(subprocess.os.environ),
+                "SPARKLEFORGE_HISTORY_SESSION_ID": session_id,
+            },
         )
         if proc.returncode != 0:
             candidate_diff = patch_ops.extract_diff(proc.stdout or "")

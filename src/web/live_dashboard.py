@@ -29,6 +29,8 @@ FALLBACK_METRICS: Dict[str, Any] = {
     "mttm_minutes": 141.08,
     "auto_merge_rate": 0.667,
     "token_savings": 0.92,
+    "ci_cumulative_tokens": 125000,
+    "ci_cumulative_cost": 1.25,
 }
 
 
@@ -69,6 +71,19 @@ def _fetch_metrics() -> Dict[str, Any]:
             metrics["token_savings"] = float(row["token_savings"])
         metrics["source"] = "supabase"
 
+    session_rows = _safe_select("sparkleforge_sessions", limit=100)
+    if session_rows:
+        total_ci_tokens = 0
+        total_ci_cost = 0.0
+        for row in session_rows:
+            meta = row.get("metadata") or {}
+            if "total_tokens" in meta:
+                total_ci_tokens += int(meta["total_tokens"])
+            if "total_cost_usd" in meta:
+                total_ci_cost += float(meta["total_cost_usd"])
+        metrics["ci_cumulative_tokens"] = total_ci_tokens
+        metrics["ci_cumulative_cost"] = total_ci_cost
+
     return metrics
 
 
@@ -107,7 +122,7 @@ def _render_header() -> None:
 
 
 def _render_metric_cards(metrics: Dict[str, Any]) -> None:
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric(
         "Mean Time to Merge (MTTM)",
         f"{metrics['mttm_minutes']:.2f} min",
@@ -122,6 +137,11 @@ def _render_metric_cards(metrics: Dict[str, Any]) -> None:
         "Zero-Cost Reactive Scheduler Token Savings",
         _format_percent(metrics["token_savings"]),
         help="Token cost reduction during async waiting.",
+    )
+    col4.metric(
+        "CI Auto-Fix Cumulative Cost",
+        f"${metrics.get('ci_cumulative_cost', 0.0):.4f}",
+        help=f"Total LLM tokens ({metrics.get('ci_cumulative_tokens', 0):,}): estimated cost consumed by CI auto-fix & Nightwelding sessions.",
     )
     st.caption(f"Metric source: `{metrics.get('source', 'baseline')}`")
 
