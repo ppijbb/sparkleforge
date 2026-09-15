@@ -89,6 +89,30 @@ def _fetch_jobs(limit: int = 25) -> List[Dict[str, Any]]:
     return rows[:limit]
 
 
+def _fetch_ci_token_metrics() -> Dict[str, Any]:
+    rows = _safe_select("sparkleforge_history_events", "metadata", limit=1000)
+    total_tokens = 0
+    total_cost = 0.0
+    for r in rows:
+        meta = r.get("metadata") or {}
+        if isinstance(meta, str):
+            import json
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        usage = meta.get("token_usage") or {}
+        total_tokens += usage.get("total_tokens", 0)
+        total_cost += meta.get("estimated_cost", 0.0)
+    return {"total_tokens": total_tokens, "total_cost_usd": total_cost}
+
+def _render_ci_cost_widget() -> None:
+    st.subheader("🤖 CI Auto-Fix Cumulative Cost")
+    metrics = _fetch_ci_token_metrics()
+    col1, col2 = st.columns(2)
+    col1.metric("Total CI Tokens Consumed", f"{metrics['total_tokens']:,}")
+    col2.metric("Total Estimated LLM Cost", f"${metrics['total_cost_usd']:.4f}")
+
 def _format_percent(value: float) -> str:
     return f"{value * 100:.1f}%"
 
@@ -164,6 +188,8 @@ def main() -> None:
         _render_agent_logs(_fetch_agent_logs())
     with col_b:
         _render_jobs(_fetch_jobs())
+    st.divider()
+    _render_ci_cost_widget()
     _render_footer()
 
 

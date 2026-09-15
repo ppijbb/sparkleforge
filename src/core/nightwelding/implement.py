@@ -82,6 +82,14 @@ def implement_until_green(
         proc = _run(
             [
                 sys.executable,
+                "-c",
+                "import os, uuid; os.environ.setdefault('SPARKLEFORGE_HISTORY_SESSION_ID', str(uuid.uuid4()))",
+            ],
+            cwd=repo_root,
+        )
+        proc = _run(
+            [
+                sys.executable,
                 str(sparkleforge_entrypoint),
                 "ci",
                 "fix-issue",
