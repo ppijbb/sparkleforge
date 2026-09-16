@@ -323,3 +323,101 @@ def get_pii_redactor(use_llm_detection: bool | None = None) -> PIIRedactor:
             cached = PIIRedactor(use_llm_detection=use_llm_detection, llm_client=llm_client)
             _pii_redactors[use_llm_detection] = cached
         return cached
+
+
+# 비밀 키 관련 상수 및 검사 함수 (정밀 매치 적용)
+_SECRET_CONFIG_KEYS = {
+    "api_key",
+    "apikey",
+    "secret",
+    "password",
+    "passwd",
+    "token",
+    "auth",
+    "credential",
+    "private_key",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+}
+
+
+def _is_secret_key(key: str) -> bool:
+    """설정 키가 비밀 정보(시크릿)를 나타내는지 여부를 정밀하게 판단합니다.
+
+    기존의 단순 substring 매칭(`secret in key_lower`)으로 인한 false positive
+    (예: `my_api_key_backup`, `tokenizer_config` 등)를 방지하기 위해,
+    점(.)으로 구분된 마지막 세그먼트를 추출하고 단어 경계/정확한 매치 또는
+    정규식을 이용해 판단합니다.
+    """
+    if not key:
+        return False
+
+    key_lower = key.lower().strip()
+    # 점(.)으로 구분된 경우 마지막 세그먼트 추출 (예: 'db.config.api_key' -> 'api_key')
+    if "." in key_lower:
+        final_segment = key_lower.rsplit(".", 1)[-1]
+    else:
+        final_segment = key_lower
+
+    # 1. 정확한 매치 또는 언더스코어/하이픈/공백 등으로 구분된 토큰 매치 확인
+    if final_segment in _SECRET_CONFIG_KEYS:
+        return True
+
+    # 2. 정규식 단어 경계 매치 (예: api_key, secret_token 등)
+    for secret in _SECRET_CONFIG_KEYS:
+        # 정규식 패턴: 단어 경계 사이에 시크릿 키가 정확히 위치하는지 확인
+        pattern = rf"(^|[-_.\s]){re.escape(secret)}($|[-_.\s])"
+        if re.search(pattern, final_segment):
+            return True
+
+        # 특수 케이스: 복합어 형태 (예: access_token, api_key 등)
+        if final_segment == secret or final_segment.endswith(f"_{secret}") or final_segment.startswith(f"{secret}_"):
+            return True
+
+    return False
+
+
+def redact_secret_config(config_dict: Dict[str, Any], replacement: str = "[REDACTED]") -> Dict[str, Any]:
+    """설정 딕셔너리에서 민감한 키의 값을 안전하게 마스킹합니다.
+
+    재귀적으로 중첩된 딕셔너리를 탐색하며, _is_secret_key를 통과한 키의 값만 마스킹합니다.
+    """
+    if not isinstance(config_dict, dict):
+        return config_dict
+
+    redacted = {}
+    for key, value in config_dict.items():
+        if _is_secret_key(key):
+            redacted[key] = replacement
+        elif isinstance(value, dict):
+            redacted[key] = redact_secret_config(value, replacement=replacement)
+        elif isinstance(value, list):
+            redacted_list = []
+            for item in value:
+                if isinstance(item, dict):
+                    redacted_list.append(redact_secret_config(item, replacement=replacement))
+                else:
+                    redacted_list.append(item)
+            redacted[key] = redacted_list
+        else:
+            redacted[key] = value
+
+    return redacted
+
+
+def sanitize_log_or_config(data: Any, replacement: str = "[REDACTED]") -> Any:
+    """로그 또는 설정 데이터 전체를 순회하며 민감 정보 및 PII를 제거합니다."""
+    if isinstance(data, dict):
+        # 1. 시크릿 설정 키 마스킹
+        cleaned_dict = redact_secret_config(data, replacement=replacement)
+        # 2. PII 마스킹 처리
+        redactor = get_pii_redactor()
+        final_data, _ = redactor.redact_session_data(cleaned_dict)
+        return final_data
+    elif isinstance(data, str):
+        redactor = get_pii_redactor()
+        text, _ = redactor.redact_text(data, replacement=replacement)
+        return text
+    else:
+        return data
