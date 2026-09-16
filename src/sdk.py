@@ -19,6 +19,11 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, Dict
+import uuid
+from datetime import datetime, timezone
+
+_jobs: Dict[str, Dict[str, Any]] = {}
+_job_tasks: Dict[str, asyncio.Task] = {}
 
 _config_load_lock = asyncio.Lock()
 
@@ -49,3 +54,60 @@ async def run(prompt: str) -> Dict[str, Any]:
 
     orchestrator = AutonomousOrchestrator()
     return await orchestrator.run_research(prompt)
+
+
+async def _execute_job(job_id: str, prompt: str) -> None:
+    try:
+        result = await run(prompt)
+        _jobs[job_id]["status"] = "completed"
+        _jobs[job_id]["result"] = result
+    except Exception as e:
+        _jobs[job_id]["status"] = "failed"
+        _jobs[job_id]["error"] = str(e)
+    finally:
+        _jobs[job_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        if job_id in _job_tasks:
+            del _job_tasks[job_id]
+
+
+async def submit_job(topic: str, **kwargs: Any) -> str:
+    """Submit a research job asynchronously and return its unique job_id."""
+    job_id = str(uuid.uuid4())
+    _jobs[job_id] = {
+        "status": "running",
+        "prompt": topic,
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+    }
+    task = asyncio.create_task(_execute_job(job_id, topic))
+    _job_tasks[job_id] = task
+    return job_id
+
+
+async def get_job_status(job_id: str) -> Dict[str, Any]:
+    """Get the current progress status, error, and completion status of a job."""
+    job = _jobs.get(job_id)
+    if job is None:
+        from src.utils.supabase_exporter import get_supabase_client, get_job_status as sb_get_job_status, SupabaseQueryError
+        if get_supabase_client() is not None:
+            try:
+                sb_job = await sb_get_job_status(job_id)
+                if sb_job is not None:
+                    return sb_job
+            except SupabaseQueryError:
+                pass
+        raise ValueError(f"Job not found: {job_id}")
+    return {"job_id": job_id, "status": job["status"], "submitted_at": job["submitted_at"], "error": job.get("error")}
+
+
+async def get_report(job_id: str) -> Dict[str, Any] | None:
+    """Get the finished report result for a completed job."""
+    job = _jobs.get(job_id)
+    if job is None:
+        from src.utils.supabase_exporter import get_supabase_client, get_report as sb_get_report, SupabaseQueryError
+        if get_supabase_client() is not None:
+            try:
+                return await sb_get_report(job_id)
+            except SupabaseQueryError:
+                pass
+        return None
+    return job.get("result")
