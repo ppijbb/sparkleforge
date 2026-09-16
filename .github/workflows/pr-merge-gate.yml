@@ -131,7 +131,6 @@ jobs:
             tests/test_session_quota.py
 
   # Required Status Check 5: GitHub Actions syntax (Layer 5)
-            tests/test_forge_master_adversarial.py
   workflow-lint:
     name: GitHub Actions syntax
     runs-on: ubuntu-latest
