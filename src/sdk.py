@@ -279,8 +279,6 @@ async def get_job_status(job_id: str) -> JobStatus:
         logger.debug("Failed to query hybrid storage for job status: %s", e)
 
     from src.utils.supabase_exporter import (
-
-    from src.utils.supabase_exporter import (
         SupabaseQueryError,
         get_job_status as sb_get_job_status,
         get_supabase_client,
