@@ -24,12 +24,8 @@ Run with::
 
 from __future__ import annotations
 
-import asyncio
 import os
 import secrets
-import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -43,27 +39,23 @@ from src.utils.supabase_exporter import (
     get_supabase_client,
 )
 
-# Anvil Phase B-2: in-process job registry for POST /tasks, separate from the
-# Supabase-backed /jobs and /reports routes above (those read rows written by
-# the normal CLI/exporter pipeline; a task submitted here runs in this
-# process via src.sdk.run() and is tracked in memory only).
-# ponytail: single-process dict, not persisted -- move to a real queue/store
-# if this ever needs to survive a restart or run behind multiple workers.
-_tasks: Dict[str, Dict[str, Any]] = {}
+# Anvil Phase B-2: in-process job registry for POST /tasks, shared with
+# src.sdk._jobs (a task submitted here runs in this process via src.sdk.submit_job()
+# and is tracked in the unified SDK registry).
+from src.sdk import _jobs as _tasks  # noqa: F401
+from src.sdk import (
+    _execute_job,
+    get_job_status as sdk_get_job_status,
+    get_report as sdk_get_report,
+    submit_job as sdk_submit_job,
+)
+
+__all__ = ["app", "_tasks"]
 
 
 async def _execute_task(job_id: str, prompt: str) -> None:
-    from src.sdk import run
-
-    try:
-        result = await run(prompt)
-        _tasks[job_id]["status"] = "completed"
-        _tasks[job_id]["result"] = result
-    except Exception as e:
-        _tasks[job_id]["status"] = "failed"
-        _tasks[job_id]["error"] = str(e)
-    finally:
-        _tasks[job_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+    """Legacy helper maintained for backward compatibility."""
+    await _execute_job(job_id, prompt)
 
 
 async def submit_task(request: Request) -> JSONResponse:
@@ -77,13 +69,7 @@ async def submit_task(request: Request) -> JSONResponse:
     if not prompt or not isinstance(prompt, str):
         return JSONResponse({"error": "'prompt' (string) is required"}, status_code=400)
 
-    job_id = str(uuid.uuid4())
-    _tasks[job_id] = {
-        "status": "running",
-        "prompt": prompt,
-        "submitted_at": datetime.now(timezone.utc).isoformat(),
-    }
-    asyncio.create_task(_execute_task(job_id, prompt))
+    job_id = await sdk_submit_job(prompt)
     return JSONResponse({"job_id": job_id, "status": "running"}, status_code=202)
 
 
@@ -91,24 +77,39 @@ async def task_status(request: Request) -> JSONResponse:
     if (err := _check_auth(request)) is not None:
         return err
     job_id = request.path_params["job_id"]
-    task = _tasks.get(job_id)
-    if task is None:
+    try:
+        task = await sdk_get_job_status(job_id)
+    except ValueError:
         return JSONResponse({"error": "task not found"}, status_code=404)
-    return JSONResponse({"job_id": job_id, "status": task["status"], "submitted_at": task["submitted_at"]})
+    except Exception:
+        return JSONResponse({"error": "failed to query task status"}, status_code=500)
+    return JSONResponse({
+        "job_id": job_id,
+        "status": task.status,
+        "submitted_at": task.submitted_at,
+    })
 
 
 async def task_report(request: Request) -> JSONResponse:
     if (err := _check_auth(request)) is not None:
         return err
     job_id = request.path_params["job_id"]
-    task = _tasks.get(job_id)
-    if task is None:
+    try:
+        task = await sdk_get_job_status(job_id)
+    except ValueError:
         return JSONResponse({"error": "task not found"}, status_code=404)
-    if task["status"] == "running":
+    except Exception:
+        return JSONResponse({"error": "failed to query task"}, status_code=500)
+
+    if task.status in ("pending", "running"):
         return JSONResponse({"error": "task still running"}, status_code=409)
-    if task["status"] == "failed":
-        return JSONResponse({"error": task.get("error", "task failed")}, status_code=500)
-    return JSONResponse(task["result"])
+    if task.status == "failed":
+        return JSONResponse({"error": task.error or "task failed"}, status_code=500)
+
+    result = await sdk_get_report(job_id)
+    if result is None:
+        return JSONResponse({"error": "report not found"}, status_code=404)
+    return JSONResponse(result)
 
 
 def _service_unavailable(detail: str) -> JSONResponse:
