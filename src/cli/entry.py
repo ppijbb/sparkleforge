@@ -13,7 +13,10 @@ _RUN_OPTIONS_WITH_VALUES = {
     "--task",
     "--session",
     "--mode",
+    "--depth",
+    "--autopilot",
 }
+
 
 def _run_command_has_query(argv: list[str]) -> bool:
     """Return True when argv contains a positional query for the run command."""

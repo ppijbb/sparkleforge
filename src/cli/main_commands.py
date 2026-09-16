@@ -109,6 +109,20 @@ async def handle_run_command(args, config):
             os.environ["LLM_MAX_TOKENS"] = str(max_tokens)
             config.llm.max_tokens = max_tokens
 
+        depth_override = getattr(args, "depth", None)
+        if depth_override:
+            os.environ["RESEARCH_DEPTH_PRESET"] = depth_override
+            if hasattr(config, "research") and hasattr(config.research, "research_depth"):
+                config.research.research_depth.default_preset = depth_override
+
+        autopilot_override = getattr(args, "autopilot", None)
+        if autopilot_override is not None:
+            if isinstance(autopilot_override, bool):
+                b_val = autopilot_override
+            else:
+                b_val = str(autopilot_override).lower() not in {"0", "false", "no", "off"}
+            os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if b_val else "false"
+
     def _sanitize_embedded_cli_flags(query: str) -> tuple[str, bool]:
         """Query 문자열에 잘못 포함된 CLI 플래그를 제거.
 
@@ -119,6 +133,8 @@ async def handle_run_command(args, config):
         markers = (
             " --max-tokens ",
             " --model ",
+            " --depth ",
+            " --autopilot ",
         )
         cut_positions = [query.find(m) for m in markers if query.find(m) != -1]
         if not cut_positions:
