@@ -243,11 +243,11 @@ class HybridStorage:
     async def save_research_result(self, state: Dict[str, Any]) -> bool:
         """Save research results from the LangGraph state to hybrid storage and Supabase."""
         try:
-        # Also update any associated task if research_id matches a job_id
-        research_id = state.get("objective_id", "")
-        if research_id and research_id in self._tasks:
-            await self.update_task(research_id, status="completed", result=state)
-        
+            # Also update any associated task if research_id matches a job_id
+            research_id = state.get("objective_id", "")
+            if research_id and research_id in self._tasks:
+                await self.update_task(research_id, status="completed", result=state)
+            
             research_id = state.get("objective_id", "")
             topic = state.get("user_request", "")
             
