@@ -2,6 +2,7 @@
 
 import json
 import logging
+import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,7 +21,9 @@ class HybridStorage:
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._memory: List[ResearchMemory] = []
         self._index_path = self._storage_path / "index.jsonl"
+        self._tasks_path = self._storage_path / "tasks.jsonl"
         self._load_index()
+        self._load_tasks()
 
     def _load_index(self) -> None:
         """Load persisted records from disk."""
@@ -65,6 +68,95 @@ class HybridStorage:
                 f.write(json.dumps(data, ensure_ascii=False) + "\n")
         except Exception as e:
             logger.warning("Could not persist research memory: %s", e)
+
+    def _load_tasks(self) -> None:
+        """Load persisted task records from disk."""
+        self._tasks: Dict[str, Dict[str, Any]] = {}
+        if not self._tasks_path.exists():
+            return
+        try:
+            with open(self._tasks_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        task = json.loads(line)
+                        self._tasks[task["job_id"]] = task
+                    except Exception as e:
+                        logger.debug("Skip invalid task line: %s", e)
+        except Exception as e:
+            logger.warning("Could not load tasks index: %s", e)
+
+    def _persist_task(self, task: Dict[str, Any]) -> None:
+        """Append or update one task record to tasks file."""
+        try:
+            # Read all tasks, update the one with matching job_id, rewrite
+            tasks = {}
+            if self._tasks_path.exists():
+                with open(self._tasks_path, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            t = json.loads(line)
+                            tasks[t["job_id"]] = t
+                        except Exception:
+                            pass
+            tasks[task["job_id"]] = task
+            with open(self._tasks_path, "w", encoding="utf-8") as f:
+                for t in tasks.values():
+                    f.write(json.dumps(t, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning("Could not persist task: %s", e)
+
+    async def create_task(self, job_id: str, prompt: str, session_id: str | None = None) -> Dict[str, Any]:
+        """Create a new task record."""
+        task = {
+            "job_id": job_id,
+            "prompt": prompt,
+            "status": "running",
+            "submitted_at": datetime.now(UTC).isoformat(),
+            "session_id": session_id,
+            "result": None,
+            "error": None,
+            "completed_at": None,
+        }
+        self._tasks[job_id] = task
+        self._persist_task(task)
+        return task
+
+    async def update_task(self, job_id: str, **updates) -> Dict[str, Any] | None:
+        """Update a task record."""
+        task = self._tasks.get(job_id)
+        if task is None:
+            return None
+        task.update(updates)
+        self._persist_task(task)
+        return task
+
+    async def get_task(self, job_id: str) -> Dict[str, Any] | None:
+        """Get a task record."""
+        return self._tasks.get(job_id)
+
+    async def get_report_by_research_id(self, research_id: str) -> Dict[str, Any] | None:
+        """Get a report by research_id from local storage."""
+        for m in self._memory:
+            if m.research_id == research_id:
+                return {
+                    "research_id": m.research_id,
+                    "topic": m.topic,
+                    "content": m.content,
+                    "summary": m.summary,
+                    "results": m.results,
+                    "metadata": m.metadata,
+                    "timestamp": m.timestamp.isoformat(),
+                    "confidence_score": m.confidence_score,
+                    "source_count": m.source_count,
+                    "verification_status": m.verification_status,
+                }
+        return None
 
     async def store_research(
         self,
@@ -151,6 +243,11 @@ class HybridStorage:
     async def save_research_result(self, state: Dict[str, Any]) -> bool:
         """Save research results from the LangGraph state to hybrid storage and Supabase."""
         try:
+        # Also update any associated task if research_id matches a job_id
+        research_id = state.get("objective_id", "")
+        if research_id and research_id in self._tasks:
+            await self.update_task(research_id, status="completed", result=state)
+        
             research_id = state.get("objective_id", "")
             topic = state.get("user_request", "")
             
