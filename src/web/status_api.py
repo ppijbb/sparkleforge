@@ -53,17 +53,12 @@ _tasks: Dict[str, Dict[str, Any]] = {}
 
 
 async def _execute_task(job_id: str, prompt: str) -> None:
-    from src.sdk import run
-
-    try:
-        result = await run(prompt)
-        _tasks[job_id]["status"] = "completed"
-        _tasks[job_id]["result"] = result
-    except Exception as e:
-        _tasks[job_id]["status"] = "failed"
-        _tasks[job_id]["error"] = str(e)
-    finally:
-        _tasks[job_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+    # Delegate to sdk implementation or maintain compatibility wrapper
+    from src.sdk import _local_jobs, _execute_bg_job
+    if job_id not in _local_jobs:
+        _local_jobs[job_id] = _tasks.get(job_id, {"status": "running", "prompt": prompt, "submitted_at": datetime.now(timezone.utc).isoformat()})
+    await _execute_bg_job(job_id, prompt)
+    _tasks[job_id] = _local_jobs[job_id]
 
 
 async def submit_task(request: Request) -> JSONResponse:
@@ -77,13 +72,14 @@ async def submit_task(request: Request) -> JSONResponse:
     if not prompt or not isinstance(prompt, str):
         return JSONResponse({"error": "'prompt' (string) is required"}, status_code=400)
 
-    job_id = str(uuid.uuid4())
+    from src.sdk import submit_job
+    job_id = await submit_job(prompt)
+    from src.sdk import _local_jobs
     _tasks[job_id] = {
-        "status": "running",
+        "status": _local_jobs[job_id]["status"],
         "prompt": prompt,
-        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "submitted_at": _local_jobs[job_id]["submitted_at"],
     }
-    asyncio.create_task(_execute_task(job_id, prompt))
     return JSONResponse({"job_id": job_id, "status": "running"}, status_code=202)
 
 
@@ -91,6 +87,9 @@ async def task_status(request: Request) -> JSONResponse:
     if (err := _check_auth(request)) is not None:
         return err
     job_id = request.path_params["job_id"]
+    from src.sdk import _local_jobs
+    if job_id in _local_jobs:
+        _tasks[job_id] = _local_jobs[job_id]
     task = _tasks.get(job_id)
     if task is None:
         return JSONResponse({"error": "task not found"}, status_code=404)
@@ -101,6 +100,9 @@ async def task_report(request: Request) -> JSONResponse:
     if (err := _check_auth(request)) is not None:
         return err
     job_id = request.path_params["job_id"]
+    from src.sdk import _local_reports, _local_jobs
+    if job_id in _local_jobs:
+        _tasks[job_id] = _local_jobs[job_id]
     task = _tasks.get(job_id)
     if task is None:
         return JSONResponse({"error": "task not found"}, status_code=404)
@@ -108,7 +110,7 @@ async def task_report(request: Request) -> JSONResponse:
         return JSONResponse({"error": "task still running"}, status_code=409)
     if task["status"] == "failed":
         return JSONResponse({"error": task.get("error", "task failed")}, status_code=500)
-    return JSONResponse(task["result"])
+    return JSONResponse(_local_reports.get(job_id, task.get("result", {})))
 
 
 def _service_unavailable(detail: str) -> JSONResponse:
