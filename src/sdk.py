@@ -40,6 +40,9 @@ _config_load_lock = asyncio.Lock()
 # Global in-memory registry for jobs submitted in-process.
 # Serves as local fallback when Supabase is not configured or in local mode,
 # and shares state with status_api.
+# Backed by HybridStorage for durability across restarts when local.
+from src.storage.hybrid_storage import HybridStorage
+_hybrid_storage = HybridStorage()
 _jobs: Dict[str, Dict[str, Any]] = {}
 _job_tasks: Dict[str, asyncio.Task[Any]] = {}
 
@@ -142,6 +145,13 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
                     report_payload = dict(result)
                     report_payload.setdefault("id", job_id)
                     report_payload.setdefault("topic", topic)
+                    await _hybrid_storage.save_research_result({
+                        "objective_id": job_id,
+                        "user_request": topic,
+                        "final_synthesis": {"content": result.get("content", str(result))},
+                        "execution_results": result.get("execution_results", []),
+                        "validation_score": result.get("confidence", 0.8),
+                    })
                     if user_id:
                         report_payload.setdefault("user_id", user_id)
                     exporter = SupabaseExporter()
@@ -163,6 +173,24 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
         completed_at = datetime.now(timezone.utc).isoformat()
         _jobs[job_id]["completed_at"] = completed_at
         _job_tasks.pop(job_id, None)
+        # Save state to local hybrid storage for durability
+        try:
+            status_val = _jobs[job_id].get("status")
+            res_val = _jobs[job_id].get("result") or {}
+            if isinstance(res_val, str):
+                res_val = {"content": res_val}
+            content_val = res_val.get("content", _jobs[job_id].get("error", ""))
+            await _hybrid_storage.store_research(
+                research_id=job_id,
+                user_id=_jobs[job_id].get("user_id", "local_user"),
+                topic=_jobs[job_id].get("topic", ""),
+                content=content_val,
+                results=res_val,
+                metadata={"status": status_val, "error": _jobs[job_id].get("error")},
+                summary=content_val[:500] if content_val else "",
+            )
+        except Exception as ex:
+            logger.debug("Failed to persist job to hybrid storage: %s", ex)
 
 
 async def submit_job(topic: str, *, user_id: Optional[str] = None, **kwargs: Any) -> str:
@@ -194,6 +222,21 @@ async def submit_job(topic: str, *, user_id: Optional[str] = None, **kwargs: Any
 
     task = asyncio.create_task(_execute_job(job_id, topic, user_id=user_id))
     _job_tasks[job_id] = task
+    
+    # Persist initial running state to hybrid storage
+    try:
+        await _hybrid_storage.store_research(
+            research_id=job_id,
+            user_id=user_id or "local_user",
+            topic=topic,
+            content="",
+            results={},
+            metadata={"status": "running"},
+            summary="",
+        )
+    except Exception as ex:
+        logger.debug("Failed to persist initial job state: %s", ex)
+        
     return job_id
 
 
@@ -212,6 +255,30 @@ async def get_job_status(job_id: str) -> JobStatus:
             result=job.get("result"),
             user_id=job.get("user_id"),
         )
+
+    # Fallback to local HybridStorage if not in memory
+    try:
+        history = await _hybrid_storage.get_user_research_history("local_user", limit=100)
+        for mem in history:
+            if mem.research_id == job_id:
+                meta = mem.metadata or {}
+                st = meta.get("status", "completed" if mem.content else "pending")
+                err = meta.get("error")
+                return JobStatus(
+                    job_id=job_id,
+                    status=st,
+                    topic=mem.topic,
+                    prompt=mem.topic,
+                    submitted_at=mem.timestamp.isoformat() if mem.timestamp else None,
+                    completed_at=mem.timestamp.isoformat() if st in ("completed", "failed") else None,
+                    error=err,
+                    result=mem.results,
+                    user_id=mem.user_id,
+                )
+    except Exception as e:
+        logger.debug("Failed to query hybrid storage for job status: %s", e)
+
+    from src.utils.supabase_exporter import (
 
     from src.utils.supabase_exporter import (
         SupabaseQueryError,
@@ -248,6 +315,18 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
     job = _jobs.get(job_id)
     if job is not None and job.get("result") is not None:
         return job.get("result")
+
+    # Fallback to hybrid storage index/files
+    try:
+        history = await _hybrid_storage.get_user_research_history("local_user", limit=100)
+        for mem in history:
+            if mem.research_id == job_id:
+                if mem.results:
+                    return mem.results
+                if mem.content:
+                    return {"content": mem.content, "summary": mem.summary}
+    except Exception as e:
+        logger.debug("Failed to query hybrid storage for report: %s", e)
 
     from src.utils.supabase_exporter import (
         SupabaseQueryError,

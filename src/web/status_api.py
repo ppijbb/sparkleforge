@@ -140,7 +140,7 @@ async def job_status(request: Request) -> JSONResponse:
     if (err := _check_auth(request)) is not None:
         return err
     if get_supabase_client() is None:
-        return _service_unavailable("not configured")
+        return await task_status(request)
     try:
         job = await get_job_status(request.path_params["job_id"])
     except SupabaseQueryError:
@@ -154,7 +154,8 @@ async def report(request: Request) -> JSONResponse:
     if (err := _check_auth(request)) is not None:
         return err
     if get_supabase_client() is None:
-        return _service_unavailable("not configured")
+        request.path_params["job_id"] = request.path_params["report_id"]
+        return await task_report(request)
     try:
         result = await get_report(request.path_params["report_id"])
     except SupabaseQueryError:
