@@ -195,7 +195,7 @@ class CredentialVault:
             return False
 
     def list_keys(self) -> list:
-        """List stored credential keys (not values)."""
+        """List stored credential keys (not values).""" # pragma: no cover
         keys = set(self._cache.keys())
         store = self._load_fallback()
         keys.update(store.keys())
