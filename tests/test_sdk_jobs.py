@@ -1,0 +1,194 @@
+"""Unit and integration tests for SDK asynchronous job API (Issue #1622)."""
+
+import asyncio
+from typing import Any, Dict
+import pytest
+
+from src import sdk
+from src.sdk import JobStatus, get_job_status, get_report, submit_job
+
+
+@pytest.fixture(autouse=True)
+def _clear_jobs():
+    sdk._jobs.clear()
+    sdk._job_tasks.clear()
+    yield
+    sdk._jobs.clear()
+    sdk._job_tasks.clear()
+
+
+@pytest.mark.asyncio
+async def test_job_status_dataclass_methods():
+    status = JobStatus(
+        job_id="test-123",
+        status="completed",
+        topic="AI Safety",
+        submitted_at="2026-09-16T12:00:00Z",
+        completed_at="2026-09-16T12:01:00Z",
+        error=None,
+        result={"summary": "All good"},
+        user_id="user-456",
+    )
+
+    d = status.to_dict()
+    assert d["job_id"] == "test-123"
+    assert d["status"] == "completed"
+    assert d["topic"] == "AI Safety"
+    assert d["result"] == {"summary": "All good"}
+    assert d["user_id"] == "user-456"
+
+    # Dict-like access
+    assert status["status"] == "completed"
+    assert status["topic"] == "AI Safety"
+    assert status.get("job_id") == "test-123"
+    assert status.get("missing_key", "default") == "default"
+
+
+@pytest.mark.asyncio
+async def test_submit_job_and_poll_success(monkeypatch):
+    async def fake_run(prompt: str) -> Dict[str, Any]:
+        await asyncio.sleep(0.01)
+        return {"report": f"findings for {prompt}", "score": 0.95}
+
+    monkeypatch.setattr(sdk, "run", fake_run)
+
+    job_id = await submit_job("quantum supremacy")
+    assert isinstance(job_id, str)
+    assert len(job_id) > 0
+
+    # Polling until completed
+    for _ in range(50):
+        status = await get_job_status(job_id)
+        if status.status == "completed":
+            break
+        await asyncio.sleep(0.01)
+
+    assert status.status == "completed"
+    assert status.topic == "quantum supremacy"
+    assert status.error is None
+    assert status.completed_at is not None
+
+    report = await get_report(job_id)
+    assert report is not None
+    assert report["report"] == "findings for quantum supremacy"
+    assert report["score"] == 0.95
+
+
+@pytest.mark.asyncio
+async def test_submit_job_handles_failure(monkeypatch):
+    async def failing_run(prompt: str) -> Dict[str, Any]:
+        await asyncio.sleep(0.01)
+        raise RuntimeError("LLM synthesis timeout")
+
+    monkeypatch.setattr(sdk, "run", failing_run)
+
+    job_id = await submit_job("failing prompt")
+
+    for _ in range(50):
+        status = await get_job_status(job_id)
+        if status.status == "failed":
+            break
+        await asyncio.sleep(0.01)
+
+    assert status.status == "failed"
+    assert "LLM synthesis timeout" in (status.error or "")
+
+    report = await get_report(job_id)
+    assert report is None
+
+
+@pytest.mark.asyncio
+async def test_get_job_status_unknown_raises_value_error():
+    with pytest.raises(ValueError, match="Job not found"):
+        await get_job_status("non-existent-uuid")
+
+
+@pytest.mark.asyncio
+async def test_get_report_unknown_returns_none():
+    report = await get_report("non-existent-uuid")
+    assert report is None
+
+
+@pytest.mark.asyncio
+async def test_submit_job_with_supabase_integration(monkeypatch):
+    from src.utils import supabase_exporter
+
+    created_job_id = "sb-job-999"
+    updates = []
+
+    monkeypatch.setattr(supabase_exporter, "get_supabase_client", lambda: object())
+
+    async def fake_create_job(topic: str, user_id: str | None = None):
+        return {"id": created_job_id, "topic": topic, "user_id": user_id}
+
+    async def fake_update_job_status(job_id: str, status: str, error_message: str | None = None):
+        updates.append((job_id, status, error_message))
+        return True
+
+    async def fake_publish_report(self, report: dict):
+        pass
+
+    async def fake_run(prompt: str) -> Dict[str, Any]:
+        return {"title": "supabase test report"}
+
+    monkeypatch.setattr(supabase_exporter, "create_job", fake_create_job)
+    monkeypatch.setattr(supabase_exporter, "update_job_status", fake_update_job_status)
+    monkeypatch.setattr(supabase_exporter.SupabaseExporter, "publish_report", fake_publish_report)
+    monkeypatch.setattr(sdk, "run", fake_run)
+
+    job_id = await submit_job("remote topic", user_id="usr-1")
+    assert job_id == created_job_id
+
+    for _ in range(50):
+        status = await get_job_status(job_id)
+        if status.status == "completed":
+            break
+        await asyncio.sleep(0.01)
+
+    assert status.status == "completed"
+    # Ensure updates were sent to Supabase
+    statuses = [u[1] for u in updates]
+    assert "running" in statuses
+    assert "completed" in statuses
+
+
+@pytest.mark.asyncio
+async def test_get_job_status_and_report_fallback_from_supabase(monkeypatch):
+    from src.utils import supabase_exporter
+
+    monkeypatch.setattr(supabase_exporter, "get_supabase_client", lambda: object())
+
+    remote_id = "remote-uuid-111"
+
+    async def fake_sb_get_job_status(job_id: str):
+        if job_id == remote_id:
+            return {
+                "id": remote_id,
+                "topic": "remote topic",
+                "status": "completed",
+                "created_at": "2026-09-16T10:00:00Z",
+                "updated_at": "2026-09-16T10:05:00Z",
+                "user_id": "usr-remote",
+            }
+        return None
+
+    async def fake_sb_get_report(report_id: str):
+        if report_id == remote_id:
+            return {"id": remote_id, "summary": "remote report content"}
+        return None
+
+    monkeypatch.setattr(supabase_exporter, "get_job_status", fake_sb_get_job_status)
+    monkeypatch.setattr(supabase_exporter, "get_report", fake_sb_get_report)
+
+    # Note: remote_id is NOT in sdk._jobs
+    assert remote_id not in sdk._jobs
+
+    status = await get_job_status(remote_id)
+    assert status.job_id == remote_id
+    assert status.status == "completed"
+    assert status.topic == "remote topic"
+    assert status.user_id == "usr-remote"
+
+    report = await get_report(remote_id)
+    assert report is not None
+    assert report["summary"] == "remote report content"
