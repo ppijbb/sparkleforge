@@ -64,6 +64,16 @@ PII_PATTERNS = {
 }
 
 
+def _is_secret_key(key: str) -> bool:
+    key_lower = key.lower()
+    parts = key_lower.split('.')
+    final_segment = parts[-1]
+    _SECRET_CONFIG_KEYS = {"api_key", "secret", "password", "passwd", "auth_token", "access_token", "refresh_token"}
+    return any(
+        secret == final_segment or re.search(r'(^|_)' + re.escape(secret) + r'($|_)', final_segment)
+        for secret in _SECRET_CONFIG_KEYS
+    )
+
 class PIIRedactor:
     """PII 제거 시스템.
 
@@ -160,9 +170,13 @@ class PIIRedactor:
 
         for key, value in session_data.items():
             if isinstance(value, str):
-                redacted_value, matches = self.redact_text(value)
-                redacted_data[key] = redacted_value
-                all_matches.extend(matches)
+                if _is_secret_key(key):
+                    redacted_data[key] = "[REDACTED]"
+                    all_matches.append(PIIMatch(pii_type="secret_key", value=value, start_pos=0, end_pos=len(value), confidence=1.0))
+                else:
+                    redacted_value, matches = self.redact_text(value)
+                    redacted_data[key] = redacted_value
+                    all_matches.extend(matches)
             elif isinstance(value, dict):
                 redacted_value, matches = self.redact_session_data(value)
                 redacted_data[key] = redacted_value
