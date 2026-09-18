@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from rich.panel import Panel
@@ -19,6 +20,12 @@ _SECRET_CONFIG_KEYS = frozenset(
         "secret",
         "token",
     }
+)
+# Word-boundary match against the whole secret token (e.g. "api_key"), not a
+# bare substring search -- "_" is a \w char, so \b never falls inside a run
+# of letters/underscores, and "my_api_key_backup" correctly does not match.
+_SECRET_KEY_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(s) for s in _SECRET_CONFIG_KEYS) + r")\b"
 )
 
 # Friendly aliases mapping user-facing option names to canonical config paths
@@ -38,9 +45,8 @@ _CONFIG_ALIASES: Dict[str, str] = {
 
 
 def _is_secret_key(key: str) -> bool:
-    """Check if key or any sub-part is considered a sensitive secret."""
-    key_lower = key.lower().replace(".", "_")
-    return any(secret in key_lower for secret in _SECRET_CONFIG_KEYS)
+    """Check if key contains a known secret token as a whole word."""
+    return bool(_SECRET_KEY_RE.search(key.lower()))
 
 
 def _redact_secret(key: str, value: Any) -> Any:
@@ -183,6 +189,9 @@ async def config_set_command(cli, args: List[str]):
                 cli.console.print("[red]❌ Primary model must not be empty[/red]")
                 return
             cfg.llm.primary_model = new_model
+            # Only cascade to role models that still mirror the old primary --
+            # a role the user pinned to something else stays pinned instead of
+            # being silently clobbered.
             for role in (
                 "planning_model",
                 "reasoning_model",
@@ -190,17 +199,18 @@ async def config_set_command(cli, args: List[str]):
                 "generation_model",
                 "compression_model",
             ):
-                if hasattr(cfg.llm, role):
+                if hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val:
                     setattr(cfg.llm, role, new_model)
             os.environ["LLM_MODEL"] = new_model
-            for env_k in (
-                "PLANNING_MODEL",
-                "REASONING_MODEL",
-                "VERIFICATION_MODEL",
-                "GENERATION_MODEL",
-                "COMPRESSION_MODEL",
+            for role, env_k in (
+                ("planning_model", "PLANNING_MODEL"),
+                ("reasoning_model", "REASONING_MODEL"),
+                ("verification_model", "VERIFICATION_MODEL"),
+                ("generation_model", "GENERATION_MODEL"),
+                ("compression_model", "COMPRESSION_MODEL"),
             ):
-                os.environ[env_k] = new_model
+                if os.getenv(env_k, old_val) == old_val:
+                    os.environ[env_k] = new_model
             cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]")
             return
 
@@ -219,21 +229,34 @@ async def config_set_command(cli, args: List[str]):
             return
 
         old_val = getattr(target, last_part)
-        old_type = type(old_val) if old_val is not None else str
 
         # Convert value_str to target type
-        if old_type is bool:
+        if old_val is None:
+            # No prior value to infer a type from -- best-effort sniff the
+            # input itself (bool, then int, then float) instead of forcing
+            # str, so a None-defaulted numeric/bool field doesn't get stuck
+            # as a string on its first set.
             converted: Any = _parse_bool(value_str)
+            if converted is None:
+                try:
+                    converted = int(value_str)
+                except ValueError:
+                    try:
+                        converted = float(value_str)
+                    except ValueError:
+                        converted = value_str.strip()
+        elif isinstance(old_val, bool):
+            converted = _parse_bool(value_str)
             if converted is None:
                 cli.console.print(f"[red]❌ Invalid boolean: '{value_str}'[/red]")
                 return
-        elif old_type is int:
+        elif isinstance(old_val, int):
             try:
                 converted = int(value_str)
             except ValueError:
                 cli.console.print(f"[red]❌ Invalid integer: '{value_str}'[/red]")
                 return
-        elif old_type is float:
+        elif isinstance(old_val, float):
             try:
                 converted = float(value_str)
             except ValueError:
@@ -246,8 +269,8 @@ async def config_set_command(cli, args: List[str]):
         cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {converted}[/green]")
 
     except Exception as e:
-        logger.error(f"Failed to set config: {e}", exc_info=True)
-        cli.console.print(f"[red]❌ Failed to set config: {e}[/red]")
+        logger.error(f"Failed to set config '{raw_key}': {e}", exc_info=True)
+        cli.console.print(f"[red]❌ Failed to set config '{raw_key}': {type(e).__name__} (see log for details)[/red]")
 
 
 async def config_get_command(cli, args: List[str]):

@@ -2,11 +2,14 @@
 
 import argparse
 import os
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 import pytest
 from rich.console import Console
 
+from src.cli.commands import config as config_module
 from src.cli.commands.config import (
+    _is_secret_key,
     config_get_command,
     config_set_command,
     config_show_command,
@@ -123,6 +126,41 @@ async def test_config_set_autopilot_alias():
     await config_set_command(cli, ["autopilot", "true"])
     assert any("True" in m for m in cli.output_messages)
     assert _autopilot_mode_enabled() is True
+
+
+def test_is_secret_key_exact_match_not_substring():
+    """Issue #1659: substring matching false-flagged e.g. my_api_key_backup."""
+    assert _is_secret_key("api_key")
+    assert _is_secret_key("llm.openrouter_api_key")
+    assert _is_secret_key("token")
+    assert not _is_secret_key("my_api_key_backup")
+    assert not _is_secret_key("tokenizer_config")
+
+
+@pytest.mark.asyncio
+async def test_config_set_model_alias_preserves_pinned_role():
+    cli = MockCLI()
+    cfg = researcher_config.config
+    pinned = "anthropic/claude-3.5-opus"
+    cfg.llm.planning_model = pinned  # simulate a role the user pinned earlier
+
+    new_model = "anthropic/claude-3.5-sonnet"
+    await config_set_command(cli, ["model", new_model])
+
+    cfg = researcher_config.config
+    assert cfg.llm.primary_model == new_model
+    assert cfg.llm.reasoning_model == new_model  # mirrored old primary -> cascades
+    assert cfg.llm.planning_model == pinned  # explicitly pinned -> untouched
+
+
+@pytest.mark.asyncio
+async def test_config_set_none_default_infers_type(monkeypatch):
+    cli = MockCLI()
+    fake_cfg = SimpleNamespace(section=SimpleNamespace(value=None))
+    monkeypatch.setattr(config_module, "_get_root_config", lambda: fake_cfg)
+
+    await config_set_command(cli, ["section.value", "42"])
+    assert fake_cfg.section.value == 42  # int, not "42"
 
 
 @pytest.mark.asyncio
