@@ -244,7 +244,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
-          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'z-ai/glm-5.2:free' }}
+          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'deepseek/deepseek-v4-flash-0731:free' }}
           # Optional: when set, the repair loop's per-attempt/per-backend history
           # is persisted to Supabase (see src/utils/sparkleforge_history.py).
           # Absent secrets leave this entirely inert -- no behavior change.
