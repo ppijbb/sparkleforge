@@ -1,7 +1,7 @@
 {
   "name": "local-researcher",
   "version": "1.0.0",
-  "description": "Local Researcher - Gemini CLI + Open Deep Research Integration",
+  "description": "SparkleForge - Local Researcher / CLI Tool Integration (Note: VS Code extension Phase K is un-shipped/retracted; package name retained for legacy Local Researcher compatibility)",
   "main": "src/cli/index.js",
   "scripts": {
     "start": "node src/cli/index.js",
