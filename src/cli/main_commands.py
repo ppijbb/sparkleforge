@@ -17,10 +17,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Any, Dict, List
 
+from src.cli.commands.config import _parse_bool
 from src.core.autonomous_research_system import (
     WebAppManager,
     project_root,
@@ -109,6 +111,27 @@ async def handle_run_command(args, config):
             os.environ["LLM_MAX_TOKENS"] = str(max_tokens)
             config.llm.max_tokens = max_tokens
 
+        depth_override = getattr(args, "depth", None)
+        if depth_override:
+            os.environ["RESEARCH_DEPTH_PRESET"] = depth_override
+            if hasattr(config, "research") and hasattr(config.research, "research_depth"):
+                config.research.research_depth.default_preset = depth_override
+
+        autopilot_override = getattr(args, "autopilot", None)
+        if autopilot_override is not None:
+            if isinstance(autopilot_override, bool):
+                b_val = autopilot_override
+            else:
+                b_val = _parse_bool(str(autopilot_override))
+                if b_val is None:
+                    logger.warning(
+                        "Invalid --autopilot value '%s'; ignoring override.",
+                        autopilot_override,
+                    )
+                    b_val = None
+            if b_val is not None:
+                os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if b_val else "false"
+
     def _sanitize_embedded_cli_flags(query: str) -> tuple[str, bool]:
         """Query 문자열에 잘못 포함된 CLI 플래그를 제거.
 
@@ -116,14 +139,13 @@ async def handle_run_command(args, config):
         """
         if not query:
             return query, False
-        markers = (
-            " --max-tokens ",
-            " --model ",
-        )
-        cut_positions = [query.find(m) for m in markers if query.find(m) != -1]
-        if not cut_positions:
+        # Matches "--flag value" and "--flag=value" alike, and end-of-string
+        # (a flag isn't guaranteed to be followed by a trailing space).
+        flag_re = re.compile(r"(?:^|\s)--(?:max-tokens|model|depth|autopilot)(?:[ =]|$)")
+        match = flag_re.search(query)
+        if not match:
             return query, False
-        cut_at = min(cut_positions)
+        cut_at = match.start()
         cleaned = query[:cut_at].strip()
         # CLI 플래그가 제거된 결과가 빈 문자열이더라도, "플래그 제거가 감지됨"은 맞으므로 True 유지.
         # 대신 caller에서 빈 쿼리를 실행하지 않도록 처리한다.
