@@ -164,6 +164,27 @@ async def test_config_set_none_default_infers_type(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_config_get_dict_key_shadowing_dict_method(monkeypatch):
+    """A dict key named like a dict method (e.g. "keys") must win over hasattr."""
+    cli = MockCLI()
+    fake_cfg = SimpleNamespace(section={"keys": "custom-value"})
+    monkeypatch.setattr(config_module, "_get_root_config", lambda: fake_cfg)
+
+    await config_get_command(cli, ["section.keys"])
+    assert any("custom-value" in m for m in cli.output_messages)
+
+
+@pytest.mark.asyncio
+async def test_config_set_depth_alias_missing_path_guarded(monkeypatch):
+    cli = MockCLI()
+    fake_cfg = SimpleNamespace()  # no `research` attribute at all
+    monkeypatch.setattr(config_module, "_get_root_config", lambda: fake_cfg)
+
+    await config_set_command(cli, ["depth", "deep"])
+    assert any("Unknown config key" in m for m in cli.output_messages)
+
+
+@pytest.mark.asyncio
 async def test_config_set_secret_forbidden():
     cli = MockCLI()
     await config_set_command(cli, ["openrouter_api_key", "sk-or-hacked"])
@@ -237,3 +258,77 @@ async def test_run_command_runtime_overrides(monkeypatch):
     assert os.getenv("RESEARCH_DEPTH_PRESET") == "quick"
     assert os.getenv("SPARKLEFORGE_AUTOPILOT_MODE") == "false"
     assert _autopilot_mode_enabled() is False
+
+
+@pytest.mark.asyncio
+async def test_run_command_sanitizes_embedded_equals_flag(monkeypatch):
+    """Issue: sanitizer only matched "--depth " (space-separated), missing --depth=quick."""
+    cfg = researcher_config.config
+    captured_query = None
+
+    args = argparse.Namespace(
+        command="run",
+        query="do the research --depth=quick",
+        model=None,
+        max_tokens=None,
+        depth=None,
+        autopilot=None,
+        task=None,
+        session_id=None,
+        continue_session=False,
+    )
+
+    async def fake_run_command(run_args, run_cfg):
+        nonlocal captured_query
+        captured_query = run_args.query
+        return 0
+
+    monkeypatch.setattr("src.cli.commands.run.run_command", fake_run_command)
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_disk_space_safety",
+        lambda: (True, "Disk OK"),
+    )
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_network_connectivity",
+        lambda: (True, "Network OK"),
+    )
+
+    rc = await handle_run_command(args, cfg)
+    assert rc == 0
+    assert captured_query == "do the research"
+
+
+@pytest.mark.asyncio
+async def test_run_command_invalid_autopilot_value_ignored(monkeypatch):
+    """An unparseable --autopilot value must not silently coerce to True."""
+    cfg = researcher_config.config
+    monkeypatch.delenv("SPARKLEFORGE_AUTOPILOT_MODE", raising=False)
+
+    args = argparse.Namespace(
+        command="run",
+        query="test query",
+        model=None,
+        max_tokens=None,
+        depth=None,
+        autopilot="maybe",
+        task=None,
+        session_id=None,
+        continue_session=False,
+    )
+
+    async def fake_run_command(run_args, run_cfg):
+        return 0
+
+    monkeypatch.setattr("src.cli.commands.run.run_command", fake_run_command)
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_disk_space_safety",
+        lambda: (True, "Disk OK"),
+    )
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_network_connectivity",
+        lambda: (True, "Network OK"),
+    )
+
+    rc = await handle_run_command(args, cfg)
+    assert rc == 0
+    assert os.getenv("SPARKLEFORGE_AUTOPILOT_MODE") is None

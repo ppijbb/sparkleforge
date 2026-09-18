@@ -175,6 +175,9 @@ async def config_set_command(cli, args: List[str]):
                     f"[red]❌ Invalid research depth: '{value_str}'. Allowed: {allowed_str}[/red]"
                 )
                 return
+            if not hasattr(cfg, "research") or not hasattr(cfg.research, "research_depth"):
+                cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
+                return
             old_val = getattr(cfg.research.research_depth, "default_preset", "auto")
             cfg.research.research_depth.default_preset = val_clean
             os.environ["RESEARCH_DEPTH_PRESET"] = val_clean
@@ -189,19 +192,11 @@ async def config_set_command(cli, args: List[str]):
                 cli.console.print("[red]❌ Primary model must not be empty[/red]")
                 return
             cfg.llm.primary_model = new_model
-            # Only cascade to role models that still mirror the old primary --
-            # a role the user pinned to something else stays pinned instead of
-            # being silently clobbered.
-            for role in (
-                "planning_model",
-                "reasoning_model",
-                "verification_model",
-                "generation_model",
-                "compression_model",
-            ):
-                if hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val:
-                    setattr(cfg.llm, role, new_model)
             os.environ["LLM_MODEL"] = new_model
+            # Only cascade a role (config attribute AND its env var together)
+            # when the role still mirrors the old primary -- a role the user
+            # pinned to something else stays pinned in both places instead of
+            # being silently clobbered or having an env var sprout under it.
             for role, env_k in (
                 ("planning_model", "PLANNING_MODEL"),
                 ("reasoning_model", "REASONING_MODEL"),
@@ -209,7 +204,8 @@ async def config_set_command(cli, args: List[str]):
                 ("generation_model", "GENERATION_MODEL"),
                 ("compression_model", "COMPRESSION_MODEL"),
             ):
-                if os.getenv(env_k, old_val) == old_val:
+                if hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val:
+                    setattr(cfg.llm, role, new_model)
                     os.environ[env_k] = new_model
             cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]")
             return
@@ -302,10 +298,18 @@ async def config_get_command(cli, args: List[str]):
         parts = canonical_key.split(".")
         curr = cfg
         for part in parts:
-            if hasattr(curr, part):
+            # dict membership takes priority over hasattr: for a plain dict,
+            # hasattr(curr, "keys") is also true (it's a dict method), so a
+            # dict key literally named "keys"/"items"/etc would otherwise
+            # resolve to the bound method instead of the stored value.
+            if isinstance(curr, dict):
+                if part in curr:
+                    curr = curr[part]
+                else:
+                    cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
+                    return
+            elif hasattr(curr, part):
                 curr = getattr(curr, part)
-            elif isinstance(curr, dict) and part in curr:
-                curr = curr[part]
             else:
                 cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
                 return
