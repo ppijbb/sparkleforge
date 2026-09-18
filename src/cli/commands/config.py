@@ -37,13 +37,15 @@ async def config_show_command(cli, args: List[str]):
         from src.core.researcher_config import get_research_config
 
         config = get_research_config()
+        research_cfg = getattr(config, "research", config)
 
         config_text = f"""
 [bold]LLM Provider:[/bold] {getattr(config, "llm_provider", "N/A")}
 [bold]LLM Model:[/bold] {getattr(config, "llm_model", "N/A")}
 [bold]Max Tokens:[/bold] {getattr(config, "max_tokens", "N/A")}
 [bold]Temperature:[/bold] {getattr(config, "temperature", "N/A")}
-"""
+[bold]Approval Policy:[/bold] {getattr(research_cfg, "approval_policy", "ask")}
+"""  # noqa: E501
 
         cli.console.print(Panel(config_text.strip(), title="Configuration", border_style="cyan"))
 
@@ -61,8 +63,31 @@ async def config_set_command(cli, args: List[str]):
     key = args[0]
     value = args[1]
 
-    cli.console.print("[yellow]⚠️  Config setting is not yet implemented[/yellow]")
-    cli.console.print(f"[dim]Key: {key}, Value: {value}[/dim]")
+    try:
+        from src.core.researcher_config import get_research_config
+        import os
+
+        research_config = get_research_config()
+        
+        parts = key.split(".")
+        curr = research_config
+        for part in parts[:-1]:
+            if hasattr(curr, part):
+                curr = getattr(curr, part)
+            elif isinstance(curr, dict) and part in curr:
+                curr = curr[part]
+            else:
+                raise AttributeError(f"Config path not found: {key}")
+
+        last = parts[-1]
+        if hasattr(curr, last):
+            setattr(curr, last, value)
+        elif isinstance(curr, dict):
+            curr[last] = value
+        os.environ[key.upper()] = str(value)
+        cli.console.print(f"[green]Successfully set {key} to {value}[/green]")
+    except Exception as e:
+        cli.console.print(f"[red]❌ Failed to set config: {e}[/red]")
 
 
 async def config_get_command(cli, args: List[str]):
@@ -77,7 +102,18 @@ async def config_get_command(cli, args: List[str]):
         from src.core.researcher_config import get_research_config
 
         config = get_research_config()
-        value = getattr(config, key, None)
+        
+        parts = key.split(".")
+        curr = config
+        for part in parts:
+            if hasattr(curr, part):
+                curr = getattr(curr, part)
+            elif isinstance(curr, dict) and part in curr:
+                curr = curr[part]
+            else:
+                curr = None
+                break
+        value = curr
 
         if value is not None:
             value = _redact_secret(key, value)

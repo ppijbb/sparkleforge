@@ -226,6 +226,7 @@ class ResearchConfig:
     enable_academic_search: bool
     enable_web_search: bool
     enable_browser_automation: bool
+    approval_policy: str = "ask"
 
     # Streaming Pipeline (혁신 5) - NO DEFAULTS
     enable_streaming: bool
@@ -1191,6 +1192,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
         enable_academic_search=get_optional_env("ENABLE_ACADEMIC_SEARCH", True, bool),
         enable_web_search=get_optional_env("ENABLE_WEB_SEARCH", True, bool),
         enable_browser_automation=get_optional_env("ENABLE_BROWSER_AUTOMATION", True, bool),
+        approval_policy=get_optional_env("APPROVAL_POLICY", "ask"),
         enable_streaming=get_optional_env("ENABLE_STREAMING", True, bool),
         stream_chunk_size=get_optional_env("STREAM_CHUNK_SIZE", 1024, int),
         enable_progressive_reporting=get_optional_env("ENABLE_PROGRESSIVE_REPORTING", True, bool),
