@@ -18,13 +18,15 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GOOGLE_GENAI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "z-ai/glm-5.2:free"
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash-0731:free"
 # OpenRouter :free variants only -- the OPENROUTER_API_KEY on this account has
 # never purchased credits, so a paid model id here 402s instead of falling
-# through. Verified against https://openrouter.ai/api/v1/models on 2026-08-22;
+# through. Verified against https://openrouter.ai/api/v1/models on 2026-09-18.
+# z-ai/glm-5.2:free dropped from primary: its live context_length is 32768,
+# 8x smaller than the 256_000 this file assumed, silently truncating prompts.
 # re-check that endpoint if these start 404ing (free listings rotate).
 OPENROUTER_FALLBACKS = [
-    "z-ai/glm-5.2:free",
+    "deepseek/deepseek-v4-flash-0731:free",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
     "google/gemma-4-31b-it:free",
     "dots-studio/dots-3-note-preview:free",
@@ -49,7 +51,7 @@ MODEL_CONTEXT_WINDOWS = {
     "qwen/": 128_000,
     "deepseek/deepseek-v4": 1_048_576,
     "deepseek/": 163_840,
-    "z-ai/glm-5.2:free": 256_000,
+    "z-ai/glm-5.2:free": 32_768,
     "z-ai/glm-5.2": 1_048_576,
     "z-ai/": 131_072,
     "glm-": 131_072,
