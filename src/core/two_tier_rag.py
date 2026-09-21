@@ -10,16 +10,80 @@ Pre-loaded + Dynamic Search 구조로 검색 효율성 극대화.
 - Bidirectional RAG: 양방향 컨텍스트 연결
 """
 
+import asyncio
 import hashlib
 import logging
+import math
 from collections import defaultdict
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
+
+# #1548: scoring weights and staleness tuning.
+EMBEDDING_SCORE_WEIGHT = 0.5  # blended 50/50 with keyword score when embeddings are available
+STALENESS_HALF_LIFE_DAYS = 14.0  # importance halves every N days without re-access
+STALENESS_THRESHOLD = 0.3  # decay factor below this flags an entry for re-verification
+
+
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    """Pairwise cosine similarity, floored at 0 (unrelated/negative treated the same).
+
+    Small pure-Python helper rather than the batch numpy path in
+    memory_embeddings.py -- entries here are a handful at a time, not a corpus.
+    """
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return max(0.0, dot / (norm_a * norm_b))
+
+
+def _time_decay_factor(
+    entry: "MemoryEntry", *, half_life_days: float = STALENESS_HALF_LIFE_DAYS
+) -> float:
+    """Exponential decay since last_accessed (or created_at if never accessed).
+
+    Returns a multiplier in (0, 1]: a fact accessed recently stays near 1.0;
+    one untouched for many half-lives decays toward 0, so it stops scoring as
+    high-relevance forever just because it was importance-tagged once (#1548).
+    """
+    reference = entry.last_accessed or entry.created_at
+    age_days = max(0.0, (datetime.now() - reference).total_seconds() / 86400.0)
+    return 0.5 ** (age_days / half_life_days)
+
+
+def _embed_sync(provider: Any, text: str) -> Optional[List[float]]:
+    """Best-effort synchronous embedding of one text via an async EmbeddingProvider.
+
+    add()/query() are a synchronous API (unchanged -- see test_sota_modules.py),
+    but EmbeddingProvider (memory_embeddings.py, shared with other RAG paths)
+    is async-only. Runs the coroutine in a fresh loop, or in a dedicated thread
+    if a loop is already running (so this is safe to call from async code too
+    without nesting asyncio.run()). Never raises: returns None on any failure,
+    which callers treat exactly like "no embedding available."
+    """
+    try:
+        coro = provider.embed_documents([text])
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            result = asyncio.run(coro)
+        else:
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(asyncio.run, coro).result()
+        return result[0].tolist()
+    except Exception as e:
+        logger.debug(f"Embedding generation failed, falling back to keyword-only: {e}")
+        return None
 
 
 class MemoryType(Enum):
@@ -85,8 +149,11 @@ class TierOneCache:
         self.entries.clear()
         self.entry_order.clear()
 
-        # 중요도 기준 정렬 후 상위 N개 선택
-        sorted_entries = sorted(entries, key=lambda e: e.importance, reverse=True)
+        # 중요도 * 시간 감쇠 기준 정렬 후 상위 N개 선택 (#1548: 오래되어
+        # 재접근되지 않은 항목이 정적 importance만으로 영구히 상위를 차지하지 않도록)
+        sorted_entries = sorted(
+            entries, key=lambda e: e.importance * _time_decay_factor(e), reverse=True
+        )
 
         for entry in sorted_entries[: self.max_entries]:
             self.entries[entry.entry_id] = entry
@@ -115,8 +182,15 @@ class TierOneCache:
         query_keywords: List[str],
         top_k: int = 5,
         memory_type: MemoryType | None = None,
+        query_embedding: List[float] | None = None,
     ) -> List[Tuple[MemoryEntry, float]]:
-        """키워드 기반 검색."""
+        """키워드 + (있으면) 임베딩 유사도 기반 검색.
+
+        query_embedding이 주어지고 entry.embedding도 있으면 코사인 유사도를
+        키워드 점수와 50/50으로 블렌드 -- 키워드가 전혀 겹치지 않아도 의미적으로
+        유사하면 검색되도록 (#1548). 둘 중 하나라도 없으면 그 신호 없이 계속
+        동작 (embedding=None은 순수 키워드 스코어링으로 폴백, 하위호환).
+        """
         results = []
         query_set = set(k.lower() for k in query_keywords)
 
@@ -128,11 +202,22 @@ class TierOneCache:
             # 키워드 매칭
             entry_keywords = set(k.lower() for k in entry.keywords)
             common = query_set & entry_keywords
+            keyword_score = len(common) / max(len(query_set), 1) if query_set else 0.0
 
-            if common:
-                score = len(common) / max(len(query_set), 1)
-                score *= entry.importance  # 중요도 가중치
-                results.append((entry, score))
+            embedding_score = 0.0
+            if query_embedding is not None and entry.embedding is not None:
+                embedding_score = _cosine_similarity(entry.embedding, query_embedding)
+
+            if keyword_score <= 0.0 and embedding_score <= 0.0:
+                continue
+
+            if entry.embedding is not None and query_embedding is not None:
+                relevance = keyword_score * (1 - EMBEDDING_SCORE_WEIGHT) + embedding_score * EMBEDDING_SCORE_WEIGHT
+            else:
+                relevance = keyword_score
+
+            score = relevance * entry.importance * _time_decay_factor(entry)
+            results.append((entry, score))
 
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
@@ -210,8 +295,15 @@ class TierTwoStore:
         top_k: int = 10,
         memory_type: MemoryType | None = None,
         min_relevance: float = 0.0,
+        query_embedding: List[float] | None = None,
     ) -> List[Tuple[MemoryEntry, float]]:
-        """동적 검색."""
+        """동적 검색 (#1548: 임베딩 유사도 + 시간 감쇠 반영).
+
+        candidate_ids는 여전히 키워드 인덱스로만 좁힌다 -- 임베딩만으로
+        전체 저장소를 매번 스캔하는 건 별도 벡터 인덱스가 필요한 더 큰
+        변경(Non-goal)이므로, 이번 스코프는 "키워드로 후보를 좁히고 그
+        후보들 사이에서 임베딩으로 순위를 재조정"까지.
+        """
         # 키워드 인덱스 활용
         candidate_ids: Set[str] = set()
 
@@ -237,20 +329,41 @@ class TierTwoStore:
             entry_keywords = set(k.lower() for k in entry.keywords)
             keyword_score = len(query_set & entry_keywords) / max(len(query_set), 1)
 
-            # 중요도 가중치
-            importance_weight = entry.importance
+            if entry.embedding is not None and query_embedding is not None:
+                embedding_score = _cosine_similarity(entry.embedding, query_embedding)
+                relevance = (
+                    keyword_score * (1 - EMBEDDING_SCORE_WEIGHT)
+                    + embedding_score * EMBEDDING_SCORE_WEIGHT
+                )
+            else:
+                relevance = keyword_score
+
+            # 중요도 가중치 -- 시간 감쇠 적용 (오래되어 재접근 없으면 약해짐)
+            importance_weight = entry.importance * _time_decay_factor(entry)
 
             # 접근 빈도 가중치
             access_weight = min(1.0, entry.access_count / 10)
 
             # 최종 점수
-            score = keyword_score * 0.6 + importance_weight * 0.3 + access_weight * 0.1
+            score = relevance * 0.6 + importance_weight * 0.3 + access_weight * 0.1
 
             if score >= min_relevance:
                 results.append((entry, score))
 
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
+
+    def get_stale_entries(self, top_k: int = 10) -> List[MemoryEntry]:
+        """Entries whose decayed importance has crossed STALENESS_THRESHOLD (#1548).
+
+        Surfaces facts for re-verification instead of letting them silently
+        keep scoring as high-relevance forever off a stale static importance.
+        Ranked by original (undecayed) importance -- the ones that mattered
+        most when stored are the most worth re-checking first.
+        """
+        stale = [e for e in self.entries.values() if _time_decay_factor(e) < STALENESS_THRESHOLD]
+        stale.sort(key=lambda e: e.importance, reverse=True)
+        return stale[:top_k]
 
     def search_by_type(self, memory_type: MemoryType, top_k: int = 10) -> List[MemoryEntry]:
         """타입별 검색."""
@@ -319,6 +432,7 @@ class TwoTierRAGSystem:
         tier1_size: int = 20,
         enable_persistence: bool = True,
         auto_promote: bool = True,
+        embedding_provider: Any | None = None,
     ):
         self.tier1 = TierOneCache(max_entries=tier1_size)
         self.tier2 = TierTwoStore(enable_persistence=enable_persistence)
@@ -328,10 +442,48 @@ class TwoTierRAGSystem:
         self.promotion_access_threshold = 5
         self.promotion_importance_threshold = 0.7
 
+        # #1548: semantic retrieval. embedding_provider=False disables it
+        # outright (e.g. tests that want fast, deterministic keyword-only
+        # behavior); None lazily creates the shared project default on first
+        # use and probes its availability once (see _maybe_embed).
+        self._embedding_provider = embedding_provider
+        self._embeddings_enabled: bool | None = False if embedding_provider is False else None
+
         logger.info(
             f"TwoTierRAGSystem initialized: tier1_size={tier1_size}, "
             f"persistence={enable_persistence}, auto_promote={auto_promote}"
         )
+
+    def _get_embedding_provider(self) -> Any | None:
+        if self._embedding_provider in (None, False):
+            if self._embedding_provider is False:
+                return None
+            from src.core.memory_embeddings import get_embedding_provider
+
+            self._embedding_provider = get_embedding_provider()
+        return self._embedding_provider
+
+    def _maybe_embed(self, text: str) -> List[float] | None:
+        """Best-effort embedding of `text`, or None if unavailable/disabled.
+
+        Probes provider.is_available once per system instance and caches the
+        result, so a dummy-random-vector fallback (e.g. sentence-transformers
+        not installed) never pollutes scoring with noise -- see #1548.
+        """
+        if self._embeddings_enabled is False:
+            return None
+        provider = self._get_embedding_provider()
+        if provider is None:
+            self._embeddings_enabled = False
+            return None
+        if self._embeddings_enabled is None:
+            try:
+                self._embeddings_enabled = bool(provider.is_available)
+            except Exception:
+                self._embeddings_enabled = False
+        if not self._embeddings_enabled:
+            return None
+        return _embed_sync(provider, text)
 
     def add(
         self,
@@ -365,6 +517,7 @@ class TwoTierRAGSystem:
             session_id=session_id,
             agent_id=agent_id,
             keywords=keywords,
+            embedding=self._maybe_embed(content),
             importance=importance,
             related_entries=related_entries or [],
         )
@@ -399,11 +552,14 @@ class TwoTierRAGSystem:
             (엔트리, 점수, 소스 티어) 튜플 리스트
         """
         keywords = self._extract_keywords(query)
+        query_embedding = self._maybe_embed(query)
         results: List[Tuple[MemoryEntry, float, str]] = []
         seen_ids: Set[str] = set()
 
         # Tier 1 검색 (빠른 캐시)
-        tier1_results = self.tier1.search(keywords, top_k=top_k, memory_type=memory_type)
+        tier1_results = self.tier1.search(
+            keywords, top_k=top_k, memory_type=memory_type, query_embedding=query_embedding
+        )
         for entry, score in tier1_results:
             if entry.entry_id not in seen_ids:
                 results.append((entry, score * 1.2, "tier1"))  # Tier 1 보너스
@@ -416,6 +572,7 @@ class TwoTierRAGSystem:
                 keywords,
                 top_k=remaining * 2,  # 더 많이 검색
                 memory_type=memory_type,
+                query_embedding=query_embedding,
             )
 
             for entry, score in tier2_results:
@@ -465,6 +622,14 @@ class TwoTierRAGSystem:
     def get_learnings(self, top_k: int = 10) -> List[MemoryEntry]:
         """학습 메모리 조회."""
         return self.query_by_type(MemoryType.LEARNING, top_k=top_k)
+
+    def get_stale_entries(self, top_k: int = 10) -> List[MemoryEntry]:
+        """Facts whose decayed importance has crossed the staleness threshold (#1548).
+
+        Surface these for re-verification rather than letting a long-running
+        session keep serving week-old facts as high-relevance forever.
+        """
+        return self.tier2.get_stale_entries(top_k=top_k)
 
     def preload_for_session(self, session_context: str, session_id: str | None = None):
         """세션 시작 시 관련 컨텍스트 사전 로드.
