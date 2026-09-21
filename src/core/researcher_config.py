@@ -843,6 +843,14 @@ class ResearcherSystemConfig(BaseModel):
         default="ask",
         description="REPL runtime approval policy: ask, allowlist, or autopilot",
     )
+    autopilot_mode: bool = Field(
+        default=True,
+        description="REPL-visible mirror of SPARKLEFORGE_AUTOPILOT_MODE -- "
+        "_autopilot_mode_enabled() remains the actual runtime check "
+        "(it also honors a per-call context override), this field just "
+        "gives `config get/set autopilot` a config-object source of truth "
+        "instead of only os.environ.",
+    )
 
     def model_post_init(self, __context):
         # Ensure output directory exists
@@ -1473,6 +1481,8 @@ def load_config_from_env() -> ResearcherSystemConfig:
         agent_tools=agent_tool_config,
         prompt_refiner=prompt_refiner_config,
         overseer=overseer_config,
+        approval_policy=get_optional_env("APPROVAL_POLICY", "ask", str),
+        autopilot_mode=get_optional_env("SPARKLEFORGE_AUTOPILOT_MODE", True, bool),
     )
 
     return config

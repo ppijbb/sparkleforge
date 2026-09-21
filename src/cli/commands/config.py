@@ -89,26 +89,33 @@ def _parse_bool(value: str) -> Optional[bool]:
 async def config_show_command(cli, args: List[str]):
     """설정 표시."""
     try:
-        cfg = _get_root_config()
+        # Shares the mutation lock as a reader: today's config_set_command
+        # critical section has no `await` in it, so this can't actually
+        # observe a torn write, but taking the lock here too means that
+        # stays true even if a future edit adds one.
+        async with CONFIG_MUTATION_LOCK:
+            cfg = _get_root_config()
 
-        llm_provider = getattr(cfg.llm, "provider", "N/A") if hasattr(cfg, "llm") else "N/A"
-        llm_model = getattr(cfg.llm, "primary_model", "N/A") if hasattr(cfg, "llm") else "N/A"
-        max_tokens = getattr(cfg.llm, "max_tokens", "N/A") if hasattr(cfg, "llm") else "N/A"
-        temperature = getattr(cfg.llm, "temperature", "N/A") if hasattr(cfg, "llm") else "N/A"
+            llm_provider = getattr(cfg.llm, "provider", "N/A") if hasattr(cfg, "llm") else "N/A"
+            llm_model = getattr(cfg.llm, "primary_model", "N/A") if hasattr(cfg, "llm") else "N/A"
+            max_tokens = getattr(cfg.llm, "max_tokens", "N/A") if hasattr(cfg, "llm") else "N/A"
+            temperature = getattr(cfg.llm, "temperature", "N/A") if hasattr(cfg, "llm") else "N/A"
 
-        depth_preset = "auto"
-        if hasattr(cfg, "research") and hasattr(cfg.research, "research_depth"):
-            depth_preset = getattr(cfg.research.research_depth, "default_preset", "auto")
+            depth_preset = "auto"
+            if hasattr(cfg, "research") and hasattr(cfg.research, "research_depth"):
+                depth_preset = getattr(cfg.research.research_depth, "default_preset", "auto")
 
-        autopilot_val = _autopilot_mode_enabled()
-        budget_limit = (
-            getattr(cfg.llm, "budget_limit", "unlimited")
-            if hasattr(cfg, "llm")
-            else "N/A"
-        )
-        approval_policy = getattr(cfg, "approval_policy", "ask")
+            autopilot_val = (
+                cfg.autopilot_mode if hasattr(cfg, "autopilot_mode") else _autopilot_mode_enabled()
+            )
+            budget_limit = (
+                getattr(cfg.llm, "budget_limit", "unlimited")
+                if hasattr(cfg, "llm")
+                else "N/A"
+            )
+            approval_policy = getattr(cfg, "approval_policy", "ask")
 
-        config_text = f"""
+            config_text = f"""
 [bold]LLM Provider:[/bold] {llm_provider}
 [bold]LLM Model:[/bold] {llm_model}
 [bold]Max Tokens:[/bold] {max_tokens}
@@ -118,7 +125,7 @@ async def config_show_command(cli, args: List[str]):
 [bold]Budget Limit:[/bold] {budget_limit}
 [bold]Approval Policy:[/bold] {approval_policy}
 """
-        cli.console.print(Panel(config_text.strip(), title="Configuration", border_style="cyan"))
+            cli.console.print(Panel(config_text.strip(), title="Configuration", border_style="cyan"))
 
     except Exception as e:
         logger.error(f"Failed to show config: {e}", exc_info=True)
@@ -155,7 +162,8 @@ async def config_set_command(cli, args: List[str]):
                         "Expected true/false/yes/no/1/0/on/off[/red]"
                     )
                     return
-                old_val = _autopilot_mode_enabled()
+                old_val = (cfg.autopilot_mode if hasattr(cfg, "autopilot_mode") else _autopilot_mode_enabled())
+                cfg.autopilot_mode = parsed_bool
                 os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if parsed_bool else "false"
                 cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {parsed_bool}[/green]")
                 return
@@ -313,42 +321,45 @@ async def config_get_command(cli, args: List[str]):
     canonical_key = _CONFIG_ALIASES.get(raw_key.lower(), raw_key)
 
     try:
-        cfg = _get_root_config()
+        async with CONFIG_MUTATION_LOCK:
+            cfg = _get_root_config()
 
-        # Handle special key: autopilot_mode
-        if canonical_key == "autopilot_mode":
-            val = _autopilot_mode_enabled()
-            cli.console.print(f"[green]{raw_key}: {val}[/green]")
-            return
+            # Handle special key: autopilot_mode
+            if canonical_key == "autopilot_mode":
+                val = (
+                    cfg.autopilot_mode if hasattr(cfg, "autopilot_mode") else _autopilot_mode_enabled()
+                )
+                cli.console.print(f"[green]{raw_key}: {val}[/green]")
+                return
 
-        # Handle special key: approval_policy
-        if canonical_key == "approval_policy":
-            val = getattr(cfg, "approval_policy", "ask")
-            cli.console.print(f"[green]{raw_key}: {val}[/green]")
-            return
+            # Handle special key: approval_policy
+            if canonical_key == "approval_policy":
+                val = getattr(cfg, "approval_policy", "ask")
+                cli.console.print(f"[green]{raw_key}: {val}[/green]")
+                return
 
-        # Direct attribute or dotted path traversal
-        parts = canonical_key.split(".")
-        curr = cfg
-        for part in parts:
-            # dict membership takes priority over hasattr: for a plain dict,
-            # hasattr(curr, "keys") is also true (it's a dict method), so a
-            # dict key literally named "keys"/"items"/etc would otherwise
-            # resolve to the bound method instead of the stored value.
-            if isinstance(curr, dict):
-                if part in curr:
-                    curr = curr[part]
+            # Direct attribute or dotted path traversal
+            parts = canonical_key.split(".")
+            curr = cfg
+            for part in parts:
+                # dict membership takes priority over hasattr: for a plain dict,
+                # hasattr(curr, "keys") is also true (it's a dict method), so a
+                # dict key literally named "keys"/"items"/etc would otherwise
+                # resolve to the bound method instead of the stored value.
+                if isinstance(curr, dict):
+                    if part in curr:
+                        curr = curr[part]
+                    else:
+                        cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
+                        return
+                elif hasattr(curr, part):
+                    curr = getattr(curr, part)
                 else:
                     cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
                     return
-            elif hasattr(curr, part):
-                curr = getattr(curr, part)
-            else:
-                cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
-                return
 
-        redacted_val = _redact_secret(raw_key, curr)
-        cli.console.print(f"[green]{raw_key}: {redacted_val}[/green]")
+            redacted_val = _redact_secret(raw_key, curr)
+            cli.console.print(f"[green]{raw_key}: {redacted_val}[/green]")
 
     except Exception as e:
         logger.error(f"Failed to get config: {e}", exc_info=True)

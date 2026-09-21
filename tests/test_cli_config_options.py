@@ -128,6 +128,22 @@ async def test_config_set_autopilot_alias():
     assert _autopilot_mode_enabled() is True
 
 
+@pytest.mark.asyncio
+async def test_config_autopilot_roundtrips_through_config_object():
+    """Issue: autopilot_mode previously lived only in os.environ, with no
+    config-object source of truth (same class of gap as approval_policy)."""
+    cli = MockCLI()
+    await config_set_command(cli, ["autopilot", "false"])
+
+    cfg = researcher_config.config
+    assert cfg.autopilot_mode is False
+    assert os.getenv("SPARKLEFORGE_AUTOPILOT_MODE") == "false"
+
+    cli.output_messages.clear()
+    await config_get_command(cli, ["autopilot"])
+    assert any("False" in m for m in cli.output_messages)
+
+
 def test_is_secret_key_exact_match_not_substring():
     """Issue #1659: substring matching false-flagged e.g. my_api_key_backup."""
     assert _is_secret_key("api_key")
