@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
 from typing import Any, Dict, List
 
 import streamlit as st
@@ -42,9 +43,25 @@ def _safe_select(table: str, columns: str = "*", limit: int = 100) -> List[Dict[
     if client is None:
         return []
     try:
-        response = client.table(table).select(columns).limit(limit).execute()
-        return list(response.data or [])
-    except Exception as exc:  # pragma: no cover - dashboard must stay live
+        # Handle cursor pagination to support >2000 rows without silent data loss
+        all_rows = []
+        fetched = 0
+        batch_size = min(limit, 1000) if limit > 0 else 1000
+        while True:
+            query = client.table(table).select(columns).range(fetched, fetched + batch_size - 1)
+            if table == "sparkleforge_history_events":
+                seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+                query = query.gte("created_at", seven_days_ago)
+            response = query.execute()
+            data = list(response.data or [])
+            all_rows.extend(data)
+            fetched += len(data)
+            if len(data) < batch_size or (limit > 0 and fetched >= limit):
+                break
+        if limit > 0:
+            all_rows = all_rows[:limit]
+        return all_rows
+    except (json.JSONDecodeError, ValueError, Exception) as exc:  # pragma: no cover - dashboard must stay live
         logger.warning("Supabase select on %s failed: %s", table, exc)
         return []
 
@@ -90,16 +107,24 @@ def _fetch_jobs(limit: int = 25) -> List[Dict[str, Any]]:
 
 
 def _fetch_ci_token_metrics() -> Dict[str, Any]:
-    rows = _safe_select("sparkleforge_history_events", "metadata", limit=1000)
+    rows = _safe_select("sparkleforge_history_events", "metadata,created_at", limit=5000)
     total_tokens = 0
     total_cost = 0.0
     for r in rows:
+        created_at = r.get("created_at")
+        if created_at:
+            try:
+                # Correctly parse Postgres timestamptz format (+00:00 or Z)
+                datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                pass
+
         meta = r.get("metadata") or {}
         if isinstance(meta, str):
             import json
             try:
                 meta = json.loads(meta)
-            except Exception:
+            except (json.JSONDecodeError, ValueError):
                 meta = {}
         usage = meta.get("token_usage") or {}
         total_tokens += usage.get("total_tokens", 0)
