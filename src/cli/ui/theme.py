@@ -27,10 +27,10 @@ STYLE_WARNING = "yellow"
 STYLE_INFO = "cyan"
 STYLE_DIM = "dim"
 
-ICON_SUCCESS = "✅"
-ICON_ERROR = "❌"
-ICON_WARNING = "⚠️"
-ICON_INFO = "ℹ️"
+ICON_SUCCESS = "[OK]"
+ICON_ERROR = "[FAIL]"
+ICON_WARNING = "[WARN]"
+ICON_INFO = "[i]"
 
 
 def _strip_known_icon(message: str) -> tuple[str, str | None]:
