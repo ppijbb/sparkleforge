@@ -4,6 +4,13 @@ from src.core.surface.task_dashboard import TaskDashboard
 
 
 def _fresh_dashboard() -> TaskDashboard:
+    """Reset the process-wide singleton and return a clean instance.
+
+    TaskDashboard() always returns the same singleton (see __new__); reset()
+    clears its state and unsets the class-level _instance, so the following
+    TaskDashboard() call constructs a genuinely fresh one rather than
+    returning stale state from a previous test.
+    """
     TaskDashboard().reset()
     return TaskDashboard()
 

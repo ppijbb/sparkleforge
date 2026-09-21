@@ -249,6 +249,11 @@ class TaskDashboard:
             ]
             tasks = [t.to_dict() for t in tasks_objs]
             in_scope_ids = {t.task_id for t in tasks_objs}
+            # _delegation_edges(tasks_objs) only ever emits an edge whose
+            # "from" is one of tasks_objs (it iterates `for t in tasks_objs`),
+            # so "from" is always in in_scope_ids already -- only "to" (a
+            # child possibly belonging to a different session) needs the
+            # scope check, to avoid referencing a task not in `tasks` above.
             edges = [
                 edge
                 for edge in self._delegation_edges(tasks_objs)
