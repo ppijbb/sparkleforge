@@ -345,7 +345,15 @@ async def config_get_command(cli, args: List[str]):
                     else:
                         found = False
                         break
-                result = _redact_secret(raw_key, curr) if found else None
+                if not found:
+                    result = None
+                elif _is_secret_key(canonical_key):
+                    # Same defense-in-depth as config_set_command's alias
+                    # check: redact on the resolved canonical path too, not
+                    # only the pre-alias raw key.
+                    result = "***" if curr else curr
+                else:
+                    result = _redact_secret(raw_key, curr)
 
         if not found:
             cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")

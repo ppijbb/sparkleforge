@@ -321,6 +321,7 @@ EXAMPLES:
         )
         command_parser.add_argument(
             "--autopilot",
+            choices=["true", "false", "yes", "no", "1", "0", "on", "off"],
             default=None,
             help="Enable or disable autonomous execution without interactive prompts (true/false)",
         )
