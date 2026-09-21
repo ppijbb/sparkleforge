@@ -137,6 +137,7 @@ class REPLCLI:
             mcp_list_command,
         )
         from src.cli.commands.nightwelding import (
+            nightwelding_digest_command,
             nightwelding_list_command,
             nightwelding_run_command,
             nightwelding_status_command,
@@ -232,6 +233,7 @@ class REPLCLI:
                 "run": nightwelding_run_command,
                 "status": nightwelding_status_command,
                 "list": nightwelding_list_command,
+                "digest": nightwelding_digest_command,
             },
             "mcp": {
                 "attach": mcp_attach_command,

@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -30,6 +32,7 @@ from src.core.nightwelding.adapter import (
     IssueContext,
     NightweldingAdapterError,
 )
+from src.core.nightwelding.models import DigestGroup, NightweldingDigest, NightweldingIssue
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +179,32 @@ class GitHubAdapter(BaseNightweldingAdapter):
             ensure_label(repo, NIGHTWELDING_FAILED_LABEL[0], NIGHTWELDING_FAILED_LABEL[1], NIGHTWELDING_FAILED_LABEL[2])
             add_labels(repo, num, [NIGHTWELDING_FAILED_LABEL[0]])
             remove_labels(repo, num, [NIGHTWELDING_QUEUE_LABEL[0]])
+
+    def fetch_nightwelding_issues(
+        self, label: str = NIGHTWELDING_QUEUE_LABEL[0], limit: int = 100
+    ) -> List[NightweldingIssue]:
+        """Fetch open issues carrying `label`, enriched with touched file paths."""
+        return fetch_nightwelding_issues(self._get_repo(), label=label, limit=limit)
+
+    def generate_digest(
+        self,
+        label: str = NIGHTWELDING_QUEUE_LABEL[0],
+        limit: int = 100,
+    ) -> NightweldingDigest:
+        """Group open Nightwelding-origin issues by root file and flag likely-fixed ones.
+
+        A digest artifact only (issue #1545) -- never auto-closes anything;
+        "possibly fixed" is a signal for a human to check, not an action.
+        """
+        issues = self.fetch_nightwelding_issues(label=label, limit=limit)
+        return build_digest(issues, repo_root=self.repo_root)
+
+    def post_digest_as_comment(
+        self, digest: NightweldingDigest, issue_number: int, top_n: int = 10
+    ) -> None:
+        """Post the digest as a single comment, per the issue's non-goal of not
+        silently mutating the issues it's reporting on."""
+        comment_on_issue(self._get_repo(), issue_number, render_digest_markdown(digest, top_n=top_n))
 
 
 def _run(cmd: List[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -355,6 +384,144 @@ def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
         ["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", body],
         capture_output=True, text=True, check=False,
     )
+
+
+_FILE_PATH_RE = re.compile(
+    r"`("
+    r"[\w\-./]*\.(?:py|ts|tsx|js|jsx|md|yml|yaml|json|toml|cfg|ini|sh|sql|go|rs|gitignore|dockerignore|env)"
+    r"|(?:[\w\-./]*/)?(?:Dockerfile|Makefile|LICENSE|Procfile)"
+    r")(?::\d+(?:-\d+)?)?`"
+)
+
+
+def _extract_files_touched(title: str, body: str) -> List[str]:
+    """Pull backtick-quoted file paths (optionally with a `:line` suffix) out
+    of an issue's title/body, in first-seen order. Matches how Nightwelding
+    and the fix_issue.py auto-fixer already format issue text (issue #1545).
+    """
+    files: List[str] = []
+    seen: set[str] = set()
+    for text in (title, body):
+        for match in _FILE_PATH_RE.finditer(text or ""):
+            path = match.group(1)
+            if path not in seen:
+                seen.add(path)
+                files.append(path)
+    return files
+
+
+def fetch_nightwelding_issues(
+    repo: str, label: str = NIGHTWELDING_QUEUE_LABEL[0], limit: int = 100
+) -> List[NightweldingIssue]:
+    """Fetch open issues carrying `label`, enriched with touched file paths.
+
+    `_run()` defaults to `check=True` (not overridden here), so a failed
+    `gh` call raises `GitHubAdapterError` instead of silently yielding [].
+    """
+    proc = _run(
+        [
+            "gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit),
+            "--json", "number,title,url,createdAt,updatedAt,labels,body",
+        ]
+    )
+    raw_issues = json.loads(proc.stdout or "[]")
+    issues: List[NightweldingIssue] = []
+    for raw in raw_issues:
+        labels = [entry["name"] for entry in raw.get("labels", [])]
+        if label not in labels:
+            continue
+        title = raw.get("title", "")
+        body = raw.get("body", "") or ""
+        issues.append(
+            NightweldingIssue(
+                number=raw["number"],
+                title=title,
+                url=raw["url"],
+                created_at=raw["createdAt"],
+                updated_at=raw["updatedAt"],
+                labels=labels,
+                body=body,
+                files_touched=_extract_files_touched(title, body),
+            )
+        )
+    return issues
+
+
+def _file_changed_since(repo_root: Path, file_path: str, since_iso: str) -> bool:
+    """True if `file_path` has commits after `since_iso` -- a "possibly
+    already fixed" signal for a human to verify, never an auto-close trigger.
+
+    Reads `repo_root`'s local git history as-is (no fetch): the CLI/CI
+    caller is expected to already be running from an up-to-date checkout of
+    this repo, same assumption `push_branch()` above makes of `origin/base`.
+    A stale/shallow checkout can under-report "possibly fixed", which only
+    means a human gets fewer such hints -- it can't cause a false positive.
+    """
+    if not (repo_root / file_path).exists():
+        return False
+    proc = _run(
+        ["git", "log", f"--since={since_iso}", "--oneline", "--", file_path],
+        cwd=repo_root,
+        check=False,
+    )
+    return bool(proc.stdout.strip())
+
+
+def build_digest(issues: List[NightweldingIssue], repo_root: Path) -> NightweldingDigest:
+    """Group Nightwelding-origin issues by root file/module (issue #1545).
+
+    Groups by the first file mentioned, a deliberate v1 heuristic (per the
+    issue's own proposal: "Groups ... by root file/module touched") --
+    the first-mentioned file isn't guaranteed to be the true root cause,
+    but a fuller root-cause ranking needs the review-verification layer
+    tracked separately (Anvil Phase Delta), not this digest.
+    """
+    groups_by_file: Dict[str, DigestGroup] = {}
+    for issue in issues:
+        root_file = issue.files_touched[0] if issue.files_touched else "(no file identified)"
+        group = groups_by_file.setdefault(root_file, DigestGroup(root_file=root_file))
+        group.issues.append(issue)
+        if root_file != "(no file identified)" and _file_changed_since(
+            repo_root, root_file, issue.created_at
+        ):
+            group.possibly_fixed_issues.append(issue.number)
+
+    return NightweldingDigest(
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        total_issues=len(issues),
+        groups=sorted(groups_by_file.values(), key=lambda g: g.root_file),
+    )
+
+
+def render_digest_markdown(digest: NightweldingDigest, top_n: int = 10) -> str:
+    """Render a digest as a single markdown comment body (issue #1545).
+
+    Posted once as a comment -- never used to silently edit/close issues.
+    """
+    top_groups = digest.top_recurring(top_n)
+    lines = [
+        f"## 🌙 Nightwelding Digest — {digest.generated_at}",
+        "",
+        f"{digest.total_issues} open Nightwelding-origin issue(s) across "
+        f"{len(digest.groups)} file(s)/module(s).",
+        "",
+        f"### Top {len(top_groups)} recurring file(s)",
+        "",
+    ]
+    if not top_groups:
+        lines.append("_No open Nightwelding-origin issues found._")
+    for group in top_groups:
+        issue_refs = ", ".join(f"#{issue.number}" for issue in group.issues)
+        lines.append(f"- **{group.root_file}** — {group.recurrence_count} issue(s): {issue_refs}")
+        if group.possibly_fixed_issues:
+            fixed_refs = ", ".join(f"#{n}" for n in group.possibly_fixed_issues)
+            lines.append(
+                f"  - ⚠️ possibly already fixed (file changed since filing): {fixed_refs} "
+                "— please verify and close manually if resolved."
+            )
+    lines.append("")
+    lines.append("_Informational digest only — Nightwelding never auto-closes or auto-merges._")
+    return "\n".join(lines)
 
 
 def find_open_pr(repo: str, branch: str, base_branch: str) -> str | None:

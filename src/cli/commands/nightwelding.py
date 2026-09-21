@@ -103,6 +103,46 @@ async def nightwelding_status_command(cli, args: List[str]):
     cli.console.print(table)
 
 
+async def nightwelding_digest_command(cli, args: List[str]):
+    """Usage: nightwelding digest [--label <label>] [--limit N] [--top-n N] [--post-to-issue N]
+
+    Manual `--flag value` parsing here (not argparse) matches every other
+    command in this module (run/status/list) and its module docstring's
+    stated reason: the REPL/CLI split reports through cli.console instead
+    of logger so it isn't silent by default, not a duplicate to collapse.
+    """
+    from src.core.nightwelding.github_adapter import render_digest_markdown
+    from src.core.nightwelding.runner import run_nightwelding_digest
+
+    label = "nightwelding-queue"
+    limit = 100
+    top_n = 10
+    post_to_issue = None
+    for i, a in enumerate(args):
+        if a == "--label" and i + 1 < len(args):
+            label = args[i + 1]
+        elif a == "--limit" and i + 1 < len(args) and args[i + 1].isdigit():
+            limit = int(args[i + 1])
+        elif a == "--top-n" and i + 1 < len(args) and args[i + 1].isdigit():
+            top_n = int(args[i + 1])
+        elif a == "--post-to-issue" and i + 1 < len(args) and args[i + 1].isdigit():
+            post_to_issue = int(args[i + 1])
+
+    with cli.console.status("[bold cyan]Nightwelding: building digest...", spinner="dots"):
+        try:
+            digest = run_nightwelding_digest(
+                label=label, limit=limit, top_n=top_n, post_to_issue=post_to_issue
+            )
+        except Exception as e:
+            cli.console.print(f"[red]❌ Nightwelding digest failed: {e}[/red]")
+            return
+
+    if post_to_issue is not None:
+        cli.console.print(f"[green]✅ Nightwelding digest posted to issue #{post_to_issue}.[/green]")
+    else:
+        cli.console.print(render_digest_markdown(digest, top_n=top_n))
+
+
 async def nightwelding_list_command(cli, args: List[str]):
     """Usage: nightwelding list [--verbose]"""
     from src.core.nightwelding.models import NightweldingQueue

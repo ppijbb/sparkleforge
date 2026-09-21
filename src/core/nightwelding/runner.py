@@ -22,6 +22,7 @@ from src.core.nightwelding.github_adapter import GitHubAdapter
 from src.core.nightwelding.implement import implement_until_green
 from src.core.nightwelding.local_adapter import LocalGitAdapter
 from src.core.nightwelding.models import (
+    NightweldingDigest,
     NightweldingItem,
     NightweldingQueue,
     NightweldingStatus,
@@ -246,3 +247,29 @@ async def run_nightwelding_sweep(
         )
         results.append(result)
     return results
+
+
+DEFAULT_DIGEST_LABEL = github_adapter.NIGHTWELDING_QUEUE_LABEL[0]
+
+
+def run_nightwelding_digest(
+    repo_root: Path | None = None,
+    repo: str | None = None,
+    label: str = DEFAULT_DIGEST_LABEL,
+    limit: int = 100,
+    top_n: int = 10,
+    post_to_issue: int | None = None,
+    adapter: GitHubAdapter | None = None,
+) -> NightweldingDigest:
+    """Group open Nightwelding-origin issues by root file, flag likely-fixed
+    ones, and optionally post the result as a single issue comment (#1545).
+
+    GitHub-only (`gh issue list` has no LocalGitAdapter equivalent yet).
+    """
+    limit = max(1, limit)
+    top_n = max(1, top_n)
+    active_adapter = adapter or GitHubAdapter(repo=repo, repo_root=repo_root or Path.cwd())
+    digest = active_adapter.generate_digest(label=label, limit=limit)
+    if post_to_issue is not None:
+        active_adapter.post_digest_as_comment(digest, post_to_issue, top_n=top_n)
+    return digest

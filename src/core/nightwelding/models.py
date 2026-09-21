@@ -224,6 +224,67 @@ class MakerMarkLedger:
         return [mark for mark, _ in scored[:top_k]]
 
 
+@dataclass
+class NightweldingIssue:
+    """A GitHub issue filed by Nightwelding, enriched with extracted metadata."""
+
+    number: int
+    title: str
+    url: str
+    created_at: str
+    updated_at: str
+    labels: List[str]
+    body: str
+    files_touched: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class DigestGroup:
+    """Nightwelding-origin issues sharing the same root file, for a digest (issue #1545)."""
+
+    root_file: str
+    issues: List[NightweldingIssue] = field(default_factory=list)
+    possibly_fixed_issues: List[int] = field(default_factory=list)
+
+    @property
+    def recurrence_count(self) -> int:
+        return len(self.issues)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "root_file": self.root_file,
+            "issues": [issue.to_dict() for issue in self.issues],
+            "recurrence_count": self.recurrence_count,
+            "possibly_fixed_issues": self.possibly_fixed_issues,
+        }
+
+
+@dataclass
+class NightweldingDigest:
+    """Weekly digest grouping open Nightwelding-origin issues (issue #1545).
+
+    A digest artifact only -- never auto-closes or auto-merges anything;
+    it's meant to be posted as a comment/issue for a human to triage.
+    """
+
+    generated_at: str
+    total_issues: int
+    groups: List[DigestGroup] = field(default_factory=list)
+
+    def top_recurring(self, top_n: int = 10) -> List[DigestGroup]:
+        return sorted(self.groups, key=lambda g: g.recurrence_count, reverse=True)[:top_n]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "generated_at": self.generated_at,
+            "total_issues": self.total_issues,
+            "groups": [g.to_dict() for g in self.groups],
+        }
+
+
 def is_mark_eligible(
     *,
     first_attempt_success: bool,
