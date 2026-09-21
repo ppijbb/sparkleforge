@@ -117,7 +117,12 @@ def _render_ci_cost_widget() -> None:
 
 
 def _fetch_cost_metrics(days: int = 7) -> Dict[str, Any]:
-    """Aggregate actual vs frontier-equivalent $ cost from logged LLM calls."""
+    """Aggregate actual vs frontier-equivalent $ cost from logged LLM calls.
+
+    limit=2000 is a pragmatic bound for a 7-day informational ticker, not a
+    correctness requirement -- consistent with _fetch_ci_token_metrics'
+    all-time limit=1000 above; neither paginates.
+    """
     rows = _safe_select("sparkleforge_history_events", "metadata,created_at", limit=2000)
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     total_actual = 0.0
@@ -127,7 +132,9 @@ def _fetch_cost_metrics(days: int = 7) -> Dict[str, Any]:
         created_at = r.get("created_at")
         if created_at:
             try:
-                if datetime.fromisoformat(created_at.replace("Z", "+00:00")) < cutoff:
+                # Python 3.11+ fromisoformat() parses a "Z" suffix natively
+                # (this project requires >=3.11); no manual "+00:00" swap needed.
+                if datetime.fromisoformat(created_at) < cutoff:
                     continue
             except ValueError:
                 pass
@@ -135,7 +142,7 @@ def _fetch_cost_metrics(days: int = 7) -> Dict[str, Any]:
         if isinstance(meta, str):
             try:
                 meta = json.loads(meta)
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 meta = {}
         actual_cost = meta.get("estimated_cost")
         if actual_cost is None:

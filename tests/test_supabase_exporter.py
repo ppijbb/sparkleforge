@@ -53,3 +53,8 @@ def test_frontier_equivalent_cost_usd_prices_input_and_output_separately():
 
 def test_frontier_equivalent_cost_usd_zero_tokens_is_zero():
     assert frontier_equivalent_cost_usd(0, 0) == 0.0
+
+
+def test_frontier_equivalent_cost_usd_unknown_model_falls_back_to_default():
+    cost = frontier_equivalent_cost_usd(1_000_000, 1_000_000, frontier_model="not-a-real-model")
+    assert cost == 15.00 + 75.00

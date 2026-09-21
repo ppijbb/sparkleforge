@@ -159,7 +159,9 @@ async def update_job_status(
 
 # Reference frontier-model pricing (USD per 1M tokens) used only to compute
 # an informational "what this would've cost on a frontier model" comparison.
-# Not used for billing or model routing.
+# Not used for billing or model routing. Source: Anthropic's published API
+# pricing for claude-opus-4, captured 2026-08 -- rates may drift over time;
+# this is a rough reference point, not a live-priced billing figure.
 FRONTIER_PRICING: Dict[str, Dict[str, float]] = {
     "claude-opus-4": {"input": 15.00, "output": 75.00},
 }
