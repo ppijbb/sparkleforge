@@ -74,6 +74,7 @@ class TaskDashboard:
         self._initialized = True
         self._tasks: Dict[str, TaskRecord] = {}
         self._lock_data = threading.RLock()
+        self._edges: List[Dict[str, Any]] = []
         self._update_callbacks: List[Callable[[TaskRecord], None]] = []
 
     def register_update_callback(self, cb: Callable[[TaskRecord], None]) -> None:
@@ -198,6 +199,11 @@ class TaskDashboard:
             tasks_objs = list(self._tasks.values())
             tasks = [t.to_dict() for t in tasks_objs]
             
+            in_scope_ids = {t.task_id for t in tasks_objs}
+            edges = [
+                e for e in self._edges
+                if e.get("from") in in_scope_ids and e.get("to") in in_scope_ids
+            ]
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
             
             # Structured trace visualization for complex multi-agent runs
@@ -211,7 +217,7 @@ class TaskDashboard:
                 counts[t.status.value] += 1
             counts["total"] = len(tasks_objs)
             
-        return {"tasks": tasks, "summary": counts}
+        return {"tasks": tasks, "edges": edges, "summary": counts}
 
     def to_session_view(self, session_id: str) -> Dict[str, Any]:
         """Return tasks + summary scoped to a session id.
@@ -227,16 +233,23 @@ class TaskDashboard:
             ]
             tasks = [t.to_dict() for t in tasks_objs]
             
+            in_scope_ids = {t.task_id for t in tasks_objs}
+            edges = [
+                e for e in self._edges
+                if e.get("from") in in_scope_ids and e.get("to") in in_scope_ids
+            ]
+            
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
             for t in tasks_objs:
                 counts[t.status.value] += 1
             counts["total"] = len(tasks_objs)
             
-        return {"tasks": tasks, "summary": counts}
+        return {"tasks": tasks, "edges": edges, "summary": counts}
 
     def reset(self) -> None:
         with self._lock_data:
             self._tasks.clear()
+            self._edges.clear()
             self._update_callbacks = []
             TaskDashboard._instance = None
             self._initialized = False
