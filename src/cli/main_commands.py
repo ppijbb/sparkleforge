@@ -1573,6 +1573,38 @@ async def handle_report_command(args):
         # a file, so exit immediately rather than risk that noise corrupting the output.
         os._exit(0)
 
+    if getattr(args, "report_command", None) == "cli-ux-audit-prompt":
+        # Same stray-stdout-log concern as daily-roadmap-prompt above.
+        import datetime
+        import os
+        import sys
+        from zoneinfo import ZoneInfo
+
+        from src.core.cli_agents.base_cli_agent import BaseCLIAgent, CLIAgentConfig
+        from src.core.roadmap.cli_ux_audit import DEFAULT_AUDIT_COMMANDS, build_cli_ux_audit_prompt
+
+        class _AuditRunner(BaseCLIAgent):
+            async def execute_query(self, query, **kwargs):
+                raise NotImplementedError
+
+            def parse_output(self, result):
+                raise NotImplementedError
+
+        today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=60))
+
+        transcripts = {}
+        for command in DEFAULT_AUDIT_COMMANDS:
+            result = await runner._execute_command_pty(list(command))
+            label = " ".join(command)
+            transcripts[label] = (
+                result.output if result.success else f"[exit {result.exit_code}] {result.output}{result.error}"
+            )
+
+        sys.stdout.write(build_cli_ux_audit_prompt(today, transcripts) + "\n")
+        sys.stdout.flush()
+        os._exit(0)
+
     report_command_name = getattr(args, "report_command", None)
     if report_command_name in (
         "roadmap-target",

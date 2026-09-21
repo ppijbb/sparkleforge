@@ -603,6 +603,12 @@ EXAMPLES:
     sync_anvil_doc_parser.add_argument("--subissue-status-file", default="anvil-subissue-status.json")
     sync_anvil_doc_parser.add_argument("--plan-file", default="docs/ANVIL_PLAN.md")
 
+    cli_ux_audit_prompt_parser = report_subparsers.add_parser(
+        "cli-ux-audit-prompt",
+        help="Pty-capture a fixed set of sparkleforge CLI invocations and print the CLI UX self-audit prompt",
+    )
+    cli_ux_audit_prompt_parser.add_argument("--today", default=None)
+
     # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단/이슈수정)
     ci_parser = subparsers.add_parser(
         "ci", help="CI gate agents used by GitHub Actions (code review, issue triage, merge decision, issue fixing)"
