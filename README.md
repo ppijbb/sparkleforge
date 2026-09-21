@@ -153,6 +153,43 @@ env var set, they reject every request instead of serving data unguarded.
 This covers hosted/Supabase-backed deployments only, not purely local runs —
 run-trigger and a Supabase-free local mode are still open.
 
+## 🔌 Use SparkleForge as an MCP Server / Claude Code Plugin ([#1551](https://github.com/ppijbb/sparkleforge/issues/1551))
+
+SparkleForge's 12 internal FastMCP servers (`src/core/mcp_servers/*.py`) are
+tools its own agents consume. `sparkleforge_server.py` is different: it exposes
+SparkleForge *itself* as one outward-facing MCP server, so an external MCP
+host — a separate Claude Code session, Codex CLI, Claude Desktop — can attach
+and drive it as tools, without shelling out to the `sparkleforge`/`sparkle` CLI.
+
+**Attach via `.mcp.json`** (any MCP-compatible host, run from the repo root):
+
+```json
+{
+  "mcpServers": {
+    "sparkleforge": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.sparkleforge_server"]
+    }
+  }
+}
+```
+
+**Or install as a Claude Code plugin** — `.claude-plugin/plugin.json` bundles
+the same server for that install path.
+
+Tools exposed:
+
+| Tool | What it does |
+|---|---|
+| `run_task(prompt)` | Blocking one-shot: runs a request and waits for the result. |
+| `start_research(query)` / `get_report(job_id)` | Non-blocking job model for anything that might exceed a client's request timeout. |
+| `nightwelding_status()` | Lists this machine's tracked Nightwelding auto-fix items. |
+| `search_skills(query)` / `get_skill(skill_id)` | Query the skill marketplace's local share directory. |
+
+Requires `fastmcp` (`pip install fastmcp`); the server degrades to unavailable
+(not a crash) if it isn't installed. v1 is local-process attach only, per
+#1551's non-goals — no hosted/multi-tenant service.
+
 ## ✨ Core Innovations
 
 ### 1. **24x7 Continuous Research Engine**
