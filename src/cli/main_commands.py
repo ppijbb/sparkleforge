@@ -1605,6 +1605,49 @@ async def handle_report_command(args):
         sys.stdout.flush()
         os._exit(0)
 
+    if getattr(args, "report_command", None) == "cli-ux-audit-run":
+        import datetime
+        import os
+        import sys
+        from zoneinfo import ZoneInfo
+
+        from src.core.cli_agents.base_cli_agent import BaseCLIAgent, CLIAgentConfig
+        from src.core.roadmap.cli_ux_audit import DEFAULT_AUDIT_COMMANDS, build_cli_ux_audit_prompt
+        from src.core.roadmap.terminal_render import png_to_data_url, render_transcript_to_png
+        from src.core.roadmap.vision_judge import call_vision_judge
+
+        class _AuditRunner(BaseCLIAgent):
+            async def execute_query(self, query, **kwargs):
+                raise NotImplementedError
+
+            def parse_output(self, result):
+                raise NotImplementedError
+
+        today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=60))
+
+        transcripts = {}
+        image_urls = []
+        for command in DEFAULT_AUDIT_COMMANDS:
+            result = await runner._execute_command_pty(list(command))
+            label = " ".join(command)
+            transcripts[label] = (
+                result.output if result.success else f"[exit {result.exit_code}] {result.output}{result.error}"
+            )
+            image_urls.append(png_to_data_url(render_transcript_to_png(transcripts[label])))
+
+        prompt = build_cli_ux_audit_prompt(today, transcripts)
+        try:
+            verdict = call_vision_judge(prompt, image_urls)
+        except Exception as e:
+            sys.stderr.write(f"cli-ux-audit-run: vision judge call failed: {e}\n")
+            sys.stderr.flush()
+            os._exit(1)
+
+        sys.stdout.write(verdict.strip() + "\n")
+        sys.stdout.flush()
+        os._exit(0)
+
     report_command_name = getattr(args, "report_command", None)
     if report_command_name in (
         "roadmap-target",

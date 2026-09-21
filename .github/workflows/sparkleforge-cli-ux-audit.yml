@@ -54,36 +54,27 @@ jobs:
             --description "SparkleForge terminal output noise/confusion, found by the CLI UX self-audit" \
             2>/dev/null || true
 
-      - name: Prepare CLI UX audit prompt
-        id: prompt
-        run: |
-          TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
-          uv run sparkleforge report cli-ux-audit-prompt --today "$TODAY" > cli-ux-audit-prompt.md
-          echo "today=$TODAY" >> "$GITHUB_OUTPUT"
-
-      - name: Run CLI UX self-audit
+      - name: Run CLI UX self-audit (pty capture -> screenshot -> vision judge)
         id: audit
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
-          SPARKLEFORGE_CLI_INTERACTIVE: 'false'
-          MCP_BUILDER_ENABLED: 'false'
-          MCP_ALLOWED_SERVERS: 'local-search'
-          SPARKLEFORGE_ALLOWED_MCP_SERVERS: 'local-search'
-          SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
-          SPARKLEFORGE_ENV: ${{ vars.SPARKLEFORGE_ENV || 'production' }}
         run: |
+          TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
+          echo "today=$TODAY" >> "$GITHUB_OUTPUT"
+
           set +e
-          timeout 10m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-3.5-flash-lite \
-            --output cli-ux-audit-result.md --task "SparkleForge CLI UX Self-Audit" \
-            --format markdown \
-            < cli-ux-audit-prompt.md > cli-ux-audit-console.log \
-            2> cli-ux-audit-error.log
+          timeout 10m uv run sparkleforge report cli-ux-audit-run --today "$TODAY" \
+            > cli-ux-audit-result.md 2> cli-ux-audit-error.log
           RC=$?
           set -e
 
+          # Text-only review already proved insufficient here (a missing emoji
+          # font made every status glyph render as a blank box on screen while
+          # the text transcript looked completely normal) -- this step judges
+          # actual rendered screenshots (pyte -> PIL -> OpenRouter vision),
+          # not just the ANSI text, via src/core/roadmap/{terminal_render,vision_judge}.py.
           if [ "$RC" -ne 0 ] || [ ! -s cli-ux-audit-result.md ]; then
-            echo "::error::CLI UX audit run failed (rc=$RC) or produced no output. See cli-ux-audit-console.log / cli-ux-audit-error.log."
+            echo "::error::CLI UX audit run failed (rc=$RC) or produced no output. See cli-ux-audit-error.log."
             tail -c 2000 cli-ux-audit-error.log || true
             exit 1
           fi
@@ -135,7 +126,7 @@ jobs:
           {
             echo "<!-- sparkleforge-cli-ux-audit:$TODAY -->"
             echo
-            echo "Found by the SparkleForge CLI UX self-audit (\`sparkleforge report cli-ux-audit-prompt\`, run daily under a real pty so terminal rendering is faithful)."
+            echo "Found by the SparkleForge CLI UX self-audit (\`sparkleforge report cli-ux-audit-run\`, run daily -- pty-captures terminal output, renders it to a screenshot, and vision-judges both the text and the actual pixels)."
             echo "Intentionally scoped so the automated OpenCode workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback."
             echo
             cat cli-ux-audit-result.md

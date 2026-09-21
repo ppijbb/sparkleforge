@@ -24,7 +24,7 @@ def build_cli_ux_audit_prompt(today: str, transcripts: dict[str, str]) -> str:
     )
     return f"""You are SparkleForge running inside the SparkleForge repository on {today}, auditing your own CLI's terminal output.
 
-The transcripts below were captured under a real pty (not a plain pipe), so colors, spinners, and width-based wrapping render exactly as a human would see them in their own terminal.
+The transcripts below were captured under a real pty (not a plain pipe), so colors, spinners, and width-based wrapping render exactly as a human would see them in their own terminal. A rendered screenshot of each command's output is also attached as an image, in the same order as the transcripts below -- judge those images too, not just the text. Text-only review has already been proven to miss real bugs here: a missing emoji font made every status glyph render as a blank box on screen while looking completely normal in the text transcript. Look at the actual pixels for unrenderable/garbled glyphs, misalignment, and anything that looks broken rather than just noisy.
 
 CLAUDE.md's CLI UX rule for this repository: "treat noisy/confusing terminal output as an actionable bug, not a side effect. Before adding a log call, ask who it's for: internal debugging belongs in the log file (or DEBUG level), not stdout. Don't add module-level logging side effects that fire before argparse/mode dispatch has decided what the user actually asked for."
 
@@ -32,7 +32,7 @@ CLAUDE.md's CLI UX rule for this repository: "treat noisy/confusing terminal out
 
 {rendered}
 
-Judge these transcripts against that rule. Look for: DEBUG/internal logging leaking to stdout, output printed before argparse has resolved the subcommand, stack traces or tracebacks on ordinary non-error paths, inconsistent or missing formatting, and anything a first-time user would find confusing or noisy.
+Judge these transcripts and the attached screenshots against that rule. Look for: DEBUG/internal logging leaking to stdout, output printed before argparse has resolved the subcommand, stack traces or tracebacks on ordinary non-error paths, inconsistent or missing formatting, unrenderable/garbled glyphs visible in the screenshots, and anything a first-time user would find confusing, broken-looking, or noisy.
 
 If you find nothing actionable, output exactly: NO_ACTIONABLE_CLI_UX_ISSUES
 

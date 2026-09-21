@@ -609,6 +609,12 @@ EXAMPLES:
     )
     cli_ux_audit_prompt_parser.add_argument("--today", default=None)
 
+    cli_ux_audit_run_parser = report_subparsers.add_parser(
+        "cli-ux-audit-run",
+        help="Pty-capture, render to screenshots, and vision-judge the CLI UX self-audit in one shot (needs OPENROUTER_API_KEY)",
+    )
+    cli_ux_audit_run_parser.add_argument("--today", default=None)
+
     # ci 커맨드 (GitHub Actions가 호출하는 CI 게이트 에이전트: 리뷰/트리아지/머지판단/이슈수정)
     ci_parser = subparsers.add_parser(
         "ci", help="CI gate agents used by GitHub Actions (code review, issue triage, merge decision, issue fixing)"
