@@ -48,7 +48,7 @@ async def help_command(console: Console):
 
 [bold]Config:[/bold]
   config show                   Show configuration
-  config set <key> <value>      Set configuration (not implemented)
+  config set <key> <value>      Set global configuration (persists to environment)
   config get <key>              Get configuration value
 
 [bold]Other:[/bold]

@@ -61,8 +61,62 @@ async def config_set_command(cli, args: List[str]):
     key = args[0]
     value = args[1]
 
-    cli.console.print("[yellow]⚠️  Config setting is not yet implemented[/yellow]")
-    cli.console.print(f"[dim]Key: {key}, Value: {value}[/dim]")
+    try:
+        from src.core.researcher_config import get_research_config, set_research_config_value, SPECIAL_KEYS, validate_special_key
+        
+        if key in SPECIAL_KEYS or hasattr(get_research_config(), key):
+            val_to_set = value
+            if key == "autopilot_mode":
+                if str(value).lower() in ("true", "1", "yes", "on"):
+                    val_to_set = True
+                elif str(value).lower() in ("false", "0", "no", "off"):
+                    val_to_set = False
+                else:
+                    try:
+                        val_to_set = bool(int(value))
+                    except ValueError:
+                        pass
+            elif key == "depth":
+                try:
+                    val_to_set = int(value)
+                except ValueError:
+                    pass
+            
+            if key == "approval_policy":
+                validate_special_key(key, val_to_set)
+
+            set_research_config_value(key, val_to_set)
+            cli.console.print(f"[green]Successfully set {key} = {val_to_set} (persisted to environment)[/green]")
+        else:
+            cli.console.print(f"[yellow]Config key not recognized or not settable: {key}[/yellow]")
+    except Exception as e:
+        logger.error(f"Failed to set config: {e}", exc_info=True)
+        cli.console.print(f"[red]❌ Failed to set config: {e}[/red]")
+
+
+async def config_get_command(cli, args: List[str]):
+    """설정 값 가져오기."""
+    if not args:
+        cli.console.print("[red]Usage: config get <key>[/red]")
+        return
+
+    key = args[0]
+
+    try:
+        from src.core.researcher_config import get_research_config
+
+        config = get_research_config()
+        value = getattr(config, key, None)
+
+        if value is not None:
+            value = _redact_secret(key, value)
+            cli.console.print(f"[green]{key}: {value}[/green]")
+        else:
+            cli.console.print(f"[yellow]Config key not found: {key}[/yellow]")
+
+    except Exception as e:
+        logger.error(f"Failed to get config: {e}", exc_info=True)
+        cli.console.print(f"[red]❌ Failed to get config: {e}[/red]")
 
 
 async def config_get_command(cli, args: List[str]):
