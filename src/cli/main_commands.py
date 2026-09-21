@@ -48,7 +48,7 @@ async def _resolve_run_session(args) -> tuple[str, str | None]:
         try:
             get_session_control().register_active_session(new_session_id, getattr(args, "query", ""))
         except RuntimeError as e:
-            return "", f"❌ {e}"
+            return "", f"{e}"
         return new_session_id, None
 
     session_control = get_session_control()
@@ -57,12 +57,12 @@ async def _resolve_run_session(args) -> tuple[str, str | None]:
     if not target_id:
         recent = await session_control.search_sessions(limit=1)
         if not recent:
-            return "", "❌ No previous session found to continue (--continue)."
+            return "", "No previous session found to continue (--continue)."
         target_id = recent[0].session_id
 
     restored_state = await session_control.restore_session(target_id)
     if restored_state is None:
-        return "", f"❌ Session not found: {target_id}"
+        return "", f"Session not found: {target_id}"
 
     prior_query = restored_state.get("user_query")
     if prior_query:
@@ -70,7 +70,7 @@ async def _resolve_run_session(args) -> tuple[str, str | None]:
             f"[Continuing session {target_id}]\nPrevious request: {prior_query}\n\n"
             f"New request: {args.query}"
         )
-    logger.info(f"↩️  Resumed session: {target_id}")
+    logger.info(f"Resumed session: {target_id}")
     return target_id, None
 
 
@@ -206,7 +206,7 @@ async def handle_run_command(args, config):
         return await _run_command(args, config)
 
     except Exception as e:
-        logger.error(f"❌ Run failed: {e}")
+        logger.error(f"Run failed: {e}")
         return 1
     finally:
         get_session_control().release_active_session(session_id)
@@ -262,9 +262,9 @@ async def _execute_coworker_goal(
         logger.warning(network_message)
 
     if force_coworker:
-        logger.info(f"🤝 Starting coworker session for: {goal}")
+        logger.info(f"Starting coworker session for: {goal}")
     else:
-        logger.info(f"🧭 Letting the agent classify and route: {goal}")
+        logger.info(f"Letting the agent classify and route: {goal}")
     from rich import get_console
 
     from src.cli.ui.spinner import stage_status
@@ -311,7 +311,7 @@ async def _execute_coworker_goal(
     if not result.get("success", True):
         error_message = result.get("error") or "coworker session failed for an unknown reason"
         logger.error(f"Coworker session failed: {error_message}")
-        print(f"❌ Coworker session failed: {error_message}")
+        print(f"[FAIL] Coworker session failed: {error_message}")
         return 1
 
     print(result.get("content", ""))
@@ -322,11 +322,11 @@ async def _execute_coworker_goal(
         print(f"Elapsed: {heat_report['elapsed_seconds']:.0f}s / {heat_report['heat_budget_seconds']:.0f}s budget")
         print(f"Completed: {len(heat_report['completed'])} step(s)")
         for item in heat_report["completed"]:
-            print(f"  ✅ {item['tool']}: {item['summary']}")
+            print(f"  [OK] {item['tool']}: {item['summary']}")
         if heat_report["failed"]:
             print(f"Failed: {len(heat_report['failed'])} step(s)")
             for item in heat_report["failed"]:
-                print(f"  ❌ {item['tool']}: {item['error']}")
+                print(f"  [FAIL] {item['tool']}: {item['error']}")
         print(f"Next recommended action: {heat_report['next_recommended_action']}")
 
     return 0
@@ -341,7 +341,7 @@ async def handle_work_command(args):
             heat_seconds = parse_heat_duration(heat_arg)
         except ValueError as e:
             logger.error(str(e))
-            print(f"❌ {e}")
+            print(f"[FAIL] {e}")
             return 1
     
     # Generate a unique session ID for this work invocation
@@ -485,7 +485,7 @@ async def handle_deny_command(args):
 
 async def handle_web_command(args):
     """웹 대시보드 시작 커맨드 처리"""
-    logger.info("🌐 Starting web dashboard...")
+    logger.info("Starting web dashboard...")
 
     web_manager = WebAppManager()
     os.environ["STREAMLIT_PORT"] = args.port
@@ -494,9 +494,9 @@ async def handle_web_command(args):
     try:
         web_manager.start_web_app()
     except KeyboardInterrupt:
-        logger.info("🛑 Web dashboard stopped")
+        logger.info("Web dashboard stopped")
     except Exception as e:
-        logger.error(f"❌ Failed to start web dashboard: {e}")
+        logger.error(f"Failed to start web dashboard: {e}")
         return 1
     return 0
 
@@ -504,7 +504,7 @@ async def handle_web_command(args):
 async def handle_mcp_command(args):
     """MCP 관리 커맨드 처리"""
     if args.mcp_command == "status":
-        logger.info("🔍 Checking MCP server status...")
+        logger.info("Checking MCP server status...")
         mcp_hub = None
 
         try:
@@ -520,27 +520,27 @@ async def handle_mcp_command(args):
             mcp_hub.print_server_status(server_status, verbose=args.verbose)
 
         except Exception as e:
-            logger.error(f"❌ MCP status check failed: {e}")
+            logger.error(f"MCP status check failed: {e}")
             return 1
         finally:
             if mcp_hub is not None:
                 await mcp_hub.cleanup()
 
     elif args.mcp_command == "server":
-        logger.info("🚀 Starting MCP server...")
+        logger.info("Starting MCP server...")
 
         try:
             from src.core.mcp_integration import get_mcp_hub
 
             mcp_hub = get_mcp_hub()
             await mcp_hub.initialize_mcp()
-            logger.info("✅ MCP Hub running. Press Ctrl+C to stop.")
+            logger.info("[OK] MCP Hub running. Press Ctrl+C to stop.")
             while True:
                 await asyncio.sleep(3600)
         except KeyboardInterrupt:
-            logger.info("🛑 MCP server stopped")
+            logger.info("MCP server stopped")
         except Exception as e:
-            logger.error(f"❌ Failed to start MCP server: {e}")
+            logger.error(f"Failed to start MCP server: {e}")
             return 1
 
     return 0
@@ -548,7 +548,7 @@ async def handle_mcp_command(args):
 
 async def handle_health_command(args):
     """시스템 헬스체크 커맨드 처리"""
-    logger.info("🏥 Running system health check...")
+    logger.info("Running system health check...")
 
     try:
         health_monitor = HealthMonitor()
@@ -557,11 +557,11 @@ async def handle_health_command(args):
         active_checks = await health_monitor.run_active_subsystem_checks()
         for name, check in active_checks.items():
             if check["ok"] is True:
-                logger.info(f"✅ {name}: ok")
+                logger.info(f"[OK] {name}: ok")
             elif check["ok"] is None:
-                logger.info(f"⏭️  {name}: {check['detail']}")
+                logger.info(f"[SKIP] {name}: {check['detail']}")
             else:
-                logger.warning(f"⚠️  {name}: {check['detail']}")
+                logger.warning(f"{name}: {check['detail']}")
 
         if args.detailed:
             # 상세 헬스체크
@@ -572,18 +572,18 @@ async def handle_health_command(args):
             # 간단한 헬스체크
             is_healthy = await health_monitor.quick_health_check()
             if is_healthy:
-                logger.info("✅ System is healthy")
+                logger.info("[OK] System is healthy")
             else:
-                logger.error("❌ System has issues")
+                logger.error("System has issues")
                 return 1
 
         # 샌드박스가 기본적인 명령조차 실행하지 못하면 백엔드가 실질적으로 고장난 것
         if active_checks["sandbox_write"]["ok"] is False:
-            logger.error("❌ Sandbox cannot execute commands")
+            logger.error("Sandbox cannot execute commands")
             return 1
 
     except Exception as e:
-        logger.error(f"❌ Health check failed: {e}")
+        logger.error(f"Health check failed: {e}")
         return 1
     return 0
 
@@ -603,7 +603,7 @@ async def handle_tools_command(args):
         return {}
 
     if args.tools_command == "list":
-        logger.info("🔧 Listing available tools...")
+        logger.info("Listing available tools...")
         mcp_hub = None
 
         try:
@@ -615,7 +615,7 @@ async def handle_tools_command(args):
                 await asyncio.wait_for(mcp_hub.initialize_mcp(), timeout=25.0)
             except TimeoutError:
                 logger.warning(
-                    "⚠️ MCP initialization timed out; showing currently discovered tools only"
+                    "MCP initialization timed out; showing currently discovered tools only"
                 )
 
             # 도구 목록 출력 (ToolInfo dataclass 또는 dict 모두 허용)
@@ -639,25 +639,25 @@ async def handle_tools_command(args):
 
             for category, tools in tools_by_category.items():
                 if not args.category or args.category == category:
-                    print(f"\n📂 {category.upper()}:")
+                    print(f"\n{category.upper()}:")
                     for tool in sorted(tools):
                         print(f"  - {tool}")
 
             if not tools_by_category:
                 logger.error(
-                    "❌ No tools discovered. Check MCP server connectivity with `sparkleforge mcp status`."
+                    "No tools discovered. Check MCP server connectivity with `sparkleforge mcp status`."
                 )
                 return 1
 
         except Exception as e:
-            logger.error(f"❌ Failed to list tools: {e}")
+            logger.error(f"Failed to list tools: {e}")
             return 1
         finally:
             if mcp_hub is not None:
                 await mcp_hub.cleanup()
 
     elif args.tools_command == "test":
-        logger.info(f"🧪 Testing tool: {args.tool_name}")
+        logger.info(f"Testing tool: {args.tool_name}")
         mcp_hub = None
 
         try:
@@ -672,13 +672,13 @@ async def handle_tools_command(args):
                 _default_tool_test_parameters(args.tool_name),
             )
             if result.get("success"):
-                print(f"✅ Tool {args.tool_name} is working")
+                print(f"[OK] Tool {args.tool_name} is working")
             else:
-                print(f"❌ Tool {args.tool_name} failed: {result.get('error')}")
+                print(f"[FAIL] Tool {args.tool_name} failed: {result.get('error')}")
                 return 1
 
         except Exception as e:
-            logger.error(f"❌ Tool test failed: {e}")
+            logger.error(f"Tool test failed: {e}")
             return 1
         finally:
             if mcp_hub is not None:
@@ -735,13 +735,13 @@ async def handle_docker_command(args):
 
     # Docker 환경 확인
     if not check_docker():
-        logger.error("❌ Docker is not installed or not running")
+        logger.error("Docker is not installed or not running")
         logger.info("Please install Docker: https://docs.docker.com/get-docker/")
         return 1
 
     compose_cmd = get_docker_compose_cmd()
     if not compose_cmd:
-        logger.error("❌ Docker Compose is not installed")
+        logger.error("Docker Compose is not installed")
         logger.info(
             "Please install Docker Compose: https://docs.docker.com/compose/install/"
         )
@@ -749,12 +749,12 @@ async def handle_docker_command(args):
 
     compose_file = check_compose_file()
     if not compose_file:
-        logger.error("❌ docker-compose.yaml file not found")
+        logger.error("docker-compose.yaml file not found")
         logger.info("Please ensure docker-compose.yaml exists in the project root")
         return 1
 
     if args.docker_command == "up":
-        logger.info("🐳 Starting Docker services...")
+        logger.info("Starting Docker services...")
         logger.info(f"Using Docker Compose: {' '.join(compose_cmd)}")
         logger.info(f"Compose file: {compose_file}")
 
@@ -762,19 +762,19 @@ async def handle_docker_command(args):
             cmd = compose_cmd + ["-f", compose_file, "up", "-d"]
             if args.build:
                 cmd.append("--build")
-                logger.info("🔨 Building images...")
+                logger.info("Building images...")
 
             # 프로필 지원 (예: sandbox)
             if hasattr(args, "profile") and args.profile:
                 for profile in args.profile:
                     cmd.extend(["--profile", profile])
-                    logger.info(f"🔧 Enabling profile: {profile}")
+                    logger.info(f"Enabling profile: {profile}")
 
             # 환경 변수 로드 (.env 파일)
             env = os.environ.copy()
             env_file = project_root / ".env"
             if env_file.exists():
-                logger.info("📄 Loading environment from .env file")
+                logger.info("Loading environment from .env file")
                 # .env 파일에서 환경 변수 로드 (간단한 구현)
                 with open(env_file) as f:
                     for line in f:
@@ -785,49 +785,49 @@ async def handle_docker_command(args):
 
             result = subprocess.run(cmd, cwd=str(project_root), env=env)
             if result.returncode == 0:
-                logger.info("✅ Docker services started successfully")
-                logger.info("🌐 Services:")
+                logger.info("[OK] Docker services started successfully")
+                logger.info("Services:")
                 logger.info("   - Backend API: http://localhost:8000")
                 logger.info("   - Frontend: http://localhost:8501")
                 logger.info("   - Redis: localhost:6379")
-                logger.info("📊 View logs: python main.py docker logs")
-                logger.info("📊 Check status: python main.py docker status")
+                logger.info("View logs: python main.py docker logs")
+                logger.info("Check status: python main.py docker status")
             else:
-                logger.error("❌ Failed to start Docker services")
+                logger.error("Failed to start Docker services")
                 return 1
 
         except Exception as e:
-            logger.error(f"❌ Docker command failed: {e}")
+            logger.error(f"Docker command failed: {e}")
             return 1
 
     elif args.docker_command == "down":
-        logger.info("🐳 Stopping Docker services...")
+        logger.info("Stopping Docker services...")
 
         try:
             cmd = compose_cmd + ["-f", compose_file, "down"]
             if hasattr(args, "volumes") and args.volumes:
                 cmd.append("--volumes")
-                logger.info("🗑️ Removing volumes...")
+                logger.info("Removing volumes...")
             if hasattr(args, "images") and args.images:
                 cmd.append("--rmi")
                 cmd.append("all")
-                logger.info("🖼️ Removing images...")
+                logger.info("Removing images...")
 
             result = subprocess.run(cmd, cwd=str(project_root))
             if result.returncode == 0:
-                logger.info("✅ Docker services stopped successfully")
+                logger.info("[OK] Docker services stopped successfully")
             else:
-                logger.error("❌ Failed to stop Docker services")
+                logger.error("Failed to stop Docker services")
                 return 1
 
         except Exception as e:
-            logger.error(f"❌ Docker command failed: {e}")
+            logger.error(f"Docker command failed: {e}")
             return 1
 
     elif args.docker_command == "logs":
         service_name = getattr(args, "service", None)
         logger.info(
-            f"📊 Showing Docker service logs{f' for {service_name}' if service_name else ''}..."
+            f"Showing Docker service logs{f' for {service_name}' if service_name else ''}..."
         )
 
         try:
@@ -846,16 +846,16 @@ async def handle_docker_command(args):
                 if result.returncode == 0:
                     print(result.stdout)
                 else:
-                    logger.error("❌ Failed to get logs")
+                    logger.error("Failed to get logs")
                     return 1
         except KeyboardInterrupt:
-            logger.info("🛑 Stopped log monitoring")
+            logger.info("Stopped log monitoring")
         except Exception as e:
-            logger.error(f"❌ Failed to show logs: {e}")
+            logger.error(f"Failed to show logs: {e}")
             return 1
 
     elif args.docker_command == "status":
-        logger.info("📊 Checking Docker service status...")
+        logger.info("Checking Docker service status...")
 
         try:
             cmd = compose_cmd + ["-f", compose_file, "ps"]
@@ -863,39 +863,39 @@ async def handle_docker_command(args):
                 cmd, cwd=str(project_root), capture_output=True, text=True
             )
             if result.returncode == 0:
-                print("🐳 Docker Services Status:")
+                print("Docker Services Status:")
                 print("=" * 50)
                 print(result.stdout)
             else:
-                logger.error("❌ Failed to get service status")
+                logger.error("Failed to get service status")
                 return 1
         except Exception as e:
-            logger.error(f"❌ Failed to check status: {e}")
+            logger.error(f"Failed to check status: {e}")
             return 1
 
     elif args.docker_command == "build":
-        logger.info("🔨 Building Docker images...")
+        logger.info("Building Docker images...")
 
         try:
             cmd = compose_cmd + ["-f", compose_file, "build"]
             if hasattr(args, "no_cache") and args.no_cache:
                 cmd.append("--no-cache")
-                logger.info("🧹 Building without cache...")
+                logger.info("Building without cache...")
 
             result = subprocess.run(cmd, cwd=str(project_root))
             if result.returncode == 0:
-                logger.info("✅ Docker images built successfully")
+                logger.info("[OK] Docker images built successfully")
             else:
-                logger.error("❌ Failed to build Docker images")
+                logger.error("Failed to build Docker images")
                 return 1
         except Exception as e:
-            logger.error(f"❌ Build failed: {e}")
+            logger.error(f"Build failed: {e}")
             return 1
 
     elif args.docker_command == "restart":
         service_name = getattr(args, "service", None)
         logger.info(
-            f"🔄 Restarting Docker services{f' ({service_name})' if service_name else ''}..."
+            f"Restarting Docker services{f' ({service_name})' if service_name else ''}..."
         )
 
         try:
@@ -905,16 +905,16 @@ async def handle_docker_command(args):
 
             result = subprocess.run(cmd, cwd=str(project_root))
             if result.returncode == 0:
-                logger.info("✅ Docker services restarted successfully")
+                logger.info("[OK] Docker services restarted successfully")
             else:
-                logger.error("❌ Failed to restart Docker services")
+                logger.error("Failed to restart Docker services")
                 return 1
         except Exception as e:
-            logger.error(f"❌ Restart failed: {e}")
+            logger.error(f"Restart failed: {e}")
             return 1
 
     else:
-        logger.error(f"❌ Unknown Docker command: {args.docker_command}")
+        logger.error(f"Unknown Docker command: {args.docker_command}")
         logger.info("Available commands: up, down, logs, status, build, restart")
         return 1
 
@@ -923,7 +923,7 @@ async def handle_docker_command(args):
 
 async def handle_setup_command(args):
     """시스템 설정 커맨드 처리"""
-    logger.info("⚙️ Running system setup...")
+    logger.info("Running system setup...")
 
     try:
         # 간단한 설정 확인
@@ -939,7 +939,7 @@ async def handle_setup_command(args):
                 missing_files.append(file_path)
 
         if missing_files:
-            logger.error(f"❌ Missing required files: {missing_files}")
+            logger.error(f"Missing required files: {missing_files}")
             return 1
 
         # 환경 변수 확인
@@ -950,13 +950,13 @@ async def handle_setup_command(args):
                 missing_env_vars.append(env_var)
 
         if missing_env_vars:
-            logger.warning(f"⚠️ Missing environment variables: {missing_env_vars}")
+            logger.warning(f"Missing environment variables: {missing_env_vars}")
             logger.info("Please set these in your .env file or environment")
 
-        logger.info("✅ System setup completed")
+        logger.info("[OK] System setup completed")
 
     except Exception as e:
-        logger.error(f"❌ Setup failed: {e}")
+        logger.error(f"Setup failed: {e}")
         return 1
     return 0
 
@@ -975,12 +975,12 @@ async def handle_dwell_command(args):
 
     from src.core.env_configurator import EnvironmentConfigurator
 
-    logger.info("🏠 SparkleForge Self-Dwell: detecting environment...")
+    logger.info("SparkleForge Self-Dwell: detecting environment...")
 
     env_configurator = EnvironmentConfigurator()
     env_summary = env_configurator.detect_environment()
     logger.info(
-        "🖥️  OS=%s arch=%s python=%s uv=%s docker=%s",
+        "OS=%s arch=%s python=%s uv=%s docker=%s",
         env_summary.get("os"),
         env_summary.get("architecture"),
         env_summary.get("python_version"),
@@ -990,39 +990,39 @@ async def handle_dwell_command(args):
 
     missing = env_summary.get("missing_dependencies", [])
     if missing:
-        logger.info("📦 Auto-installing missing dependencies: %s", ", ".join(missing))
+        logger.info("Auto-installing missing dependencies: %s", ", ".join(missing))
         install_ok, install_message = env_configurator.auto_install(missing)
         if not install_ok:
-            logger.error("❌ Auto-install failed: %s", install_message)
+            logger.error("Auto-install failed: %s", install_message)
             return 1
-        logger.info("✅ Auto-install complete: %s", install_message)
+        logger.info("[OK] Auto-install complete: %s", install_message)
     else:
-        logger.info("✅ All required dependencies already present")
+        logger.info("[OK] All required dependencies already present")
 
     missing_mcp = env_summary.get("missing_mcp_servers", [])
     if missing_mcp:
-        logger.info("🔌 Provisioning missing MCP servers: %s", ", ".join(missing_mcp))
+        logger.info("Provisioning missing MCP servers: %s", ", ".join(missing_mcp))
         mcp_ok, mcp_message = env_configurator.provision_mcp_servers(missing_mcp)
         if not mcp_ok:
-            logger.warning("⚠️  MCP provisioning incomplete: %s", mcp_message)
+            logger.warning("MCP provisioning incomplete: %s", mcp_message)
         else:
-            logger.info("✅ MCP servers provisioned: %s", mcp_message)
+            logger.info("[OK] MCP servers provisioned: %s", mcp_message)
 
     install_service = getattr(args, "install_service", True)
     if install_service:
-        logger.info("🛠️  Installing background resident service...")
+        logger.info("Installing background resident service...")
         service_ok, service_message = env_configurator.install_resident_service()
         if service_ok:
-            logger.info("✅ Resident service installed: %s", service_message)
+            logger.info("[OK] Resident service installed: %s", service_message)
         else:
-            logger.warning("⚠️  Resident service install skipped: %s", service_message)
+            logger.warning("Resident service install skipped: %s", service_message)
 
     verify = getattr(args, "verify", True)
     if verify:
-        logger.info("🔍 Verifying cross-platform readiness...")
+        logger.info("Verifying cross-platform readiness...")
         verify_script = project_root / "scripts" / "verify_environment.py"
         if not verify_script.exists():
-            logger.warning("⚠️  scripts/verify_environment.py not found; skipping verification")
+            logger.warning("scripts/verify_environment.py not found; skipping verification")
         else:
             python_bin = sys.executable or "python3"
             try:
@@ -1035,16 +1035,16 @@ async def handle_dwell_command(args):
                 )
                 print(result.stdout)
                 if result.returncode != 0:
-                    logger.error("❌ Environment verification failed (exit %s)", result.returncode)
+                    logger.error("Environment verification failed (exit %s)", result.returncode)
                     if result.stderr:
                         logger.error(result.stderr)
                     return 1
-                logger.info("✅ Environment verification passed")
+                logger.info("[OK] Environment verification passed")
             except Exception as e:
-                logger.error("❌ Environment verification raised: %s", e)
+                logger.error("Environment verification raised: %s", e)
                 return 1
 
-    logger.info("🏠 SparkleForge is now dwelling in this environment 🎉")
+    logger.info("SparkleForge is now dwelling in this environment ")
     return 0
 
 
@@ -1063,7 +1063,7 @@ async def handle_nightwelding_command(args):
             provider = getattr(args, "provider", None)
 
             if target_issue:
-                logger.info(f"🌙 Nightwelding: running issue {target_issue} (provider={provider or 'auto'})")
+                logger.info(f"Nightwelding: running issue {target_issue} (provider={provider or 'auto'})")
                 item = await run_nightwelding_issue(
                     target_issue,
                     max_iterations=args.max_iterations,
@@ -1071,7 +1071,7 @@ async def handle_nightwelding_command(args):
                 )
                 items = [item]
             else:
-                logger.info(f"🌙 Nightwelding: sweeping backlog label '{args.backlog_label}' (provider={provider or 'auto'})")
+                logger.info(f"Nightwelding: sweeping backlog label '{args.backlog_label}' (provider={provider or 'auto'})")
                 items = await run_nightwelding_sweep(
                     backlog_label=args.backlog_label,
                     max_per_run=args.max_per_run,
@@ -1086,14 +1086,14 @@ async def handle_nightwelding_command(args):
             failed = 0
             for item in items:
                 if item.status.value == "draft_opened":
-                    logger.info(f"✅ Issue #{item.issue_number}: Published -> {item.pr_url}")
+                    logger.info(f"[OK] Issue #{item.issue_number}: Published -> {item.pr_url}")
                 else:
                     failed += 1
-                    logger.error(f"❌ Issue #{item.issue_number}: {item.status.value} — {item.failure_reason}")
+                    logger.error(f"Issue #{item.issue_number}: {item.status.value} — {item.failure_reason}")
             return 1 if failed and failed == len(items) else 0
 
         except Exception as e:
-            logger.error(f"❌ Nightwelding run failed: {e}")
+            logger.error(f"Nightwelding run failed: {e}")
             return 1
 
     elif args.nightwelding_command == "status":
@@ -1109,7 +1109,7 @@ async def handle_nightwelding_command(args):
                     status_str += f" — {item.failure_reason.splitlines()[0]}"
                 logger.info(f"{status_str} (updated {item.updated_at})")
         except Exception as e:
-            logger.error(f"❌ Failed to read Nightwelding status: {e}")
+            logger.error(f"Failed to read Nightwelding status: {e}")
             return 1
 
     elif args.nightwelding_command == "list":
@@ -1125,7 +1125,7 @@ async def handle_nightwelding_command(args):
                     line += f"\n  log: {log_val}"
                 logger.info(line)
         except Exception as e:
-            logger.error(f"❌ Failed to list Nightwelding queue: {e}")
+            logger.error(f"Failed to list Nightwelding queue: {e}")
             return 1
 
     elif args.nightwelding_command == "digest":
@@ -1139,17 +1139,17 @@ async def handle_nightwelding_command(args):
                 post_to_issue=args.post_to_issue,
             )
             if args.post_to_issue is not None:
-                logger.info(f"🌙 Nightwelding digest posted to issue #{args.post_to_issue}.")
+                logger.info(f"[OK] Nightwelding digest posted to issue #{args.post_to_issue}.")
             else:
                 from src.core.nightwelding.github_adapter import render_digest_markdown
 
                 print(render_digest_markdown(digest, top_n=args.top_n))
         except Exception as e:
-            logger.error(f"❌ Nightwelding digest failed: {e}")
+            logger.error(f"Nightwelding digest failed: {e}")
             return 1
 
     else:
-        logger.error(f"❌ Unknown nightwelding command: {args.nightwelding_command}")
+        logger.error(f"Unknown nightwelding command: {args.nightwelding_command}")
         logger.info("Available commands: run, status, list, digest")
         return 1
 
@@ -1201,7 +1201,7 @@ async def handle_ci_command(args):
                 labels=args.labels,
             )
         except RuntimeError as e:
-            logger.error(f"❌ ci publish failed: {e}")
+            logger.error(f"ci publish failed: {e}")
             return 1
         Path("publish_result.json").write_text(
             json.dumps(result.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -1256,7 +1256,7 @@ async def handle_ci_command(args):
                 changed_lines=changed_lines,
             )
         except Exception as e:
-            logger.error(f"❌ assess-substantiality: diff gathering failed: {e}")
+            logger.error(f"assess-substantiality: diff gathering failed: {e}")
             verdict = SubstantialityVerdict(
                 substantial=False,
                 reason=" and the scope-overlap check itself failed to run, so it could not be verified",
@@ -1368,7 +1368,7 @@ async def handle_ci_command(args):
         print(f"Planned {len(plan)} new todo-debt issue(s); {len(known_anchors(existing_issues))} already tracked.")
         return 0
 
-    logger.error(f"❌ Unknown ci command: {args.ci_command}")
+    logger.error(f"Unknown ci command: {args.ci_command}")
     return 2
 
 
@@ -1388,18 +1388,18 @@ async def handle_autofix_command(args):
             self_verify_command=args.self_verify_command or None,
         )
         if result.success:
-            logger.info(f"✅ Autofix repair loop succeeded after {result.attempts} attempt(s).")
+            logger.info(f"[OK] Autofix repair loop succeeded after {result.attempts} attempt(s).")
             return 0
-        logger.error(f"❌ Autofix repair loop failed: {result.reason}")
+        logger.error(f"Autofix repair loop failed: {result.reason}")
         return 1
 
-    logger.error(f"❌ Unknown autofix command: {args.autofix_command}")
+    logger.error(f"Unknown autofix command: {args.autofix_command}")
     return 2
 
 
 async def handle_interactive_command(args):
     """인터랙티브 모드 처리"""
-    logger.info("💬 Starting interactive mode...")
+    logger.info("Starting interactive mode...")
     scheduler = None
 
     async def _shutdown():
@@ -1438,16 +1438,16 @@ async def handle_interactive_command(args):
             finally:
                 await _shutdown()
         except asyncio.CancelledError:
-            logger.info("👋 Interactive mode cancelled; shutting down")
+            logger.info("Interactive mode cancelled; shutting down")
             raise
         return 0
 
     except (EOFError, KeyboardInterrupt, SystemExit):
-        logger.info("👋 Goodbye!")
+        logger.info("Goodbye!")
         await _shutdown()
         return 0
     except Exception as e:
-        logger.error(f"❌ Interactive mode failed: {e}")
+        logger.error(f"Interactive mode failed: {e}")
         await _shutdown()
         return 1
     return 0
@@ -1460,12 +1460,12 @@ async def handle_cli_command(args):
 
     # CLI 에이전트 초기화
     if not initialize_cli_agents():
-        logger.warning("⚠️ CLI agents not enabled or failed to initialize")
+        logger.warning("CLI agents not enabled or failed to initialize")
 
     cli_manager = get_cli_agent_manager()
 
     if args.cli_command == "list":
-        logger.info("🤖 Available CLI Agents:")
+        logger.info("Available CLI Agents:")
 
         try:
             available_agents = cli_manager.get_available_agents()
@@ -1477,7 +1477,7 @@ async def handle_cli_command(args):
                 agent_info = cli_manager.get_agent_info(agent_name)
                 if agent_info:
                     status = (
-                        "✅ Available" if agent_info.get("instance") else "⚠️ Configured"
+                        "[OK] Available" if agent_info.get("instance") else "[WARN] Configured"
                     )
                     logger.info(f"  - {agent_name}: {status}")
                     if agent_info.get("type"):
@@ -1485,43 +1485,43 @@ async def handle_cli_command(args):
                     if agent_info.get("command"):
                         logger.info(f"    Command: {agent_info['command']}")
                 else:
-                    logger.info(f"  - {agent_name}: ❌ Not configured")
+                    logger.info(f"  - {agent_name}: [FAIL] Not configured")
 
         except Exception as e:
-            logger.error(f"❌ Failed to list CLI agents: {e}")
+            logger.error(f"Failed to list CLI agents: {e}")
             return 1
 
     elif args.cli_command == "test":
         agent_name = args.agent_name
-        logger.info(f"🧪 Testing CLI agent: {agent_name}")
+        logger.info(f"Testing CLI agent: {agent_name}")
 
         try:
             # 헬스체크
             agent = cli_manager.create_agent(agent_name)
             if not agent:
-                logger.error(f"❌ CLI agent not available: {agent_name}")
+                logger.error(f"CLI agent not available: {agent_name}")
                 return 1
 
             is_healthy = await agent.health_check()
             if is_healthy:
-                logger.info(f"✅ CLI agent {agent_name} is healthy")
+                logger.info(f"[OK] CLI agent {agent_name} is healthy")
                 # 추가 정보 표시
                 info = agent.get_info()
                 logger.info(f"   Name: {info.get('name')}")
                 logger.info(f"   Command: {info.get('command')}")
                 logger.info(f"   Timeout: {info.get('timeout')}s")
             else:
-                logger.error(f"❌ CLI agent {agent_name} is not healthy")
+                logger.error(f"CLI agent {agent_name} is not healthy")
                 return 1
 
         except Exception as e:
-            logger.error(f"❌ CLI agent test failed: {e}")
+            logger.error(f"CLI agent test failed: {e}")
             return 1
 
     elif args.cli_command == "run":
         agent_name = args.agent_name
         query = args.query
-        logger.info(f"🚀 Running query with CLI agent: {agent_name}")
+        logger.info(f"Running query with CLI agent: {agent_name}")
         logger.info(f"   Query: {query}")
 
         try:
@@ -1534,37 +1534,37 @@ async def handle_cli_command(args):
             result = await cli_manager.execute_with_agent(agent_name, query, **kwargs)
 
             if result.get("success"):
-                logger.info("✅ CLI agent execution successful")
-                logger.info("📄 Response:")
+                logger.info("[OK] CLI agent execution successful")
+                logger.info("Response:")
                 print(result.get("response", ""))
 
                 # 메타데이터 표시
                 metadata = result.get("metadata", {})
                 if metadata:
-                    logger.info("📊 Metadata:")
+                    logger.info("Metadata:")
                     for key, value in metadata.items():
                         if key != "execution_time":  # 실행 시간은 별도로 표시
                             logger.info(f"   {key}: {value}")
 
                 execution_time = metadata.get("execution_time", 0)
                 if execution_time:
-                    logger.info(f"⏱️ Execution time: {execution_time:.2f}s")
+                    logger.info(f"Execution time: {execution_time:.2f}s")
 
                 confidence = result.get("confidence", 0)
-                logger.info(f"🎯 Confidence: {confidence:.2f}")
+                logger.info(f"Confidence: {confidence:.2f}")
 
             else:
-                logger.error("❌ CLI agent execution failed")
+                logger.error("CLI agent execution failed")
                 error_msg = result.get("error", "Unknown error")
                 logger.error(f"   Error: {error_msg}")
                 return 1
 
         except Exception as e:
-            logger.error(f"❌ CLI agent execution failed: {e}")
+            logger.error(f"CLI agent execution failed: {e}")
             return 1
 
     else:
-        logger.error(f"❌ Unknown CLI command: {args.cli_command}")
+        logger.error(f"Unknown CLI command: {args.cli_command}")
         logger.info("Available commands: list, test, run")
         return 1
 
@@ -1591,6 +1591,81 @@ async def handle_report_command(args):
         # `sparkleforge health`) logs a stray line to stdout after the command "returns".
         # This command's whole job is printing static text for a workflow to redirect to
         # a file, so exit immediately rather than risk that noise corrupting the output.
+        os._exit(0)
+
+    if getattr(args, "report_command", None) == "cli-ux-audit-prompt":
+        # Same stray-stdout-log concern as daily-roadmap-prompt above.
+        import datetime
+        import os
+        import sys
+        from zoneinfo import ZoneInfo
+
+        from src.core.cli_agents.base_cli_agent import BaseCLIAgent, CLIAgentConfig
+        from src.core.roadmap.cli_ux_audit import DEFAULT_AUDIT_COMMANDS, build_cli_ux_audit_prompt
+
+        class _AuditRunner(BaseCLIAgent):
+            async def execute_query(self, query, **kwargs):
+                raise NotImplementedError
+
+            def parse_output(self, result):
+                raise NotImplementedError
+
+        today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=60))
+
+        transcripts = {}
+        for command in DEFAULT_AUDIT_COMMANDS:
+            result = await runner._execute_command_pty(list(command))
+            label = " ".join(command)
+            transcripts[label] = (
+                result.output if result.success else f"[exit {result.exit_code}] {result.output}{result.error}"
+            )
+
+        sys.stdout.write(build_cli_ux_audit_prompt(today, transcripts) + "\n")
+        sys.stdout.flush()
+        os._exit(0)
+
+    if getattr(args, "report_command", None) == "cli-ux-audit-run":
+        import datetime
+        import os
+        import sys
+        from zoneinfo import ZoneInfo
+
+        from src.core.cli_agents.base_cli_agent import BaseCLIAgent, CLIAgentConfig
+        from src.core.roadmap.cli_ux_audit import DEFAULT_AUDIT_COMMANDS, build_cli_ux_audit_prompt
+        from src.core.roadmap.terminal_render import png_to_data_url, render_transcript_to_png
+        from src.core.roadmap.vision_judge import call_vision_judge
+
+        class _AuditRunner(BaseCLIAgent):
+            async def execute_query(self, query, **kwargs):
+                raise NotImplementedError
+
+            def parse_output(self, result):
+                raise NotImplementedError
+
+        today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=60))
+
+        transcripts = {}
+        image_urls = []
+        for command in DEFAULT_AUDIT_COMMANDS:
+            result = await runner._execute_command_pty(list(command))
+            label = " ".join(command)
+            transcripts[label] = (
+                result.output if result.success else f"[exit {result.exit_code}] {result.output}{result.error}"
+            )
+            image_urls.append(png_to_data_url(render_transcript_to_png(transcripts[label])))
+
+        prompt = build_cli_ux_audit_prompt(today, transcripts)
+        try:
+            verdict = call_vision_judge(prompt, image_urls)
+        except Exception as e:
+            sys.stderr.write(f"cli-ux-audit-run: vision judge call failed: {e}\n")
+            sys.stderr.flush()
+            os._exit(1)
+
+        sys.stdout.write(verdict.strip() + "\n")
+        sys.stdout.flush()
         os._exit(0)
 
     report_command_name = getattr(args, "report_command", None)

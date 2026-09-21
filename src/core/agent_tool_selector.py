@@ -68,6 +68,7 @@ class AgentToolSelector:
                 ToolCategory.SEARCH,
                 ToolCategory.DATA,
                 ToolCategory.ACADEMIC,
+                ToolCategory.COMPUTER,
             ],
             AgentType.GENERATOR: [
                 ToolCategory.GENERATION,

@@ -7,8 +7,12 @@ from typing import Any, List
 """
 
 import asyncio
+import fcntl
 import logging
 import os
+import pty
+import struct
+import termios
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -168,6 +172,86 @@ class BaseCLIAgent(ABC):
                 exit_code=-1,
                 execution_time=execution_time,
             )
+
+    async def _execute_command_pty(
+        self, command: Union[str, List[str]], timeout: int | None = None
+    ) -> CLIExecutionResult:
+        """Run a command under a real pty instead of a plain pipe.
+
+        Plain ``subprocess.PIPE`` capture makes ``isatty()`` False in the
+        child, so TTY-gated rendering (colors, spinners, width-based
+        wrapping) never appears in the captured output -- a self-judge
+        reading that capture is judging a different program than what a
+        human sees. This gives it the same view a human terminal would.
+        """
+        start_time = time.time()
+        timeout = timeout or self.config.timeout
+        cmd = command.split() if isinstance(command, str) else list(command)
+
+        master_fd, slave_fd = pty.openpty()
+        try:
+            fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+        except OSError:
+            pass
+
+        env = {**self.config.env} if self.config.env else {}
+        env.update(os.environ)
+        env.setdefault("TERM", "xterm-256color")
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                env=env,
+                cwd=self.config.working_dir,
+            )
+        finally:
+            os.close(slave_fd)
+
+        async def _drain() -> bytes:
+            loop = asyncio.get_event_loop()
+            chunks = []
+            while True:
+                try:
+                    data = await loop.run_in_executor(None, os.read, master_fd, 4096)
+                except OSError:
+                    break
+                if not data:
+                    break
+                chunks.append(data)
+            return b"".join(chunks)
+
+        drain_task = asyncio.create_task(_drain())
+        try:
+            await asyncio.wait_for(process.wait(), timeout=timeout)
+            output = await asyncio.wait_for(drain_task, timeout=5)
+        except TimeoutError:
+            drain_task.cancel()
+            process.kill()
+            await process.wait()
+            execution_time = time.time() - start_time
+            self.logger.error(f"PTY command timed out after {execution_time:.2f}s")
+            return CLIExecutionResult(
+                success=False,
+                output="",
+                error=f"Command timed out after {timeout} seconds",
+                exit_code=-1,
+                execution_time=execution_time,
+            )
+        finally:
+            os.close(master_fd)
+
+        execution_time = time.time() - start_time
+        return CLIExecutionResult(
+            success=process.returncode == 0,
+            output=output.decode("utf-8", errors="replace"),
+            error="",
+            exit_code=process.returncode or 0,
+            execution_time=execution_time,
+            metadata={"command": cmd, "pty": True},
+        )
 
     def _validate_result(self, result: CLIExecutionResult) -> bool:
         """실행 결과를 검증
