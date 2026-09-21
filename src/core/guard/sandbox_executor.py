@@ -263,7 +263,7 @@ class SandboxExecutor:
             remediated=remediated,
             remediation=remediation,
         )
-        logger.info(
+        logger.debug(
             "Sandbox[%s] exit=%d dur=%.1fms killed=%s remediated=%s cmd=%s",
             sandbox_type, returncode, duration_ms, killed, remediated, command[:60],
         )
