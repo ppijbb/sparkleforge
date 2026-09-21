@@ -313,6 +313,18 @@ EXAMPLES:
             action="store_true",
             help="Resume the most recently active session",
         )
+        command_parser.add_argument(
+            "--depth",
+            choices=["quick", "medium", "deep", "auto"],
+            default=None,
+            help="Research depth preset (quick, medium, deep, auto)",
+        )
+        command_parser.add_argument(
+            "--autopilot",
+            choices=["true", "false", "yes", "no", "1", "0", "on", "off"],
+            default=None,
+            help="Enable or disable autonomous execution without interactive prompts (true/false)",
+        )
 
     # run 커맨드
     run_parser = subparsers.add_parser("run", help="Execute research request")

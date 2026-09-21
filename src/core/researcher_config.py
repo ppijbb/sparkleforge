@@ -16,7 +16,7 @@ def get_default_session_quota():
     from src.core.session_control import SessionQuota
 
     return SessionQuota.from_env()
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -34,6 +34,13 @@ class TaskType(Enum):
 
 class LLMConfig(BaseModel):
     """LLM configuration settings - Multi-Model Orchestration (혁신 3)."""
+
+    # Without this, temperature's ge=0.0/le=2.0 and max_tokens'/budget_limit's
+    # bounds are only checked at construction time -- `cfg.llm.temperature =
+    # 99.0` (config_set_command's generic dotted-path branch, or
+    # handle_run_command's --max-tokens override) would silently persist an
+    # out-of-range value with no error.
+    model_config = ConfigDict(validate_assignment=True)
 
     # Primary provider (OpenRouter + Gemini 2.5 Flash Lite) - NO DEFAULTS
     provider: str = Field(description="LLM provider")
@@ -839,6 +846,21 @@ class ResearcherSystemConfig(BaseModel):
     overseer: OverseerConfig = Field(
         default_factory=lambda: OverseerConfig(), description="Overseer configuration"
     )
+    approval_policy: Literal["ask", "allowlist", "autopilot"] = Field(
+        default="ask",
+        description="REPL runtime approval policy: ask, allowlist, or autopilot. "
+        "Enforced at the model level (validate_assignment=True) so this can't "
+        "be set to an invalid value by any path other than config_set_command's "
+        "own pre-check.",
+    )
+    autopilot_mode: bool = Field(
+        default=True,
+        description="REPL-visible mirror of SPARKLEFORGE_AUTOPILOT_MODE -- "
+        "_autopilot_mode_enabled() remains the actual runtime check "
+        "(it also honors a per-call context override), this field just "
+        "gives `config get/set autopilot` a config-object source of truth "
+        "instead of only os.environ.",
+    )
 
     def model_post_init(self, __context):
         # Ensure output directory exists
@@ -1469,6 +1491,8 @@ def load_config_from_env() -> ResearcherSystemConfig:
         agent_tools=agent_tool_config,
         prompt_refiner=prompt_refiner_config,
         overseer=overseer_config,
+        approval_policy=get_optional_env("APPROVAL_POLICY", "ask", str),
+        autopilot_mode=get_optional_env("SPARKLEFORGE_AUTOPILOT_MODE", True, bool),
     )
 
     return config
