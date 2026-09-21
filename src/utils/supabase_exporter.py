@@ -9,7 +9,7 @@ import logging
 import os
 import asyncio
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -132,10 +132,18 @@ async def create_job(topic: str, user_id: Optional[str] = None) -> Optional[Dict
         return None
 
 
+FORGE_JOB_TTL_DAYS = 30
+_TERMINAL_JOB_STATUSES = {"completed", "failed"}
+
+
 async def update_job_status(
     job_id: str, status: str, error_message: Optional[str] = None
 ) -> bool:
-    """Update status of a research job in Supabase."""
+    """Update status of a research job in Supabase.
+
+    #1619: reaching a terminal status (completed/failed) sets expires_at
+    FORGE_JOB_TTL_DAYS out, so cleanup_expired_jobs.py can later delete it.
+    """
     client = get_supabase_client()
     if not client:
         return False
@@ -146,6 +154,10 @@ async def update_job_status(
     }
     if error_message:
         data["error_message"] = error_message
+    if status in _TERMINAL_JOB_STATUSES:
+        data["expires_at"] = (
+            datetime.utcnow() + timedelta(days=FORGE_JOB_TTL_DAYS)
+        ).isoformat() + "Z"
 
     try:
         response = await asyncio.to_thread(

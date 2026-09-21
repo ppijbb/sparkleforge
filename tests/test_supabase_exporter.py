@@ -3,7 +3,12 @@
 import asyncio
 import time
 
-from src.utils.supabase_exporter import SupabaseExporter, frontier_equivalent_cost_usd
+import src.utils.supabase_exporter as supabase_exporter
+from src.utils.supabase_exporter import (
+    SupabaseExporter,
+    frontier_equivalent_cost_usd,
+    update_job_status,
+)
 
 
 class _FakeExecute:
@@ -58,3 +63,65 @@ def test_frontier_equivalent_cost_usd_zero_tokens_is_zero():
 def test_frontier_equivalent_cost_usd_unknown_model_falls_back_to_default():
     cost = frontier_equivalent_cost_usd(1_000_000, 1_000_000, frontier_model="not-a-real-model")
     assert cost == 15.00 + 75.00
+
+
+class _FakeUpdateQuery:
+    def __init__(self, recorder, data):
+        self.recorder = recorder
+        self.data = data
+
+    def eq(self, *_a, **_kw):
+        return self
+
+    def execute(self):
+        self.recorder.append(self.data)
+
+        class _Result:
+            data = [self.data]
+
+        return _Result()
+
+
+class _FakeJobsTable:
+    def __init__(self, recorder):
+        self.recorder = recorder
+
+    def update(self, data):
+        return _FakeUpdateQuery(self.recorder, data)
+
+
+class _FakeJobsClient:
+    def __init__(self):
+        self.updates = []
+
+    def table(self, _name):
+        return _FakeJobsTable(self.updates)
+
+
+def test_update_job_status_sets_expires_at_on_completed(monkeypatch):
+    client = _FakeJobsClient()
+    monkeypatch.setattr(supabase_exporter, "get_supabase_client", lambda: client)
+
+    result = asyncio.run(update_job_status("job1", "completed"))
+
+    assert result is True
+    assert "expires_at" in client.updates[0]
+
+
+def test_update_job_status_sets_expires_at_on_failed(monkeypatch):
+    client = _FakeJobsClient()
+    monkeypatch.setattr(supabase_exporter, "get_supabase_client", lambda: client)
+
+    asyncio.run(update_job_status("job2", "failed", error_message="boom"))
+
+    assert "expires_at" in client.updates[0]
+    assert client.updates[0]["error_message"] == "boom"
+
+
+def test_update_job_status_leaves_expires_at_unset_for_non_terminal_status(monkeypatch):
+    client = _FakeJobsClient()
+    monkeypatch.setattr(supabase_exporter, "get_supabase_client", lambda: client)
+
+    asyncio.run(update_job_status("job3", "running"))
+
+    assert "expires_at" not in client.updates[0]
