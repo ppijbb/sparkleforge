@@ -1,0 +1,175 @@
+name: SparkleForge CLI UX Audit
+
+on:
+  schedule:
+    # 01:30 Asia/Seoul every day -- offset an hour from sparkleforge-daily-roadmap.yml (00:30) to avoid runner contention.
+    - cron: '30 16 * * *'
+  workflow_dispatch:
+    inputs:
+      max_iterations:
+        description: 'Maximum SparkleForge repair attempts after the issue is created'
+        required: false
+        default: '3'
+        type: string
+
+concurrency:
+  group: sparkleforge-cli-ux-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  audit-cli-ux:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          token: ${{ secrets.PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SparkleForge
+        run: |
+          uv sync
+
+      - name: Ensure cli-ux label exists
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh label create "cli-ux" \
+            --repo "${{ github.repository }}" \
+            --color "0E8A16" \
+            --description "SparkleForge terminal output noise/confusion, found by the CLI UX self-audit" \
+            2>/dev/null || true
+
+      - name: Prepare CLI UX audit prompt
+        id: prompt
+        run: |
+          TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
+          uv run sparkleforge report cli-ux-audit-prompt --today "$TODAY" > cli-ux-audit-prompt.md
+          echo "today=$TODAY" >> "$GITHUB_OUTPUT"
+
+      - name: Run CLI UX self-audit
+        id: audit
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          SPARKLEFORGE_CLI_INTERACTIVE: 'false'
+          MCP_BUILDER_ENABLED: 'false'
+          MCP_ALLOWED_SERVERS: 'local-search'
+          SPARKLEFORGE_ALLOWED_MCP_SERVERS: 'local-search'
+          SPARKLEFORGE_SKIP_ERA_FOR_MCP: 'true'
+          SPARKLEFORGE_ENV: ${{ vars.SPARKLEFORGE_ENV || 'production' }}
+        run: |
+          set +e
+          timeout 10m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-3.5-flash-lite \
+            --output cli-ux-audit-result.md --task "SparkleForge CLI UX Self-Audit" \
+            --format markdown \
+            < cli-ux-audit-prompt.md > cli-ux-audit-console.log \
+            2> cli-ux-audit-error.log
+          RC=$?
+          set -e
+
+          if [ "$RC" -ne 0 ] || [ ! -s cli-ux-audit-result.md ]; then
+            echo "::error::CLI UX audit run failed (rc=$RC) or produced no output. See cli-ux-audit-console.log / cli-ux-audit-error.log."
+            tail -c 2000 cli-ux-audit-error.log || true
+            exit 1
+          fi
+
+          if grep -Fq "NO_ACTIONABLE_CLI_UX_ISSUES" cli-ux-audit-result.md; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          for section in "## Why now" "## Proposed change" "## Implementation notes" "## Acceptance criteria" "## Validation"; do
+            if ! grep -Fq "$section" cli-ux-audit-result.md; then
+              echo "::error::CLI UX audit output is missing required section: $section"
+              exit 1
+            fi
+          done
+
+          echo "found=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub issue
+        id: create_issue
+        if: steps.audit.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          HAS_PAT: ${{ secrets.PAT != '' }}
+          TODAY: ${{ steps.prompt.outputs.today }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::error::PAT repository secret is required so audit issues are authored by the PAT owner instead of github-actions[bot]."
+            exit 1
+          fi
+
+          EXISTING=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --search "sparkleforge-cli-ux-audit:$TODAY in:body sort:created-desc" \
+            --json number \
+            --jq '[.[].number] | sort | .[0] // empty')
+
+          TITLE=$(sed -n '1s/^# *//p' cli-ux-audit-result.md | head -c 180)
+          if [ -z "$TITLE" ]; then
+            TITLE="Terminal output noise found by CLI UX self-audit"
+          fi
+          SUBJECT=$(printf '%s\n' "$TITLE" | sed -E \
+            -e 's/^[[:space:]]+|[[:space:]]+$//g' \
+            -e 's/[[:space:]]+/ /g' | tr '[:upper:]' '[:lower:]')
+          ISSUE_TITLE="fix: $SUBJECT"
+          python scripts/validate_commit_messages.py --message "$ISSUE_TITLE"
+
+          {
+            echo "<!-- sparkleforge-cli-ux-audit:$TODAY -->"
+            echo
+            echo "Found by the SparkleForge CLI UX self-audit (\`sparkleforge report cli-ux-audit-prompt\`, run daily under a real pty so terminal rendering is faithful)."
+            echo "Intentionally scoped so the automated OpenCode workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback."
+            echo
+            cat cli-ux-audit-result.md
+          } > cli-ux-audit-issue-body.md
+
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" \
+              --repo "${{ github.repository }}" \
+              --title "$ISSUE_TITLE" \
+              --body-file cli-ux-audit-issue-body.md
+            echo "Updated issue: #$EXISTING"
+            echo "issue_number=$EXISTING" >> "$GITHUB_OUTPUT"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ISSUE_URL=$(gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$ISSUE_TITLE" \
+            --body-file cli-ux-audit-issue-body.md \
+            --label "cli-ux")
+
+          ISSUE_NUMBER="${ISSUE_URL##*/}"
+          echo "Created issue: $ISSUE_URL"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch SparkleForge follow-up
+        if: steps.create_issue.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh workflow run opencode-auto-fix.yml \
+            --repo "${{ github.repository }}" \
+            --field issue_number="${{ steps.create_issue.outputs.issue_number }}" \
+            --field max_iterations="${{ github.event.inputs.max_iterations || '3' }}"
+          echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created and dispatched to opencode-auto-fix.yml."
