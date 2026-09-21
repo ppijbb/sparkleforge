@@ -394,6 +394,46 @@ async def test_run_command_sanitizes_embedded_equals_flag(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_command_sanitizes_embedded_space_flag(monkeypatch):
+    """Round-6 review claimed "--depth quick" (space, no "=") still slips
+    through unsanitized. Directly disproven: the regex's `[ =]` alternation
+    matches a plain space too."""
+    cfg = researcher_config.config
+    captured_query = None
+
+    args = argparse.Namespace(
+        command="run",
+        query="do the research --depth quick",
+        model=None,
+        max_tokens=None,
+        depth=None,
+        autopilot=None,
+        task=None,
+        session_id=None,
+        continue_session=False,
+    )
+
+    async def fake_run_command(run_args, run_cfg):
+        nonlocal captured_query
+        captured_query = run_args.query
+        return 0
+
+    monkeypatch.setattr("src.cli.commands.run.run_command", fake_run_command)
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_disk_space_safety",
+        lambda: (True, "Disk OK"),
+    )
+    monkeypatch.setattr(
+        "src.core.observe.system_collector.check_network_connectivity",
+        lambda: (True, "Network OK"),
+    )
+
+    rc = await handle_run_command(args, cfg)
+    assert rc == 0
+    assert captured_query == "do the research"
+
+
+@pytest.mark.asyncio
 async def test_run_command_invalid_autopilot_value_ignored(monkeypatch):
     """An unparseable --autopilot value must not silently coerce to True."""
     cfg = researcher_config.config

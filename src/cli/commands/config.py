@@ -89,10 +89,9 @@ def _parse_bool(value: str) -> Optional[bool]:
 async def config_show_command(cli, args: List[str]):
     """설정 표시."""
     try:
-        # Shares the mutation lock as a reader: today's config_set_command
-        # critical section has no `await` in it, so this can't actually
-        # observe a torn write, but taking the lock here too means that
-        # stays true even if a future edit adds one.
+        # Shares the mutation lock as a reader, but only while snapshotting
+        # values -- the lock is released before cli.console.print (I/O) runs,
+        # so a slow render can't hold up a concurrent config_set_command.
         async with CONFIG_MUTATION_LOCK:
             cfg = _get_root_config()
 
@@ -115,7 +114,7 @@ async def config_show_command(cli, args: List[str]):
             )
             approval_policy = getattr(cfg, "approval_policy", "ask")
 
-            config_text = f"""
+        config_text = f"""
 [bold]LLM Provider:[/bold] {llm_provider}
 [bold]LLM Model:[/bold] {llm_model}
 [bold]Max Tokens:[/bold] {max_tokens}
@@ -125,7 +124,7 @@ async def config_show_command(cli, args: List[str]):
 [bold]Budget Limit:[/bold] {budget_limit}
 [bold]Approval Policy:[/bold] {approval_policy}
 """
-            cli.console.print(Panel(config_text.strip(), title="Configuration", border_style="cyan"))
+        cli.console.print(Panel(config_text.strip(), title="Configuration", border_style="cyan"))
 
     except Exception as e:
         logger.error(f"Failed to show config: {e}", exc_info=True)
@@ -140,14 +139,17 @@ async def config_set_command(cli, args: List[str]):
 
     raw_key = args[0]
     value_str = " ".join(args[1:])
+    canonical_key = _CONFIG_ALIASES.get(raw_key.lower(), raw_key)
 
-    if _is_secret_key(raw_key):
+    # Check both the raw key and its resolved canonical path -- an alias
+    # that maps a plain-looking name to a secret-shaped canonical key (none
+    # do today, but nothing stops one being added later) must not bypass
+    # this by only ever checking the pre-alias-resolution string.
+    if _is_secret_key(raw_key) or _is_secret_key(canonical_key):
         cli.console.print(
             f"[red]❌ Modifying API keys or secrets ('{raw_key}') via 'config set' is not allowed[/red]"
         )
         return
-
-    canonical_key = _CONFIG_ALIASES.get(raw_key.lower(), raw_key)
 
     try:
         async with CONFIG_MUTATION_LOCK:
@@ -324,45 +326,48 @@ async def config_get_command(cli, args: List[str]):
     canonical_key = _CONFIG_ALIASES.get(raw_key.lower(), raw_key)
 
     try:
+        # Gather the result (or a not-found marker) while holding the lock,
+        # then print outside it -- I/O has no business extending how long a
+        # concurrent config_set_command has to wait.
         async with CONFIG_MUTATION_LOCK:
             cfg = _get_root_config()
 
-            # Handle special key: autopilot_mode
             if canonical_key == "autopilot_mode":
-                val = (
+                found = True
+                result = (
                     cfg.autopilot_mode if hasattr(cfg, "autopilot_mode") else _autopilot_mode_enabled()
                 )
-                cli.console.print(f"[green]{raw_key}: {val}[/green]")
-                return
-
-            # Handle special key: approval_policy
-            if canonical_key == "approval_policy":
-                val = getattr(cfg, "approval_policy", "ask")
-                cli.console.print(f"[green]{raw_key}: {val}[/green]")
-                return
-
-            # Direct attribute or dotted path traversal
-            parts = canonical_key.split(".")
-            curr = cfg
-            for part in parts:
-                # dict membership takes priority over hasattr: for a plain dict,
-                # hasattr(curr, "keys") is also true (it's a dict method), so a
-                # dict key literally named "keys"/"items"/etc would otherwise
-                # resolve to the bound method instead of the stored value.
-                if isinstance(curr, dict):
-                    if part in curr:
-                        curr = curr[part]
+            elif canonical_key == "approval_policy":
+                found = True
+                result = getattr(cfg, "approval_policy", "ask")
+            else:
+                # Direct attribute or dotted path traversal
+                parts = canonical_key.split(".")
+                curr = cfg
+                found = True
+                for part in parts:
+                    # dict membership takes priority over hasattr: for a plain
+                    # dict, hasattr(curr, "keys") is also true (it's a dict
+                    # method), so a dict key literally named "keys"/"items"/etc
+                    # would otherwise resolve to the bound method instead of
+                    # the stored value.
+                    if isinstance(curr, dict):
+                        if part in curr:
+                            curr = curr[part]
+                        else:
+                            found = False
+                            break
+                    elif hasattr(curr, part):
+                        curr = getattr(curr, part)
                     else:
-                        cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
-                        return
-                elif hasattr(curr, part):
-                    curr = getattr(curr, part)
-                else:
-                    cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
-                    return
+                        found = False
+                        break
+                result = _redact_secret(raw_key, curr) if found else None
 
-            redacted_val = _redact_secret(raw_key, curr)
-            cli.console.print(f"[green]{raw_key}: {redacted_val}[/green]")
+        if not found:
+            cli.console.print(f"[yellow]Config key not found: {raw_key}[/yellow]")
+        else:
+            cli.console.print(f"[green]{raw_key}: {result}[/green]")
 
     except Exception as e:
         logger.error(f"Failed to get config: {e}", exc_info=True)
