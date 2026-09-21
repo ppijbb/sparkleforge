@@ -1571,7 +1571,7 @@ async def handle_report_command(args):
         # `sparkleforge health`) logs a stray line to stdout after the command "returns".
         # This command's whole job is printing static text for a workflow to redirect to
         # a file, so exit immediately rather than risk that noise corrupting the output.
-        os._exit(0)
+        sys.exit(0)
 
     report_command_name = getattr(args, "report_command", None)
     if report_command_name in (
@@ -1605,7 +1605,7 @@ async def handle_report_command(args):
             sys.stdout.flush()
             target = select_anvil_target(milestone, sub_status)
             Path(args.target_out).write_text(target_file_contents(target), encoding="utf-8")
-            os._exit(0)
+            sys.exit(0)
 
         if report_command_name == "roadmap-fallback-issue":
             from src.core.roadmap.planning import build_fallback_roadmap
@@ -1627,7 +1627,7 @@ async def handle_report_command(args):
                 )
             )
             sys.stdout.flush()
-            os._exit(0)
+            sys.exit(0)
 
         if report_command_name == "roadmap-issue-body":
             from src.core.roadmap.planning import build_issue_body
@@ -1646,7 +1646,7 @@ async def handle_report_command(args):
                 )
             )
             sys.stdout.flush()
-            os._exit(0)
+            sys.exit(0)
 
         if report_command_name == "sync-anvil-doc":
             from src.core.roadmap.anvil_doc_sync import sync_anvil_doc
@@ -1667,7 +1667,7 @@ async def handle_report_command(args):
             changed = sync_anvil_doc(Path(args.plan_file), milestone["number"], closed, total)
             sys.stdout.write(("changed" if changed else "nochange") + "\n")
             sys.stdout.flush()
-            os._exit(0)
+            sys.exit(0)
 
     from src.cli.commands.report import report_command
     from rich.console import Console

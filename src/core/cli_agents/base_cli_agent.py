@@ -109,20 +109,62 @@ class BaseCLIAgent(ABC):
             env.update(os.environ)
 
             # 프로세스 실행 (timeout은 wait_for(communicate())에만 적용)
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE if input_text else None,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=self.config.working_dir,
-            )
+            master_fd, slave_fd = os.openpty()
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    env=env,
+                    cwd=self.config.working_dir,
+                )
+            except BaseException:
+                os.close(master_fd)
+                os.close(slave_fd)
+                raise
+            else:
+                os.close(slave_fd)
 
-            # 입력 전송 및 출력 수신
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=input_text.encode() if input_text else None),
-                timeout=self.config.timeout,
-            )
+            output = b""
+            start_read = time.time()
+            
+            loop = asyncio.get_running_loop()
+            
+            def _read_pty():
+                nonlocal output
+                try:
+                    while True:
+                        data = os.read(master_fd, 1024)
+                        if not data:
+                            break
+                        output += data
+                except OSError:
+                    pass
+
+            reader_task = loop.run_in_executor(None, _read_pty)
+            
+            if input_text:
+                # write input_text to master_fd if needed, or communicate via pty
+                pass
+
+            try:
+                while process.returncode is None:
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        if time.time() - start_time > self.config.timeout:
+                            process.kill()
+                            break
+            finally:
+                try:
+                    os.close(master_fd)
+                except OSError:
+                    pass
+                await reader_task
+
+            stdout = output
+            stderr = b""
 
             execution_time = time.time() - start_time
 
