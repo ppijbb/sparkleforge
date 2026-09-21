@@ -13,7 +13,15 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List
 
+from src.utils.sparkleforge_history import (
+    end_history_session,
+    log_history_event,
+    start_history_session,
+)
+
 logger = logging.getLogger(__name__)
+
+BUDGET_WARNING_PCT = 80.0
 
 
 @dataclass
@@ -59,6 +67,7 @@ class SessionStatus(Enum):
     FAILED = "failed"  # 실패
     CANCELLED = "cancelled"  # 취소됨
     WAITING = "waiting"  # 대기 중 (사용자 응답 등)
+    QUOTA_EXCEEDED = "quota_exceeded"  # 토큰/비용 쿼터 초과로 강제 종료됨
 
 
 class TaskStatus(Enum):
@@ -515,15 +524,72 @@ class SessionControl:
         if session_id in self.active_sessions:
             self.active_sessions[session_id]["status"] = status
 
+    def _ensure_history_session(self, session_id: str, q: Dict[str, Any]) -> str:
+        """Lazily start (and cache) the sparkleforge_history session backing this
+        SessionControl session_id (see #1618) -- these are different id spaces:
+        SessionControl session_ids are plain strings like "session_20260921_...",
+        not the UUIDs sparkleforge_history_events.session_id has a foreign key to.
+        """
+        history_session_id = q.get("history_session_id")
+        if history_session_id is None:
+            history_session_id = start_history_session("session_control", external_ref=session_id)
+            q["history_session_id"] = history_session_id
+        return history_session_id
+
+    async def _cancel_for_quota_exceeded(self, session_id: str, reason: str) -> None:
+        """Cancel a session for a budget/token overage, then mark it QUOTA_EXCEEDED
+        (cancel_session() always sets CANCELLED, which would otherwise overwrite
+        this more specific status once the task runs)."""
+        await self.cancel_session(session_id, reason=reason)
+        if session_id in self.active_sessions:
+            self.active_sessions[session_id]["status"] = SessionStatus.QUOTA_EXCEEDED
+
     def check_quotas(self, session_id: str) -> bool:
         """쿼터 초과 여부 확인 및 초과 시 자동 취소."""
         if session_id not in self._session_quotas:
             return True
 
         q = self._session_quotas[session_id]
-        if (time.time() - q["start_time"] > q["timeout"]) or \
-           (q["cost_incurred"] >= q["budget"]) or \
-           (q["tokens_used"] >= q["max_tokens"]):
+        cost_pct = (q["cost_incurred"] / q["budget"] * 100.0) if q["budget"] > 0 else 0.0
+        token_pct = (q["tokens_used"] / q["max_tokens"] * 100.0) if q["max_tokens"] > 0 else 0.0
+        budget_pct = max(cost_pct, token_pct)
+        cost_exceeded = q["cost_incurred"] >= q["budget"]
+        tokens_exceeded = q["tokens_used"] >= q["max_tokens"]
+        is_budget_reason = cost_exceeded or tokens_exceeded
+        timed_out = time.time() - q["start_time"] > q["timeout"]
+
+        usage_metadata = {
+            "cost_incurred": q["cost_incurred"],
+            "budget": q["budget"],
+            "tokens_used": q["tokens_used"],
+            "max_tokens": q["max_tokens"],
+        }
+        if is_budget_reason and not q.get("budget_exceeded_logged"):
+            q["budget_exceeded_logged"] = True
+            reason = "cost_exceeded" if cost_exceeded else "tokens_exceeded"
+            history_session_id = self._ensure_history_session(session_id, q)
+            log_history_event(
+                history_session_id,
+                "budget_exceeded",
+                f"session {session_id} exceeded its {reason} quota",
+                level="error",
+                metadata={**usage_metadata, "reason": reason},
+            )
+            end_history_session(
+                history_session_id, status="quota_exceeded", metadata={"reason": reason}
+            )
+        elif budget_pct >= BUDGET_WARNING_PCT and not q.get("budget_warning_logged"):
+            q["budget_warning_logged"] = True
+            history_session_id = self._ensure_history_session(session_id, q)
+            log_history_event(
+                history_session_id,
+                "budget_warning",
+                f"session {session_id} reached {budget_pct:.0f}% of its token/cost budget",
+                level="warning",
+                metadata=usage_metadata,
+            )
+
+        if timed_out or is_budget_reason:
             logger.warning(f"Session {session_id} exceeded quotas and was cancelled.")
             try:
                 from src.core.surface.notification_channel import (
@@ -549,13 +615,19 @@ class SessionControl:
             except Exception as notify_ex:
                 logger.warning("Failed to send quota cancellation notification: %s", notify_ex)
             try:
-                asyncio.get_running_loop().create_task(self.cancel_session(session_id))
+                loop = asyncio.get_running_loop()
+                if is_budget_reason:
+                    loop.create_task(self._cancel_for_quota_exceeded(session_id, "quota_exceeded"))
+                else:
+                    loop.create_task(self.cancel_session(session_id))
             except RuntimeError:
                 # check_quotas is called from sync code paths with no
                 # guaranteed running event loop; fall back to a direct
-                # status flip so callers still observe CANCELLED.
+                # status flip so callers still observe the right status.
                 if session_id in self.active_sessions:
-                    self.active_sessions[session_id]["status"] = SessionStatus.CANCELLED
+                    self.active_sessions[session_id]["status"] = (
+                        SessionStatus.QUOTA_EXCEEDED if is_budget_reason else SessionStatus.CANCELLED
+                    )
                     self.active_sessions[session_id]["cancelled_at"] = datetime.now()
             return False
 
@@ -598,10 +670,18 @@ class SessionControl:
             pct_used = (used / limit * 100.0) if limit > 0 else 0.0
             return {"used": used, "limit": limit, "remaining": remaining, "pct_used": pct_used}
 
+        if q.get("budget_exceeded_logged"):
+            quota_event = "exceeded"
+        elif q.get("budget_warning_logged"):
+            quota_event = "warning"
+        else:
+            quota_event = "none"
+
         return {
             "tokens": _usage(q["tokens_used"], q["max_tokens"]),
             "cost": _usage(q["cost_incurred"], q["budget"]),
             "time": _usage(elapsed, q["timeout"]),
+            "quota_event": quota_event,
         }
 
     def get_all_quota_usage(self) -> Dict[str, Dict[str, Any]]:
