@@ -35,6 +35,13 @@ class TaskType(Enum):
 class LLMConfig(BaseModel):
     """LLM configuration settings - Multi-Model Orchestration (혁신 3)."""
 
+    # Without this, temperature's ge=0.0/le=2.0 and max_tokens'/budget_limit's
+    # bounds are only checked at construction time -- `cfg.llm.temperature =
+    # 99.0` (config_set_command's generic dotted-path branch, or
+    # handle_run_command's --max-tokens override) would silently persist an
+    # out-of-range value with no error.
+    model_config = ConfigDict(validate_assignment=True)
+
     # Primary provider (OpenRouter + Gemini 2.5 Flash Lite) - NO DEFAULTS
     provider: str = Field(description="LLM provider")
     primary_model: str = Field(description="Primary model")

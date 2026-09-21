@@ -271,8 +271,10 @@ async def test_config_set_depth_alias_missing_path_guarded(monkeypatch):
 
     await config_set_command(cli, ["depth", "deep"])
     # Distinct from "Unknown config key" -- this is a missing schema
-    # structure, not a typo'd key name.
-    assert any("internal config error" in m for m in cli.output_messages)
+    # structure, not a typo'd key name -- but worded without exposing the
+    # internal attribute path to the user.
+    assert any("unavailable" in m for m in cli.output_messages)
+    assert not any("Unknown config key" in m for m in cli.output_messages)
 
 
 @pytest.mark.asyncio
@@ -288,6 +290,22 @@ async def test_config_set_unknown_key_rejected():
     cli = MockCLI()
     await config_set_command(cli, ["llm.unknown_setting", "123"])
     assert any("Unknown config key" in m for m in cli.output_messages)
+
+
+@pytest.mark.asyncio
+async def test_config_set_temperature_out_of_range_rejected():
+    """LLMConfig lacked validate_assignment=True, so temperature's
+    ge=0.0/le=2.0 constraint was only checked at construction time --
+    `config set temperature 99` silently persisted an invalid value."""
+    cli = MockCLI()
+    cfg = researcher_config.config
+    original = cfg.llm.temperature
+
+    await config_set_command(cli, ["temperature", "99"])
+
+    cfg = researcher_config.config
+    assert cfg.llm.temperature == original
+    assert any("see log for details" in m for m in cli.output_messages)
 
 
 @pytest.mark.asyncio

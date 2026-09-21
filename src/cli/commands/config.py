@@ -151,165 +151,148 @@ async def config_set_command(cli, args: List[str]):
         )
         return
 
-    try:
-        async with CONFIG_MUTATION_LOCK:
-            cfg = _get_root_config()
+    def _do_set(cfg) -> str:
+        """All validation and mutation, returning the message to print. Takes
+        no lock itself and does no I/O -- the caller holds CONFIG_MUTATION_LOCK
+        only around this call, then prints the result after releasing it."""
+        # Handle special key: autopilot_mode
+        if canonical_key == "autopilot_mode":
+            parsed_bool = _parse_bool(value_str)
+            if parsed_bool is None:
+                return (
+                    f"[red]❌ Invalid boolean for autopilot_mode: '{value_str}'. "
+                    "Expected true/false/yes/no/1/0/on/off[/red]"
+                )
+            old_val = (cfg.autopilot_mode if hasattr(cfg, "autopilot_mode") else _autopilot_mode_enabled())
+            cfg.autopilot_mode = parsed_bool
+            os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if parsed_bool else "false"
+            return f"[green]✓ {raw_key}: {old_val} -> {parsed_bool}[/green]"
 
-            # Handle special key: autopilot_mode
-            if canonical_key == "autopilot_mode":
-                parsed_bool = _parse_bool(value_str)
-                if parsed_bool is None:
-                    cli.console.print(
-                        f"[red]❌ Invalid boolean for autopilot_mode: '{value_str}'. "
-                        "Expected true/false/yes/no/1/0/on/off[/red]"
-                    )
-                    return
-                old_val = (cfg.autopilot_mode if hasattr(cfg, "autopilot_mode") else _autopilot_mode_enabled())
-                cfg.autopilot_mode = parsed_bool
-                os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if parsed_bool else "false"
-                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {parsed_bool}[/green]")
-                return
+        # Handle special key: approval_policy
+        if canonical_key == "approval_policy":
+            val_clean = value_str.lower().strip()
+            if val_clean not in ("ask", "allowlist", "autopilot"):
+                return (
+                    f"[red]❌ Invalid approval policy: '{value_str}'. "
+                    "Allowed: ask, allowlist, autopilot[/red]"
+                )
+            old_val = getattr(cfg, "approval_policy", "ask")
+            cfg.approval_policy = val_clean
+            os.environ["APPROVAL_POLICY"] = val_clean
+            return f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]"
 
-            # Handle special key: approval_policy
-            if canonical_key == "approval_policy":
-                val_clean = value_str.lower().strip()
-                if val_clean not in ("ask", "allowlist", "autopilot"):
-                    cli.console.print(
-                        f"[red]❌ Invalid approval policy: '{value_str}'. "
-                        "Allowed: ask, allowlist, autopilot[/red]"
-                    )
-                    return
-                old_val = getattr(cfg, "approval_policy", "ask")
-                cfg.approval_policy = val_clean
-                os.environ["APPROVAL_POLICY"] = val_clean
-                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]")
-                return
+        # Handle special key: depth preset
+        if canonical_key in ("research.research_depth.default_preset", "research_depth", "depth"):
+            val_clean = value_str.lower().strip()
+            valid_presets = {"quick", "medium", "deep", "auto"}
+            if val_clean not in valid_presets:
+                allowed_str = ", ".join(sorted(valid_presets))
+                return f"[red]❌ Invalid research depth: '{value_str}'. Allowed: {allowed_str}[/red]"
+            if not hasattr(cfg, "research") or not hasattr(cfg.research, "research_depth"):
+                return "[red]❌ Research depth setting is unavailable right now[/red]"
+            old_val = getattr(cfg.research.research_depth, "default_preset", "auto")
+            cfg.research.research_depth.default_preset = val_clean
+            os.environ["RESEARCH_DEPTH_PRESET"] = val_clean
+            return f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]"
 
-            # Handle special key: depth preset
-            if canonical_key in ("research.research_depth.default_preset", "research_depth", "depth"):
-                val_clean = value_str.lower().strip()
-                valid_presets = {"quick", "medium", "deep", "auto"}
-                if val_clean not in valid_presets:
-                    allowed_str = ", ".join(sorted(valid_presets))
-                    cli.console.print(
-                        f"[red]❌ Invalid research depth: '{value_str}'. Allowed: {allowed_str}[/red]"
-                    )
-                    return
-                if not hasattr(cfg, "research") or not hasattr(cfg.research, "research_depth"):
-                    cli.console.print(
-                        "[red]❌ Research depth config is unavailable on this config instance "
-                        "(cfg.research.research_depth is missing) -- this is an internal config "
-                        "error, not a typo'd key[/red]"
-                    )
-                    return
-                old_val = getattr(cfg.research.research_depth, "default_preset", "auto")
-                cfg.research.research_depth.default_preset = val_clean
-                os.environ["RESEARCH_DEPTH_PRESET"] = val_clean
-                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]")
-                return
+        # Handle model selection alias
+        if canonical_key in ("llm.primary_model", "primary_model", "model"):
+            old_val = cfg.llm.primary_model
+            new_model = value_str.strip()
+            if not new_model:
+                return "[red]❌ Primary model must not be empty[/red]"
+            cfg.llm.primary_model = new_model
+            os.environ["LLM_MODEL"] = new_model
+            # Only cascade a role when BOTH its config attribute and its
+            # env var still mirror the old primary -- checking only the
+            # config side let a role whose env var was pinned by hand
+            # (export REASONING_MODEL=...) get clobbered anyway, since
+            # the cfg attribute alone still matched.
+            for role, env_k in (
+                ("planning_model", "PLANNING_MODEL"),
+                ("reasoning_model", "REASONING_MODEL"),
+                ("verification_model", "VERIFICATION_MODEL"),
+                ("generation_model", "GENERATION_MODEL"),
+                ("compression_model", "COMPRESSION_MODEL"),
+            ):
+                cfg_matches = hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val
+                env_matches = os.getenv(env_k, old_val) == old_val
+                if cfg_matches and env_matches:
+                    setattr(cfg.llm, role, new_model)
+                    os.environ[env_k] = new_model
+            return f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]"
 
-            # Handle model selection alias
-            if canonical_key in ("llm.primary_model", "primary_model", "model"):
-                old_val = cfg.llm.primary_model
-                new_model = value_str.strip()
-                if not new_model:
-                    cli.console.print("[red]❌ Primary model must not be empty[/red]")
-                    return
-                cfg.llm.primary_model = new_model
-                os.environ["LLM_MODEL"] = new_model
-                # Only cascade a role when BOTH its config attribute and its
-                # env var still mirror the old primary -- checking only the
-                # config side let a role whose env var was pinned by hand
-                # (export REASONING_MODEL=...) get clobbered anyway, since
-                # the cfg attribute alone still matched.
-                for role, env_k in (
-                    ("planning_model", "PLANNING_MODEL"),
-                    ("reasoning_model", "REASONING_MODEL"),
-                    ("verification_model", "VERIFICATION_MODEL"),
-                    ("generation_model", "GENERATION_MODEL"),
-                    ("compression_model", "COMPRESSION_MODEL"),
-                ):
-                    cfg_matches = hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val
-                    env_matches = os.getenv(env_k, old_val) == old_val
-                    if cfg_matches and env_matches:
-                        setattr(cfg.llm, role, new_model)
-                        os.environ[env_k] = new_model
-                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]")
-                return
-
-            # Dotted path traversal on ResearcherSystemConfig -- mirrors
-            # config_get_command's dict-before-hasattr precedence so a dict
-            # branch in the config tree can be traversed the same way by
-            # both `config get` and `config set`.
-            parts = canonical_key.split(".")
-            target = cfg
-            for part in parts[:-1]:
-                if isinstance(target, dict):
-                    if part not in target:
-                        cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
-                        return
-                    target = target[part]
-                elif hasattr(target, part):
-                    target = getattr(target, part)
-                else:
-                    cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
-                    return
-
-            last_part = parts[-1]
-            target_is_dict = isinstance(target, dict)
-            if target_is_dict:
-                if last_part not in target:
-                    cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
-                    return
-                old_val = target[last_part]
+        # Dotted path traversal on ResearcherSystemConfig -- mirrors
+        # config_get_command's dict-before-hasattr precedence so a dict
+        # branch in the config tree can be traversed the same way by
+        # both `config get` and `config set`.
+        parts = canonical_key.split(".")
+        target = cfg
+        for part in parts[:-1]:
+            if isinstance(target, dict):
+                if part not in target:
+                    return f"[red]❌ Unknown config key: '{raw_key}'[/red]"
+                target = target[part]
+            elif hasattr(target, part):
+                target = getattr(target, part)
             else:
-                if not hasattr(target, last_part):
-                    cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
-                    return
-                old_val = getattr(target, last_part)
+                return f"[red]❌ Unknown config key: '{raw_key}'[/red]"
 
-            # Convert value_str to target type
-            if old_val is None:
-                # No prior value to infer a type from -- best-effort sniff the
-                # input itself (int, then float, then bool) instead of forcing
-                # str, so a None-defaulted numeric/bool field doesn't get stuck
-                # as a string on its first set. int/float are tried before
-                # bool because "0"/"1" are valid bool aliases too, and a bare
-                # digit should become a number, not True/False.
-                converted: Any
-                try:
-                    converted = int(value_str)
-                except ValueError:
-                    try:
-                        converted = float(value_str)
-                    except ValueError:
-                        parsed_bool = _parse_bool(value_str)
-                        converted = value_str.strip() if parsed_bool is None else parsed_bool
-            elif isinstance(old_val, bool):
-                converted = _parse_bool(value_str)
-                if converted is None:
-                    cli.console.print(f"[red]❌ Invalid boolean: '{value_str}'[/red]")
-                    return
-            elif isinstance(old_val, int):
-                try:
-                    converted = int(value_str)
-                except ValueError:
-                    cli.console.print(f"[red]❌ Invalid integer: '{value_str}'[/red]")
-                    return
-            elif isinstance(old_val, float):
+        last_part = parts[-1]
+        target_is_dict = isinstance(target, dict)
+        if target_is_dict:
+            if last_part not in target:
+                return f"[red]❌ Unknown config key: '{raw_key}'[/red]"
+            old_val = target[last_part]
+        else:
+            if not hasattr(target, last_part):
+                return f"[red]❌ Unknown config key: '{raw_key}'[/red]"
+            old_val = getattr(target, last_part)
+
+        # Convert value_str to target type
+        if old_val is None:
+            # No prior value to infer a type from -- best-effort sniff the
+            # input itself (int, then float, then bool) instead of forcing
+            # str, so a None-defaulted numeric/bool field doesn't get stuck
+            # as a string on its first set. int/float are tried before
+            # bool because "0"/"1" are valid bool aliases too, and a bare
+            # digit should become a number, not True/False.
+            converted: Any
+            try:
+                converted = int(value_str)
+            except ValueError:
                 try:
                     converted = float(value_str)
                 except ValueError:
-                    cli.console.print(f"[red]❌ Invalid float: '{value_str}'[/red]")
-                    return
-            else:
-                converted = value_str.strip()
+                    parsed_bool = _parse_bool(value_str)
+                    converted = value_str.strip() if parsed_bool is None else parsed_bool
+        elif isinstance(old_val, bool):
+            converted = _parse_bool(value_str)
+            if converted is None:
+                return f"[red]❌ Invalid boolean: '{value_str}'[/red]"
+        elif isinstance(old_val, int):
+            try:
+                converted = int(value_str)
+            except ValueError:
+                return f"[red]❌ Invalid integer: '{value_str}'[/red]"
+        elif isinstance(old_val, float):
+            try:
+                converted = float(value_str)
+            except ValueError:
+                return f"[red]❌ Invalid float: '{value_str}'[/red]"
+        else:
+            converted = value_str.strip()
 
-            if target_is_dict:
-                target[last_part] = converted
-            else:
-                setattr(target, last_part, converted)
-            cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {converted}[/green]")
+        if target_is_dict:
+            target[last_part] = converted
+        else:
+            setattr(target, last_part, converted)
+        return f"[green]✓ {raw_key}: {old_val} -> {converted}[/green]"
+
+    try:
+        async with CONFIG_MUTATION_LOCK:
+            message = _do_set(_get_root_config())
+        cli.console.print(message)
 
     except Exception as e:
         logger.error(f"Failed to set config '{raw_key}': {e}", exc_info=True)
