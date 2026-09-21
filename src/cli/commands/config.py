@@ -3,11 +3,17 @@
 import logging
 import os
 import re
+import threading
 from typing import Any, Dict, List, Optional
 
 from rich.panel import Panel
 
 logger = logging.getLogger(__name__)
+
+# Guards the read-modify-write os.environ/config mutations below against
+# concurrent `config set` invocations (REPL command + a background task
+# calling this at the same time).
+_CONFIG_MUTATION_LOCK = threading.Lock()
 
 # Keys that must not be printed or set directly (API keys, tokens, passwords)
 _SECRET_CONFIG_KEYS = frozenset(
@@ -98,7 +104,7 @@ async def config_show_command(cli, args: List[str]):
             if hasattr(cfg, "llm")
             else "N/A"
         )
-        approval_policy = os.getenv("APPROVAL_POLICY", "ask")
+        approval_policy = getattr(cfg, "approval_policy", "ask")
 
         config_text = f"""
 [bold]LLM Provider:[/bold] {llm_provider}
@@ -114,7 +120,7 @@ async def config_show_command(cli, args: List[str]):
 
     except Exception as e:
         logger.error(f"Failed to show config: {e}", exc_info=True)
-        cli.console.print(f"[red]❌ Failed to show config: {e}[/red]")
+        cli.console.print("[red]❌ Failed to show config (see log for details)[/red]")
 
 
 async def config_set_command(cli, args: List[str]):
@@ -135,138 +141,146 @@ async def config_set_command(cli, args: List[str]):
     canonical_key = _CONFIG_ALIASES.get(raw_key.lower(), raw_key)
 
     try:
-        cfg = _get_root_config()
+        with _CONFIG_MUTATION_LOCK:
+            cfg = _get_root_config()
 
-        # Handle special key: autopilot_mode
-        if canonical_key == "autopilot_mode":
-            parsed_bool = _parse_bool(value_str)
-            if parsed_bool is None:
-                cli.console.print(
-                    f"[red]❌ Invalid boolean for autopilot_mode: '{value_str}'[/red]"
-                )
+            # Handle special key: autopilot_mode
+            if canonical_key == "autopilot_mode":
+                parsed_bool = _parse_bool(value_str)
+                if parsed_bool is None:
+                    cli.console.print(
+                        f"[red]❌ Invalid boolean for autopilot_mode: '{value_str}'[/red]"
+                    )
+                    return
+                from src.core.autonomous_orchestrator import _autopilot_mode_enabled
+                old_val = _autopilot_mode_enabled()
+                os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if parsed_bool else "false"
+                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {parsed_bool}[/green]")
                 return
-            from src.core.autonomous_orchestrator import _autopilot_mode_enabled
-            old_val = _autopilot_mode_enabled()
-            os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if parsed_bool else "false"
-            cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {parsed_bool}[/green]")
-            return
 
-        # Handle special key: approval_policy
-        if canonical_key == "approval_policy":
-            val_clean = value_str.lower().strip()
-            if val_clean not in ("ask", "allowlist", "autopilot"):
-                cli.console.print(
-                    f"[red]❌ Invalid approval policy: '{value_str}'. "
-                    "Allowed: ask, allowlist, autopilot[/red]"
-                )
+            # Handle special key: approval_policy
+            if canonical_key == "approval_policy":
+                val_clean = value_str.lower().strip()
+                if val_clean not in ("ask", "allowlist", "autopilot"):
+                    cli.console.print(
+                        f"[red]❌ Invalid approval policy: '{value_str}'. "
+                        "Allowed: ask, allowlist, autopilot[/red]"
+                    )
+                    return
+                old_val = getattr(cfg, "approval_policy", "ask")
+                cfg.approval_policy = val_clean
+                os.environ["APPROVAL_POLICY"] = val_clean
+                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]")
                 return
-            old_val = os.getenv("APPROVAL_POLICY", "ask")
-            os.environ["APPROVAL_POLICY"] = val_clean
-            cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]")
-            return
 
-        # Handle special key: depth preset
-        if canonical_key in ("research.research_depth.default_preset", "research_depth", "depth"):
-            val_clean = value_str.lower().strip()
-            valid_presets = {"quick", "medium", "deep", "auto"}
-            if val_clean not in valid_presets:
-                allowed_str = ", ".join(sorted(valid_presets))
-                cli.console.print(
-                    f"[red]❌ Invalid research depth: '{value_str}'. Allowed: {allowed_str}[/red]"
-                )
+            # Handle special key: depth preset
+            if canonical_key in ("research.research_depth.default_preset", "research_depth", "depth"):
+                val_clean = value_str.lower().strip()
+                valid_presets = {"quick", "medium", "deep", "auto"}
+                if val_clean not in valid_presets:
+                    allowed_str = ", ".join(sorted(valid_presets))
+                    cli.console.print(
+                        f"[red]❌ Invalid research depth: '{value_str}'. Allowed: {allowed_str}[/red]"
+                    )
+                    return
+                if not hasattr(cfg, "research") or not hasattr(cfg.research, "research_depth"):
+                    cli.console.print(
+                        "[red]❌ Research depth config is unavailable on this config instance "
+                        "(cfg.research.research_depth is missing) -- this is an internal config "
+                        "error, not a typo'd key[/red]"
+                    )
+                    return
+                old_val = getattr(cfg.research.research_depth, "default_preset", "auto")
+                cfg.research.research_depth.default_preset = val_clean
+                os.environ["RESEARCH_DEPTH_PRESET"] = val_clean
+                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]")
                 return
-            if not hasattr(cfg, "research") or not hasattr(cfg.research, "research_depth"):
+
+            # Handle model selection alias
+            if canonical_key in ("llm.primary_model", "primary_model", "model"):
+                old_val = cfg.llm.primary_model
+                new_model = value_str.strip()
+                if not new_model:
+                    cli.console.print("[red]❌ Primary model must not be empty[/red]")
+                    return
+                cfg.llm.primary_model = new_model
+                os.environ["LLM_MODEL"] = new_model
+                # Only cascade a role (config attribute AND its env var together)
+                # when the role still mirrors the old primary -- a role the user
+                # pinned to something else stays pinned in both places instead of
+                # being silently clobbered or having an env var sprout under it.
+                for role, env_k in (
+                    ("planning_model", "PLANNING_MODEL"),
+                    ("reasoning_model", "REASONING_MODEL"),
+                    ("verification_model", "VERIFICATION_MODEL"),
+                    ("generation_model", "GENERATION_MODEL"),
+                    ("compression_model", "COMPRESSION_MODEL"),
+                ):
+                    if hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val:
+                        setattr(cfg.llm, role, new_model)
+                        os.environ[env_k] = new_model
+                cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]")
+                return
+
+            # Dotted path traversal on ResearcherSystemConfig
+            parts = canonical_key.split(".")
+            target = cfg
+            for part in parts[:-1]:
+                if not hasattr(target, part):
+                    cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
+                    return
+                target = getattr(target, part)
+
+            last_part = parts[-1]
+            if not hasattr(target, last_part):
                 cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
                 return
-            old_val = getattr(cfg.research.research_depth, "default_preset", "auto")
-            cfg.research.research_depth.default_preset = val_clean
-            os.environ["RESEARCH_DEPTH_PRESET"] = val_clean
-            cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {val_clean}[/green]")
-            return
 
-        # Handle model selection alias
-        if canonical_key in ("llm.primary_model", "primary_model", "model"):
-            old_val = cfg.llm.primary_model
-            new_model = value_str.strip()
-            if not new_model:
-                cli.console.print("[red]❌ Primary model must not be empty[/red]")
-                return
-            cfg.llm.primary_model = new_model
-            os.environ["LLM_MODEL"] = new_model
-            # Only cascade a role (config attribute AND its env var together)
-            # when the role still mirrors the old primary -- a role the user
-            # pinned to something else stays pinned in both places instead of
-            # being silently clobbered or having an env var sprout under it.
-            for role, env_k in (
-                ("planning_model", "PLANNING_MODEL"),
-                ("reasoning_model", "REASONING_MODEL"),
-                ("verification_model", "VERIFICATION_MODEL"),
-                ("generation_model", "GENERATION_MODEL"),
-                ("compression_model", "COMPRESSION_MODEL"),
-            ):
-                if hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val:
-                    setattr(cfg.llm, role, new_model)
-                    os.environ[env_k] = new_model
-            cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]")
-            return
+            old_val = getattr(target, last_part)
 
-        # Dotted path traversal on ResearcherSystemConfig
-        parts = canonical_key.split(".")
-        target = cfg
-        for part in parts[:-1]:
-            if not hasattr(target, part):
-                cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
-                return
-            target = getattr(target, part)
-
-        last_part = parts[-1]
-        if not hasattr(target, last_part):
-            cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
-            return
-
-        old_val = getattr(target, last_part)
-
-        # Convert value_str to target type
-        if old_val is None:
-            # No prior value to infer a type from -- best-effort sniff the
-            # input itself (bool, then int, then float) instead of forcing
-            # str, so a None-defaulted numeric/bool field doesn't get stuck
-            # as a string on its first set.
-            converted: Any = _parse_bool(value_str)
-            if converted is None:
+            # Convert value_str to target type
+            if old_val is None:
+                # No prior value to infer a type from -- best-effort sniff the
+                # input itself (int, then float, then bool) instead of forcing
+                # str, so a None-defaulted numeric/bool field doesn't get stuck
+                # as a string on its first set. int/float are tried before
+                # bool because "0"/"1" are valid bool aliases too, and a bare
+                # digit should become a number, not True/False.
+                converted: Any
                 try:
                     converted = int(value_str)
                 except ValueError:
                     try:
                         converted = float(value_str)
                     except ValueError:
-                        converted = value_str.strip()
-        elif isinstance(old_val, bool):
-            converted = _parse_bool(value_str)
-            if converted is None:
-                cli.console.print(f"[red]❌ Invalid boolean: '{value_str}'[/red]")
-                return
-        elif isinstance(old_val, int):
-            try:
-                converted = int(value_str)
-            except ValueError:
-                cli.console.print(f"[red]❌ Invalid integer: '{value_str}'[/red]")
-                return
-        elif isinstance(old_val, float):
-            try:
-                converted = float(value_str)
-            except ValueError:
-                cli.console.print(f"[red]❌ Invalid float: '{value_str}'[/red]")
-                return
-        else:
-            converted = value_str.strip()
+                        parsed_bool = _parse_bool(value_str)
+                        converted = value_str.strip() if parsed_bool is None else parsed_bool
+            elif isinstance(old_val, bool):
+                converted = _parse_bool(value_str)
+                if converted is None:
+                    cli.console.print(f"[red]❌ Invalid boolean: '{value_str}'[/red]")
+                    return
+            elif isinstance(old_val, int):
+                try:
+                    converted = int(value_str)
+                except ValueError:
+                    cli.console.print(f"[red]❌ Invalid integer: '{value_str}'[/red]")
+                    return
+            elif isinstance(old_val, float):
+                try:
+                    converted = float(value_str)
+                except ValueError:
+                    cli.console.print(f"[red]❌ Invalid float: '{value_str}'[/red]")
+                    return
+            else:
+                converted = value_str.strip()
 
-        setattr(target, last_part, converted)
-        cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {converted}[/green]")
+            setattr(target, last_part, converted)
+            cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {converted}[/green]")
 
     except Exception as e:
         logger.error(f"Failed to set config '{raw_key}': {e}", exc_info=True)
-        cli.console.print(f"[red]❌ Failed to set config '{raw_key}': {type(e).__name__} (see log for details)[/red]")
+        cli.console.print(f"[red]❌ Failed to set config '{raw_key}' (see log for details)[/red]")
 
 
 async def config_get_command(cli, args: List[str]):
@@ -290,7 +304,7 @@ async def config_get_command(cli, args: List[str]):
 
         # Handle special key: approval_policy
         if canonical_key == "approval_policy":
-            val = os.getenv("APPROVAL_POLICY", "ask")
+            val = getattr(cfg, "approval_policy", "ask")
             cli.console.print(f"[green]{raw_key}: {val}[/green]")
             return
 
@@ -319,4 +333,4 @@ async def config_get_command(cli, args: List[str]):
 
     except Exception as e:
         logger.error(f"Failed to get config: {e}", exc_info=True)
-        cli.console.print(f"[red]❌ Failed to get config: {e}[/red]")
+        cli.console.print("[red]❌ Failed to get config (see log for details)[/red]")

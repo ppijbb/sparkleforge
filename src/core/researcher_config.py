@@ -839,6 +839,10 @@ class ResearcherSystemConfig(BaseModel):
     overseer: OverseerConfig = Field(
         default_factory=lambda: OverseerConfig(), description="Overseer configuration"
     )
+    approval_policy: str = Field(
+        default="ask",
+        description="REPL runtime approval policy: ask, allowlist, or autopilot",
+    )
 
     def model_post_init(self, __context):
         # Ensure output directory exists

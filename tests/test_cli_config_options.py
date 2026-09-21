@@ -164,6 +164,46 @@ async def test_config_set_none_default_infers_type(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_config_set_none_default_zero_stays_int(monkeypatch):
+    """"0" is a bool alias too -- int/float must be tried before bool, or a
+    None-defaulted numeric field set to "0" becomes False instead of 0."""
+    cli = MockCLI()
+    fake_cfg = SimpleNamespace(section=SimpleNamespace(value=None))
+    monkeypatch.setattr(config_module, "_get_root_config", lambda: fake_cfg)
+
+    await config_set_command(cli, ["section.value", "0"])
+    assert fake_cfg.section.value == 0
+    assert fake_cfg.section.value is not False
+
+
+@pytest.mark.asyncio
+async def test_config_set_none_default_bool_word_still_works(monkeypatch):
+    cli = MockCLI()
+    fake_cfg = SimpleNamespace(section=SimpleNamespace(value=None))
+    monkeypatch.setattr(config_module, "_get_root_config", lambda: fake_cfg)
+
+    await config_set_command(cli, ["section.value", "true"])
+    assert fake_cfg.section.value is True
+
+
+@pytest.mark.asyncio
+async def test_config_approval_policy_roundtrips_through_config_object():
+    """Issue: APPROVAL_POLICY previously lived only in os.environ, with no
+    config-object source of truth. It must now live on the config object."""
+    cli = MockCLI()
+    await config_set_command(cli, ["approval_policy", "allowlist"])
+    assert any("allowlist" in m for m in cli.output_messages)
+
+    cfg = researcher_config.config
+    assert cfg.approval_policy == "allowlist"
+    assert os.getenv("APPROVAL_POLICY") == "allowlist"
+
+    cli.output_messages.clear()
+    await config_get_command(cli, ["approval_policy"])
+    assert any("allowlist" in m for m in cli.output_messages)
+
+
+@pytest.mark.asyncio
 async def test_config_get_dict_key_shadowing_dict_method(monkeypatch):
     """A dict key named like a dict method (e.g. "keys") must win over hasattr."""
     cli = MockCLI()
@@ -181,7 +221,9 @@ async def test_config_set_depth_alias_missing_path_guarded(monkeypatch):
     monkeypatch.setattr(config_module, "_get_root_config", lambda: fake_cfg)
 
     await config_set_command(cli, ["depth", "deep"])
-    assert any("Unknown config key" in m for m in cli.output_messages)
+    # Distinct from "Unknown config key" -- this is a missing schema
+    # structure, not a typo'd key name.
+    assert any("internal config error" in m for m in cli.output_messages)
 
 
 @pytest.mark.asyncio
