@@ -9,7 +9,7 @@ import logging
 import os
 import asyncio
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +113,12 @@ async def create_job(topic: str, user_id: Optional[str] = None) -> Optional[Dict
     if not client:
         return None
 
+    ttl_days = int(os.environ.get("FORGE_JOB_TTL_DAYS", 30))
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat()
     data = {
         "topic": topic,
         "status": "pending",
+        "expires_at": expires_at,
     }
     if user_id:
         data["user_id"] = user_id
@@ -142,7 +145,7 @@ async def update_job_status(
 
     data = {
         "status": status,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if error_message:
         data["error_message"] = error_message
