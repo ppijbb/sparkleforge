@@ -17,6 +17,12 @@ def test_extract_files_touched_pulls_backtick_paths_in_order():
     assert files == ["src/web/live_dashboard.py", "src/utils/supabase_exporter.py"]
 
 
+def test_extract_files_touched_matches_extensionless_and_dotfile_names():
+    body = "Broke `Dockerfile`, `docker/Makefile`, `.gitignore`, and `.env` too."
+    files = github_adapter._extract_files_touched("", body)
+    assert files == ["Dockerfile", "docker/Makefile", ".gitignore", ".env"]
+
+
 def test_extract_files_touched_ignores_non_path_backticks():
     files = github_adapter._extract_files_touched("`some_var` is unused", "no files here either")
     assert files == []

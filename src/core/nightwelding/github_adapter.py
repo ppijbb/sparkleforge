@@ -387,7 +387,10 @@ def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
 
 
 _FILE_PATH_RE = re.compile(
-    r"`([\w\-./]+\.(?:py|ts|tsx|js|jsx|md|yml|yaml|json|toml|cfg|ini|sh|sql|go|rs))(?::\d+(?:-\d+)?)?`"
+    r"`("
+    r"[\w\-./]*\.(?:py|ts|tsx|js|jsx|md|yml|yaml|json|toml|cfg|ini|sh|sql|go|rs|gitignore|dockerignore|env)"
+    r"|(?:[\w\-./]*/)?(?:Dockerfile|Makefile|LICENSE|Procfile)"
+    r")(?::\d+(?:-\d+)?)?`"
 )
 
 
@@ -447,6 +450,12 @@ def fetch_nightwelding_issues(
 def _file_changed_since(repo_root: Path, file_path: str, since_iso: str) -> bool:
     """True if `file_path` has commits after `since_iso` -- a "possibly
     already fixed" signal for a human to verify, never an auto-close trigger.
+
+    Reads `repo_root`'s local git history as-is (no fetch): the CLI/CI
+    caller is expected to already be running from an up-to-date checkout of
+    this repo, same assumption `push_branch()` above makes of `origin/base`.
+    A stale/shallow checkout can under-report "possibly fixed", which only
+    means a human gets fewer such hints -- it can't cause a false positive.
     """
     if not (repo_root / file_path).exists():
         return False
@@ -459,7 +468,14 @@ def _file_changed_since(repo_root: Path, file_path: str, since_iso: str) -> bool
 
 
 def build_digest(issues: List[NightweldingIssue], repo_root: Path) -> NightweldingDigest:
-    """Group Nightwelding-origin issues by root file/module (issue #1545)."""
+    """Group Nightwelding-origin issues by root file/module (issue #1545).
+
+    Groups by the first file mentioned, a deliberate v1 heuristic (per the
+    issue's own proposal: "Groups ... by root file/module touched") --
+    the first-mentioned file isn't guaranteed to be the true root cause,
+    but a fuller root-cause ranking needs the review-verification layer
+    tracked separately (Anvil Phase Delta), not this digest.
+    """
     groups_by_file: Dict[str, DigestGroup] = {}
     for issue in issues:
         root_file = issue.files_touched[0] if issue.files_touched else "(no file identified)"
