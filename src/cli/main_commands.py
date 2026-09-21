@@ -1128,9 +1128,29 @@ async def handle_nightwelding_command(args):
             logger.error(f"❌ Failed to list Nightwelding queue: {e}")
             return 1
 
+    elif args.nightwelding_command == "digest":
+        from src.core.nightwelding.runner import run_nightwelding_digest
+
+        try:
+            digest = run_nightwelding_digest(
+                label=args.label,
+                limit=args.limit,
+                top_n=args.top_n,
+                post_to_issue=args.post_to_issue,
+            )
+            if args.post_to_issue is not None:
+                logger.info(f"🌙 Nightwelding digest posted to issue #{args.post_to_issue}.")
+            else:
+                from src.core.nightwelding.github_adapter import render_digest_markdown
+
+                print(render_digest_markdown(digest, top_n=args.top_n))
+        except Exception as e:
+            logger.error(f"❌ Nightwelding digest failed: {e}")
+            return 1
+
     else:
         logger.error(f"❌ Unknown nightwelding command: {args.nightwelding_command}")
-        logger.info("Available commands: run, status, list")
+        logger.info("Available commands: run, status, list, digest")
         return 1
 
     return 0

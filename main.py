@@ -553,6 +553,19 @@ EXAMPLES:
     # nightwelding list
     nightwelding_list_parser = nightwelding_subparsers.add_parser("list", help="List Nightwelding queue history")
 
+    # nightwelding digest
+    nightwelding_digest_parser = nightwelding_subparsers.add_parser(
+        "digest", help="Group open Nightwelding-origin issues by root file and flag likely-fixed ones"
+    )
+    nightwelding_digest_parser.add_argument(
+        "--label", default="nightwelding-queue", help="Label identifying Nightwelding-origin issues (default: nightwelding-queue)"
+    )
+    nightwelding_digest_parser.add_argument("--limit", type=int, default=100, help="Max open issues to scan")
+    nightwelding_digest_parser.add_argument("--top-n", type=int, default=10, help="Number of top recurring file groups to surface")
+    nightwelding_digest_parser.add_argument(
+        "--post-to-issue", type=int, default=None, help="Post the digest as a comment on this issue number instead of printing it"
+    )
+
     # report parser
     report_parser = subparsers.add_parser(
         "report",
