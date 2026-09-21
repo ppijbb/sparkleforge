@@ -197,7 +197,11 @@ def _render_cost_ticker(cost_metrics: Dict[str, Any]) -> None:
         _format_usd(cost_metrics["total_frontier_equivalent"]),
         help=f"What the same token usage would cost on {cost_metrics['frontier_model']}.",
     )
-    col_c.metric("Savings", _format_percent(cost_metrics["savings_pct"]))
+    savings_pct = cost_metrics["savings_pct"]
+    # savings_pct is None whenever total_frontier_equivalent is 0 (e.g. logged
+    # calls with no token_usage) even though request_count > 0 -- guard
+    # separately from the request_count==0 check above.
+    col_c.metric("Savings", _format_percent(savings_pct) if savings_pct is not None else "No data yet")
 
 
 def _format_percent(value: float) -> str:
