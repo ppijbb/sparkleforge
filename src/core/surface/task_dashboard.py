@@ -191,6 +191,7 @@ class TaskDashboard:
     def snapshot(self) -> Dict[str, Any]:
         """Return a serializable snapshot of all tasks for surface consumers.
 
+        Includes tasks and edges (if tracked), ensuring both endpoints of every edge exist.
         CLI (`session stats`/`session tasks`) and web UI render the same data
         via this single source of truth (Surface integration, #570).
         """
@@ -198,6 +199,7 @@ class TaskDashboard:
             tasks_objs = list(self._tasks.values())
             tasks = [t.to_dict() for t in tasks_objs]
             
+            edges = getattr(self, "_edges", [])
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
             
             # Structured trace visualization for complex multi-agent runs
@@ -211,7 +213,7 @@ class TaskDashboard:
                 counts[t.status.value] += 1
             counts["total"] = len(tasks_objs)
             
-        return {"tasks": tasks, "summary": counts}
+        return {"tasks": tasks, "edges": edges, "summary": counts}
 
     def to_session_view(self, session_id: str) -> Dict[str, Any]:
         """Return tasks + summary scoped to a session id.
@@ -232,7 +234,13 @@ class TaskDashboard:
                 counts[t.status.value] += 1
             counts["total"] = len(tasks_objs)
             
-        return {"tasks": tasks, "summary": counts}
+            in_scope_ids = {t.task_id for t in tasks_objs}
+            in_scope_edges = [
+                e for e in getattr(self, "_edges", [])
+                if e.get("from") in in_scope_ids and e.get("to") in in_scope_ids
+            ]
+            
+        return {"tasks": tasks, "edges": in_scope_edges, "summary": counts}
 
     def reset(self) -> None:
         with self._lock_data:
