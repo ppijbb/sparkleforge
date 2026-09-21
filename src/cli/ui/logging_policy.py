@@ -29,6 +29,7 @@ QUIET_LOGGER_NAMES = (
     "src.core.session_control",
     "src.core.context_loader",
     "src.core.scheduler",
+    "src.core.cli_agents.cli_agent_manager",
     "streamlit",
     "streamlit.runtime",
     "local_researcher",
