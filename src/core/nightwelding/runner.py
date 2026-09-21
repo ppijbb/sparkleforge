@@ -266,6 +266,8 @@ def run_nightwelding_digest(
 
     GitHub-only (`gh issue list` has no LocalGitAdapter equivalent yet).
     """
+    limit = max(1, limit)
+    top_n = max(1, top_n)
     active_adapter = adapter or GitHubAdapter(repo=repo, repo_root=repo_root or Path.cwd())
     digest = active_adapter.generate_digest(label=label, limit=limit)
     if post_to_issue is not None:

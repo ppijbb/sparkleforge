@@ -387,7 +387,7 @@ def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
 
 
 _FILE_PATH_RE = re.compile(
-    r"`([\w\-./]+\.(?:py|ts|tsx|js|jsx|md|yml|yaml|json|toml|cfg|ini))(?::\d+(?:-\d+)?)?`"
+    r"`([\w\-./]+\.(?:py|ts|tsx|js|jsx|md|yml|yaml|json|toml|cfg|ini|sh|sql|go|rs))(?::\d+(?:-\d+)?)?`"
 )
 
 
@@ -410,7 +410,11 @@ def _extract_files_touched(title: str, body: str) -> List[str]:
 def fetch_nightwelding_issues(
     repo: str, label: str = NIGHTWELDING_QUEUE_LABEL[0], limit: int = 100
 ) -> List[NightweldingIssue]:
-    """Fetch open issues carrying `label`, enriched with touched file paths."""
+    """Fetch open issues carrying `label`, enriched with touched file paths.
+
+    `_run()` defaults to `check=True` (not overridden here), so a failed
+    `gh` call raises `GitHubAdapterError` instead of silently yielding [].
+    """
     proc = _run(
         [
             "gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit),

@@ -104,7 +104,13 @@ async def nightwelding_status_command(cli, args: List[str]):
 
 
 async def nightwelding_digest_command(cli, args: List[str]):
-    """Usage: nightwelding digest [--label <label>] [--limit N] [--top-n N] [--post-to-issue N]"""
+    """Usage: nightwelding digest [--label <label>] [--limit N] [--top-n N] [--post-to-issue N]
+
+    Manual `--flag value` parsing here (not argparse) matches every other
+    command in this module (run/status/list) and its module docstring's
+    stated reason: the REPL/CLI split reports through cli.console instead
+    of logger so it isn't silent by default, not a duplicate to collapse.
+    """
     from src.core.nightwelding.github_adapter import render_digest_markdown
     from src.core.nightwelding.runner import run_nightwelding_digest
 
