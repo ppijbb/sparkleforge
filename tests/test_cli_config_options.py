@@ -215,6 +215,19 @@ async def test_config_get_dict_key_shadowing_dict_method(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_config_set_supports_dict_traversal(monkeypatch):
+    """config_set_command previously had no dict branch at all, so it could
+    not update a key living inside a plain dict -- only config_get_command
+    could read one. Both must support the same shape."""
+    cli = MockCLI()
+    fake_cfg = SimpleNamespace(section={"nested": 1})
+    monkeypatch.setattr(config_module, "_get_root_config", lambda: fake_cfg)
+
+    await config_set_command(cli, ["section.nested", "5"])
+    assert fake_cfg.section["nested"] == 5
+
+
+@pytest.mark.asyncio
 async def test_config_set_depth_alias_missing_path_guarded(monkeypatch):
     cli = MockCLI()
     fake_cfg = SimpleNamespace()  # no `research` attribute at all

@@ -22,7 +22,7 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List
 
-from src.cli.commands.config import _parse_bool
+from src.cli.commands.config import CONFIG_MUTATION_LOCK, _parse_bool
 from src.core.autonomous_research_system import (
     WebAppManager,
     project_root,
@@ -125,7 +125,8 @@ async def handle_run_command(args, config):
                 b_val = _parse_bool(str(autopilot_override))
                 if b_val is None:
                     logger.warning(
-                        "Invalid --autopilot value '%s'; ignoring override.",
+                        "Invalid --autopilot value '%s' (expected true/false/yes/no/1/0/on/off); "
+                        "ignoring override.",
                         autopilot_override,
                     )
                     b_val = None
@@ -192,7 +193,11 @@ async def handle_run_command(args, config):
         if not network_ok:
             logger.warning(network_message)
 
-        _apply_runtime_overrides()
+        # Shares config.py's lock with `config set` -- both mutate the same
+        # os.environ keys and config-object attributes, and only one of the
+        # two paths being guarded still leaves a race between them.
+        async with CONFIG_MUTATION_LOCK:
+            _apply_runtime_overrides()
 
         from src.cli.commands.run import run_command as _run_command
 

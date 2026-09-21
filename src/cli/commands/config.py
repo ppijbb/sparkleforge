@@ -1,19 +1,24 @@
 """설정 관리 명령어 (Anvil Phase K / REPL 런타임 설정)."""
 
+import asyncio
 import logging
 import os
 import re
-import threading
 from typing import Any, Dict, List, Optional
 
 from rich.panel import Panel
 
+from src.core import researcher_config
+from src.core.autonomous_orchestrator import _autopilot_mode_enabled
+
 logger = logging.getLogger(__name__)
 
 # Guards the read-modify-write os.environ/config mutations below against
-# concurrent `config set` invocations (REPL command + a background task
-# calling this at the same time).
-_CONFIG_MUTATION_LOCK = threading.Lock()
+# concurrent `config set` invocations -- an asyncio.Lock (not threading.Lock)
+# because every caller (REPL command, handle_run_command's runtime overrides)
+# is a coroutine on the same event loop; this serializes those coroutines
+# without ever blocking the loop itself.
+CONFIG_MUTATION_LOCK = asyncio.Lock()
 
 # Keys that must not be printed or set directly (API keys, tokens, passwords)
 _SECRET_CONFIG_KEYS = frozenset(
@@ -66,8 +71,6 @@ def _redact_secret(key: str, value: Any) -> Any:
 
 def _get_root_config():
     """Ensure and return the global ResearcherSystemConfig instance."""
-    from src.core import researcher_config
-
     if researcher_config.config is None:
         researcher_config.load_config_from_env()
     return researcher_config.config
@@ -87,7 +90,6 @@ async def config_show_command(cli, args: List[str]):
     """설정 표시."""
     try:
         cfg = _get_root_config()
-        from src.core.autonomous_orchestrator import _autopilot_mode_enabled
 
         llm_provider = getattr(cfg.llm, "provider", "N/A") if hasattr(cfg, "llm") else "N/A"
         llm_model = getattr(cfg.llm, "primary_model", "N/A") if hasattr(cfg, "llm") else "N/A"
@@ -141,7 +143,7 @@ async def config_set_command(cli, args: List[str]):
     canonical_key = _CONFIG_ALIASES.get(raw_key.lower(), raw_key)
 
     try:
-        with _CONFIG_MUTATION_LOCK:
+        async with CONFIG_MUTATION_LOCK:
             cfg = _get_root_config()
 
             # Handle special key: autopilot_mode
@@ -149,10 +151,10 @@ async def config_set_command(cli, args: List[str]):
                 parsed_bool = _parse_bool(value_str)
                 if parsed_bool is None:
                     cli.console.print(
-                        f"[red]❌ Invalid boolean for autopilot_mode: '{value_str}'[/red]"
+                        f"[red]❌ Invalid boolean for autopilot_mode: '{value_str}'. "
+                        "Expected true/false/yes/no/1/0/on/off[/red]"
                     )
                     return
-                from src.core.autonomous_orchestrator import _autopilot_mode_enabled
                 old_val = _autopilot_mode_enabled()
                 os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if parsed_bool else "false"
                 cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {parsed_bool}[/green]")
@@ -222,21 +224,36 @@ async def config_set_command(cli, args: List[str]):
                 cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]")
                 return
 
-            # Dotted path traversal on ResearcherSystemConfig
+            # Dotted path traversal on ResearcherSystemConfig -- mirrors
+            # config_get_command's dict-before-hasattr precedence so a dict
+            # branch in the config tree can be traversed the same way by
+            # both `config get` and `config set`.
             parts = canonical_key.split(".")
             target = cfg
             for part in parts[:-1]:
-                if not hasattr(target, part):
+                if isinstance(target, dict):
+                    if part not in target:
+                        cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
+                        return
+                    target = target[part]
+                elif hasattr(target, part):
+                    target = getattr(target, part)
+                else:
                     cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
                     return
-                target = getattr(target, part)
 
             last_part = parts[-1]
-            if not hasattr(target, last_part):
-                cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
-                return
-
-            old_val = getattr(target, last_part)
+            target_is_dict = isinstance(target, dict)
+            if target_is_dict:
+                if last_part not in target:
+                    cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
+                    return
+                old_val = target[last_part]
+            else:
+                if not hasattr(target, last_part):
+                    cli.console.print(f"[red]❌ Unknown config key: '{raw_key}'[/red]")
+                    return
+                old_val = getattr(target, last_part)
 
             # Convert value_str to target type
             if old_val is None:
@@ -275,7 +292,10 @@ async def config_set_command(cli, args: List[str]):
             else:
                 converted = value_str.strip()
 
-            setattr(target, last_part, converted)
+            if target_is_dict:
+                target[last_part] = converted
+            else:
+                setattr(target, last_part, converted)
             cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {converted}[/green]")
 
     except Exception as e:
@@ -297,7 +317,6 @@ async def config_get_command(cli, args: List[str]):
 
         # Handle special key: autopilot_mode
         if canonical_key == "autopilot_mode":
-            from src.core.autonomous_orchestrator import _autopilot_mode_enabled
             val = _autopilot_mode_enabled()
             cli.console.print(f"[green]{raw_key}: {val}[/green]")
             return
