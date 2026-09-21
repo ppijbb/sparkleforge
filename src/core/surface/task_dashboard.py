@@ -29,6 +29,8 @@ class TaskRecord:
     name: str
     description: str
     agent_id: str
+    parent_task_id: Optional[str] = None
+    children_task_ids: List[str] = field(default_factory=list)
     status: TaskStatus = TaskStatus.QUEUED
     progress: float = 0.0       # 0.0 – 1.0
     result: Optional[Any] = None
@@ -93,17 +95,33 @@ class TaskDashboard:
         description: str,
         agent_id: str,
         metadata: Optional[Dict[str, Any]] = None,
+        parent_task_id: Optional[str] = None,
     ) -> TaskRecord:
-        """Submit a new task to the queue."""
+        """Submit a new task to the queue.
+
+        ``parent_task_id`` records a delegator/delegate edge (e.g. an
+        orchestrator agent handing a sub-task to a specialized agent), which
+        ``snapshot()``/``to_session_view()`` expose as a DAG for live
+        multi-agent collaboration views.
+        """
         task = TaskRecord(
             task_id=str(uuid.uuid4()),
             name=name,
             description=description,
             agent_id=agent_id,
+            parent_task_id=parent_task_id,
             metadata=metadata or {},
         )
         with self._lock_data:
             self._tasks[task.task_id] = task
+            if parent_task_id and parent_task_id in self._tasks:
+                self._tasks[parent_task_id].children_task_ids.append(task.task_id)
+            elif parent_task_id:
+                logger.debug(
+                    "Task %s submitted with parent_task_id=%s, but no such parent is "
+                    "registered -- it will render as a root in render_tree().",
+                    task.task_id[:8], parent_task_id,
+                )
         self._notify(task)
         logger.info("Task submitted: %s (%s)", name, task.task_id[:8])
         return task
@@ -188,6 +206,15 @@ class TaskDashboard:
         counts["total"] = len(tasks)
         return counts
 
+    @staticmethod
+    def _delegation_edges(tasks_objs: List[TaskRecord]) -> List[Dict[str, str]]:
+        """Build delegator -> delegate edges for live multi-agent DAG views."""
+        return [
+            {"from": t.task_id, "to": child_id, "type": "delegates_to"}
+            for t in tasks_objs
+            for child_id in t.children_task_ids
+        ]
+
     def snapshot(self) -> Dict[str, Any]:
         """Return a serializable snapshot of all tasks for surface consumers.
 
@@ -197,9 +224,10 @@ class TaskDashboard:
         with self._lock_data:
             tasks_objs = list(self._tasks.values())
             tasks = [t.to_dict() for t in tasks_objs]
-            
+            edges = self._delegation_edges(tasks_objs)
+
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
-            
+
             # Structured trace visualization for complex multi-agent runs
             for t in tasks_objs:
                 if "trace" in t.metadata:
@@ -210,8 +238,8 @@ class TaskDashboard:
             for t in tasks_objs:
                 counts[t.status.value] += 1
             counts["total"] = len(tasks_objs)
-            
-        return {"tasks": tasks, "summary": counts}
+
+        return {"tasks": tasks, "summary": counts, "edges": edges}
 
     def to_session_view(self, session_id: str) -> Dict[str, Any]:
         """Return tasks + summary scoped to a session id.
@@ -226,13 +254,53 @@ class TaskDashboard:
                 if t.metadata.get("session_id") == session_id
             ]
             tasks = [t.to_dict() for t in tasks_objs]
-            
+            in_scope_ids = {t.task_id for t in tasks_objs}
+            # _delegation_edges(tasks_objs) only ever emits an edge whose
+            # "from" is one of tasks_objs (it iterates `for t in tasks_objs`),
+            # so "from" is always in in_scope_ids already -- only "to" (a
+            # child possibly belonging to a different session) needs the
+            # scope check, to avoid referencing a task not in `tasks` above.
+            edges = [
+                edge
+                for edge in self._delegation_edges(tasks_objs)
+                if edge["to"] in in_scope_ids
+            ]
+
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
             for t in tasks_objs:
                 counts[t.status.value] += 1
             counts["total"] = len(tasks_objs)
-            
-        return {"tasks": tasks, "summary": counts}
+
+        return {"tasks": tasks, "summary": counts, "edges": edges}
+
+    def render_tree(self) -> str:
+        """Render the current delegation tree as indented ASCII text.
+
+        Read-only v1 view of live multi-agent collaboration: which agent is
+        delegating to/blocked on which, without a graphing dependency.
+        """
+        with self._lock_data:
+            tasks_objs = list(self._tasks.values())
+            by_id = {t.task_id: t for t in tasks_objs}
+            roots = [t for t in tasks_objs if not t.parent_task_id or t.parent_task_id not in by_id]
+
+            lines: List[str] = []
+
+            def _walk(task: TaskRecord, depth: int) -> None:
+                lines.append(
+                    f"{'  ' * depth}- [{task.status.value}] {task.name} ({task.agent_id})"
+                )
+                for child_id in task.children_task_ids:
+                    child = by_id.get(child_id)
+                    if child is not None:
+                        _walk(child, depth + 1)
+
+            # created_at is a required TaskRecord field (default_factory=time.time,
+            # defined above in this same file), always a float -- never missing.
+            for root in sorted(roots, key=lambda t: t.created_at):
+                _walk(root, 0)
+
+        return "\n".join(lines) if lines else "(no tasks)"
 
     def reset(self) -> None:
         with self._lock_data:
