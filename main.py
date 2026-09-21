@@ -854,6 +854,15 @@ EXAMPLES:
         console_handler.setLevel(logging.DEBUG)
     else:
         console_handler.setLevel(logging.INFO)
+        # Applied unconditionally here (not just in the is_repl_mode branch
+        # below) because one-shot standalone commands (health/cli/tools/...)
+        # dispatch and return before that branch ever runs -- they used to
+        # get zero noise suppression, leaking every internal module's INFO
+        # logging (agent-class registration, MCP auto-discovery chatter,
+        # etc.) straight to stdout alongside the command's actual output.
+        from src.cli.ui.logging_policy import apply_repl_quiet_mode
+
+        apply_repl_quiet_mode()
 
     # 서브커맨드 처리 (반환 코드는 프로세스 종료까지 전달)
     cli_rc: int | None = None
