@@ -2,16 +2,19 @@
 
 POST /tasks submits a prompt and runs it in-process via src.sdk.run();
 GET /tasks/{job_id}/status and /tasks/{job_id}/report poll it. These are
-tracked in an in-process registry, separate from the Supabase-backed
-/jobs and /reports routes below.
+tracked in src.sdk's job registry (in-process memory, plus a durable local
+JSON file -- see src/sdk.py's module docstring, #1654), separate from the
+Supabase-backed /jobs and /reports routes below.
 
 Lets a client that isn't at the PC (mobile, a different machine) check on a
 research job and read its finished report, without needing direct Supabase
-credentials. Backed by the same Supabase tables the public telemetry
-dashboard (``src/web/live_dashboard.py``) already reads from -- this only
-covers deployments with Supabase configured; it does not cover purely local,
-same-machine runs (``src/core/session_control.py``'s in-process session
-state, or ``src/storage/hybrid_storage.py``'s local file store).
+credentials. /jobs and /reports are backed by the same Supabase tables the
+public telemetry dashboard (``src/web/live_dashboard.py``) already reads
+from, so they only cover deployments with Supabase configured. /tasks works
+either way: with Supabase configured it also mirrors status there, and
+without it, it durably falls back to a local file so status/report survive
+a restart of this process -- see #1654. Run with a single worker (uvicorn's
+default): the local file store is not safe for multiple concurrent writers.
 
 Requires a bearer token: set STATUS_API_TOKEN and send
 ``Authorization: Bearer <token>`` on every request. Without the env var set,

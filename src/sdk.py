@@ -21,13 +21,25 @@ Also provides asynchronous background job submission and status polling:
     job_id = await submit_job("Latest AI trends in 2025")
     status = await get_job_status(job_id)
     report = await get_report(job_id)
+
+Job records also persist to a local JSON file (#1654) so status/report survive
+a process restart on purely local (no-Supabase) deployments -- e.g. status_api.py
+being restarted. This file-backed store is single-process/single-worker only:
+concurrent writers (multiple uvicorn workers) racing on the same file can lose
+an update, so run status_api.py with a single worker (uvicorn's default) for
+local mode. Hosted/Supabase-backed deployments are unaffected -- Supabase
+remains the source of truth there.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+import os
 from typing import Any, Dict, Optional
 import uuid
 
@@ -42,6 +54,53 @@ _config_load_lock = asyncio.Lock()
 # and shares state with status_api.
 _jobs: Dict[str, Dict[str, Any]] = {}
 _job_tasks: Dict[str, asyncio.Task[Any]] = {}
+
+# #1654: durable local fallback, one tier below _jobs (this process's memory)
+# and above Supabase -- see the module docstring's single-worker note.
+_JOB_STORE_PATH = Path(
+    os.getenv("SPARKLEFORGE_SDK_JOB_STORE", str(Path.home() / ".sparkleforge" / "sdk_jobs.json"))
+)
+_job_store_file_lock = threading.Lock()
+
+
+def _load_job_store() -> Dict[str, Dict[str, Any]]:
+    """Best-effort read of the durable job-record file.
+
+    Fails open (returns {}) on any error -- a corrupt/missing store must
+    never break in-process job tracking, only lose the cross-restart fallback.
+    """
+    with _job_store_file_lock:
+        try:
+            if not _JOB_STORE_PATH.exists():
+                return {}
+            return json.loads(_JOB_STORE_PATH.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.debug(f"Failed to read SDK job store at {_JOB_STORE_PATH}: {e}")
+            return {}
+
+
+def _persist_job(job_id: str) -> None:
+    """Durably record one job's current state, so it survives a restart.
+
+    Best-effort: never raises. Read-modify-write on a single JSON file --
+    safe for one process, not for concurrent writers (see module docstring).
+    """
+    job = _jobs.get(job_id)
+    if job is None:
+        return
+    with _job_store_file_lock:
+        try:
+            _JOB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            store: Dict[str, Any] = {}
+            if _JOB_STORE_PATH.exists():
+                try:
+                    store = json.loads(_JOB_STORE_PATH.read_text(encoding="utf-8"))
+                except Exception:
+                    store = {}
+            store[job_id] = job
+            _JOB_STORE_PATH.write_text(json.dumps(store), encoding="utf-8")
+        except Exception as e:
+            logger.debug(f"Failed to persist job {job_id} to {_JOB_STORE_PATH}: {e}")
 
 
 @dataclass
@@ -124,6 +183,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
     )
 
     _jobs[job_id]["status"] = "running"
+    _persist_job(job_id)
     if get_supabase_client() is not None:
         try:
             await update_job_status(job_id, "running")
@@ -134,6 +194,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
         result = await run(topic)
         _jobs[job_id]["status"] = "completed"
         _jobs[job_id]["result"] = result
+        _persist_job(job_id)
 
         if get_supabase_client() is not None:
             try:
@@ -151,6 +212,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
     except Exception as e:
         _jobs[job_id]["status"] = "failed"
         _jobs[job_id]["error"] = str(e)
+        _persist_job(job_id)
 
         if get_supabase_client() is not None:
             try:
@@ -162,6 +224,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
     finally:
         completed_at = datetime.now(timezone.utc).isoformat()
         _jobs[job_id]["completed_at"] = completed_at
+        _persist_job(job_id)
         _job_tasks.pop(job_id, None)
 
 
@@ -191,6 +254,7 @@ async def submit_job(topic: str, *, user_id: Optional[str] = None, **kwargs: Any
         "submitted_at": now,
         "user_id": user_id,
     }
+    _persist_job(job_id)
 
     task = asyncio.create_task(_execute_job(job_id, topic, user_id=user_id))
     _job_tasks[job_id] = task
@@ -211,6 +275,29 @@ async def get_job_status(job_id: str) -> JobStatus:
             error=job.get("error"),
             result=job.get("result"),
             user_id=job.get("user_id"),
+        )
+
+    persisted = _load_job_store().get(job_id)
+    if persisted is not None:
+        status_val = persisted.get("status", "pending")
+        error_val = persisted.get("error")
+        # This process's _job_tasks was rebuilt empty on startup, so a
+        # persisted "pending"/"running" record here means the job was
+        # in-flight when a previous process died -- it will never resume,
+        # so say so rather than reporting a stale "running" forever.
+        if status_val in ("pending", "running") and job_id not in _job_tasks:
+            status_val = "failed"
+            error_val = "Job was in progress when the process restarted and cannot resume."
+        return JobStatus(
+            job_id=job_id,
+            status=status_val,
+            topic=persisted.get("topic"),
+            prompt=persisted.get("prompt"),
+            submitted_at=persisted.get("submitted_at"),
+            completed_at=persisted.get("completed_at"),
+            error=error_val,
+            result=persisted.get("result"),
+            user_id=persisted.get("user_id"),
         )
 
     from src.utils.supabase_exporter import (
@@ -248,6 +335,10 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
     job = _jobs.get(job_id)
     if job is not None and job.get("result") is not None:
         return job.get("result")
+
+    persisted = _load_job_store().get(job_id)
+    if persisted is not None and persisted.get("result") is not None:
+        return persisted.get("result")
 
     from src.utils.supabase_exporter import (
         SupabaseQueryError,

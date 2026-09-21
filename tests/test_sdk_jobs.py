@@ -9,7 +9,10 @@ from src.sdk import JobStatus, get_job_status, get_report, submit_job
 
 
 @pytest.fixture(autouse=True)
-def _clear_jobs():
+def _clear_jobs(tmp_path, monkeypatch):
+    # #1654: isolate the durable job-store file per test -- never touch the
+    # real ~/.sparkleforge/sdk_jobs.json, and never leak state between tests.
+    monkeypatch.setattr(sdk, "_JOB_STORE_PATH", tmp_path / "sdk_jobs.json")
     sdk._jobs.clear()
     sdk._job_tasks.clear()
     yield
@@ -150,6 +153,75 @@ async def test_submit_job_with_supabase_integration(monkeypatch):
     statuses = [u[1] for u in updates]
     assert "running" in statuses
     assert "completed" in statuses
+
+
+@pytest.mark.asyncio
+async def test_completed_job_survives_simulated_process_restart(monkeypatch):
+    async def fake_run(prompt: str) -> Dict[str, Any]:
+        return {"report": f"findings for {prompt}"}
+
+    monkeypatch.setattr(sdk, "run", fake_run)
+
+    job_id = await submit_job("durable topic")
+    for _ in range(50):
+        status = await get_job_status(job_id)
+        if status.status == "completed":
+            break
+        await asyncio.sleep(0.01)
+    assert status.status == "completed"
+
+    # Simulate a process restart: a fresh process has empty _jobs/_job_tasks,
+    # but the same job-store file on disk.
+    sdk._jobs.clear()
+    sdk._job_tasks.clear()
+
+    status_after_restart = await get_job_status(job_id)
+    assert status_after_restart.status == "completed"
+    assert status_after_restart.topic == "durable topic"
+
+    report_after_restart = await get_report(job_id)
+    assert report_after_restart == {"report": "findings for durable topic"}
+
+
+@pytest.mark.asyncio
+async def test_orphaned_running_job_reports_failed_after_restart(monkeypatch):
+    # Never resolves on its own -- simulates a job whose task died with the process.
+    stuck = asyncio.Event()
+
+    async def hanging_run(prompt: str) -> Dict[str, Any]:
+        await stuck.wait()
+        return {}
+
+    monkeypatch.setattr(sdk, "run", hanging_run)
+
+    job_id = await submit_job("orphaned topic")
+    for _ in range(50):
+        status = await get_job_status(job_id)
+        if status.status == "running":
+            break
+        await asyncio.sleep(0.01)
+    assert status.status == "running"
+
+    # Simulate a process restart while the job was still in flight.
+    sdk._job_tasks[job_id].cancel()
+    sdk._jobs.clear()
+    sdk._job_tasks.clear()
+
+    status_after_restart = await get_job_status(job_id)
+    assert status_after_restart.status == "failed"
+    assert "restarted" in (status_after_restart.error or "")
+
+
+def test_persist_job_is_a_noop_for_unknown_job_id():
+    sdk._persist_job("no-such-job")  # must not raise, and must not create the file
+    assert not sdk._JOB_STORE_PATH.exists()
+
+
+def test_load_job_store_fails_open_on_corrupt_file():
+    sdk._JOB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    sdk._JOB_STORE_PATH.write_text("not valid json", encoding="utf-8")
+
+    assert sdk._load_job_store() == {}
 
 
 @pytest.mark.asyncio
