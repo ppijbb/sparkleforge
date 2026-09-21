@@ -157,6 +157,23 @@ async def update_job_status(
         return False
 
 
+# Reference frontier-model pricing (USD per 1M tokens) used only to compute
+# an informational "what this would've cost on a frontier model" comparison.
+# Not used for billing or model routing.
+FRONTIER_PRICING: Dict[str, Dict[str, float]] = {
+    "claude-opus-4": {"input": 15.00, "output": 75.00},
+}
+DEFAULT_FRONTIER_MODEL = "claude-opus-4"
+
+
+def frontier_equivalent_cost_usd(
+    prompt_tokens: int, completion_tokens: int, frontier_model: str = DEFAULT_FRONTIER_MODEL
+) -> float:
+    """Price a given token count at reference frontier-model rates."""
+    rates = FRONTIER_PRICING.get(frontier_model, FRONTIER_PRICING[DEFAULT_FRONTIER_MODEL])
+    return (prompt_tokens / 1_000_000) * rates["input"] + (completion_tokens / 1_000_000) * rates["output"]
+
+
 async def update_session_tokens_and_cost(session_id: str) -> bool:
     """Aggregate tokens and cost from history events for a session and update session metadata."""
     client = get_supabase_client()

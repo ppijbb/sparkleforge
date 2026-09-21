@@ -3,7 +3,7 @@
 import asyncio
 import time
 
-from src.utils.supabase_exporter import SupabaseExporter
+from src.utils.supabase_exporter import SupabaseExporter, frontier_equivalent_cost_usd
 
 
 class _FakeExecute:
@@ -44,3 +44,12 @@ def test_publish_report_does_not_block_event_loop():
         assert elapsed < 1.0
 
     asyncio.run(main())
+
+
+def test_frontier_equivalent_cost_usd_prices_input_and_output_separately():
+    cost = frontier_equivalent_cost_usd(prompt_tokens=1_000_000, completion_tokens=1_000_000)
+    assert cost == 15.00 + 75.00
+
+
+def test_frontier_equivalent_cost_usd_zero_tokens_is_zero():
+    assert frontier_equivalent_cost_usd(0, 0) == 0.0
