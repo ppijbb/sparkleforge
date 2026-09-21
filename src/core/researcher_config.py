@@ -16,7 +16,7 @@ def get_default_session_quota():
     from src.core.session_control import SessionQuota
 
     return SessionQuota.from_env()
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -839,9 +839,12 @@ class ResearcherSystemConfig(BaseModel):
     overseer: OverseerConfig = Field(
         default_factory=lambda: OverseerConfig(), description="Overseer configuration"
     )
-    approval_policy: str = Field(
+    approval_policy: Literal["ask", "allowlist", "autopilot"] = Field(
         default="ask",
-        description="REPL runtime approval policy: ask, allowlist, or autopilot",
+        description="REPL runtime approval policy: ask, allowlist, or autopilot. "
+        "Enforced at the model level (validate_assignment=True) so this can't "
+        "be set to an invalid value by any path other than config_set_command's "
+        "own pre-check.",
     )
     autopilot_mode: bool = Field(
         default=True,

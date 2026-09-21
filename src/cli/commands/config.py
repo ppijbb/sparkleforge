@@ -133,7 +133,7 @@ async def config_show_command(cli, args: List[str]):
 
 
 async def config_set_command(cli, args: List[str]):
-    """설정 변경 (현재 세션 및 런타임 환경에 적용)."""
+    """설정 변경 (프로세스 전역 config 객체와 os.environ을 직접 수정 -- 세션 범위 아님)."""
     if len(args) < 2:
         cli.console.print("[red]Usage: config set <key> <value>[/red]")
         return
@@ -215,10 +215,11 @@ async def config_set_command(cli, args: List[str]):
                     return
                 cfg.llm.primary_model = new_model
                 os.environ["LLM_MODEL"] = new_model
-                # Only cascade a role (config attribute AND its env var together)
-                # when the role still mirrors the old primary -- a role the user
-                # pinned to something else stays pinned in both places instead of
-                # being silently clobbered or having an env var sprout under it.
+                # Only cascade a role when BOTH its config attribute and its
+                # env var still mirror the old primary -- checking only the
+                # config side let a role whose env var was pinned by hand
+                # (export REASONING_MODEL=...) get clobbered anyway, since
+                # the cfg attribute alone still matched.
                 for role, env_k in (
                     ("planning_model", "PLANNING_MODEL"),
                     ("reasoning_model", "REASONING_MODEL"),
@@ -226,7 +227,9 @@ async def config_set_command(cli, args: List[str]):
                     ("generation_model", "GENERATION_MODEL"),
                     ("compression_model", "COMPRESSION_MODEL"),
                 ):
-                    if hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val:
+                    cfg_matches = hasattr(cfg.llm, role) and getattr(cfg.llm, role) == old_val
+                    env_matches = os.getenv(env_k, old_val) == old_val
+                    if cfg_matches and env_matches:
                         setattr(cfg.llm, role, new_model)
                         os.environ[env_k] = new_model
                 cli.console.print(f"[green]✓ {raw_key}: {old_val} -> {new_model}[/green]")

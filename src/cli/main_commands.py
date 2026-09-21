@@ -132,6 +132,8 @@ async def handle_run_command(args, config):
                     b_val = None
             if b_val is not None:
                 os.environ["SPARKLEFORGE_AUTOPILOT_MODE"] = "true" if b_val else "false"
+                if hasattr(config, "autopilot_mode"):
+                    config.autopilot_mode = b_val
 
     def _sanitize_embedded_cli_flags(query: str) -> tuple[str, bool]:
         """Query 문자열에 잘못 포함된 CLI 플래그를 제거.

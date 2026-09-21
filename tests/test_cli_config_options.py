@@ -170,6 +170,26 @@ async def test_config_set_model_alias_preserves_pinned_role():
 
 
 @pytest.mark.asyncio
+async def test_config_set_model_alias_preserves_env_pinned_role(monkeypatch):
+    """A role whose config attribute still mirrors the old primary but whose
+    env var was hand-pinned (export REASONING_MODEL=...) must not cascade
+    either -- checking only the config side let this slip through before."""
+    cli = MockCLI()
+    cfg = researcher_config.config
+    old_primary = cfg.llm.primary_model
+    assert cfg.llm.reasoning_model == old_primary  # not pinned on the cfg side
+    monkeypatch.setenv("REASONING_MODEL", "hand-pinned/model")
+
+    new_model = "anthropic/claude-3.5-sonnet"
+    await config_set_command(cli, ["model", new_model])
+
+    cfg = researcher_config.config
+    assert cfg.llm.primary_model == new_model
+    assert cfg.llm.reasoning_model == old_primary  # env-pinned -> untouched
+    assert os.getenv("REASONING_MODEL") == "hand-pinned/model"
+
+
+@pytest.mark.asyncio
 async def test_config_set_none_default_infers_type(monkeypatch):
     cli = MockCLI()
     fake_cfg = SimpleNamespace(section=SimpleNamespace(value=None))
@@ -329,6 +349,10 @@ async def test_run_command_runtime_overrides(monkeypatch):
     assert os.getenv("RESEARCH_DEPTH_PRESET") == "quick"
     assert os.getenv("SPARKLEFORGE_AUTOPILOT_MODE") == "false"
     assert _autopilot_mode_enabled() is False
+    # --autopilot went through handle_run_command's own override path, not
+    # config_set_command -- it must still land on the config object, or this
+    # entry point re-creates the same split-brain the config-object fix closed.
+    assert cfg.autopilot_mode is False
 
 
 @pytest.mark.asyncio
