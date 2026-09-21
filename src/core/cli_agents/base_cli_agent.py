@@ -216,6 +216,33 @@ class BaseCLIAgent(ABC):
             "output_format": self.config.output_format,
         }
 
+    async def capture_screen(self, filename: str | None = None) -> str | None:
+        """Host-agnostic screen capture capability.
+
+        If the host is running computer_use / Xvfb, delegate to screenshot tools/servers.
+        Otherwise, attempt to capture via browser manager if available or fallback cleanly.
+        """
+        try:
+            # 1. Try computer-use server / Xvfb display if available
+            from src.core.mcp_integration import execute_tool
+            res = await execute_tool("computer_use", {"action": "screenshot"})
+            if res and res.get("success"):
+                return res.get("data", {}).get("filename")
+        except Exception:
+            pass
+
+        try:
+            # 2. Try browser manager / Playwright controller if a browser session is active
+            from src.automation.browser_manager import get_playwright_controller
+            ctrl = get_playwright_controller()
+            if ctrl and ctrl.is_initialized:
+                return await ctrl.take_screenshot(filename=filename)
+        except Exception:
+            pass
+
+        # 3. Clean fallback when no display/browser is owned by the host
+        return None
+
     def context_window(self) -> int:
         """Best-known input+output context window for the active model.
 
