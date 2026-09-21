@@ -124,20 +124,29 @@ def _fetch_cost_metrics(days: int = 7) -> Dict[str, Any]:
     all-time limit=1000 above; neither paginates.
     """
     rows = _safe_select("sparkleforge_history_events", "metadata,created_at", limit=2000)
+    if len(rows) >= 2000:
+        logger.warning(
+            "_fetch_cost_metrics hit its row limit (2000); the %d-day cost ticker "
+            "may be undercounting.",
+            days,
+        )
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     total_actual = 0.0
     total_frontier = 0.0
     request_count = 0
     for r in rows:
         created_at = r.get("created_at")
-        if created_at:
-            try:
-                # Python 3.11+ fromisoformat() parses a "Z" suffix natively
-                # (this project requires >=3.11); no manual "+00:00" swap needed.
-                if datetime.fromisoformat(created_at) < cutoff:
-                    continue
-            except ValueError:
-                pass
+        if not created_at:
+            continue
+        try:
+            # Python 3.11+ fromisoformat() parses a "Z" suffix natively
+            # (this project requires >=3.11); no manual "+00:00" swap needed.
+            if datetime.fromisoformat(created_at) < cutoff:
+                continue
+        except ValueError:
+            # Can't verify this row is inside the 7-day window -- exclude it
+            # rather than risk counting stale/out-of-window cost data.
+            continue
         meta = r.get("metadata") or {}
         if isinstance(meta, str):
             try:
