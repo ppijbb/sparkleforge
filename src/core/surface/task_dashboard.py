@@ -116,6 +116,12 @@ class TaskDashboard:
             self._tasks[task.task_id] = task
             if parent_task_id and parent_task_id in self._tasks:
                 self._tasks[parent_task_id].children_task_ids.append(task.task_id)
+            elif parent_task_id:
+                logger.debug(
+                    "Task %s submitted with parent_task_id=%s, but no such parent is "
+                    "registered -- it will render as a root in render_tree().",
+                    task.task_id[:8], parent_task_id,
+                )
         self._notify(task)
         logger.info("Task submitted: %s (%s)", name, task.task_id[:8])
         return task
@@ -289,6 +295,8 @@ class TaskDashboard:
                     if child is not None:
                         _walk(child, depth + 1)
 
+            # created_at is a required TaskRecord field (default_factory=time.time,
+            # defined above in this same file), always a float -- never missing.
             for root in sorted(roots, key=lambda t: t.created_at):
                 _walk(root, 0)
 
