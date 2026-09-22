@@ -19,6 +19,8 @@ import os
 import subprocess
 from typing import Awaitable, Callable, TypeVar
 
+from src.utils.sparkleforge_history import end_history_session, log_history_event
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -95,6 +97,15 @@ async def run_with_crash_supervision(
                     "[SessionSupervisor] session %s crashed %d time(s), giving up: %s",
                     session_id, max_restarts, exc,
                 )
+                end_history_session(
+                    session_id,
+                    status="failed",
+                    metadata={
+                        "reason": "crash_limit_exceeded",
+                        "restart_count": max_restarts,
+                        "last_error": str(exc),
+                    },
+                )
                 if on_exhausted is not None:
                     on_exhausted(session_id, exc)
                 raise
@@ -103,5 +114,16 @@ async def run_with_crash_supervision(
                 "[SessionSupervisor] session %s crashed (attempt %d/%d), "
                 "retrying in %.1fs: %s",
                 session_id, attempt, max_restarts, delay, exc,
+            )
+            log_history_event(
+                session_id,
+                "crash",
+                str(exc),
+                level="error",
+                metadata={
+                    "restart_count": attempt,
+                    "restart_attempt": attempt,
+                    "backoff_s": delay,
+                },
             )
             await asyncio.sleep(delay)

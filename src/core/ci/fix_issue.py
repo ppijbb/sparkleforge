@@ -34,11 +34,25 @@ from src.core.patch_ops import (
     run,
 )
 from src.core.ci.response_parsing import _strip_fenced_response
-from src.utils.sparkleforge_history import log_history_event
+from src.utils.sparkleforge_history import (
+    fetch_recent_patch_failures,
+    log_error_context,
+    log_history_event,
+)
 
 _CHARS_PER_TOKEN = 3
 _PROMPT_SAFETY_TOKENS = 1_000
 _MAX_FILE_CONTEXT_CHARS = 200_000
+
+
+def _diff_target_files_exist(diff_text: str) -> dict[str, bool]:
+    """Map each patch target path to whether it already exists on disk.
+
+    Distinguishes an edit-to-existing-file failure from a new-file-creation
+    failure when a patch doesn't apply -- see agent_error_contexts diagnostics.
+    """
+    paths = set(re.findall(r"^\+\+\+ b/(.+?)\s*$", diff_text, re.MULTILINE))
+    return {p: Path(p).exists() for p in paths}
 
 
 def _infer_relevant_files(issue_context: str, all_files: list[str]) -> list[str]:
@@ -310,6 +324,25 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     all_files = snapshot.splitlines()
     agent = _build_agent()
 
+    issue_number_match = re.search(r"#(\d+)", issue_context)
+    issue_number = issue_number_match.group(1) if issue_number_match else None
+    if issue_number:
+        loop_for_lookup = asyncio.get_event_loop()
+        prior_failures = await loop_for_lookup.run_in_executor(
+            None, fetch_recent_patch_failures, issue_number
+        )
+        if prior_failures:
+            prior_errors = (
+                prior_failures[0].get("execution_context", {}).get("apply_errors", "")
+            )
+            extra_context = (
+                extra_context
+                + "\n\n## Prior patch-apply failure for this issue\n"
+                "A previous attempt's patch failed to apply for the reasons below. "
+                "Generate a different, smaller, or more precisely-anchored diff this time.\n"
+                f"```\n{prior_errors[:1500]}\n```"
+            ).strip()
+
     # Provide relevant files within the active model's prompt budget.
     relevant_files = _infer_relevant_files(issue_context, all_files)
     file_contents_str = _budgeted_relevant_file_contents(
@@ -387,11 +420,9 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
                 data = json.loads(raw_json)
                 if data.get("action") == "decompose" and "sub_issues" in data:
                     from src.core.nightwelding.github_adapter import create_subissues
-                    # Extract issue number from context file name or path
-                    issue_num = re.search(r"#(\d+)", issue_context)
-                    if issue_num:
-                        await create_subissues(issue_num.group(1), data["sub_issues"])
-                        print(f"Successfully decomposed issue #{issue_num.group(1)}")
+                    if issue_number:
+                        await create_subissues(issue_number, data["sub_issues"])
+                        print(f"Successfully decomposed issue #{issue_number}")
                         return 0
         except Exception as e:
             print(f"Decomposition parsing failed: {e}", file=sys.stderr)
@@ -436,6 +467,17 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         print(err, file=sys.stderr)
         print("--- Failed Patch ---", file=sys.stderr)
         print(diff[:4000], file=sys.stderr)
+        log_error_context(
+            "PatchApplyFailure",
+            (err or "patch apply failed")[:4000],
+            session_id=os.getenv("SPARKLEFORGE_HISTORY_SESSION_ID"),
+            execution_context={
+                "issue_number": issue_number,
+                "diff": diff,
+                "apply_errors": err,
+                "target_files_exist": _diff_target_files_exist(diff),
+            },
+        )
         return 1
     if repository_change_signature() == before_signature:
         print("OpenCode patch applied cleanly but produced no repository changes.", file=sys.stderr)
