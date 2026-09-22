@@ -99,7 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
           HAS_PAT: ${{ secrets.PAT != '' }}
-          TODAY: ${{ steps.prompt.outputs.today }}
+          TODAY: ${{ steps.audit.outputs.today }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
             echo "::error::PAT repository secret is required so audit issues are authored by the PAT owner instead of github-actions[bot]."
