@@ -188,11 +188,21 @@ class HybridStorage:
                 sources = []
                 for res in state.get("execution_results", []):
                     if isinstance(res, dict) and "url" in res:
-                        sources.append({
+                        source = {
                             "title": res.get("title", res.get("url")),
                             "url": res.get("url"),
-                            "reliability": res.get("reliability", 1.0)
-                        })
+                            "reliability": res.get("reliability", 1.0),
+                            # #1620: which tool/agent surfaced this source, and
+                            # when -- always known from the execution result.
+                            "agent_name": res.get("tool_used", "unknown"),
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        }
+                        # Only set when the producing execution result actually
+                        # logged itself via enqueue_log_event() and knows its
+                        # own row id -- never fabricated.
+                        if res.get("agent_log_id"):
+                            source["agent_log_id"] = res["agent_log_id"]
+                        sources.append(source)
                 
                 await publish_report(
                     topic=topic,

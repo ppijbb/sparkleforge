@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 import uuid
 
 from src.utils.logger import get_logger
@@ -167,6 +167,26 @@ class JobStatus:
         return self.to_dict().get(item, default)
 
 
+@dataclass
+class ProgressEvent:
+    """One intermediate progress notification from a `run()` call (#1621)."""
+
+    phase: str
+    agent_name: Optional[str]
+    message: str
+    percentage: Optional[float]
+    timestamp: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "phase": self.phase,
+            "agent_name": self.agent_name,
+            "message": self.message,
+            "percentage": self.percentage,
+            "timestamp": self.timestamp,
+        }
+
+
 async def _ensure_config_loaded() -> None:
     from src.core import researcher_config
 
@@ -175,12 +195,25 @@ async def _ensure_config_loaded() -> None:
             researcher_config.load_config_from_env()
 
 
-async def run(prompt: str) -> Dict[str, Any]:
+async def run(
+    prompt: str,
+    *,
+    on_progress: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+) -> Dict[str, Any]:
     """Run one research request and return its result dict.
 
     Exceptions from the underlying orchestrator (including provider/config
     errors) propagate as-is rather than being wrapped -- the same behavior
     main.py's own `--prompt` headless path already has.
+
+    on_progress: if given, awaited with a ProgressEvent for every event the
+    orchestrator streams via StreamingManager for this specific call (scoped
+    by a fresh objective_id so concurrent run() calls don't cross-talk). Today
+    that's the couple of events analysis.py's node emits (WORKFLOW_START,
+    then AGENT_ACTION on analysis completion) -- most orchestrator nodes don't
+    call stream_event() yet, so callers should expect a sparse stream, not a
+    step-by-step blow-by-blow. A raising on_progress is logged and swallowed;
+    it never fails the underlying research run.
     """
     await _ensure_config_loaded()
 
@@ -192,7 +225,38 @@ async def run(prompt: str) -> Dict[str, Any]:
     from src.core.autonomous_orchestrator import AutonomousOrchestrator
 
     orchestrator = AutonomousOrchestrator()
-    return await orchestrator.run_research(prompt)
+
+    if on_progress is None:
+        return await orchestrator.run_research(prompt)
+
+    from src.core.streaming_manager import get_streaming_manager
+
+    objective_id = f"sdk_{uuid.uuid4().hex[:12]}"
+    manager = get_streaming_manager()
+
+    async def _relay(event: Any) -> None:
+        if event.workflow_id != objective_id:
+            return
+        try:
+            await on_progress(
+                ProgressEvent(
+                    phase=event.event_type.value,
+                    agent_name=event.agent_id,
+                    message=str(
+                        event.data.get("message") or event.data.get("action") or ""
+                    ),
+                    percentage=event.data.get("progress") or event.data.get("percentage"),
+                    timestamp=event.timestamp.isoformat(),
+                )
+            )
+        except Exception:
+            logger.warning("sdk.run on_progress callback raised; continuing.", exc_info=True)
+
+    manager.add_local_listener(_relay)
+    try:
+        return await orchestrator.execute(prompt, objective_id=objective_id)
+    finally:
+        manager.remove_local_listener(_relay)
 
 
 async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -> None:

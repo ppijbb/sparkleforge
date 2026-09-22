@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Set
+from typing import Any, Awaitable, Callable, Dict, List, Set
 
 import logging
 
@@ -143,6 +143,11 @@ class StreamingManager:
         self.connections: Set[Any] = set()
         self.connection_lock = asyncio.Lock()
 
+        # In-process listeners (#1621): plain async callbacks, alongside the
+        # WebSocket connections above, for in-process callers (e.g. src.sdk.run's
+        # on_progress) that want events without a websocket round-trip.
+        self._local_listeners: List[Callable[["StreamingEvent"], Awaitable[None]]] = []
+
         # Circuit breaker for reliability
         self.circuit_breaker = CircuitBreaker(
             name="streaming_manager",
@@ -171,6 +176,24 @@ class StreamingManager:
         logger.info(
             f"StreamingManager initialized: max_buffer={max_buffer_size}, max_connections={max_connections}"
         )
+
+    def add_local_listener(
+        self, callback: Callable[["StreamingEvent"], Awaitable[None]]
+    ) -> None:
+        """Register an in-process async callback to receive every streamed event.
+
+        Unlike `self.connections` (WebSocket clients), this needs no network
+        round-trip -- see src.sdk.run()'s on_progress parameter (#1621).
+        """
+        self._local_listeners.append(callback)
+
+    def remove_local_listener(
+        self, callback: Callable[["StreamingEvent"], Awaitable[None]]
+    ) -> None:
+        try:
+            self._local_listeners.remove(callback)
+        except ValueError:
+            pass
 
     async def stream_event(
         self,
@@ -235,6 +258,14 @@ class StreamingManager:
 
             # 연결된 클라이언트들에게 브로드캐스트
             await self._broadcast_event(event)
+
+            # In-process listeners (best-effort; one bad listener must never
+            # break event streaming for everyone else).
+            for local_listener in list(self._local_listeners):
+                try:
+                    await local_listener(event)
+                except Exception as listener_err:
+                    logger.warning(f"Local streaming listener raised: {listener_err}")
 
             # 백프레셔 해제 체크
             if self.is_backpressured and len(self.event_queue) < self.backpressure_threshold * 0.5:

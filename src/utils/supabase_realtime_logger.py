@@ -10,6 +10,7 @@ import threading
 import queue
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Any, Dict, Optional
@@ -98,11 +99,20 @@ def stop_supabase_logger_worker():
         logger.debug("Supabase realtime logger worker thread stopped.")
 
 
-def enqueue_log_event(session_id: str, agent_name: str, message: str, level: str = "info"):
-    """Queue a log event to be broadcast to Supabase."""
+def enqueue_log_event(session_id: str, agent_name: str, message: str, level: str = "info") -> str:
+    """Queue a log event to be broadcast to Supabase.
+
+    Generates the row's id client-side (rather than relying on agent_logs.id's
+    server-side gen_random_uuid() default) and returns it, so a caller that
+    needs to correlate this specific log row later -- e.g. reports.sources'
+    agent_log_id, see #1620 -- has it immediately instead of having to look
+    it up after the batched, best-effort insert eventually lands.
+    """
     start_supabase_logger_worker()
-    
+
+    log_id = str(uuid.uuid4())
     event = {
+        "id": log_id,
         "session_id": session_id,
         "agent_name": agent_name,
         "message": message,
@@ -110,6 +120,7 @@ def enqueue_log_event(session_id: str, agent_name: str, message: str, level: str
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
     _log_queue.put(event)
+    return log_id
 
 
 def _supabase_logger_worker_loop():

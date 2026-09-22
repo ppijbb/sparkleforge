@@ -1,12 +1,15 @@
 """Regression tests for per-session Supabase realtime logger isolation."""
 
+import queue
 import sys
 import threading
 
+import src.utils.supabase_realtime_logger as realtime_logger
 from src.utils.supabase_realtime_logger import (
     SupabaseLoggingHandler,
     SessionStdoutRedirector,
     SupabaseRealtimeLogger,
+    enqueue_log_event,
 )
 
 
@@ -129,3 +132,20 @@ def test_stop_is_idempotent():
     logger.stop()
     logger.stop()  # second stop must be a no-op
     assert logger.queue.empty()
+
+
+def test_enqueue_log_event_returns_a_unique_id_and_queues_it(monkeypatch):
+    """#1620: the returned id must match what actually got queued, so a caller
+    can correlate this exact row later (e.g. reports.sources' agent_log_id)."""
+    monkeypatch.setattr(realtime_logger, "start_supabase_logger_worker", lambda: None)
+    realtime_logger._log_queue = queue.Queue()
+
+    log_id_1 = enqueue_log_event("s1", "researcher", "found source A")
+    log_id_2 = enqueue_log_event("s1", "researcher", "found source B")
+
+    assert log_id_1 != log_id_2
+
+    queued = [realtime_logger._log_queue.get_nowait(), realtime_logger._log_queue.get_nowait()]
+    assert {e["id"] for e in queued} == {log_id_1, log_id_2}
+    assert all(e["session_id"] == "s1" for e in queued)
+    assert all(e["agent_name"] == "researcher" for e in queued)
