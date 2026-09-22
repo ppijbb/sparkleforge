@@ -37,7 +37,7 @@ import asyncio
 import json
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
 from typing import Any, Dict, Optional
@@ -61,6 +61,26 @@ _JOB_STORE_PATH = Path(
     os.getenv("SPARKLEFORGE_SDK_JOB_STORE", str(Path.home() / ".sparkleforge" / "sdk_jobs.json"))
 )
 _job_store_file_lock = threading.Lock()
+
+# #1654 review: the job-store file accumulated every job forever. Mirrors
+# forge_jobs' Supabase-side TTL (#1619) -- terminal jobs older than this are
+# dropped the next time any job is persisted.
+_JOB_STORE_TTL_DAYS = 30
+
+
+def _prune_expired_jobs(store: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=_JOB_STORE_TTL_DAYS)
+    pruned: Dict[str, Dict[str, Any]] = {}
+    for jid, job in store.items():
+        completed_at = job.get("completed_at")
+        if job.get("status") in ("completed", "failed") and completed_at:
+            try:
+                if datetime.fromisoformat(completed_at) < cutoff:
+                    continue
+            except (ValueError, TypeError):
+                pass
+        pruned[jid] = job
+    return pruned
 
 
 def _load_job_store() -> Dict[str, Dict[str, Any]]:
@@ -98,6 +118,7 @@ def _persist_job(job_id: str) -> None:
                 except Exception:
                     store = {}
             store[job_id] = job
+            store = _prune_expired_jobs(store)
             _JOB_STORE_PATH.write_text(json.dumps(store), encoding="utf-8")
         except Exception as e:
             logger.debug(f"Failed to persist job {job_id} to {_JOB_STORE_PATH}: {e}")
@@ -183,7 +204,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
     )
 
     _jobs[job_id]["status"] = "running"
-    _persist_job(job_id)
+    await asyncio.to_thread(_persist_job, job_id)
     if get_supabase_client() is not None:
         try:
             await update_job_status(job_id, "running")
@@ -194,7 +215,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
         result = await run(topic)
         _jobs[job_id]["status"] = "completed"
         _jobs[job_id]["result"] = result
-        _persist_job(job_id)
+        await asyncio.to_thread(_persist_job, job_id)
 
         if get_supabase_client() is not None:
             try:
@@ -212,7 +233,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
     except Exception as e:
         _jobs[job_id]["status"] = "failed"
         _jobs[job_id]["error"] = str(e)
-        _persist_job(job_id)
+        await asyncio.to_thread(_persist_job, job_id)
 
         if get_supabase_client() is not None:
             try:
@@ -224,7 +245,7 @@ async def _execute_job(job_id: str, topic: str, user_id: Optional[str] = None) -
     finally:
         completed_at = datetime.now(timezone.utc).isoformat()
         _jobs[job_id]["completed_at"] = completed_at
-        _persist_job(job_id)
+        await asyncio.to_thread(_persist_job, job_id)
         _job_tasks.pop(job_id, None)
 
 
@@ -254,7 +275,7 @@ async def submit_job(topic: str, *, user_id: Optional[str] = None, **kwargs: Any
         "submitted_at": now,
         "user_id": user_id,
     }
-    _persist_job(job_id)
+    await asyncio.to_thread(_persist_job, job_id)
 
     task = asyncio.create_task(_execute_job(job_id, topic, user_id=user_id))
     _job_tasks[job_id] = task
@@ -277,7 +298,8 @@ async def get_job_status(job_id: str) -> JobStatus:
             user_id=job.get("user_id"),
         )
 
-    persisted = _load_job_store().get(job_id)
+    job_store = await asyncio.to_thread(_load_job_store)
+    persisted = job_store.get(job_id)
     if persisted is not None:
         status_val = persisted.get("status", "pending")
         error_val = persisted.get("error")
@@ -336,7 +358,8 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
     if job is not None and job.get("result") is not None:
         return job.get("result")
 
-    persisted = _load_job_store().get(job_id)
+    job_store = await asyncio.to_thread(_load_job_store)
+    persisted = job_store.get(job_id)
     if persisted is not None and persisted.get("result") is not None:
         return persisted.get("result")
 

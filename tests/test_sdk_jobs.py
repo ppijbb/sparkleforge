@@ -1,6 +1,7 @@
 """Unit and integration tests for SDK asynchronous job API (Issue #1622)."""
 
 import asyncio
+import json
 from typing import Any, Dict
 import pytest
 
@@ -222,6 +223,41 @@ def test_load_job_store_fails_open_on_corrupt_file():
     sdk._JOB_STORE_PATH.write_text("not valid json", encoding="utf-8")
 
     assert sdk._load_job_store() == {}
+
+
+def test_prune_expired_jobs_drops_old_terminal_jobs_only():
+    from datetime import datetime, timedelta, timezone
+
+    old = (datetime.now(timezone.utc) - timedelta(days=sdk._JOB_STORE_TTL_DAYS + 1)).isoformat()
+    recent = datetime.now(timezone.utc).isoformat()
+    store = {
+        "old-completed": {"status": "completed", "completed_at": old},
+        "old-failed": {"status": "failed", "completed_at": old},
+        "recent-completed": {"status": "completed", "completed_at": recent},
+        "still-running": {"status": "running", "completed_at": None},
+        "no-completed-at": {"status": "completed"},
+    }
+
+    pruned = sdk._prune_expired_jobs(store)
+
+    assert set(pruned) == {"recent-completed", "still-running", "no-completed-at"}
+
+
+def test_persist_job_prunes_old_terminal_jobs_from_the_store(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    old = (datetime.now(timezone.utc) - timedelta(days=sdk._JOB_STORE_TTL_DAYS + 1)).isoformat()
+    sdk._JOB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    sdk._JOB_STORE_PATH.write_text(
+        json.dumps({"ancient-job": {"status": "completed", "completed_at": old}}),
+        encoding="utf-8",
+    )
+
+    sdk._jobs["new-job"] = {"job_id": "new-job", "status": "running"}
+    sdk._persist_job("new-job")
+
+    on_disk = json.loads(sdk._JOB_STORE_PATH.read_text(encoding="utf-8"))
+    assert set(on_disk) == {"new-job"}
 
 
 @pytest.mark.asyncio
