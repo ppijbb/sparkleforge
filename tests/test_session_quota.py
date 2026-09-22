@@ -41,7 +41,11 @@ def test_budget_exhausted_cancels_session() -> None:
     controller._session_quotas[session_id]["budget"] = 1.0
 
     assert controller.check_quotas(session_id) is False
-    assert controller.active_sessions[session_id]["status"] == SessionStatus.CANCELLED
+    # A cost/token overage now gets the more specific QUOTA_EXCEEDED status
+    # (#1618), distinguishable from a user-initiated cancel_session() --
+    # see test_timeout_exceeded_cancels_session below for the still-generic
+    # CANCELLED path (a wall-clock timeout, not a budget overage).
+    assert controller.active_sessions[session_id]["status"] == SessionStatus.QUOTA_EXCEEDED
 
 
 def test_timeout_exceeded_cancels_session() -> None:

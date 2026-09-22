@@ -6,6 +6,7 @@ from src.core.ci.fix_issue import (
     _budgeted_relevant_file_contents,
     _budgeted_requested_tool_context,
     _build_agent,
+    _diff_target_files_exist,
     _per_file_context_limit,
     _prompt_fits_budget,
 )
@@ -34,6 +35,29 @@ def test_build_agent_falls_back_to_open_code_for_unknown_name(monkeypatch, capsy
     agent = _build_agent()
     assert isinstance(agent, OpenCodeAgent)
     assert "not-a-real-agent" in capsys.readouterr().err
+
+
+def test_diff_target_files_exist_distinguishes_new_and_existing_files(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "existing.py").write_text("x = 1\n", encoding="utf-8")
+
+    diff = (
+        "diff --git a/existing.py b/existing.py\n"
+        "--- a/existing.py\n"
+        "+++ b/existing.py\n"
+        "@@ -1 +1 @@\n"
+        "-x = 1\n"
+        "+x = 2\n"
+        "diff --git a/new_file.py b/new_file.py\n"
+        "--- /dev/null\n"
+        "+++ b/new_file.py\n"
+        "@@ -0,0 +1 @@\n"
+        "+y = 1\n"
+    )
+
+    result = _diff_target_files_exist(diff)
+
+    assert result == {"existing.py": True, "new_file.py": False}
 
 
 def test_normalize_diff_repairs_incorrect_hunk_counts() -> None:

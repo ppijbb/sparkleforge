@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import List
 
-from src.core.nightwelding import gate, github_adapter
+from src.core.nightwelding import escalation, gate, github_adapter
 from src.core.nightwelding.adapter import BaseNightweldingAdapter
 from src.core.nightwelding.adapter import IssueContext  # noqa: F401  (re-exported for tests)
 from src.core.nightwelding.github_adapter import GitHubAdapter
@@ -86,7 +86,12 @@ async def run_nightwelding_issue(
         issue_number, main_repo_root, repo=repo, explicit_adapter=adapter, provider=provider
     )
 
-    item = NightweldingItem(issue_number=issue_number, status=NightweldingStatus.WRITING_TEST)
+    prior_item = queue.get(issue_number)
+    item = NightweldingItem(
+        issue_number=issue_number,
+        status=NightweldingStatus.WRITING_TEST,
+        consecutive_failures=prior_item.consecutive_failures if prior_item else 0,
+    )
     queue.upsert(item)
 
     worktree_dir: Path | None = None
@@ -179,6 +184,7 @@ async def run_nightwelding_issue(
         )
         item.pr_url = published_ref
         item.status = NightweldingStatus.DRAFT_OPENED
+        item.consecutive_failures = 0
         queue.upsert(item)
 
         active_adapter.report_success(issue_number, published_ref)
@@ -201,11 +207,14 @@ def _fail(
 ) -> NightweldingItem:
     item.status = NightweldingStatus.FAILED
     item.failure_reason = reason
+    item.consecutive_failures += 1
     queue.upsert(item)
     try:
         adapter.report_failure(issue_number, reason, log=log)
     except Exception:
         logger.exception("Nightwelding: failed to report failure for issue #%s", issue_number)
+    if escalation.should_escalate(item):
+        escalation.escalate_issue(adapter, issue_number, item)
     return item
 
 
@@ -230,6 +239,7 @@ async def run_nightwelding_sweep(
         exclude_labels=[
             github_adapter.NIGHTWELDING_DRAFT_LABEL[0],
             github_adapter.NIGHTWELDING_FAILED_LABEL[0],
+            github_adapter.AUTO_FIX_BACKOFF_LABEL[0],
         ],
         limit=limit,
     )
