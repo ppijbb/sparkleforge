@@ -89,6 +89,8 @@ def _worker_loop() -> None:
                     ).execute()
                 elif kind == "event":
                     client.table("sparkleforge_history_events").insert(payload).execute()
+                elif kind == "error_context":
+                    client.table("agent_error_contexts").insert(payload).execute()
             except Exception as e:
                 logger.debug("Failed to write sparkleforge history (%s): %s", kind, e)
 
@@ -161,6 +163,61 @@ def log_history_event(
             },
         )
     )
+
+
+def log_error_context(
+    error_type: str,
+    error_message: str,
+    *,
+    session_id: Optional[str] = None,
+    scenario_name: Optional[str] = None,
+    execution_context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Record a structured failure to agent_error_contexts (see supabase_schema.sql).
+
+    Same fire-and-forget, fail-open contract as log_history_event: callers
+    never block on network I/O and never see an exception from this module.
+    """
+    _ensure_worker()
+    _queue.put(
+        (
+            "error_context",
+            {
+                "session_id": session_id,
+                "scenario_name": scenario_name,
+                "error_type": error_type,
+                "error_message": error_message,
+                "execution_context": execution_context or {},
+            },
+        )
+    )
+
+
+def fetch_recent_patch_failures(issue_number: str, limit: int = 1) -> list:
+    """Best-effort read of this issue's most recently recorded PatchApplyFailure rows.
+
+    Synchronous (unlike the write path above) since callers need the result
+    before building the next prompt. Fails open -- returns [] if Supabase
+    isn't configured or the query errors -- because this is a diagnostic
+    nice-to-have, never a hard dependency for fix_issue().
+    """
+    client = get_supabase_client()
+    if not client:
+        return []
+    try:
+        resp = (
+            client.table("agent_error_contexts")
+            .select("error_message,execution_context,created_at")
+            .eq("error_type", "PatchApplyFailure")
+            .filter("execution_context->>issue_number", "eq", str(issue_number))
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return resp.data or []
+    except Exception as e:
+        logger.debug("Failed to fetch prior patch-failure context: %s", e)
+        return []
 
 
 def end_history_session(
