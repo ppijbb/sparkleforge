@@ -566,7 +566,12 @@ class SessionControl:
         }
         if is_budget_reason and not q.get("budget_exceeded_logged"):
             q["budget_exceeded_logged"] = True
-            reason = "cost_exceeded" if cost_exceeded else "tokens_exceeded"
+            if cost_exceeded and tokens_exceeded:
+                reason = "cost_and_tokens_exceeded"
+            elif cost_exceeded:
+                reason = "cost_exceeded"
+            else:
+                reason = "tokens_exceeded"
             history_session_id = self._ensure_history_session(session_id, q)
             log_history_event(
                 history_session_id,
