@@ -15,7 +15,12 @@ CREATE TABLE IF NOT EXISTS public.reports (
     full_report TEXT NOT NULL,               -- Complete report in Markdown
     confidence_score FLOAT DEFAULT 0.0,      -- Confidence evaluation score (0.0 to 1.0)
     source_count INTEGER DEFAULT 0,          -- Count of verified sources/links
-    sources JSONB DEFAULT '[]'::jsonb,       -- List of sources used: [{title, url, reliability}]
+    sources JSONB DEFAULT '[]'::jsonb,       -- List of sources used: [{title, url, reliability,
+                                              -- agent_name, timestamp, agent_log_id?}] --
+                                              -- agent_log_id (#1620), when present, is a client-
+                                              -- generated id from enqueue_log_event() (see
+                                              -- supabase_realtime_logger.py) correlating this
+                                              -- source to the agent_logs row that surfaced it.
     keywords TEXT[] DEFAULT '{}'::text[],    -- Tags/keywords associated with the topic
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,  -- Reference to the requesting user (optional)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -43,7 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_forge_jobs_expires_at ON public.forge_jobs(expire
 
 -- 3. Create a table for persistent agent logs (Live Broadcast backup)
 CREATE TABLE IF NOT EXISTS public.agent_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),  -- #1620: may be client-supplied (see enqueue_log_event())
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     job_id UUID REFERENCES public.forge_jobs(id) ON DELETE CASCADE,
     session_id TEXT,                         -- maps to objective_id
