@@ -199,20 +199,6 @@ async def submit_job(topic: str, *, user_id: Optional[str] = None, **kwargs: Any
 
 async def get_job_status(job_id: str) -> JobStatus:
     """Get the current progress status, error, and completion status of a job."""
-    job = _jobs.get(job_id)
-    if job is not None:
-        return JobStatus(
-            job_id=job_id,
-            status=job.get("status", "pending"),
-            topic=job.get("topic"),
-            prompt=job.get("prompt"),
-            submitted_at=job.get("submitted_at"),
-            completed_at=job.get("completed_at"),
-            error=job.get("error"),
-            result=job.get("result"),
-            user_id=job.get("user_id"),
-        )
-
     from src.utils.supabase_exporter import (
         SupabaseQueryError,
         get_job_status as sb_get_job_status,
@@ -238,17 +224,27 @@ async def get_job_status(job_id: str) -> JobStatus:
         except SupabaseQueryError:
             raise
         except Exception as e:
-            raise ValueError(f"Failed to query job status: {e}") from e
+            logger.warning(f"Failed to query job status from Supabase for {job_id}: {e}")
+
+    job = _jobs.get(job_id)
+    if job is not None:
+        return JobStatus(
+            job_id=job_id,
+            status=job.get("status", "pending"),
+            topic=job.get("topic"),
+            prompt=job.get("prompt"),
+            submitted_at=job.get("submitted_at"),
+            completed_at=job.get("completed_at"),
+            error=job.get("error"),
+            result=job.get("result"),
+            user_id=job.get("user_id"),
+        )
 
     raise ValueError(f"Job not found: {job_id}")
 
 
 async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
     """Get the finished report result for a completed job, or None if not found/unfinished."""
-    job = _jobs.get(job_id)
-    if job is not None and job.get("result") is not None:
-        return job.get("result")
-
     from src.utils.supabase_exporter import (
         SupabaseQueryError,
         get_report as sb_get_report,
@@ -264,5 +260,9 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
             raise
         except Exception:
             pass
+
+    job = _jobs.get(job_id)
+    if job is not None and job.get("result") is not None:
+        return job.get("result")
 
     return None
