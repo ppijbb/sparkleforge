@@ -190,6 +190,9 @@ Requires `fastmcp` (`pip install fastmcp`); the server degrades to unavailable
 (not a crash) if it isn't installed. v1 is local-process attach only, per
 #1551's non-goals — no hosted/multi-tenant service.
 
+`search_skills`/`get_skill` read from `~/.sparkleforge/skill_marketplace` by
+default; override with `SPARKLEFORGE_SKILL_MARKETPLACE_DIR`.
+
 ## ✨ Core Innovations
 
 ### 1. **24x7 Continuous Research Engine**

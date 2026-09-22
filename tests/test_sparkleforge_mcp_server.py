@@ -172,6 +172,23 @@ async def test_get_skill_returns_structured_error_when_missing(monkeypatch):
     assert "no-such-skill" in parsed["error"]
 
 
+def test_run_raises_when_fastmcp_unavailable(monkeypatch):
+    monkeypatch.setattr(sparkleforge_server, "mcp", None)
+
+    with pytest.raises(RuntimeError, match="fastmcp is not installed"):
+        sparkleforge_server.run()
+
+
+@pytest.mark.skipif(sparkleforge_server.mcp is None, reason="fastmcp not installed")
+def test_run_starts_the_stdio_server(monkeypatch):
+    calls = []
+    monkeypatch.setattr(sparkleforge_server.mcp, "run", lambda **kw: calls.append(kw))
+
+    sparkleforge_server.run()
+
+    assert calls == [{"show_banner": False}]
+
+
 if __name__ == "__main__":
     import asyncio
 
