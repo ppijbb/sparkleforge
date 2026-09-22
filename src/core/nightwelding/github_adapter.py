@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 NIGHTWELDING_DRAFT_LABEL = ("nightwelding-draft-opened", "5319E7", "Nightwelding opened a Draft PR; human must review and mark it ready before it can merge.")
 NIGHTWELDING_FAILED_LABEL = ("nightwelding-failed", "B60205", "Nightwelding could not reproduce the issue, or could not make the reproduction test pass.")
 NIGHTWELDING_QUEUE_LABEL = ("nightwelding-queue", "1D76DB", "Queued for Nightwelding's overnight autonomous-implementation pipeline.")
+HUMAN_REVIEW_NEEDED_LABEL = ("human-review-needed", "D93F0B", "Nightwelding failed repeatedly on this issue; needs a human to look at it.")
+AUTO_FIX_BACKOFF_LABEL = ("auto-fix-backoff", "5A5A5A", "Nightwelding sweeps skip this issue until the label is removed (issue #1615).")
 
 
 class GitHubAdapterError(NightweldingAdapterError):
@@ -97,7 +99,9 @@ class GitHubAdapter(BaseNightweldingAdapter):
         return list_candidate_issues(
             self._get_repo(),
             backlog_label=backlog_label,
-            exclude_labels=exclude_labels or [NIGHTWELDING_DRAFT_LABEL[0], NIGHTWELDING_FAILED_LABEL[0]],
+            exclude_labels=exclude_labels or [
+                NIGHTWELDING_DRAFT_LABEL[0], NIGHTWELDING_FAILED_LABEL[0], AUTO_FIX_BACKOFF_LABEL[0],
+            ],
             limit=limit,
         )
 
