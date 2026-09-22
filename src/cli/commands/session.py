@@ -458,6 +458,7 @@ async def session_cost_command(cli, args: List[str]):
         table.add_column("Cost used", justify="right")
         table.add_column("Cost budget", justify="right")
         table.add_column("% used", justify="right")
+        table.add_column("Quota event", justify="right")
 
         total_cost = 0.0
         for session_id, usage in all_usage.items():
@@ -468,6 +469,7 @@ async def session_cost_command(cli, args: List[str]):
                 f"${cost['used']:.4f}",
                 f"${cost['limit']:.4f}",
                 f"{cost['pct_used']:.1f}%",
+                usage.get("quota_event", "none"),
             )
 
         cli.console.print(table)

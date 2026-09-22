@@ -37,8 +37,14 @@ CREATE TABLE IF NOT EXISTS public.forge_jobs (
     error_message TEXT,
     payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE  -- #1619: set on completed/failed; cleanup_expired_jobs.py deletes past this
 );
+
+-- #1619: idempotent for databases where forge_jobs already existed before
+-- expires_at was added -- CREATE TABLE IF NOT EXISTS above is a no-op there.
+ALTER TABLE public.forge_jobs ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_forge_jobs_expires_at ON public.forge_jobs(expires_at);
 
 -- 3. Create a table for persistent agent logs (Live Broadcast backup)
 CREATE TABLE IF NOT EXISTS public.agent_logs (
