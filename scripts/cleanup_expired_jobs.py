@@ -34,12 +34,22 @@ def main() -> int:
         return 1
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    expired = (
-        client.table("forge_jobs")
-        .select("id,status,expires_at")
-        .lt("expires_at", now_iso)
-        .execute()
-    )
+    try:
+        # PostgREST caps a single response at its configured max rows
+        # (commonly 1000); a run with more expired rows than that only
+        # deletes the first batch. This script is meant to run periodically
+        # (cron/scheduled workflow), so leftovers get caught by the next
+        # run rather than being silently lost -- not implementing full
+        # offset pagination here to keep this a simple batch utility.
+        expired = (
+            client.table("forge_jobs")
+            .select("id,status,expires_at")
+            .lt("expires_at", now_iso)
+            .execute()
+        )
+    except Exception as e:
+        print(f"Failed to query expired forge_jobs rows: {e}", file=sys.stderr)
+        return 1
     rows = expired.data or []
     if not rows:
         print("No expired forge_jobs rows.")
@@ -53,7 +63,11 @@ def main() -> int:
         return 0
 
     ids = [row["id"] for row in rows]
-    client.table("forge_jobs").delete().in_("id", ids).execute()
+    try:
+        client.table("forge_jobs").delete().in_("id", ids).execute()
+    except Exception as e:
+        print(f"Failed to delete expired forge_jobs rows: {e}", file=sys.stderr)
+        return 1
     print(f"Deleted {len(ids)} expired forge_jobs row(s).")
     return 0
 

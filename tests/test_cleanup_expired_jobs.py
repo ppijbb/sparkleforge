@@ -102,3 +102,57 @@ def test_no_supabase_configured_returns_error(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["cleanup_expired_jobs.py"])
 
     assert cleanup_expired_jobs.main() == 1
+
+
+class _RaisingSelectTable:
+    def select(self, *_a, **_kw):
+        return self
+
+    def lt(self, *_a, **_kw):
+        return self
+
+    def execute(self):
+        raise RuntimeError("network down")
+
+
+class _RaisingDeleteTable:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def select(self, *_a, **_kw):
+        return _FakeSelectFluent(self.rows)
+
+    def delete(self):
+        return self
+
+    def in_(self, *_a, **_kw):
+        return self
+
+    def execute(self):
+        raise RuntimeError("network down")
+
+
+def test_query_failure_returns_error_without_crashing(monkeypatch, capsys):
+    client = _FakeClient([])
+    monkeypatch.setattr(client, "table", lambda _name: _RaisingSelectTable())
+    monkeypatch.setattr(cleanup_expired_jobs, "get_supabase_client", lambda: client)
+    monkeypatch.setattr(sys, "argv", ["cleanup_expired_jobs.py"])
+
+    exit_code = cleanup_expired_jobs.main()
+
+    assert exit_code == 1
+    assert "Failed to query" in capsys.readouterr().err
+
+
+def test_delete_failure_returns_error_instead_of_false_success(monkeypatch, capsys):
+    client = _FakeClient([{"id": "j1", "status": "completed", "expires_at": "2020-01-01"}])
+    monkeypatch.setattr(client, "table", lambda _name: _RaisingDeleteTable(client.rows))
+    monkeypatch.setattr(cleanup_expired_jobs, "get_supabase_client", lambda: client)
+    monkeypatch.setattr(sys, "argv", ["cleanup_expired_jobs.py", "--yes"])
+
+    exit_code = cleanup_expired_jobs.main()
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Failed to delete" in captured.err
+    assert "Deleted" not in captured.out

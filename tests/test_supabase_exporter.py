@@ -125,3 +125,18 @@ def test_update_job_status_leaves_expires_at_unset_for_non_terminal_status(monke
     asyncio.run(update_job_status("job3", "running"))
 
     assert "expires_at" not in client.updates[0]
+
+
+def test_update_job_status_timestamps_are_timezone_aware(monkeypatch):
+    """Regression: datetime.utcnow() + manual '+ "Z"' produced a naive
+    datetime masquerading as UTC. Both timestamps must carry a real offset."""
+    from datetime import datetime
+
+    client = _FakeJobsClient()
+    monkeypatch.setattr(supabase_exporter, "get_supabase_client", lambda: client)
+
+    asyncio.run(update_job_status("job4", "completed"))
+
+    update = client.updates[0]
+    assert datetime.fromisoformat(update["updated_at"]).tzinfo is not None
+    assert datetime.fromisoformat(update["expires_at"]).tzinfo is not None

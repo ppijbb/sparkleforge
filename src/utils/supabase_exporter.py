@@ -9,7 +9,7 @@ import logging
 import os
 import asyncio
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -150,14 +150,14 @@ async def update_job_status(
 
     data = {
         "status": status,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if error_message:
         data["error_message"] = error_message
     if status in _TERMINAL_JOB_STATUSES:
         data["expires_at"] = (
-            datetime.utcnow() + timedelta(days=FORGE_JOB_TTL_DAYS)
-        ).isoformat() + "Z"
+            datetime.now(timezone.utc) + timedelta(days=FORGE_JOB_TTL_DAYS)
+        ).isoformat()
 
     try:
         response = await asyncio.to_thread(
