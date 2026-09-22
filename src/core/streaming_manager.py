@@ -265,7 +265,7 @@ class StreamingManager:
                 try:
                     await local_listener(event)
                 except Exception as listener_err:
-                    logger.debug(f"Local streaming listener raised: {listener_err}")
+                    logger.warning(f"Local streaming listener raised: {listener_err}")
 
             # 백프레셔 해제 체크
             if self.is_backpressured and len(self.event_queue) < self.backpressure_threshold * 0.5:
