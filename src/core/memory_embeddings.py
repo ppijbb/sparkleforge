@@ -66,6 +66,16 @@ class EmbeddingProvider(ABC):
     def dimensionality(self) -> int:
         """임베딩 차원 반환."""
 
+    @property
+    def is_available(self) -> bool:
+        """실제 임베딩 생성 가능 여부 (더미/placeholder 폴백이 아닌지).
+
+        기본값 True; LocalEmbeddingProvider가 sentence-transformers 로드
+        실패(더미 랜덤 벡터 폴백) 여부를 반영해 오버라이드한다. 호출자가
+        임베딩 기반 유사도를 신뢰해도 되는지 판단하는 용도 (#1548).
+        """
+        return True
+
 
 class LocalEmbeddingProvider(EmbeddingProvider):
     """로컬 임베딩 제공자 (sentence-transformers 기반).
@@ -113,6 +123,11 @@ class LocalEmbeddingProvider(EmbeddingProvider):
     @property
     def dimensionality(self) -> int:
         return self._dim
+
+    @property
+    def is_available(self) -> bool:
+        """False once `_get_model()` had to fall back to dummy random vectors."""
+        return self._get_model() != "dummy"
 
 
 class GeminiEmbeddingProvider(EmbeddingProvider):
