@@ -42,6 +42,45 @@ class _FakeClient:
         return _FakeTable(self.calls, name)
 
 
+class _FakeSelectResult:
+    def __init__(self, data):
+        self.data = data
+
+
+class _FakeSelectTable:
+    """Fake for the read path: select().eq().filter().order().limit().execute()."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, n):
+        self._rows = self._rows[:n]
+        return self
+
+    def execute(self):
+        return _FakeSelectResult(self._rows)
+
+
+class _FakeSelectClient:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def table(self, _name):
+        return _FakeSelectTable(self.rows)
+
+
 def _run_loop_until_idle(monkeypatch, fake_client, prefill_items, idle_wait=0.4):
     """Reset module globals, prefill the queue, run the loop briefly, then stop it."""
     history._queue = queue.Queue()
@@ -151,3 +190,83 @@ def test_end_to_end_helpers_enqueue_expected_shapes(monkeypatch):
         name == "sparkleforge_history_events" and op == "insert" and payload["role"] == "user"
         for name, op, payload, _f in client.calls
     )
+
+
+def test_log_error_context_writes_to_agent_error_contexts_table(monkeypatch):
+    client = _FakeClient()
+    monkeypatch.setattr(history, "_BATCH_MAX_WAIT_S", 0.1)
+
+    items = [
+        (
+            "error_context",
+            {
+                "session_id": "s1",
+                "scenario_name": None,
+                "error_type": "PatchApplyFailure",
+                "error_message": "git apply -p1: patch does not apply",
+                "execution_context": {"issue_number": "1616", "diff": "diff --git a/x b/x"},
+            },
+        )
+    ]
+
+    _run_loop_until_idle(monkeypatch, client, items, idle_wait=0.4)
+
+    error_calls = [c for c in client.calls if c[0] == "agent_error_contexts"]
+    assert len(error_calls) == 1
+    _name, op, payload, _filters = error_calls[0]
+    assert op == "insert"
+    assert payload["error_type"] == "PatchApplyFailure"
+    assert payload["execution_context"]["issue_number"] == "1616"
+
+
+def test_log_error_context_helper_enqueues_expected_shape(monkeypatch):
+    client = _FakeClient()
+    monkeypatch.setattr(history, "_BATCH_MAX_WAIT_S", 0.1)
+    history._queue = queue.Queue()
+    history._stop_event = threading.Event()
+    monkeypatch.setattr(history, "get_supabase_client", lambda: client)
+
+    thread = threading.Thread(target=history._worker_loop, daemon=True)
+    thread.start()
+
+    history.log_error_context(
+        "PatchApplyFailure",
+        "boom",
+        session_id="s2",
+        execution_context={"issue_number": "1616"},
+    )
+
+    history._queue.join()
+    time.sleep(0.3)
+    history._stop_event.set()
+    thread.join(timeout=2.0)
+
+    assert any(
+        name == "agent_error_contexts" and op == "insert" and payload["error_message"] == "boom"
+        for name, op, payload, _f in client.calls
+    )
+
+
+def test_fetch_recent_patch_failures_returns_rows_when_configured(monkeypatch):
+    rows = [{"error_message": "boom", "execution_context": {"apply_errors": "git apply -p1: ..."}}]
+    monkeypatch.setattr(history, "get_supabase_client", lambda: _FakeSelectClient(rows))
+
+    result = history.fetch_recent_patch_failures("1616")
+
+    assert result == rows
+
+
+def test_fetch_recent_patch_failures_fails_open_without_supabase(monkeypatch):
+    monkeypatch.setattr(history, "get_supabase_client", lambda: None)
+
+    assert history.fetch_recent_patch_failures("1616") == []
+
+
+def test_fetch_recent_patch_failures_fails_open_on_query_error(monkeypatch):
+    class _BoomClient:
+        def table(self, _name):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(history, "get_supabase_client", lambda: _BoomClient())
+
+    assert history.fetch_recent_patch_failures("1616") == []
