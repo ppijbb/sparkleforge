@@ -168,6 +168,9 @@ def _persist_job(job_id: str) -> None:
                 os.fsync(f.fileno())
             os.replace(tmp_path, _JOB_STORE_PATH)
         except Exception as e:
+            logger.error(f"Failed to persist SDK job {job_id}: {e}")
+
+
 class JobStatus:
     """Represents the execution and progress status of a research job."""
 
