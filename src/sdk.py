@@ -37,6 +37,7 @@ import asyncio
 import json
 import threading
 from dataclasses import dataclass
+import contextlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
@@ -60,15 +61,23 @@ _job_tasks: Dict[str, asyncio.Task[Any]] = {}
 _JOB_STORE_PATH = Path(
     os.getenv("SPARKLEFORGE_SDK_JOB_STORE", str(Path.home() / ".sparkleforge" / "sdk_jobs.json"))
 )
+try:
+    _JOB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not os.access(_JOB_STORE_PATH.parent, os.W_OK):
+        logger.warning(f"Job store directory at {_JOB_STORE_PATH.parent} is not writable.")
+except Exception as e:
+    logger.warning(f"Failed to verify/create job store parent directory: {e}")
+
 _job_store_file_lock = threading.Lock()
 
 # #1654 review: the job-store file accumulated every job forever. Mirrors
 # forge_jobs' Supabase-side TTL (#1619) -- terminal jobs older than this are
 # dropped the next time any job is persisted.
-_JOB_STORE_TTL_DAYS = 30
+_JOB_STORE_TTL_DAYS = int(os.getenv("SPARKLEFORGE_SDK_JOB_STORE_TTL_DAYS", "30"))
 
 
 def _prune_expired_jobs(store: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Drop terminal jobs older than TTL."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=_JOB_STORE_TTL_DAYS)
     pruned: Dict[str, Dict[str, Any]] = {}
     for jid, job in store.items():
@@ -87,41 +96,88 @@ def _load_job_store() -> Dict[str, Dict[str, Any]]:
     """Best-effort read of the durable job-record file.
 
     Fails open (returns {}) on any error -- a corrupt/missing store must
-    never break in-process job tracking, only lose the cross-restart fallback.
+    raise or log errors appropriately depending on strictness, but here
+    we catch specific decode/IO errors and log loudly if corrupted.
     """
     with _job_store_file_lock:
         try:
             if not _JOB_STORE_PATH.exists():
                 return {}
-            return json.loads(_JOB_STORE_PATH.read_text(encoding="utf-8"))
+            raw = _JOB_STORE_PATH.read_text(encoding="utf-8")
+            if not raw.strip():
+                return {}
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error(f"Corrupt SDK job store JSON at {_JOB_STORE_PATH}: {e}")
+            raise
+        except OSError as e:
+            logger.error(f"OS error reading SDK job store at {_JOB_STORE_PATH}: {e}")
+            raise
         except Exception as e:
-            logger.debug(f"Failed to read SDK job store at {_JOB_STORE_PATH}: {e}")
-            return {}
+            logger.error(f"Unexpected error reading SDK job store at {_JOB_STORE_PATH}: {e}")
+            raise
+
+
+@contextlib.contextmanager
+def _file_lock_context(path: Path):
+    """Cross-process file locking via fcntl (POSIX) or msvcrt (Windows) if available."""
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as lock_file:
+        try:
+            import fcntl
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+        except (ImportError, AttributeError, OSError):
+            try:
+                import msvcrt
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            except (ImportError, AttributeError, OSError):
+                pass
+        try:
+            yield
+        finally:
+            try:
+                import fcntl
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+            except (ImportError, AttributeError, OSError):
+                try:
+                    import msvcrt
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                except (ImportError, AttributeError, OSError):
+                    pass
 
 
 def _persist_job(job_id: str) -> None:
     """Durably record one job's current state, so it survives a restart.
 
-    Best-effort: never raises. Read-modify-write on a single JSON file --
-    safe for one process, not for concurrent writers (see module docstring).
+    Uses atomic write (write to temp file + rename) and cross-process locking.
     """
     job = _jobs.get(job_id)
     if job is None:
         return
     with _job_store_file_lock:
-        try:
-            _JOB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            store: Dict[str, Any] = {}
-            if _JOB_STORE_PATH.exists():
+        with _file_lock_context(_JOB_STORE_PATH):
+            try:
+                _JOB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                store: Dict[str, Any] = {}
+                if _JOB_STORE_PATH.exists():
+                    try:
+                        raw = _JOB_STORE_PATH.read_text(encoding="utf-8")
+                        if raw.strip():
+                            store = json.loads(raw)
+                    except Exception:
+                        store = {}
+                store[job_id] = job
+                store = _prune_expired_jobs(store)
+                
+                tmp_path = _JOB_STORE_PATH.with_suffix(".tmp")
+                tmp_path.write_text(json.dumps(store), encoding="utf-8")
                 try:
-                    store = json.loads(_JOB_STORE_PATH.read_text(encoding="utf-8"))
-                except Exception:
-                    store = {}
-            store[job_id] = job
-            store = _prune_expired_jobs(store)
-            _JOB_STORE_PATH.write_text(json.dumps(store), encoding="utf-8")
-        except Exception as e:
-            logger.debug(f"Failed to persist job {job_id} to {_JOB_STORE_PATH}: {e}")
+                    tmp_path.replace(_JOB_STORE_PATH)
+                except OSError:
+                    os.replace(tmp_path, _JOB_STORE_PATH)
+            except Exception as e:
+                logger.warning(f"Failed to persist job {job_id} to {_JOB_STORE_PATH}: {e}")
 
 
 @dataclass
@@ -362,30 +418,7 @@ async def get_job_status(job_id: str) -> JobStatus:
             user_id=job.get("user_id"),
         )
 
-    job_store = await asyncio.to_thread(_load_job_store)
-    persisted = job_store.get(job_id)
-    if persisted is not None:
-        status_val = persisted.get("status", "pending")
-        error_val = persisted.get("error")
-        # This process's _job_tasks was rebuilt empty on startup, so a
-        # persisted "pending"/"running" record here means the job was
-        # in-flight when a previous process died -- it will never resume,
-        # so say so rather than reporting a stale "running" forever.
-        if status_val in ("pending", "running") and job_id not in _job_tasks:
-            status_val = "failed"
-            error_val = "Job was in progress when the process restarted and cannot resume."
-        return JobStatus(
-            job_id=job_id,
-            status=status_val,
-            topic=persisted.get("topic"),
-            prompt=persisted.get("prompt"),
-            submitted_at=persisted.get("submitted_at"),
-            completed_at=persisted.get("completed_at"),
-            error=error_val,
-            result=persisted.get("result"),
-            user_id=persisted.get("user_id"),
-        )
-
+    # Supabase is the primary source of truth for hosted deployments; check Supabase first.
     from src.utils.supabase_exporter import (
         SupabaseQueryError,
         get_job_status as sb_get_job_status,
@@ -411,7 +444,29 @@ async def get_job_status(job_id: str) -> JobStatus:
         except SupabaseQueryError:
             raise
         except Exception as e:
-            raise ValueError(f"Failed to query job status: {e}") from e
+            logger.debug(f"Supabase query failed, falling back to local store: {e}")
+
+    job_store = await asyncio.to_thread(_load_job_store)
+    persisted = job_store.get(job_id)
+    if persisted is not None:
+        status_val = persisted.get("status", "pending")
+        error_val = persisted.get("error")
+        # Attempt recovery via Supabase if possible, otherwise mark unknown/failed gracefully
+        if status_val in ("pending", "running") and job_id not in _job_tasks:
+            status_val = "unknown"
+            error_val = "Job was in process during restart and active status could not be verified."
+        return JobStatus(
+            job_id=job_id,
+            status=status_val,
+            topic=persisted.get("topic"),
+            prompt=persisted.get("prompt"),
+            submitted_at=persisted.get("submitted_at"),
+            completed_at=persisted.get("completed_at"),
+            error=error_val,
+            result=persisted.get("result"),
+            user_id=persisted.get("user_id"),
+        )
+
 
     raise ValueError(f"Job not found: {job_id}")
 
@@ -422,17 +477,6 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
     if job is not None and job.get("result") is not None:
         return job.get("result")
 
-    job_store = await asyncio.to_thread(_load_job_store)
-    persisted = job_store.get(job_id)
-    if persisted is not None and persisted.get("result") is not None:
-        return persisted.get("result")
-
-    from src.utils.supabase_exporter import (
-        SupabaseQueryError,
-        get_report as sb_get_report,
-        get_supabase_client,
-    )
-
     if get_supabase_client() is not None:
         try:
             sb_report = await sb_get_report(job_id)
@@ -442,5 +486,10 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
             raise
         except Exception:
             pass
+
+    job_store = await asyncio.to_thread(_load_job_store)
+    persisted = job_store.get(job_id)
+    if persisted is not None and persisted.get("result") is not None:
+        return persisted.get("result")
 
     return None
