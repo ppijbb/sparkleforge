@@ -58,14 +58,23 @@ _job_tasks: Dict[str, asyncio.Task[Any]] = {}
 # #1654: durable local fallback, one tier below _jobs (this process's memory)
 # and above Supabase -- see the module docstring's single-worker note.
 _JOB_STORE_PATH = Path(
-    os.getenv("SPARKLEFORGE_SDK_JOB_STORE", str(Path.home() / ".sparkleforge" / "sdk_jobs.json"))
+    os.getenv("SPARKLEFORGE_SDK_JOB_STORE_PATH", os.getenv("SPARKLEFORGE_SDK_JOB_STORE", str(Path.home() / ".sparkleforge" / "sdk_jobs.json")))
 )
 _job_store_file_lock = threading.Lock()
 
 # #1654 review: the job-store file accumulated every job forever. Mirrors
 # forge_jobs' Supabase-side TTL (#1619) -- terminal jobs older than this are
 # dropped the next time any job is persisted.
-_JOB_STORE_TTL_DAYS = 30
+try:
+    _JOB_STORE_TTL_DAYS = int(os.getenv("SPARKLEFORGE_SDK_JOB_STORE_TTL_DAYS", "30"))
+except (ValueError, TypeError):
+    _JOB_STORE_TTL_DAYS = 30
+
+# Validate writability at startup if parent exists or can be created
+try:
+    _JOB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+except Exception as e:
+    logger.warning(f"Job store path {_JOB_STORE_PATH} parent directory not writable: {e}")
 
 
 def _prune_expired_jobs(store: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -86,17 +95,26 @@ def _prune_expired_jobs(store: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str,
 def _load_job_store() -> Dict[str, Dict[str, Any]]:
     """Best-effort read of the durable job-record file.
 
-    Fails open (returns {}) on any error -- a corrupt/missing store must
-    never break in-process job tracking, only lose the cross-restart fallback.
+    Raises or logs explicitly on JSON corruption / unexpected OS errors so
+    file corruption does not go silently unnoticed.
     """
     with _job_store_file_lock:
         try:
             if not _JOB_STORE_PATH.exists():
                 return {}
-            return json.loads(_JOB_STORE_PATH.read_text(encoding="utf-8"))
+            content = _JOB_STORE_PATH.read_text(encoding="utf-8")
+            if not content.strip():
+                return {}
+            return json.loads(content)
+        except json.JSONDecodeError as jde:
+            logger.error(f"Corrupt SDK job store JSON at {_JOB_STORE_PATH}: {jde}")
+            raise
+        except OSError as oe:
+            logger.error(f"OS error reading SDK job store at {_JOB_STORE_PATH}: {oe}")
+            raise
         except Exception as e:
-            logger.debug(f"Failed to read SDK job store at {_JOB_STORE_PATH}: {e}")
-            return {}
+            logger.error(f"Unexpected error reading SDK job store at {_JOB_STORE_PATH}: {e}")
+            raise
 
 
 def _persist_job(job_id: str) -> None:
@@ -114,14 +132,20 @@ def _persist_job(job_id: str) -> None:
             store: Dict[str, Any] = {}
             if _JOB_STORE_PATH.exists():
                 try:
-                    store = json.loads(_JOB_STORE_PATH.read_text(encoding="utf-8"))
+                    content = _JOB_STORE_PATH.read_text(encoding="utf-8")
+                    if content.strip():
+                        store = json.loads(content)
                 except Exception:
                     store = {}
             store[job_id] = job
             store = _prune_expired_jobs(store)
-            _JOB_STORE_PATH.write_text(json.dumps(store), encoding="utf-8")
+            
+            # Atomic write via temp file and os.replace
+            tmp_path = _JOB_STORE_PATH.with_suffix(_JOB_STORE_PATH.suffix + ".tmp")
+            tmp_path.write_text(json.dumps(store), encoding="utf-8")
+            os.replace(tmp_path, _JOB_STORE_PATH)
         except Exception as e:
-            logger.debug(f"Failed to persist job {job_id} to {_JOB_STORE_PATH}: {e}")
+            logger.warning(f"Failed to persist job {job_id} to {_JOB_STORE_PATH}: {e}")
 
 
 @dataclass
@@ -349,43 +373,8 @@ async def submit_job(topic: str, *, user_id: Optional[str] = None, **kwargs: Any
 async def get_job_status(job_id: str) -> JobStatus:
     """Get the current progress status, error, and completion status of a job."""
     job = _jobs.get(job_id)
-    if job is not None:
-        return JobStatus(
-            job_id=job_id,
-            status=job.get("status", "pending"),
-            topic=job.get("topic"),
-            prompt=job.get("prompt"),
-            submitted_at=job.get("submitted_at"),
-            completed_at=job.get("completed_at"),
-            error=job.get("error"),
-            result=job.get("result"),
-            user_id=job.get("user_id"),
-        )
 
-    job_store = await asyncio.to_thread(_load_job_store)
-    persisted = job_store.get(job_id)
-    if persisted is not None:
-        status_val = persisted.get("status", "pending")
-        error_val = persisted.get("error")
-        # This process's _job_tasks was rebuilt empty on startup, so a
-        # persisted "pending"/"running" record here means the job was
-        # in-flight when a previous process died -- it will never resume,
-        # so say so rather than reporting a stale "running" forever.
-        if status_val in ("pending", "running") and job_id not in _job_tasks:
-            status_val = "failed"
-            error_val = "Job was in progress when the process restarted and cannot resume."
-        return JobStatus(
-            job_id=job_id,
-            status=status_val,
-            topic=persisted.get("topic"),
-            prompt=persisted.get("prompt"),
-            submitted_at=persisted.get("submitted_at"),
-            completed_at=persisted.get("completed_at"),
-            error=error_val,
-            result=persisted.get("result"),
-            user_id=persisted.get("user_id"),
-        )
-
+    # 1. Check Supabase first if configured (Supabase precedence rule)
     from src.utils.supabase_exporter import (
         SupabaseQueryError,
         get_job_status as sb_get_job_status,
@@ -411,22 +400,63 @@ async def get_job_status(job_id: str) -> JobStatus:
         except SupabaseQueryError:
             raise
         except Exception as e:
-            raise ValueError(f"Failed to query job status: {e}") from e
+            logger.debug(f"Supabase query failed for job {job_id}, falling back to local: {e}")
+
+    # 2. Check in-process memory next
+    if job is not None:
+        return JobStatus(
+            job_id=job_id,
+            status=job.get("status", "pending"),
+            topic=job.get("topic"),
+            prompt=job.get("prompt"),
+            submitted_at=job.get("submitted_at"),
+            completed_at=job.get("completed_at"),
+            error=job.get("error"),
+            result=job.get("result"),
+            user_id=job.get("user_id"),
+        )
+
+    # 3. Fall back to local durable job store file
+    try:
+        job_store = await asyncio.to_thread(_load_job_store)
+    except Exception:
+        job_store = {}
+
+    persisted = job_store.get(job_id) if job_store else None
+    if persisted is not None:
+        status_val = persisted.get("status", "pending")
+        error_val = persisted.get("error")
+        # Orphaned job recovery: try to query Supabase or check if active,
+        # otherwise mark status appropriately instead of silently failing or spinning.
+        if status_val in ("pending", "running") and job_id not in _job_tasks:
+            if get_supabase_client() is not None:
+                try:
+                    sb_row = await sb_get_job_status(job_id)
+                    if sb_row and sb_row.get("status") not in ("pending", "running"):
+                        status_val = sb_row.get("status", status_val)
+                except Exception:
+                    pass
+            if status_val in ("pending", "running"):
+                status_val = "unknown"
+                error_val = "Job was in-flight during restart and could not be verified in Supabase."
+        return JobStatus(
+            job_id=job_id,
+            status=status_val,
+            topic=persisted.get("topic"),
+            prompt=persisted.get("prompt"),
+            submitted_at=persisted.get("submitted_at"),
+            completed_at=persisted.get("completed_at"),
+            error=error_val,
+            result=persisted.get("result"),
+            user_id=persisted.get("user_id"),
+        )
 
     raise ValueError(f"Job not found: {job_id}")
 
 
 async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
     """Get the finished report result for a completed job, or None if not found/unfinished."""
-    job = _jobs.get(job_id)
-    if job is not None and job.get("result") is not None:
-        return job.get("result")
-
-    job_store = await asyncio.to_thread(_load_job_store)
-    persisted = job_store.get(job_id)
-    if persisted is not None and persisted.get("result") is not None:
-        return persisted.get("result")
-
+    # 1. Check Supabase first (Supabase precedence rule)
     from src.utils.supabase_exporter import (
         SupabaseQueryError,
         get_report as sb_get_report,
@@ -442,5 +472,18 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
             raise
         except Exception:
             pass
+
+    job = _jobs.get(job_id)
+    if job is not None and job.get("result") is not None:
+        return job.get("result")
+
+    try:
+        job_store = await asyncio.to_thread(_load_job_store)
+    except Exception:
+        job_store = {}
+
+    persisted = job_store.get(job_id) if job_store else None
+    if persisted is not None and persisted.get("result") is not None:
+        return persisted.get("result")
 
     return None
