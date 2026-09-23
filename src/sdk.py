@@ -413,7 +413,6 @@ async def get_job_status(job_id: str) -> JobStatus:
             logger.debug(f"Supabase query failed for job status {job_id}: {e}")
 
     if job is not None:
-    if job is not None:
         return JobStatus(
             job_id=job_id,
             status=job.get("status", "pending"),
