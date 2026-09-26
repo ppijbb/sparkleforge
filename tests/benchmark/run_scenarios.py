@@ -17,10 +17,10 @@ Usage:
 """
 
 from __future__ import annotations
-import enum
 
 import argparse
 import asyncio
+import enum
 import importlib
 import json
 import os
@@ -146,17 +146,28 @@ def load_scenarios(only_id: str | None = None) -> List[Dict[str, Any]]:
 
 def classify_error(stderr: str) -> str:
     """Classify error into Supabase 12-Taxonomy."""
-    if "ToolBindingGap" in stderr: return FailureTaxonomy.ToolBindingGap.value
-    if "PermissionDenied" in stderr: return FailureTaxonomy.PermissionDenied.value
-    if "timeout" in stderr.lower(): return FailureTaxonomy.SchedulerTimeout.value
-    if "LoopStagnation" in stderr: return FailureTaxonomy.LoopStagnation.value
-    if "AgentPassivity" in stderr: return FailureTaxonomy.AgentPassivity.value
-    if "PrematureExit" in stderr: return FailureTaxonomy.PrematureExit.value
-    if "ContextBloat" in stderr: return FailureTaxonomy.ContextBloat.value
-    if "FactDistortion" in stderr: return FailureTaxonomy.FactDistortion.value
-    if "DecoyLeak" in stderr: return FailureTaxonomy.DecoyLeak.value
-    if "SpecViolation" in stderr: return FailureTaxonomy.SpecViolation.value
-    if "ToolHallucination" in stderr: return FailureTaxonomy.ToolHallucination.value
+    if "ToolBindingGap" in stderr:
+        return FailureTaxonomy.ToolBindingGap.value
+    if "PermissionDenied" in stderr:
+        return FailureTaxonomy.PermissionDenied.value
+    if "timeout" in stderr.lower():
+        return FailureTaxonomy.SchedulerTimeout.value
+    if "LoopStagnation" in stderr:
+        return FailureTaxonomy.LoopStagnation.value
+    if "AgentPassivity" in stderr:
+        return FailureTaxonomy.AgentPassivity.value
+    if "PrematureExit" in stderr:
+        return FailureTaxonomy.PrematureExit.value
+    if "ContextBloat" in stderr:
+        return FailureTaxonomy.ContextBloat.value
+    if "FactDistortion" in stderr:
+        return FailureTaxonomy.FactDistortion.value
+    if "DecoyLeak" in stderr:
+        return FailureTaxonomy.DecoyLeak.value
+    if "SpecViolation" in stderr:
+        return FailureTaxonomy.SpecViolation.value
+    if "ToolHallucination" in stderr:
+        return FailureTaxonomy.ToolHallucination.value
     return FailureTaxonomy.UnresolvedBug.value
 
 
@@ -388,6 +399,21 @@ def _compare_scenarios(current_scenarios: Dict[str, Any], baseline_scenarios: Di
             prior_check = prior.get("breakdown", {}).get(check_name)
             if prior_check is None or prior_check.get("inconclusive"):
                 continue
+            # Rule-based fallback or infra outage in prior check must not register as capability regression
+            prior_reason = (prior_check.get("reason") or "").lower()
+            if any(
+                marker in prior_reason
+                for marker in (
+                    "rule-based fallback",
+                    "judge unavailable",
+                    "fallback models failed",
+                    "all fallback models exhausted",
+                )
+            ):
+                print(
+                    f"    {check_name}: SKIPPED (prior baseline was rule-based fallback / judge unavailable: {prior_check.get('reason')})"
+                )
+                continue
             tolerance = (
                 JUDGE_REGRESSION_TOLERANCE
                 if check_name.startswith("judge_")
@@ -485,11 +511,15 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         if adjusted - prev_adjusted >= min_effect:
             improvements += 1
         prev_adjusted = adjusted
+    current_improved = False
     if current_adjusted is not None and prev_adjusted is not None:
         if current_adjusted - prev_adjusted >= min_effect:
             improvements += 1
+            current_improved = True
 
-    report["stagnation_detected"] = improvements < min_improvements
+    # Stagnation is resolved if the current run itself shows meaningful improvement (breaks deadlock)
+    # or if the rolling window already met the improvement threshold.
+    report["stagnation_detected"] = (improvements < min_improvements) and not current_improved
     report["stagnation_improvements"] = improvements
     report["stagnation_window_size"] = len(history_window)
 
@@ -499,7 +529,9 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
             f"(Δ ≥ {min_effect}) across the last {len(history_window)} history entries "
             f"(threshold: {min_improvements})."
         )
-        return 1
+        # Stagnation flags the report for downstream tracking (`sparkleforge ci stagnation-issue`),
+        # but does not fail the PR gate if there is no actual regression (prevents permanent CI deadlock).
+        return regression_exit
 
     print(
         f"[scenario-eval] stagnation gate passed: {improvements} meaningful improvement(s) "

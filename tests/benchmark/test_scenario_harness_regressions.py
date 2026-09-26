@@ -147,3 +147,83 @@ async def test_build_env_grade_reports_env_setup_success_via_dotenv_file(monkeyp
     scores = await build_env.grade(tmp_path, ctx, stdout="")
 
     assert scores["env_setup"][0] == 1.0
+
+
+def test_compare_scenarios_skips_rule_based_fallback():
+    current = {
+        "s1": {
+            "total": 0.0,
+            "adjusted_total": 0.0,
+            "breakdown": {
+                "judge_quality": {"score": 0.0, "reason": "empty output", "inconclusive": False}
+            },
+        }
+    }
+    baseline = {
+        "s1": {
+            "total": 0.5,
+            "adjusted_total": 0.5,
+            "breakdown": {
+                "judge_quality": {
+                    "score": 0.5,
+                    "reason": "rule-based fallback judge: matched 1 signal group(s) (LLM judge unavailable)",
+                    "inconclusive": False,
+                }
+            },
+        }
+    }
+    # Should not report regression because baseline was an infra rule-based fallback
+    exit_code = run_scenarios._compare_scenarios(current, baseline)
+    assert exit_code == 0
+
+
+def test_compare_to_history_resolves_stagnation_on_improvement(tmp_path):
+    history_file = tmp_path / "history.jsonl"
+    import json
+
+    # 5 history entries with 0.24 score (0 internal improvements)
+    with history_file.open("w", encoding="utf-8") as f:
+        for _ in range(5):
+            entry = {
+                "overall_score_adjusted": 0.24,
+                "inconclusive_checks": 0,
+                "generated_at": "2026-08-08T00:00:00Z",
+                "scenarios": {},
+            }
+            f.write(json.dumps(entry) + "\n")
+
+    current_report = {
+        "overall_score_adjusted": 0.55,
+        "scenarios": {},
+    }
+
+    exit_code = run_scenarios.compare_to_history(current_report, history_file)
+    assert exit_code == 0
+    assert current_report["stagnation_detected"] is False
+    assert current_report["stagnation_improvements"] == 1
+
+
+def test_compare_to_history_does_not_block_merge_when_no_regression(tmp_path):
+    history_file = tmp_path / "history.jsonl"
+    import json
+
+    with history_file.open("w", encoding="utf-8") as f:
+        for _ in range(5):
+            entry = {
+                "overall_score_adjusted": 0.24,
+                "inconclusive_checks": 0,
+                "generated_at": "2026-08-08T00:00:00Z",
+                "scenarios": {},
+            }
+            f.write(json.dumps(entry) + "\n")
+
+    current_report = {
+        "overall_score_adjusted": 0.24,
+        "scenarios": {},
+    }
+
+    exit_code = run_scenarios.compare_to_history(current_report, history_file)
+    # Stagnation is detected because no improvement, but exit code is 0 (no regression) so PR is not deadlocked
+    assert exit_code == 0
+    assert current_report["stagnation_detected"] is True
+
