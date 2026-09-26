@@ -46,6 +46,12 @@ env:
   AUTO_FIX_MERGE_METHOD: ${{ vars.AUTO_FIX_MERGE_METHOD || 'squash' }}
   AUTO_FIX_MERGE_WAIT_SECONDS: ${{ vars.AUTO_FIX_MERGE_WAIT_SECONDS || '900' }}
 
+  # Circuit breaker configuration
+  AUTO_FIX_MAX_ATTEMPTS: ${{ vars.AUTO_FIX_MAX_ATTEMPTS || '5' }}
+  AUTO_FIX_CIRCUIT_BREAKER_THRESHOLD: ${{ vars.AUTO_FIX_CIRCUIT_BREAKER_THRESHOLD || '3' }}
+  AUTO_FIX_CIRCUIT_BREAKER_WINDOW_HOURS: ${{ vars.AUTO_FIX_CIRCUIT_BREAKER_WINDOW_HOURS || '24' }}
+  AUTO_FIX_PROVIDER_HEALTH_CHECK: ${{ vars.AUTO_FIX_PROVIDER_HEALTH_CHECK || 'true' }}
+
 jobs:
   open-pr-and-fix:
     if: >-
@@ -226,6 +232,91 @@ jobs:
       - name: Clear explicit retry labels
         if: >-
           steps.context.outputs.skip != 'true' &&
+        if: >-
+          steps.context.outputs.skip != 'true' &&
+          (github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@sparkleforge')) ||
+          (github.event_name == 'issues' && github.event.label.name == 'auto-fix-requested'))
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh issue edit "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --remove-label auto-fix-failed,auto-fix-pr-opened,auto-fix-requested 2>/dev/null || true
+
+      - name: Check provider health
+        if: >-
+          steps.context.outputs.skip != 'true' &&
+          env.AUTO_FIX_PROVIDER_HEALTH_CHECK == 'true'
+        id: provider_health
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+        run: |
+          set +e
+          HEALTHY=false
+          # Try a lightweight model call to verify provider availability
+          if [ -n "$GOOGLE_API_KEY" ]; then
+            curl -s -f -m 10 "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GOOGLE_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{"contents":[{"parts":[{"text":"health check"}]}]}' >/dev/null && HEALTHY=true
+          fi
+          if [ "$HEALTHY" != "true" ] && [ -n "$OPENROUTER_API_KEY" ]; then
+            curl -s -f -m 10 "https://openrouter.ai/api/v1/chat/completions" \
+              -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{"model":"google/gemini-flash-1.5","messages":[{"role":"user","content":"health check"}],"max_tokens":1}' >/dev/null && HEALTHY=true
+          fi
+          if [ "$HEALTHY" != "true" ] && [ -n "$NVIDIA_API_KEY" ]; then
+            curl -s -f -m 10 "https://integrate.api.nvidia.com/v1/chat/completions" \
+              -H "Authorization: Bearer $NVIDIA_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{"model":"meta/llama-3.1-8b-instruct","messages":[{"role":"user","content":"health check"}],"max_tokens":1}' >/dev/null && HEALTHY=true
+          fi
+          set -e
+          if [ "$HEALTHY" = "true" ]; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+            echo "Provider health check passed"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::All LLM providers appear unhealthy. Skipping auto-fix to avoid retry storm."
+          fi
+
+      - name: Check circuit breaker
+        if: steps.context.outputs.skip != 'true' && steps.provider_health.outputs.healthy == 'true'
+        id: circuit_breaker
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          ISSUE_NUMBER="${{ steps.context.outputs.issue_number }}"
+          REPO="${{ github.repository }}"
+          
+          # Check if circuit breaker label exists
+          CIRCUIT_BROKEN=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels --jq '[.labels[].name] | contains(["auto-fix-circuit-broken"])')
+          if [ "$CIRCUIT_BROKEN" = "true" ]; then
+            echo "broken=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Circuit breaker active for issue #$ISSUE_NUMBER. Skipping auto-fix."
+            exit 0
+          fi
+          
+          # Count consecutive failures in the last 24h
+          SINCE=$(date -u -d "${{ env.AUTO_FIX_CIRCUIT_BREAKER_WINDOW_HOURS }} hours ago" +%Y-%m-%dT%H:%M:%SZ)
+          FAILURE_COUNT=$(gh api repos/$REPO/issues/$ISSUE_NUMBER/events --jq "[.[] | select(.event == \"labeled\" and .label.name == \"auto-fix-failed\" and .created_at >= \"$SINCE\")] | length")
+          
+          THRESHOLD="${{ env.AUTO_FIX_CIRCUIT_BREAKER_THRESHOLD }}"
+          if [ "$FAILURE_COUNT" -ge "$THRESHOLD" ]; then
+            echo "broken=true" >> "$GITHUB_OUTPUT"
+            gh label create auto-fix-circuit-broken --repo "$REPO" --color B60205 --description "Auto-fix circuit breaker triggered after $THRESHOLD consecutive failures" --force >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label auto-fix-circuit-broken || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "🔴 **Circuit breaker activated**: $FAILURE_COUNT consecutive auto-fix failures in the last ${{ env.AUTO_FIX_CIRCUIT_BREAKER_WINDOW_HOURS }}h. Further automated attempts are paused until a human removes the \`auto-fix-circuit-broken\` label." || true
+            echo "::warning::Circuit breaker triggered for issue #$ISSUE_NUMBER ($FAILURE_COUNT failures)"
+          else
+            echo "broken=false" >> "$GITHUB_OUTPUT"
+            echo "Circuit breaker check passed: $FAILURE_COUNT/$THRESHOLD failures in window"
+          fi
+
+      - name: Check and increment
           (github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@sparkleforge')) ||
           (github.event_name == 'issues' && github.event.label.name == 'auto-fix-requested'))
