@@ -466,7 +466,7 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         f"[scenario-eval] comparing against conclusive history entry from "
         f"{prior_report.get('generated_at')} (skipped inconclusive entries)"
     )
-    regression_exit = _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {}))
+    regression_exit = _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {})) if prior_report else 0
 
     # Stagnation gate: count meaningful improvements (Δ ≥ 0.03) across the
     # last 5 conclusive history entries. Judge-API noise that moves the raw
@@ -505,7 +505,7 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         f"[scenario-eval] stagnation gate passed: {improvements} meaningful improvement(s) "
         f"across the last {len(history_window)} history entries."
     )
-    return regression_exit
+    return locals().get("regression_exit", 0)
 
 
 def append_history(report: Dict[str, Any], history_path: Path) -> None:

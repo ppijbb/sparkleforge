@@ -139,6 +139,8 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 raise ValueError(f"Unsafe file path: {file_path}")
 
             path = Path(file_path)
+            if path.is_file():
+                raise IsADirectoryError(f"Path is a file, cannot use as directory: {path.parent}")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
@@ -203,6 +205,12 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 raise ValueError(f"Unsafe file path: {file_path}")
 
             path = Path(file_path)
+            if path.is_file():
+                raise IsADirectoryError(f"Path is a file, cannot use as directory: {path.parent}")
+            if path.parent.exists() and not path.parent.is_dir():
+                import warnings
+                warnings.warn(f"Parent path {path.parent} is a file and will be replaced by a directory.", UserWarning)
+                path.parent.unlink()
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
