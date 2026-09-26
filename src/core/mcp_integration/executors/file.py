@@ -313,6 +313,90 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 confidence=0.9,
             )
 
+        elif tool_name in ("batch_copy_files", "batch_move_files", "copy_files", "move_files"):
+            operations = parameters.get("operations") or parameters.get("files") or []
+            src_dir = parameters.get("source_directory") or parameters.get("src")
+            dest_dir = parameters.get("destination_directory") or parameters.get("dest") or parameters.get("destination")
+            is_move = "move" in tool_name
+
+            if not operations and src_dir and dest_dir:
+                # Convenience mode: copy/move all files matching criteria from src to dest
+                src_path = Path(src_dir)
+                dest_path = Path(dest_dir)
+                if not src_path.exists() or not src_path.is_dir():
+                    raise FileNotFoundError(f"Source directory not found: {src_dir}")
+                
+                date_range = parameters.get("date_range") or parameters.get("year")
+                pattern = parameters.get("pattern") or "*"
+                
+                operations = []
+                for item in src_path.rglob(pattern):
+                    if item.is_file():
+                        # Check date/year filters if requested (e.g. 2025 receipts)
+                        if date_range:
+                            try:
+                                mtime = item.stat().st_mtime
+                                import datetime
+                                file_year = datetime.datetime.fromtimestamp(mtime).year
+                                if str(date_range) not in str(file_year) and str(date_range) not in item.name:
+                                    continue
+                            except Exception:
+                                pass
+                        rel = item.relative_to(src_path)
+                        operations.append({
+                            "source": str(item),
+                            "destination": str(dest_path / rel)
+                        })
+
+            if not operations:
+                raise ValueError("operations list or source/destination directories are required for batch file operations")
+
+            import shutil
+            results = []
+            for op in operations:
+                s_path_str = op.get("source") or op.get("src")
+                d_path_str = op.get("destination") or op.get("dest")
+                if not s_path_str or not d_path_str:
+                    continue
+                if not _is_safe_path(s_path_str) or not _is_safe_path(d_path_str):
+                    raise ValueError(f"Unsafe path in batch operation: {s_path_str} -> {d_path_str}")
+                
+                s_path = Path(s_path_str)
+                d_path = Path(d_path_str)
+                
+                if not s_path.exists():
+                    # Fallback search if exact path not found
+                    parent_search = s_path.parent
+                    if parent_search.exists():
+                        matches = list(parent_search.rglob(s_path.name))
+                        if matches:
+                            s_path = matches[0]
+
+                if not s_path.exists():
+                    raise FileNotFoundError(f"Source file not found: {s_path}")
+
+                d_path.parent.mkdir(parents=True, exist_ok=True)
+                if is_move:
+                    shutil.move(str(s_path), str(d_path))
+                else:
+                    if s_path.is_dir():
+                        shutil.copytree(str(s_path), str(d_path), dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(str(s_path), str(d_path))
+                
+                results.append({
+                    "source": str(s_path),
+                    "destination": str(d_path),
+                    "action": "moved" if is_move else "copied"
+                })
+
+            return ToolResult(
+                success=True,
+                data={"operations_count": len(results), "results": results},
+                execution_time=time.time() - start_time,
+                confidence=0.95,
+            )
+
         else:
             raise ValueError(f"Unknown file tool: {tool_name}")
 
