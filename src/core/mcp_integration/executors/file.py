@@ -13,7 +13,7 @@ MIN_MATCH_LINES = 2
 
 
 def _edit_mismatch_hint(content: str, old_string: str, context_lines: int = 3, max_chars: int = 800) -> str:
-    """Best-effort hint for an edit_file 'old_string not found' failure.
+    r"""Best-effort hint for an edit_file 'old_string not found' failure.
 
     A bare "not found" error gives the model nothing to correct itself with,
     so it re-reads the whole file (an extra iteration, and one the momentum
@@ -203,7 +203,11 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
                 raise ValueError(f"Unsafe file path: {file_path}")
 
             path = Path(file_path)
+            if path.parent.is_file():
+                path.parent.unlink()
             path.parent.mkdir(parents=True, exist_ok=True)
+            if path.is_dir():
+                raise IsADirectoryError(f"Cannot write file to a directory path: {file_path}")
             path.write_text(content, encoding="utf-8")
 
             return ToolResult(
