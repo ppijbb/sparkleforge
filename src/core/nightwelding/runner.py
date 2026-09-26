@@ -15,13 +15,14 @@ import time
 from pathlib import Path
 from typing import List
 
-from src.core.nightwelding import gate, github_adapter
+from src.core.nightwelding import escalation, gate, github_adapter
 from src.core.nightwelding.adapter import BaseNightweldingAdapter
 from src.core.nightwelding.adapter import IssueContext  # noqa: F401  (re-exported for tests)
 from src.core.nightwelding.github_adapter import GitHubAdapter
 from src.core.nightwelding.implement import implement_until_green
 from src.core.nightwelding.local_adapter import LocalGitAdapter
 from src.core.nightwelding.models import (
+    NightweldingDigest,
     NightweldingItem,
     NightweldingQueue,
     NightweldingStatus,
@@ -85,7 +86,12 @@ async def run_nightwelding_issue(
         issue_number, main_repo_root, repo=repo, explicit_adapter=adapter, provider=provider
     )
 
-    item = NightweldingItem(issue_number=issue_number, status=NightweldingStatus.WRITING_TEST)
+    prior_item = queue.get(issue_number)
+    item = NightweldingItem(
+        issue_number=issue_number,
+        status=NightweldingStatus.WRITING_TEST,
+        consecutive_failures=prior_item.consecutive_failures if prior_item else 0,
+    )
     queue.upsert(item)
 
     worktree_dir: Path | None = None
@@ -178,6 +184,7 @@ async def run_nightwelding_issue(
         )
         item.pr_url = published_ref
         item.status = NightweldingStatus.DRAFT_OPENED
+        item.consecutive_failures = 0
         queue.upsert(item)
 
         active_adapter.report_success(issue_number, published_ref)
@@ -200,11 +207,14 @@ def _fail(
 ) -> NightweldingItem:
     item.status = NightweldingStatus.FAILED
     item.failure_reason = reason
+    item.consecutive_failures += 1
     queue.upsert(item)
     try:
         adapter.report_failure(issue_number, reason, log=log)
     except Exception:
         logger.exception("Nightwelding: failed to report failure for issue #%s", issue_number)
+    if escalation.should_escalate(item):
+        escalation.escalate_issue(adapter, issue_number, item)
     return item
 
 
@@ -229,6 +239,7 @@ async def run_nightwelding_sweep(
         exclude_labels=[
             github_adapter.NIGHTWELDING_DRAFT_LABEL[0],
             github_adapter.NIGHTWELDING_FAILED_LABEL[0],
+            github_adapter.AUTO_FIX_BACKOFF_LABEL[0],
         ],
         limit=limit,
     )
@@ -246,3 +257,29 @@ async def run_nightwelding_sweep(
         )
         results.append(result)
     return results
+
+
+DEFAULT_DIGEST_LABEL = github_adapter.NIGHTWELDING_QUEUE_LABEL[0]
+
+
+def run_nightwelding_digest(
+    repo_root: Path | None = None,
+    repo: str | None = None,
+    label: str = DEFAULT_DIGEST_LABEL,
+    limit: int = 100,
+    top_n: int = 10,
+    post_to_issue: int | None = None,
+    adapter: GitHubAdapter | None = None,
+) -> NightweldingDigest:
+    """Group open Nightwelding-origin issues by root file, flag likely-fixed
+    ones, and optionally post the result as a single issue comment (#1545).
+
+    GitHub-only (`gh issue list` has no LocalGitAdapter equivalent yet).
+    """
+    limit = max(1, limit)
+    top_n = max(1, top_n)
+    active_adapter = adapter or GitHubAdapter(repo=repo, repo_root=repo_root or Path.cwd())
+    digest = active_adapter.generate_digest(label=label, limit=limit)
+    if post_to_issue is not None:
+        active_adapter.post_digest_as_comment(digest, post_to_issue, top_n=top_n)
+    return digest

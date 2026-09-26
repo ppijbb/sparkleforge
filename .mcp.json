@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sparkleforge": {
+      "command": "python",
+      "args": ["-m", "src.core.mcp_servers.sparkleforge_server"]
+    }
+  }
+}

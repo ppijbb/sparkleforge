@@ -9,7 +9,7 @@ import logging
 import os
 import asyncio
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -132,20 +132,32 @@ async def create_job(topic: str, user_id: Optional[str] = None) -> Optional[Dict
         return None
 
 
+FORGE_JOB_TTL_DAYS = 30
+_TERMINAL_JOB_STATUSES = {"completed", "failed"}
+
+
 async def update_job_status(
     job_id: str, status: str, error_message: Optional[str] = None
 ) -> bool:
-    """Update status of a research job in Supabase."""
+    """Update status of a research job in Supabase.
+
+    #1619: reaching a terminal status (completed/failed) sets expires_at
+    FORGE_JOB_TTL_DAYS out, so cleanup_expired_jobs.py can later delete it.
+    """
     client = get_supabase_client()
     if not client:
         return False
 
     data = {
         "status": status,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if error_message:
         data["error_message"] = error_message
+    if status in _TERMINAL_JOB_STATUSES:
+        data["expires_at"] = (
+            datetime.now(timezone.utc) + timedelta(days=FORGE_JOB_TTL_DAYS)
+        ).isoformat()
 
     try:
         response = await asyncio.to_thread(
@@ -155,6 +167,25 @@ async def update_job_status(
     except Exception as e:
         logger.error(f"Failed to update job status in Supabase: {e}")
         return False
+
+
+# Reference frontier-model pricing (USD per 1M tokens) used only to compute
+# an informational "what this would've cost on a frontier model" comparison.
+# Not used for billing or model routing. Source: Anthropic's published API
+# pricing for claude-opus-4, captured 2026-08 -- rates may drift over time;
+# this is a rough reference point, not a live-priced billing figure.
+FRONTIER_PRICING: Dict[str, Dict[str, float]] = {
+    "claude-opus-4": {"input": 15.00, "output": 75.00},
+}
+DEFAULT_FRONTIER_MODEL = "claude-opus-4"
+
+
+def frontier_equivalent_cost_usd(
+    prompt_tokens: int, completion_tokens: int, frontier_model: str = DEFAULT_FRONTIER_MODEL
+) -> float:
+    """Price a given token count at reference frontier-model rates."""
+    rates = FRONTIER_PRICING.get(frontier_model, FRONTIER_PRICING[DEFAULT_FRONTIER_MODEL])
+    return (prompt_tokens / 1_000_000) * rates["input"] + (completion_tokens / 1_000_000) * rates["output"]
 
 
 async def update_session_tokens_and_cost(session_id: str) -> bool:
