@@ -349,6 +349,36 @@ async def submit_job(topic: str, *, user_id: Optional[str] = None, **kwargs: Any
 async def get_job_status(job_id: str) -> JobStatus:
     """Get the current progress status, error, and completion status of a job."""
     job = _jobs.get(job_id)
+    if job is None:
+        from src.utils.supabase_exporter import (
+            SupabaseQueryError,
+            get_job_status as sb_get_job_status,
+            get_supabase_client,
+        )
+
+        if get_supabase_client() is not None:
+            try:
+                sb_row = await sb_get_job_status(job_id)
+                if sb_row is not None:
+                    return JobStatus(
+                        job_id=str(sb_row.get("id", job_id)),
+                        status=sb_row.get("status", "pending"),
+                        topic=sb_row.get("topic"),
+                        prompt=sb_row.get("topic"),
+                        submitted_at=sb_row.get("created_at"),
+                        completed_at=sb_row.get("updated_at")
+                        if sb_row.get("status") in ("completed", "failed")
+                        else None,
+                        error=sb_row.get("error_message"),
+                        user_id=sb_row.get("user_id"),
+                    )
+            except SupabaseQueryError:
+                raise
+            except Exception as e:
+                logger.warning(f"Failed to query Supabase for job {job_id}, falling back to local store: {e}")
+
+    job = _jobs.get(job_id)
+
     if job is not None:
         return JobStatus(
             job_id=job_id,
@@ -386,33 +416,6 @@ async def get_job_status(job_id: str) -> JobStatus:
             user_id=persisted.get("user_id"),
         )
 
-    from src.utils.supabase_exporter import (
-        SupabaseQueryError,
-        get_job_status as sb_get_job_status,
-        get_supabase_client,
-    )
-
-    if get_supabase_client() is not None:
-        try:
-            sb_row = await sb_get_job_status(job_id)
-            if sb_row is not None:
-                return JobStatus(
-                    job_id=str(sb_row.get("id", job_id)),
-                    status=sb_row.get("status", "pending"),
-                    topic=sb_row.get("topic"),
-                    prompt=sb_row.get("topic"),
-                    submitted_at=sb_row.get("created_at"),
-                    completed_at=sb_row.get("updated_at")
-                    if sb_row.get("status") in ("completed", "failed")
-                    else None,
-                    error=sb_row.get("error_message"),
-                    user_id=sb_row.get("user_id"),
-                )
-        except SupabaseQueryError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Failed to query job status: {e}") from e
-
     raise ValueError(f"Job not found: {job_id}")
 
 
@@ -421,11 +424,6 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
     job = _jobs.get(job_id)
     if job is not None and job.get("result") is not None:
         return job.get("result")
-
-    job_store = await asyncio.to_thread(_load_job_store)
-    persisted = job_store.get(job_id)
-    if persisted is not None and persisted.get("result") is not None:
-        return persisted.get("result")
 
     from src.utils.supabase_exporter import (
         SupabaseQueryError,
@@ -441,6 +439,11 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
         except SupabaseQueryError:
             raise
         except Exception:
-            pass
+        return job.get("result")
+
+    job_store = await asyncio.to_thread(_load_job_store)
+    persisted = job_store.get(job_id)
+    if persisted is not None and persisted.get("result") is not None:
+        return persisted.get("result")
 
     return None
