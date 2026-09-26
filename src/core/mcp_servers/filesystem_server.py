@@ -96,6 +96,20 @@ class CopyInput(BaseModel):
     destination: str = Field(..., description="Destination path")
 
 
+class BatchCopyInput(BaseModel):
+    """Input for copying multiple files."""
+
+    sources: List[str] = Field(..., description="List of source paths")
+    destination_dir: str = Field(..., description="Destination directory path")
+
+
+class MoveFilesInput(BaseModel):
+    """Input for moving multiple files."""
+
+    sources: List[str] = Field(..., description="List of source paths")
+    destination_dir: str = Field(..., description="Destination directory path")
+
+
 # Configuration
 ALLOWED_PATHS: List[str] = []
 DENIED_PATHS: List[str] = []
@@ -515,6 +529,52 @@ async def get_file_stats(input: StatsInput) -> str:
             ensure_ascii=False,
             indent=2,
         )
+
+
+@mcp.tool()
+async def semantic_file_search(input: SearchInput) -> str:
+    """Enhanced semantic file search with date-range and pattern support (fallback/alias to search_content & glob)."""
+    # Delegate to search_content as robust fallback/implementation
+    return await search_content(input)
+
+
+@mcp.tool()
+async def list_directory_recursive(input: ListInput) -> str:
+    """List directory contents recursively (helper for when semantic search yields 0 results)."""
+    input.recursive = True
+    return await list_directory(input)
+
+
+@mcp.tool()
+async def batch_copy_files(input: BatchCopyInput) -> str:
+    """Copy multiple files to a destination directory safely."""
+    results = []
+    for src in input.sources:
+        dest_path = Path(input.destination_dir) / Path(src).name
+        res = await copy_path(CopyInput(source=src, destination=str(dest_path)))
+        results.append(json.loads(res))
+    return json.dumps({
+        "success": all(r.get("success", False) for r in results),
+        "destination_dir": input.destination_dir,
+        "results": results
+    }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+async def move_files(input: MoveFilesInput) -> str:
+    """Move multiple files to a destination directory safely."""
+    results = []
+    for src in input.sources:
+        dest_path = Path(input.destination_dir) / Path(src).name
+        res = await copy_path(CopyInput(source=src, destination=str(dest_path)))
+        if json.loads(res).get("success", False):
+            await remove_path(RemoveInput(path=src, recursive=False))
+        results.append(json.loads(res))
+    return json.dumps({
+        "success": all(r.get("success", False) for r in results),
+        "destination_dir": input.destination_dir,
+        "results": results
+    }, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
