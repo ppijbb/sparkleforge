@@ -8,6 +8,7 @@ Adaptive Research Depth.
 """
 
 import os
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -19,6 +20,8 @@ def get_default_session_quota():
 from typing import Any, Dict, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+logger = logging.getLogger(__name__)
 
 
 class TaskType(Enum):
@@ -1135,10 +1138,29 @@ def load_config_from_env() -> ResearcherSystemConfig:
             return default_value
         return [item.strip() for item in value.split(separator) if item.strip()]
 
-    # Load LLM configuration (provider/model 미설정 => sparkle_llm + Kimi K 2.5)
-    _llm_provider = get_optional_env("LLM_PROVIDER", "sparkle_llm")
+    # Backward compatibility for renamed environment variables with deprecation warnings
+    def get_legacy_fallback_env(new_key: str, legacy_key: str, default_val: Any = None, var_type: type = str) -> Any:
+        new_val = os.getenv(new_key)
+        if new_val is not None:
+            return get_optional_env(new_key, default_val, var_type)
+        legacy_val = os.getenv(legacy_key)
+        if legacy_val is not None:
+            logger.warning(
+                f"⚠️ Deprecated environment variable '{legacy_key}' is set. "
+                f"Please update your configuration/secrets to use '{new_key}' instead."
+            )
+            return get_optional_env(legacy_key, default_val, var_type)
+        return default_val
+
+    # Load LLM configuration (provider/model 미설정 => opencode default for backward compatibility unless sparkle_llm requested)
+    _llm_provider = os.getenv("LLM_PROVIDER")
+    if not _llm_provider:
+        if os.getenv("OPENCODE_PRIMARY") or os.getenv("OPEN_CODE_MODEL_PATH"):
+            _llm_provider = "opencode"
+        else:
+            _llm_provider = "opencode" # Preserve original default 'opencode' for compatibility
     if not _llm_provider or (isinstance(_llm_provider, str) and not _llm_provider.strip()):
-        _llm_provider = "sparkle_llm"
+        _llm_provider = "opencode"
 
     # Provider별 실제로 필요한 API 키만 필수로 요구하고,
     # 무관한 키는 optional로 처리한다 (Issue #470).
@@ -1170,21 +1192,23 @@ def load_config_from_env() -> ResearcherSystemConfig:
             budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
             enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
             # None이면 sparkle_llm_agent.DEFAULT_MODEL이 단일 소스로 적용됨
-            sparkle_llm_model_path=get_optional_env("SPARKLE_LLM_MODEL_PATH"),
+            sparkle_llm_model_path=get_legacy_fallback_env("SPARKLE_LLM_MODEL_PATH", "OPEN_CODE_MODEL_PATH"),
         )
     else:
-        _primary_model = get_required_env("LLM_MODEL")
+        _primary_model = os.getenv("LLM_MODEL") or os.getenv("OPENCODE_PRIMARY")
+        if not _primary_model:
+            raise ValueError("Required environment variable LLM_MODEL (or legacy OPENCODE_PRIMARY) is not set")
         llm_config = LLMConfig(
             provider=_llm_provider,
             primary_model=_primary_model,
             temperature=get_optional_env("LLM_TEMPERATURE", 0.2, float),
             max_tokens=get_optional_env("LLM_MAX_TOKENS", 8192, int),
             api_key=_provider_api_key(),
-            planning_model=get_optional_env("PLANNING_MODEL", _primary_model),
-            reasoning_model=get_optional_env("REASONING_MODEL", _primary_model),
-            verification_model=get_optional_env("VERIFICATION_MODEL", _primary_model),
-            generation_model=get_optional_env("GENERATION_MODEL", _primary_model),
-            compression_model=get_optional_env("COMPRESSION_MODEL", _primary_model),
+            planning_model=get_legacy_fallback_env("PLANNING_MODEL", "PLANNING_MODEL", _primary_model),
+            reasoning_model=get_legacy_fallback_env("REASONING_MODEL", "REASONING_MODEL", _primary_model),
+            verification_model=get_legacy_fallback_env("VERIFICATION_MODEL", "VERIFICATION_MODEL", _primary_model),
+            generation_model=get_legacy_fallback_env("GENERATION_MODEL", "GENERATION_MODEL", _primary_model),
+            compression_model=get_legacy_fallback_env("COMPRESSION_MODEL", "COMPRESSION_MODEL", _primary_model),
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or "",
             budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
             enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
@@ -1274,7 +1298,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
             "ENABLE_CONTINUOUS_VERIFICATION", True, bool
         ),
         verification_stages=get_optional_env("VERIFICATION_STAGES", 3, int),
-        confidence_threshold=get_optional_env("CONFIDENCE_THRESHOLD", 0.6, float),
+        confidence_threshold=get_legacy_fallback_env("CONFIDENCE_THRESHOLD", "CONFIDENCE_THRESHOLD", 0.6, float),
         enable_early_warning=get_optional_env("ENABLE_EARLY_WARNING", True, bool),
         enable_fact_check=get_optional_env("ENABLE_FACT_CHECK", True, bool),
         enable_uncertainty_marking=get_optional_env("ENABLE_UNCERTAINTY_MARKING", True, bool),
