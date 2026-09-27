@@ -86,6 +86,16 @@ def _positive_int_env(name: str) -> int | None:
 # SPARKLE_LLM_PRIMARY: "google" = Gemini 우선 (한도 절약), "openrouter" = OpenRouter 우선, "nvidia" = NVIDIA NIM
 def _primary_provider() -> str:
     raw = (os.getenv("SPARKLE_LLM_PRIMARY") or "").strip().lower()
+    if not raw:
+        legacy = (os.getenv("OPENCODE_PRIMARY") or "").strip().lower()
+        if legacy:
+            import warnings
+            warnings.warn(
+                "OPENCODE_PRIMARY is deprecated; please use SPARKLE_LLM_PRIMARY instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            raw = legacy
     if raw in ("google", "openrouter", "nvidia"):
         return raw
     if os.getenv("NVIDIA_API_KEY"):
@@ -98,6 +108,16 @@ class SparkleLLMAgent(BaseCLIAgent):
 
     def __init__(self, model_path: str | None = None):
         raw = model_path or os.getenv("SPARKLE_LLM_MODEL_PATH") or DEFAULT_MODEL
+        if not model_path and not os.getenv("SPARKLE_LLM_MODEL_PATH"):
+            legacy_path = os.getenv("OPEN_CODE_MODEL_PATH")
+            if legacy_path:
+                import warnings
+                warnings.warn(
+                    "OPEN_CODE_MODEL_PATH is deprecated; please use SPARKLE_LLM_MODEL_PATH instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                raw = legacy_path
         if "/" not in raw:
             raw = f"moonshotai/{raw}"
         self._model = raw

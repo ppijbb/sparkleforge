@@ -918,7 +918,7 @@ def get_cli_agents_config() -> Dict[str, Any]:
             # sparkle_llm는 기본 provider이므로 model_path override 여부와 무관하게 항상 활성화.
             # model_path가 None이면 SparkleLLMAgent.DEFAULT_MODEL로 위임된다.
             "enabled": True,
-            "model_path": os.getenv("SPARKLE_LLM_MODEL_PATH") or config.llm.sparkle_llm_model_path,
+            "model_path": os.getenv("SPARKLE_LLM_MODEL_PATH") or os.getenv("OPEN_CODE_MODEL_PATH") or config.llm.sparkle_llm_model_path,
         },
         "gemini_cli": {
             "enabled": bool(os.getenv("GEMINI_CLI_API_KEY") or config.llm.gemini_cli_api_key),
@@ -1137,6 +1137,30 @@ def load_config_from_env() -> ResearcherSystemConfig:
 
     # Load LLM configuration (provider/model 미설정 => sparkle_llm + Kimi K 2.5)
     _llm_provider = get_optional_env("LLM_PROVIDER", "sparkle_llm")
+    if not os.getenv("LLM_PROVIDER"):
+        # Check if legacy env vars for provider are set, or preserve backward compatible default ("opencode") if legacy config exists
+        import warnings
+        if os.getenv("OPENCODE_PRIMARY") or os.getenv("OPEN_CODE_MODEL_PATH") or os.getenv("OPENCODE_VERIFY_COMMAND") or os.getenv("OPENCODE_SELF_VERIFY_COMMAND"):
+            warnings.warn(
+                "Legacy OPENCODE_* environment variables detected. Defaulting LLM_PROVIDER to 'opencode' for backward compatibility. Please migrate to SPARKLEFORGE / SPARKLE_LLM equivalents.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            _llm_provider = get_optional_env("LLM_PROVIDER", "opencode")
+        else:
+            # Check if any old opencode setting is requested or if we should support a migration flag / fallback
+            # To ensure full backward compatibility for existing deployments without breaking new users, 
+            # if LLM_PROVIDER is unset, we check if they are upgrading or if a migration flag is off.
+            # Wait, the issue states: "Keep default as 'opencode' for one release cycle" or support fallback.
+            # Let's inspect if SPARKLEFORGE_MIGRATION_V2 is set. If not, default to "opencode" to avoid silent breakage!
+            if os.getenv("SPARKLEFORGE_MIGRATION_V2") != "1" and not os.getenv("SPARKLE_LLM_PRIMARY"):
+                warnings.warn(
+                    "LLM_PROVIDER defaulted to 'opencode' for backward compatibility. Set SPARKLEFORGE_MIGRATION_V2=1 or LLM_PROVIDER=sparkle_llm to opt in to the S++ tier default.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                _llm_provider = "opencode"
+
     if not _llm_provider or (isinstance(_llm_provider, str) and not _llm_provider.strip()):
         _llm_provider = "sparkle_llm"
 
@@ -1170,7 +1194,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
             budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
             enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
             # None이면 sparkle_llm_agent.DEFAULT_MODEL이 단일 소스로 적용됨
-            sparkle_llm_model_path=get_optional_env("SPARKLE_LLM_MODEL_PATH"),
+            sparkle_llm_model_path=get_optional_env("SPARKLE_LLM_MODEL_PATH") or get_optional_env("OPEN_CODE_MODEL_PATH"),
         )
     else:
         _primary_model = get_required_env("LLM_MODEL")
@@ -1180,11 +1204,11 @@ def load_config_from_env() -> ResearcherSystemConfig:
             temperature=get_optional_env("LLM_TEMPERATURE", 0.2, float),
             max_tokens=get_optional_env("LLM_MAX_TOKENS", 8192, int),
             api_key=_provider_api_key(),
-            planning_model=get_optional_env("PLANNING_MODEL", _primary_model),
-            reasoning_model=get_optional_env("REASONING_MODEL", _primary_model),
-            verification_model=get_optional_env("VERIFICATION_MODEL", _primary_model),
-            generation_model=get_optional_env("GENERATION_MODEL", _primary_model),
-            compression_model=get_optional_env("COMPRESSION_MODEL", _primary_model),
+            planning_model=get_optional_env("PLANNING_MODEL", get_optional_env("OPENCODE_PLANNING_MODEL", _primary_model)),
+            reasoning_model=get_optional_env("REASONING_MODEL", get_optional_env("OPENCODE_REASONING_MODEL", _primary_model)),
+            verification_model=get_optional_env("VERIFICATION_MODEL", get_optional_env("OPENCODE_VERIFICATION_MODEL", _primary_model)),
+            generation_model=get_optional_env("GENERATION_MODEL", get_optional_env("OPENCODE_GENERATION_MODEL", _primary_model)),
+            compression_model=get_optional_env("COMPRESSION_MODEL", get_optional_env("OPENCODE_COMPRESSION_MODEL", _primary_model)),
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or "",
             budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
             enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
