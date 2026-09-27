@@ -1,5 +1,9 @@
 name: SparkleForge Auto Fix PR
 
+env:
+  MAX_AUTO_FIX_ATTEMPTS: ${{ vars.MAX_AUTO_FIX_ATTEMPTS || '5' }}
+  CIRCUIT_BREAKER_THRESHOLD: ${{ vars.CIRCUIT_BREAKER_THRESHOLD || '3' }}
+  CIRCUIT_BREAKER_WINDOW_HOURS: ${{ vars.CIRCUIT_BREAKER_WINDOW_HOURS || '24' }}
 on:
   workflow_dispatch:
     inputs:
@@ -45,6 +49,167 @@ permissions:
 env:
   AUTO_FIX_MERGE_METHOD: ${{ vars.AUTO_FIX_MERGE_METHOD || 'squash' }}
   AUTO_FIX_MERGE_WAIT_SECONDS: ${{ vars.AUTO_FIX_MERGE_WAIT_SECONDS || '900' }}
+  provider-health-check:
+    name: Provider Health Check
+    runs-on: ubuntu-latest
+    outputs:
+      healthy: ${{ steps.check.outputs.healthy }}
+      provider: ${{ steps.check.outputs.provider }}
+    steps:
+      - name: Check LLM provider health
+        id: check
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
+        run: |
+          set -e
+          PROVIDER="${OPENCODE_PRIMARY}"
+          echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
+          
+          case "$PROVIDER" in
+            google)
+              if [ -z "$GOOGLE_API_KEY" ]; then
+                echo "::warning::GOOGLE_API_KEY not set, skipping health check"
+                echo "healthy=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              # Lightweight test call to Gemini API
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GOOGLE_API_KEY" \
+                -H "Content-Type: application/json" \
+                -d '{"contents":[{"parts":[{"text":"health check"}]}],"generationConfig":{"maxOutputTokens":1}}' \
+                --max-time 10) || true
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "healthy=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "::warning::Google provider health check failed (HTTP $HTTP_CODE)"
+                echo "healthy=false" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            openrouter)
+              if [ -z "$OPENROUTER_API_KEY" ]; then
+                echo "::warning::OPENROUTER_API_KEY not set, skipping health check"
+                echo "healthy=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                "https://openrouter.ai/api/v1/chat/completions" \
+                -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+                -H "Content-Type: application/json" \
+                -d '{"model":"google/gemini-3.5-flash-lite","messages":[{"role":"user","content":"health check"}],"max_tokens":1}' \
+                --max-time 10) || true
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "healthy=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "::warning::OpenRouter provider health check failed (HTTP $HTTP_CODE)"
+                echo "healthy=false" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            nvidia)
+              if [ -z "$NVIDIA_API_KEY" ]; then
+                echo "::warning::NVIDIA_API_KEY not set, skipping health check"
+                echo "healthy=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                "https://integrate.api.nvidia.com/v1/chat/completions" \
+                -H "Authorization: Bearer $NVIDIA_API_KEY" \
+                -H "Content-Type: application/json" \
+                -d '{"model":"meta/llama-3.1-8b-instruct","messages":[{"role":"user","content":"health check"}],"max_tokens":1}' \
+                --max-time 10) || true
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "healthy=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "::warning::NVIDIA provider health check failed (HTTP $HTTP_CODE)"
+                echo "healthy=false" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              echo "::warning::Unknown provider '$PROVIDER', assuming healthy"
+              echo "healthy=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  circuit-breaker-check:
+    name: Circuit Breaker Check
+    needs: provider-health-check
+    if: needs.provider-health-check.outputs.healthy == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+      attempt_count: ${{ steps.check.outputs.attempt_count }}
+    steps:
+      - name: Check circuit breaker status
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          set -e
+          # Determine issue number
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.issue_number }}" ]; then
+            ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
+          elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "attempt_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          echo "Checking circuit breaker for issue #$ISSUE_NUMBER"
+          
+          # Check for auto-fix-circuit-broken label
+          HAS_CIRCUIT_BROKEN=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json labels --jq '[.labels[].name] | contains(["auto-fix-circuit-broken"])')
+          
+          if [ "$HAS_CIRCUIT_BROKEN" = "true" ]; then
+            echo "::warning::Circuit breaker active for issue #$ISSUE_NUMBER (label: auto-fix-circuit-broken). Skipping auto-fix."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "attempt_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          # Count recent auto-fix failures in the last 24 hours
+          SINCE=$(date -u -d "${{ env.CIRCUIT_BREAKER_WINDOW_HOURS }} hours ago" +"%Y-%m-%dT%H:%M:%SZ")
+          RECENT_RUNS=$(gh api "repos/${{ github.repository }}/actions/runs" \
+            --jq ".workflow_runs | map(select(.name == \"SparkleForge Auto Fix PR\" and .created_at >= \"$SINCE\" and .conclusion == \"failure\")) | length")
+          
+          # Also check issue labels for attempt tracking
+          ATTEMPT_LABEL=$(gh issue view "$ISSUE_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json labels --jq '.labels[] | select(.name | startswith("auto-fix-attempt-")) | .name' | head -1)
+          
+          if [ -n "$ATTEMPT_LABEL" ]; then
+            ATTEMPT_COUNT=$(echo "$ATTEMPT_LABEL" | sed 's/auto-fix-attempt-//')
+          else
+            ATTEMPT_COUNT=0
+          fi
+          
+          echo "Recent failed runs (24h): $RECENT_RUNS"
+          echo "Current attempt count: $ATTEMPT_COUNT"
+          echo "attempt_count=$ATTEMPT_COUNT" >> "$GITHUB_OUTPUT"
+          
+          # Check circuit breaker threshold
+          if [ "$RECENT_RUNS" -ge "${{ env.CIRCUIT_BREAKER_THRESHOLD }}" ]; then
+            echo "::warning::Circuit breaker threshold reached ($RECENT_RUNS failures in 24h). Adding auto-fix-circuit-broken label."
+            gh label create auto-fix-circuit-broken \
+              --repo "${{ github.repository }}" \
+              --color B60205 \
+              --description "Auto-fix circuit breaker activated after 3+ consecutive failures in 24h. Human intervention required." \
+              --force >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --add-label auto-fix-circuit-broken || true
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --body "🛑 **Auto-fix circuit breaker activated**\n\n$RECENT_RUNS consecutive auto-fix attempts have failed in the last 24 hours. This issue is now paused from automated repair attempts.\n\n**To resume:** A human must remove the \`auto-fix-circuit-broken\` label from this issue." || true
+            echo "skip=true" >>
 
 jobs:
   open-pr-and-fix:
