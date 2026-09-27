@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from src.core import patch_ops
-from src.core.cli_agents.open_code_agent import OpenCodeAgent
+from src.core.cli_agents.sparkle_llm_agent import SparkleLLMAgent
 
 REPRO_TEST_PATTERN = re.compile(r"^tests/(?:[^/]+/)*test_[^/]+\.py$")
 
@@ -29,7 +29,7 @@ REPRO_TEST_PATTERN = re.compile(r"^tests/(?:[^/]+/)*test_[^/]+\.py$")
 NON_REPRODUCIBLE_TITLE_PREFIXES = ("planning:", "design:", "rfc:", "spike:")
 
 # excluded when scanning `git status` for what the LLM's diff actually touched.
-_IGNORED_RUNTIME_FILES = {"opencode.patch"}
+_IGNORED_RUNTIME_FILES = {"sparkleforge.patch"}
 
 _MAX_WRITE_ATTEMPTS = 2
 _COLLECT_TIMEOUT_SECONDS = 120
@@ -176,7 +176,7 @@ async def write_reproduction_test(
     snapshot = patch_ops.repo_snapshot(cwd=repo_root)
     status = patch_ops.run(["git", "status", "--short"], cwd=repo_root).stdout
 
-    agent = OpenCodeAgent()
+    agent = SparkleLLMAgent()
     extra_context = ""
     for attempt in range(_MAX_WRITE_ATTEMPTS):
         prompt = _repro_prompt(issue_context, snapshot, status, extra_context)
@@ -189,7 +189,7 @@ async def write_reproduction_test(
             ),
         )
         if not result.get("success"):
-            extra_context = result.get("response") or result.get("error") or "OpenCode call failed"
+            extra_context = result.get("response") or result.get("error") or "SparkleForge LLM call failed"
             continue
 
         diff = patch_ops.extract_diff(result.get("response", ""))
@@ -202,7 +202,7 @@ async def write_reproduction_test(
             extra_context = f"Previous diff failed schema validation: {schema_reason}\n\nRegenerate a minimal diff that only adds/modifies tests/test_*.py files."
             continue
 
-        patch_path = repo_root / "opencode.patch"
+        patch_path = repo_root / "sparkleforge.patch"
         patch_path.write_text(diff, encoding="utf-8")
         applied, err = patch_ops._apply_patch(patch_path, cwd=repo_root)
         if not applied:
@@ -211,7 +211,7 @@ async def write_reproduction_test(
 
         break
     else:
-        return ReproResult(success=False, reason="OpenCode could not produce an applicable reproduction-test diff after 2 attempts.")
+        return ReproResult(success=False, reason="SparkleForge could not produce an applicable reproduction-test diff after 2 attempts.")
 
     all_ok, touched = _touched_test_files(repo_root)
     if not touched:

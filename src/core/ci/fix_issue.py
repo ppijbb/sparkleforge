@@ -2,7 +2,7 @@
 
 Moved from scripts/opencode_github_worker.py so GitHub Actions calls
 `sparkleforge ci fix-issue` instead of a standalone script. Reused by three
-callers: opencode-auto-fix.yml's repair loop (via src.core.autofix.runner),
+callers: sparkleforge-auto-fix.yml's repair loop (via src.core.autofix.runner),
 src.core.nightwelding.implement, and scripts/run_swebench_lite.py -- all three
 now invoke it as a subprocess via `main.py ci fix-issue`.
 
@@ -292,24 +292,24 @@ def _budgeted_requested_tool_context(
 
 def _build_agent() -> BaseCLIAgent:
     """Construct the repair-loop's coding agent through CLIAgentManager so
-    opencode/claude_code/codex are all equally controllable registered
+    sparkle_llm/claude_code/codex are all equally controllable registered
     targets, instead of hardcoding one class here.
 
-    AUTOFIX_CLI_AGENT selects which one (default: open_code, the only one
-    with working credentials configured in opencode-auto-fix.yml today).
+    AUTOFIX_CLI_AGENT selects which one (default: sparkle_llm, the only one
+    with working credentials configured in sparkleforge-auto-fix.yml today).
     Set it to "claude_code" or "codex" once ANTHROPIC_API_KEY/OPENAI_API_KEY
     and the corresponding CLI binary are available in the runner.
     """
-    requested = os.getenv("AUTOFIX_CLI_AGENT", "open_code")
+    requested = os.getenv("AUTOFIX_CLI_AGENT", "sparkle_llm")
     agent = get_cli_agent_manager().create_agent(requested)
     if agent is not None:
         return agent
     print(
-        f"AUTOFIX_CLI_AGENT={requested!r} is not a usable agent; falling back to open_code.",
+        f"AUTOFIX_CLI_AGENT={requested!r} is not a usable agent; falling back to sparkle_llm.",
         file=sys.stderr,
     )
-    fallback = get_cli_agent_manager().create_agent("open_code")
-    assert fallback is not None, "open_code agent must always be constructible"
+    fallback = get_cli_agent_manager().create_agent("sparkle_llm")
+    assert fallback is not None, "sparkle_llm agent must always be constructible"
     return fallback
 
 
@@ -405,7 +405,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             )
         if not result.get("success"):
             print(
-                result.get("response") or result.get("error") or "OpenCode failed", file=sys.stderr
+                result.get("response") or result.get("error") or "SparkleForge failed", file=sys.stderr
             )
             return 1
 
@@ -450,12 +450,12 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
             continue
 
     if not diff:
-        print("OpenCode did not return an applicable diff.", file=sys.stderr)
+        print("SparkleForge did not return an applicable diff.", file=sys.stderr)
         return 1
     if not diff.strip():
-        raise ValueError("OpenCode produced an empty patch.")
+        raise ValueError("SparkleForge produced an empty patch.")
 
-    patch_path = Path("opencode.patch")
+    patch_path = Path("sparkleforge.patch")
     before_signature = repository_change_signature()
     patch_path.write_text(diff, encoding="utf-8")
 
@@ -480,7 +480,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         )
         return 1
     if repository_change_signature() == before_signature:
-        print("OpenCode patch applied cleanly but produced no repository changes.", file=sys.stderr)
+        print("SparkleForge patch applied cleanly but produced no repository changes.", file=sys.stderr)
         print("--- No-op Patch ---", file=sys.stderr)
         print(diff[:4000], file=sys.stderr)
         return 1

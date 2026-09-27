@@ -1,7 +1,7 @@
-"""OpenCode repair loop: retries `sparkleforge ci fix-issue` with self-verify/verify-command gating.
+"""SparkleForge repair loop: retries `sparkleforge ci fix-issue` with self-verify/verify-command gating.
 
-1:1 relocation of the "OpenCode repair loop" bash step from
-.github/workflows/opencode-auto-fix.yml -- preserves its exact semantics,
+1:1 relocation of the "SparkleForge repair loop" bash step from
+.github/workflows/sparkleforge-auto-fix.yml -- preserves its exact semantics,
 including a quirk that looks unintentional but is kept as-is: a failing
 self-verify command aborts the whole loop immediately (no retry), while a
 failing verify command retries up to max_iterations.
@@ -68,12 +68,12 @@ def run_autofix_repair_loop(
         )
         return result
 
-    extra_context_path = repo_root / "opencode-extra-context.md"
+    extra_context_path = repo_root / "sparkleforge-extra-context.md"
     extra_context_path.write_text("", encoding="utf-8")
-    worker_error_path = repo_root / "opencode-worker-error.log"
-    self_verify_log_path = repo_root / "opencode-self-verify.log"
-    verify_log_path = repo_root / "opencode-verify.log"
-    patch_path = repo_root / "opencode.patch"
+    worker_error_path = repo_root / "sparkleforge-worker-error.log"
+    self_verify_log_path = repo_root / "sparkleforge-self-verify.log"
+    verify_log_path = repo_root / "sparkleforge-verify.log"
+    patch_path = repo_root / "sparkleforge.patch"
 
     sparkleforge_entrypoint = Path(__file__).resolve().parents[3] / "main.py"
     if not sparkleforge_entrypoint.exists():
@@ -81,9 +81,9 @@ def run_autofix_repair_loop(
 
     for attempt in range(1, max_iterations + 1):
         is_last_attempt = attempt == max_iterations
-        print(f"OpenCode attempt {attempt} of {max_iterations}")
+        print(f"SparkleForge attempt {attempt} of {max_iterations}")
         log_history_event(
-            history_session_id, "log", f"OpenCode attempt {attempt} of {max_iterations}"
+            history_session_id, "log", f"SparkleForge attempt {attempt} of {max_iterations}"
         )
 
         proc = _run(
@@ -105,7 +105,7 @@ def run_autofix_repair_loop(
 
         if proc.returncode != 0:
             lines = [
-                "Previous OpenCode attempt failed before commit.",
+                "Previous SparkleForge attempt failed before commit.",
                 "",
                 "git apply, no-op patch, or worker error:",
                 proc.stderr or "",
@@ -115,27 +115,27 @@ def run_autofix_repair_loop(
             lines += ["", "Regenerate the patch against the current repository contents."]
             extra_context_path.write_text("\n".join(lines), encoding="utf-8")
             log_history_event(
-                history_session_id, "error", proc.stderr or "OpenCode attempt failed", level="error"
+                history_session_id, "error", proc.stderr or "SparkleForge attempt failed", level="error"
             )
 
             if is_last_attempt:
                 print(proc.stderr or "")
                 return _finish(
-                    AutofixResult(success=False, reason=proc.stderr or "OpenCode attempt failed", attempts=attempt)
+                    AutofixResult(success=False, reason=proc.stderr or "SparkleForge attempt failed", attempts=attempt)
                 )
             continue
 
         # repository_change_signature() reads the excludes both this loop and the
-        # old bash step already agreed on (issue-context.md, opencode.patch,
-        # opencode-extra-context.md, opencode-verify.log, opencode-worker-error.log,
+        # old bash step already agreed on (issue-context.md, sparkleforge.patch,
+        # sparkleforge-extra-context.md, sparkleforge-verify.log, sparkleforge-worker-error.log,
         # *.orig/*.rej) -- reuse it instead of reimplementing the pathspec exclude list.
         changed = bool(patch_ops.repository_change_signature(cwd=repo_root))
         if not changed:
-            message = f"OpenCode produced no repository changes on attempt {attempt}."
+            message = f"SparkleForge produced no repository changes on attempt {attempt}."
             print(message)
             worker_error_path.write_text(message, encoding="utf-8")
             extra_context_path.write_text(
-                "Previous OpenCode attempt produced no repository changes.\n\n"
+                "Previous SparkleForge attempt produced no repository changes.\n\n"
                 "The response either generated a no-op patch or changed only files ignored by git.\n"
                 "Regenerate a minimal patch that changes tracked repository files relevant to the issue.",
                 encoding="utf-8",

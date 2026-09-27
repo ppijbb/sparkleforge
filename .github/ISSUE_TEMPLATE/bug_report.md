@@ -38,7 +38,7 @@ Add screenshots to help explain your problem.
 *For SparkleForge team use only.*
 
 - [ ] **Product Hunt Banner**: Create `docs/banner.jpg` highlighting *"The World's First 24/7 Self-Healing Agent OS"*.
-- [ ] **45-Second Demo GIF**: Generate `docs/demo_scenario.gif` covering issue creation → OpenCode fix PR → CI passing → auto-merge + telemetry update.
+- [ ] **45-Second Demo GIF**: Generate `docs/demo_scenario.gif` covering issue creation → SparkleForge fix PR → CI passing → auto-merge + telemetry update.
 - [ ] **1-Line Tagline**: *"An Autonomous Generic Agent OS with 24/7 Deep Research & Self-Repair Capabilities."*
 - [ ] **Maker Comment**: Draft narrative with architecture highlights and benchmark results (141 min MTTM, 92% cost savings).
 - [ ] **Architecture Comparison Diagram**: Create visual showing polling vs. reactive scheduling.

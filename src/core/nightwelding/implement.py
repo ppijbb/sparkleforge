@@ -1,7 +1,7 @@
 """Implementation repair loop: turn a red reproduction test green.
 
 Mirrors the retry loop in src/core/autofix/runner.py (which backs the
-"OpenCode repair loop" step in .github/workflows/opencode-auto-fix.yml) but
+"SparkleForge repair loop" step in .github/workflows/sparkleforge-auto-fix.yml) but
 verifies against the reproduction test written by
 src/core/nightwelding/gate.py instead of a bare `compileall` check.
 
@@ -49,7 +49,7 @@ def implement_until_green(
 
     issue_context_path = repo_root / "issue-context.md"
     issue_context_path.write_text(issue_context, encoding="utf-8")
-    extra_context_path = repo_root / "opencode-extra-context.md"
+    extra_context_path = repo_root / "sparkleforge-extra-context.md"
     extra_context_path.write_text("", encoding="utf-8")
 
     validator_script = Path(__file__).resolve().parents[3] / "scripts" / "validate_commit_messages.py"
@@ -124,7 +124,7 @@ def implement_until_green(
             if attempt == max_iterations:
                 return ImplementResult(
                     success=False,
-                    reason="OpenCode did not produce an applicable implementation diff.",
+                    reason="SparkleForge did not produce an applicable implementation diff.",
                     log=proc.stderr[-4000:],
                     attempts=attempt,
                 )
@@ -141,7 +141,7 @@ def implement_until_green(
             if attempt == max_iterations:
                 return ImplementResult(
                     success=False,
-                    reason="OpenCode produced no repository changes.",
+                    reason="SparkleForge produced no repository changes.",
                     attempts=attempt,
                 )
             continue

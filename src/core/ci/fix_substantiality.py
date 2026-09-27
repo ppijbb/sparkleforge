@@ -1,6 +1,6 @@
 """Whether an auto-fix diff substantially implements the issue it targets.
 
-Consolidates two signals opencode-auto-fix.yml previously computed
+Consolidates two signals sparkleforge-auto-fix.yml previously computed
 independently -- a bash heuristic, and a standalone script this replaces
 (scripts/check_issue_scope_overlap.py):
 

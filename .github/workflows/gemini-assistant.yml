@@ -86,10 +86,10 @@ jobs:
   code-review:
     if: >-
       (github.event_name == 'pull_request' &&
-       !contains(github.event.pull_request.body, 'OpenCode-generated') &&
+       !contains(github.event.pull_request.body, 'SparkleForge-generated') &&
        !startsWith(github.event.pull_request.head.ref, 'fix/triage') &&
        !contains(github.event.pull_request.title, 'fix: triage')) ||
-      (github.event_name == 'push' && !contains(github.event.head_commit.message, 'apply OpenCode changes'))
+      (github.event_name == 'push' && !contains(github.event.head_commit.message, 'apply SparkleForge changes'))
     runs-on: ubuntu-latest
     timeout-minutes: 8
     permissions:
@@ -189,7 +189,7 @@ jobs:
           HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
-            echo "::error::PAT repository secret is required to create issues and dispatch opencode-auto-fix.yml as part of the automatic issue-to-PR flow."
+            echo "::error::PAT repository secret is required to create issues and dispatch sparkleforge-auto-fix.yml as part of the automatic issue-to-PR flow."
             exit 1
           fi
 
@@ -232,12 +232,12 @@ jobs:
             echo "issue_number=$ISSUE_NUMBER"
           } >> "$GITHUB_OUTPUT"
 
-          gh workflow run opencode-auto-fix.yml \
+          gh workflow run sparkleforge-auto-fix.yml \
             --repo "${{ github.repository }}" \
             --field issue_number="$ISSUE_NUMBER" \
             --field max_iterations="3"
 
-          echo "Created issue #$ISSUE_NUMBER and dispatched opencode-auto-fix.yml."
+          echo "Created issue #$ISSUE_NUMBER and dispatched sparkleforge-auto-fix.yml."
 
   merge-decision:
     needs: code-review

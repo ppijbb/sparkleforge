@@ -1,7 +1,7 @@
 name: Nightwelding Autonomous Implementation
 
 # Nightwelding retries the auto-fix-failed backlog overnight (issues the daytime
-# opencode-auto-fix.yml pipeline already tried and gave up on, and which its
+# sparkleforge-auto-fix.yml pipeline already tried and gave up on, and which its
 # own 30-minute sweep explicitly never retries automatically), gated by a
 # reproduce-first test that must go red before implementing and green before
 # a Draft PR opens. It never merges. All of the actual logic lives in
@@ -83,8 +83,8 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
-          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'deepseek/deepseek-v4-flash-0731:free' }}
+          SPARKLE_LLM_PRIMARY: ${{ vars.SPARKLE_LLM_PRIMARY || 'google' }}
+          SPARKLE_LLM_MODEL_PATH: ${{ vars.SPARKLE_LLM_MODEL_PATH || 'deepseek/deepseek-v4-flash-0731:free' }}
         run: |
           echo "Resolved Nightwelding base branch: ${NIGHTWELDING_BASE_BRANCH}"
           ARGS=(nightwelding run --max-iterations "${{ github.event.inputs.max_iterations || '4' }}")

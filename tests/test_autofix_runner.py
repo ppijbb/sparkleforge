@@ -121,9 +121,9 @@ def test_writes_worker_error_and_verify_logs_to_disk(tmp_path, issue_context, mo
     )
 
     assert result.success is True
-    assert (tmp_path / "opencode-worker-error.log").exists()
-    assert (tmp_path / "opencode-verify.log").exists()
-    assert "all good" in (tmp_path / "opencode-verify.log").read_text(encoding="utf-8")
+    assert (tmp_path / "sparkleforge-worker-error.log").exists()
+    assert (tmp_path / "sparkleforge-verify.log").exists()
+    assert "all good" in (tmp_path / "sparkleforge-verify.log").read_text(encoding="utf-8")
 
 
 def test_silent_commit_failure_is_reported_not_swallowed(tmp_path, issue_context, monkeypatch):

@@ -127,7 +127,7 @@ jobs:
             echo "<!-- sparkleforge-cli-ux-audit:$TODAY -->"
             echo
             echo "Found by the SparkleForge CLI UX self-audit (\`sparkleforge report cli-ux-audit-run\`, run daily -- pty-captures terminal output, renders it to a screenshot, and vision-judges both the text and the actual pixels)."
-            echo "Intentionally scoped so the automated OpenCode workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback."
+            echo "Intentionally scoped so the automated SparkleForge workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback."
             echo
             cat cli-ux-audit-result.md
           } > cli-ux-audit-issue-body.md
@@ -159,8 +159,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          gh workflow run opencode-auto-fix.yml \
+          gh workflow run sparkleforge-auto-fix.yml \
             --repo "${{ github.repository }}" \
             --field issue_number="${{ steps.create_issue.outputs.issue_number }}" \
             --field max_iterations="${{ github.event.inputs.max_iterations || '3' }}"
-          echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created and dispatched to opencode-auto-fix.yml."
+          echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created and dispatched to sparkleforge-auto-fix.yml."

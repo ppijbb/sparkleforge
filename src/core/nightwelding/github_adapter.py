@@ -4,7 +4,7 @@ Consistent with the rest of this project: no GitHub API client is built here,
 just subprocess calls to the `gh` CLI and `git`, exactly like the existing
 GitHub Actions workflows and src/core/ci/fix_issue.py already do.
 
-The PR body always contains the literal substring "OpenCode-generated" and
+The PR body always contains the literal substring "SparkleForge-generated" and
 branches always use the "nightwelding/" prefix — both are load-bearing for
 staying Draft-only forever: gemini-assistant.yml's `code-review` job (and,
 transitively, `merge-decision`, which needs `code-review` to succeed) skips
@@ -339,7 +339,7 @@ def commit_changes(repo_root: Path, message: str) -> None:
     """Stage all changes (tracked modifications + untracked files) and commit.
 
     Never stages SparkleForge's own runtime scratch files (issue-context.md,
-    opencode.patch, logs, ...) -- they must not leak into a real repo's history.
+    sparkleforge.patch, logs, ...) -- they must not leak into a real repo's history.
     """
     _run(["git", "add", "-u"], cwd=repo_root, check=False)
     untracked = _run(
@@ -604,11 +604,11 @@ def open_draft_pr(
     issue_number: Optional[int] = None
 ) -> str:
     """Open a Draft PR. `body` MUST already contain the literal substring
-    'OpenCode-generated' — callers are responsible for that (see module
+    'SparkleForge-generated' — callers are responsible for that (see module
     docstring for why).
     """
-    if "OpenCode-generated" not in body:
-        raise GitHubAdapterError("PR body must contain the literal substring 'OpenCode-generated'.")
+    if "SparkleForge-generated" not in body:
+        raise GitHubAdapterError("PR body must contain the literal substring 'SparkleForge-generated'.")
 
     existing = find_open_pr(repo, branch, base_branch)
     if existing:

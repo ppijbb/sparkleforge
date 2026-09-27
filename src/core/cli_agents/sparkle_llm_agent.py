@@ -1,6 +1,6 @@
-"""Open Code Agent — provider 우선 호출 (Google Gemini / OpenRouter)
+"""SparkleLLM Agent — provider 우선 호출 (Google Gemini / OpenRouter)
 
-OPENCODE_PRIMARY=google 이면 Gemini 우선 호출로 OpenRouter 일일 한도 소진 방지.
+SPARKLE_LLM_PRIMARY=google 이면 Gemini 우선 호출로 OpenRouter 일일 한도 소진 방지.
 opencode CLI run 명령이 non-interactive 환경에서 hang되므로, REST API 직접 호출.
 """
 
@@ -83,9 +83,9 @@ def _positive_int_env(name: str) -> int | None:
     return value if value > 0 else None
 
 
-# OPENCODE_PRIMARY: "google" = Gemini 우선 (한도 절약), "openrouter" = OpenRouter 우선, "nvidia" = NVIDIA NIM
+# SPARKLE_LLM_PRIMARY: "google" = Gemini 우선 (한도 절약), "openrouter" = OpenRouter 우선, "nvidia" = NVIDIA NIM
 def _primary_provider() -> str:
-    raw = (os.getenv("OPENCODE_PRIMARY") or "").strip().lower()
+    raw = (os.getenv("SPARKLE_LLM_PRIMARY") or "").strip().lower()
     if raw in ("google", "openrouter", "nvidia"):
         return raw
     if os.getenv("NVIDIA_API_KEY"):
@@ -93,11 +93,11 @@ def _primary_provider() -> str:
     return "google" if os.getenv("GOOGLE_API_KEY") else "openrouter"
 
 
-class OpenCodeAgent(BaseCLIAgent):
-    """LLM agent: OPENCODE_PRIMARY에 따라 Google, NVIDIA NIM, OpenRouter 우선 호출 및 fallback."""
+class SparkleLLMAgent(BaseCLIAgent):
+    """LLM agent: SPARKLE_LLM_PRIMARY에 따라 Google, NVIDIA NIM, OpenRouter 우선 호출 및 fallback."""
 
     def __init__(self, model_path: str | None = None):
-        raw = model_path or os.getenv("OPEN_CODE_MODEL_PATH") or DEFAULT_MODEL
+        raw = model_path or os.getenv("SPARKLE_LLM_MODEL_PATH") or DEFAULT_MODEL
         if "/" not in raw:
             raw = f"moonshotai/{raw}"
         self._model = raw
@@ -113,8 +113,8 @@ class OpenCodeAgent(BaseCLIAgent):
         # instead of guessing from branding alone.
         self._last_backend = ""
         config = CLIAgentConfig(
-            name="open_code",
-            command="opencode",
+            name="sparkle_llm",
+            command="sparkle_llm",
             args=[],
             env={},
             timeout=120,
@@ -124,7 +124,7 @@ class OpenCodeAgent(BaseCLIAgent):
 
     def context_window(self) -> int:
         """Return the best-known input+output context window for the active model."""
-        override = _positive_int_env("OPEN_CODE_CONTEXT_WINDOW") or _positive_int_env(
+        override = _positive_int_env("SPARKLE_LLM_CONTEXT_WINDOW") or _positive_int_env(
             "LLM_CONTEXT_WINDOW"
         )
         if override:
@@ -165,7 +165,7 @@ class OpenCodeAgent(BaseCLIAgent):
                 "response": text,
                 "confidence": 0.85 if text else 0.0,
                 "metadata": {
-                    "agent": "open_code",
+                    "agent": "sparkle_llm",
                     "model": self._model,
                     "backend": self._last_backend or "unknown",
                     "max_tokens": max_tokens,
@@ -176,13 +176,13 @@ class OpenCodeAgent(BaseCLIAgent):
         except Exception as e:
             elapsed = time.time() - start
             err_detail = _describe_exc(e)
-            logger.error("OpenCodeAgent API call failed: %s", err_detail)
+            logger.error("SparkleLLMAgent API call failed: %s", err_detail)
             return {
                 "success": False,
                 "response": f"[ERROR] {err_detail}",
                 "confidence": 0.0,
                 "metadata": {
-                    "agent": "open_code",
+                    "agent": "sparkle_llm",
                     "model": self._model,
                     "max_tokens": max_tokens,
                     "execution_time": elapsed,
@@ -204,7 +204,7 @@ class OpenCodeAgent(BaseCLIAgent):
         return GOOGLE_FALLBACK_MODEL
 
     async def _call_llm(self, user_msg: str, system_msg: str, max_tokens: int) -> str:
-        """OPENCODE_PRIMARY에 따라 Google, NVIDIA, OpenRouter 호출."""
+        """SPARKLE_LLM_PRIMARY에 따라 Google, NVIDIA, OpenRouter 호출."""
         if self._primary == "nvidia" and self._nvidia_key:
             try:
                 return await self._call_nvidia_nim(user_msg, system_msg, max_tokens)

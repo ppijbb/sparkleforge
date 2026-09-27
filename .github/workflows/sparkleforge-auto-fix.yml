@@ -243,8 +243,8 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENCODE_PRIMARY: ${{ vars.OPENCODE_PRIMARY || 'google' }}
-          OPEN_CODE_MODEL_PATH: ${{ vars.OPEN_CODE_MODEL_PATH || 'deepseek/deepseek-v4-flash-0731:free' }}
+          SPARKLE_LLM_PRIMARY: ${{ vars.SPARKLE_LLM_PRIMARY || 'google' }}
+          SPARKLE_LLM_MODEL_PATH: ${{ vars.SPARKLE_LLM_MODEL_PATH || 'deepseek/deepseek-v4-flash-0731:free' }}
           # Optional: when set, the repair loop's per-attempt/per-backend history
           # is persisted to Supabase (see src/utils/sparkleforge_history.py).
           # Absent secrets leave this entirely inert -- no behavior change.
@@ -256,9 +256,9 @@ jobs:
             --issue-context issue-context.md \
             --commit-title "${{ steps.context.outputs.commit_title }}" \
             --max-iterations "${{ github.event.inputs.max_iterations || '3' }}" \
-            --verify-command "${{ vars.OPENCODE_VERIFY_COMMAND || 'python -m compileall -q src scripts' }}" \
-            --self-verify-command "${{ vars.OPENCODE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}" \
-            > opencode-worker-error.log 2>&1
+            --verify-command "${{ vars.SPARKLEFORGE_VERIFY_COMMAND || 'python -m compileall -q src scripts' }}" \
+            --self-verify-command "${{ vars.SPARKLEFORGE_SELF_VERIFY_COMMAND || 'python scripts/check_test_code.py' }}" \
+            > sparkleforge-worker-error.log 2>&1
           EXIT_CODE=$?
           if [ "$EXIT_CODE" -ne 0 ]; then
             # Worker error is otherwise written only to the job summary (never to
@@ -266,8 +266,8 @@ jobs:
             # so `gh run view --log`/the Actions UI shows the real failure inline
             # instead of a bare "exit code 1" -- diagnosing this used to require
             # a job summary, which isn't reachable via the GitHub REST API.
-            echo "::group::opencode-worker-error.log (tail)"
-            tail -n 120 opencode-worker-error.log
+            echo "::group::sparkleforge-worker-error.log (tail)"
+            tail -n 120 sparkleforge-worker-error.log
             echo "::endgroup::"
           fi
           set -e
@@ -333,7 +333,7 @@ jobs:
               --base "${{ steps.context.outputs.base_branch }}" \
               --head "${{ steps.context.outputs.branch }}" \
               --title "${{ steps.context.outputs.pr_title }}" \
-              --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
+              --body "SparkleForge-generated fix for ${{ steps.context.outputs.issue_url }}.
 
           $CLOSES_LINE
 
@@ -563,17 +563,17 @@ jobs:
             echo "- Workflow: ${{ github.workflow }}"
             echo "- Issue: #${{ steps.context.outputs.issue_number }}"
             echo
-            if [ -f opencode-worker-error.log ]; then
+            if [ -f sparkleforge-worker-error.log ]; then
               echo "Worker error:"
               echo '```text'
-              tail -n 120 opencode-worker-error.log
+              tail -n 120 sparkleforge-worker-error.log
               echo '```'
             fi
-            if [ -f opencode-verify.log ]; then
+            if [ -f sparkleforge-verify.log ]; then
               echo
               echo "Verification output:"
               echo '```text'
-              tail -n 120 opencode-verify.log
+              tail -n 120 sparkleforge-verify.log
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"

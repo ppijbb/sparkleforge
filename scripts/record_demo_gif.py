@@ -7,7 +7,7 @@ async def record_demo():
     Records a 45-second demo of the SparkleForge self-healing flywheel.
     Phases:
     0-10s: Issue creation
-    10-25s: OpenCode agent fix
+    10-25s: SparkleForge agent fix
     25-35s: CI test suite
     35-45s: PR merge & dashboard update
     """

@@ -4,7 +4,7 @@ Used by .github/workflows/scenario-eval.yml as the CI hard-gate companion to
 the stagnation detection in tests/benchmark/run_scenarios.py. When the most
 recent N=5 history entries show no meaningful improvement (Delta >= 0.03 in
 at least 2 of the last 5 runs), this opens an issue naming the lowest-scoring
-breakdown item and labels it so opencode-auto-fix.yml does not auto-absorb it.
+breakdown item and labels it so sparkleforge-auto-fix.yml does not auto-absorb it.
 
 Moved verbatim from scripts/create_stagnation_issue.py.
 """
@@ -139,7 +139,7 @@ def build_stagnation_issue(
         f"{trend_lines}\n\n"
         f"{inconclusive_note}"
         f"{rollback_note}\n\n"
-        "This issue is intentionally excluded from the opencode-auto-fix.yml "
+        "This issue is intentionally excluded from the sparkleforge-auto-fix.yml "
         "auto-scan/auto-merge pipeline (labeled `no-auto-fix`) per the "
         "CLAUDE.md principle that merges require an explicit in-session human "
         "decision. A human should investigate the named breakdown item and "

@@ -228,7 +228,7 @@ PR #1595/#1596/#1597/#1599/#1600으로 main에 머지됐다(§2). 자동
   실패시켜 CI 하드 게이트로 만든다 — 이슈만 쌓이고 아무도 안 보는
   Nightwelding 이슈들의 전례(예: `docs/BENCHMARK_REPORT.md`의
   "Issue #843 OPEN, Tracked" 방치)를 반복하지 않기 위함. 이 자동 생성
-  이슈는 `opencode-auto-fix.yml`의 자동 스캔/자동 머지 대상에서 제외되는
+  이슈는 `sparkleforge-auto-fix.yml`의 자동 스캔/자동 머지 대상에서 제외되는
   라벨을 명시적으로 달아야 한다 — CLAUDE.md의 "사람이 세션 내에서 머지를
   명시하지 않으면 머지 금지" 원칙과 충돌하지 않도록.
 - **Μ-3 에이전트 기반 지표 선정**: `RequestAnalyzer`/

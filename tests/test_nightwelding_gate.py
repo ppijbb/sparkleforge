@@ -69,10 +69,10 @@ def test_guard_rejects_src_edit(tmp_path) -> None:
     assert "src/sneaky_fix.py" in touched
 
 
-def test_guard_ignores_opencode_patch_scratch_file(tmp_path) -> None:
+def test_guard_ignores_sparkleforge_patch_scratch_file(tmp_path) -> None:
     repo = _init_repo(tmp_path)
     (repo / "tests" / "test_repro_issue_1.py").write_text("def test_x():\n    assert False\n", encoding="utf-8")
-    (repo / "opencode.patch").write_text("diff --git a/x b/x\n", encoding="utf-8")
+    (repo / "sparkleforge.patch").write_text("diff --git a/x b/x\n", encoding="utf-8")
 
     all_ok, touched = _touched_test_files(repo)
 

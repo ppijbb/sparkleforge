@@ -158,7 +158,7 @@ async def run_nightwelding_issue(
         queue.upsert(item)
 
         body = (
-            f"OpenCode-generated Nightwelding fix for {issue.url}.\n\n"
+            f"SparkleForge-generated Nightwelding fix for {issue.url}.\n\n"
             "This PR was opened by Nightwelding, an overnight autonomous-implementation "
             "pipeline. It is intentionally a **Draft** and requires a human to review it "
             "and mark it ready before it can merge.\n\n"

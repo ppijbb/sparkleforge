@@ -129,12 +129,12 @@ async def execute_llm_task(
                     metadata={"rate_limited": True, "agent": agent_name},
                 )
 
-        # Provider가 opencode면 무조건 OpenCode(Kimi K 2.5)로 라우팅
+        # Provider가 sparkle_llm이면 무조건 SparkleLLM(Kimi K 2.5)로 라우팅
         from src.core.researcher_config import get_llm_config
 
-        if get_llm_config().provider == "opencode":
+        if get_llm_config().provider == "sparkle_llm":
             result = await _execute_cli_agent_task(
-                prompt, task_type, "open_code", system_message, **kwargs
+                prompt, task_type, "sparkle_llm", system_message, **kwargs
             )
             ok, final_content = validate_llm_output(result.content or "")
             if not ok:
@@ -264,11 +264,10 @@ def _is_cli_agent(model_name: str) -> bool:
     """모델 이름이 CLI 에이전트인지 확인"""
     cli_agents = {
         "claude_code",
-        "open_code",
+        "sparkle_llm",
         "gemini_cli",
         "cline_cli",
         "claudecode",
-        "opencode",
         "gemini-cli",
         "cline-cli",
     }

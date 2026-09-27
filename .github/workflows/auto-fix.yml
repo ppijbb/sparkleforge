@@ -27,7 +27,7 @@ jobs:
           HAS_PAT: ${{ secrets.PAT != '' }}
         run: |
           if [ "$HAS_PAT" != "true" ]; then
-            echo "::error::PAT repository secret is required to dispatch opencode-auto-fix.yml."
+            echo "::error::PAT repository secret is required to dispatch sparkleforge-auto-fix.yml."
             exit 1
           fi
           gh auth status
@@ -50,7 +50,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
-          gh workflow run opencode-auto-fix.yml \
+          gh workflow run sparkleforge-auto-fix.yml \
             --repo "${{ github.repository }}" \
             --field issue_number="${{ github.event.inputs.issue_number }}" \
             --field max_iterations="${{ github.event.inputs.max_iterations }}"

@@ -115,7 +115,7 @@ No divergence detected across the three tracked axes.
 
 All data points in this benchmark report are directly verifiable via the repository's open CI/CD execution logs and commit history:
 - Scenario Evaluation Logs: [tests/benchmark/baselines/scenario_history.jsonl](../tests/benchmark/baselines/scenario_history.jsonl)
-- Automated Workflows: [.github/workflows/scenario-eval.yml](../.github/workflows/scenario-eval.yml) & [.github/workflows/opencode-auto-fix.yml](../.github/workflows/opencode-auto-fix.yml)
+- Automated Workflows: [.github/workflows/scenario-eval.yml](../.github/workflows/scenario-eval.yml) & [.github/workflows/sparkleforge-auto-fix.yml](../.github/workflows/sparkleforge-auto-fix.yml)
 
 The performance numbers above measure *speed and cost*; they say nothing about
 whether the governance layer (capability grants, action journal, task

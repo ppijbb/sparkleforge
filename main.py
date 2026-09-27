@@ -694,9 +694,9 @@ EXAMPLES:
     ci_plan_todo_issues_parser.add_argument("--existing-issues-file", required=True)
     ci_plan_todo_issues_parser.add_argument("--plan-out", default="todo-issue-plan.json")
 
-    # autofix 커맨드 (opencode-auto-fix.yml의 재시도/검증 루프를 내재화)
+    # autofix 커맨드 (sparkleforge-auto-fix.yml의 재시도/검증 루프를 내재화)
     autofix_parser = subparsers.add_parser(
-        "autofix", help="OpenCode repair loop: retries `ci fix-issue` with self-verify/verify-command gating"
+        "autofix", help="SparkleForge repair loop: retries `ci fix-issue` with self-verify/verify-command gating"
     )
     autofix_subparsers = autofix_parser.add_subparsers(dest="autofix_command", help="Autofix commands")
     autofix_run_parser = autofix_subparsers.add_parser(
