@@ -19,7 +19,7 @@ async def forge_master_command(cli, args: List[str]):
         cli.console.print(
             "[red]Usage: forge-master <query> [--agent AGENT] [--persistent] [--persona PERSONA][/red]"
         )
-        cli.console.print("Available: claude_code, codex, gemini_cli, hermes, open_code, cline_cli")
+        cli.console.print("Available: claude_code, codex, gemini_cli, hermes, sparkle_llm, cline_cli")
         cli.console.print("Personas: ponytail, caveman, blacksmith")
         return
 

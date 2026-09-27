@@ -65,7 +65,7 @@ class ForgeMasterRouter:
             "local": True,
             "priority": 4,
         },
-        "open_code": {
+        "sparkle_llm": {
             "strengths": ["local_llm", "offline", "general_code"],
             "score": 0.75,
             "cost_tier": "minimal",

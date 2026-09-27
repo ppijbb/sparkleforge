@@ -300,7 +300,7 @@ def register_forge_master_dispatch_tool() -> None:
             description=(
                 "Hand off a batch of coding tasks to ForgeMaster, which routes "
                 "each one to an external CLI agent (claude_code, codex, "
-                "gemini_cli, hermes, open_code, cline_cli) and runs them "
+                "gemini_cli, hermes, sparkle_llm, cline_cli) and runs them "
                 "concurrently. You must choose agent_name yourself per task "
                 "based on the task and each agent's described strengths - this "
                 "tool does not pick or switch agents for you, and will not "

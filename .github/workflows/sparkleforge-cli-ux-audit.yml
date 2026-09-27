@@ -127,7 +127,7 @@ jobs:
             echo "<!-- sparkleforge-cli-ux-audit:$TODAY -->"
             echo
             echo "Found by the SparkleForge CLI UX self-audit (\`sparkleforge report cli-ux-audit-run\`, run daily -- pty-captures terminal output, renders it to a screenshot, and vision-judges both the text and the actual pixels)."
-            echo "Intentionally scoped so the automated OpenCode workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback."
+            echo "Intentionally scoped so the automated SparkleForge workflow can create a branch, commit fixes, open a PR, and iterate on verification feedback."
             echo
             cat cli-ux-audit-result.md
           } > cli-ux-audit-issue-body.md

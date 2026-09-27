@@ -10,14 +10,14 @@ from src.core.ci.fix_issue import (
     _per_file_context_limit,
     _prompt_fits_budget,
 )
-from src.core.cli_agents.open_code_agent import OpenCodeAgent
+from src.core.cli_agents.sparkle_llm_agent import SparkleLLMAgent
 from src.core.patch_ops import _normalize_diff, _split_multifile_patch, _validate_patch_paths
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-class DummyOpenCodeAgent:
+class DummySparkleLLMAgent:
     def __init__(self, prompt_budget: int):
         self.prompt_budget = prompt_budget
 
@@ -25,15 +25,15 @@ class DummyOpenCodeAgent:
         return self.prompt_budget
 
 
-def test_build_agent_defaults_to_open_code(monkeypatch) -> None:
+def test_build_agent_defaults_to_sparkle_llm(monkeypatch) -> None:
     monkeypatch.delenv("AUTOFIX_CLI_AGENT", raising=False)
-    assert isinstance(_build_agent(), OpenCodeAgent)
+    assert isinstance(_build_agent(), SparkleLLMAgent)
 
 
-def test_build_agent_falls_back_to_open_code_for_unknown_name(monkeypatch, capsys) -> None:
+def test_build_agent_falls_back_to_sparkle_llm_for_unknown_name(monkeypatch, capsys) -> None:
     monkeypatch.setenv("AUTOFIX_CLI_AGENT", "not-a-real-agent")
     agent = _build_agent()
-    assert isinstance(agent, OpenCodeAgent)
+    assert isinstance(agent, SparkleLLMAgent)
     assert "not-a-real-agent" in capsys.readouterr().err
 
 
@@ -286,7 +286,7 @@ def test_split_multifile_patch_keeps_paths_with_spaces() -> None:
 
 def test_per_file_context_limit_caps_large_model_budget() -> None:
     limit = _per_file_context_limit(
-        DummyOpenCodeAgent(prompt_budget=1_000_000),
+        DummySparkleLLMAgent(prompt_budget=1_000_000),
         1,
         snapshot="",
         status="",
@@ -298,7 +298,7 @@ def test_per_file_context_limit_caps_large_model_budget() -> None:
 
 def test_per_file_context_limit_returns_zero_when_prompt_budget_is_exhausted() -> None:
     limit = _per_file_context_limit(
-        DummyOpenCodeAgent(prompt_budget=100),
+        DummySparkleLLMAgent(prompt_budget=100),
         3,
         snapshot="src/core/patch_ops.py",
         status="",
@@ -310,14 +310,14 @@ def test_per_file_context_limit_returns_zero_when_prompt_budget_is_exhausted() -
 
 def test_per_file_context_limit_shares_budget_across_files() -> None:
     one_file = _per_file_context_limit(
-        DummyOpenCodeAgent(prompt_budget=50_000),
+        DummySparkleLLMAgent(prompt_budget=50_000),
         1,
         snapshot="src/core/patch_ops.py",
         status="",
         issue_context="short issue",
     )
     five_files = _per_file_context_limit(
-        DummyOpenCodeAgent(prompt_budget=50_000),
+        DummySparkleLLMAgent(prompt_budget=50_000),
         5,
         snapshot="src/core/patch_ops.py",
         status="",
@@ -331,7 +331,7 @@ def test_per_file_context_limit_shares_budget_across_files() -> None:
 def test_budgeted_relevant_file_contents_shrinks_until_final_prompt_fits(tmp_path) -> None:
     source = tmp_path / "large_module.py"
     source.write_text("\n".join(f"line_{i} = 'value'" for i in range(2_000)), encoding="utf-8")
-    agent = DummyOpenCodeAgent(prompt_budget=3_000)
+    agent = DummySparkleLLMAgent(prompt_budget=3_000)
 
     file_contents_str = _budgeted_relevant_file_contents(
         agent,
@@ -357,7 +357,7 @@ def test_budgeted_relevant_file_contents_shrinks_until_final_prompt_fits(tmp_pat
 def test_budgeted_requested_tool_context_counts_existing_file_context(tmp_path) -> None:
     requested = tmp_path / "requested.py"
     requested.write_text("\n".join(f"result_{i} = {i}" for i in range(2_000)), encoding="utf-8")
-    agent = DummyOpenCodeAgent(prompt_budget=3_500)
+    agent = DummySparkleLLMAgent(prompt_budget=3_500)
     file_contents_str = "Relevant File Contents (with exact line numbers):\n" + (
         "context line\n" * 120
     )

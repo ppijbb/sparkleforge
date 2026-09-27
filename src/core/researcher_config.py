@@ -72,8 +72,8 @@ class LLMConfig(BaseModel):
     # Claude Code settings
     claude_code_api_key: str | None = Field(default=None, description="Claude Code API key")
 
-    # OpenCode settings
-    open_code_model_path: str | None = Field(default=None, description="OpenCode model path")
+    # SparkleLLM settings
+    sparkle_llm_model_path: str | None = Field(default=None, description="SparkleLLM model path")
 
     # Gemini CLI settings
     gemini_cli_api_key: str | None = Field(default=None, description="Gemini CLI API key")
@@ -914,11 +914,11 @@ def get_cli_agents_config() -> Dict[str, Any]:
             "enabled": bool(os.getenv("CLAUDE_CODE_API_KEY") or config.llm.claude_code_api_key),
             "api_key": os.getenv("CLAUDE_CODE_API_KEY") or config.llm.claude_code_api_key,
         },
-        "open_code": {
-            # open_code는 기본 provider이므로 model_path override 여부와 무관하게 항상 활성화.
-            # model_path가 None이면 OpenCodeAgent.DEFAULT_MODEL로 위임된다.
+        "sparkle_llm": {
+            # sparkle_llm는 기본 provider이므로 model_path override 여부와 무관하게 항상 활성화.
+            # model_path가 None이면 SparkleLLMAgent.DEFAULT_MODEL로 위임된다.
             "enabled": True,
-            "model_path": os.getenv("OPEN_CODE_MODEL_PATH") or config.llm.open_code_model_path,
+            "model_path": os.getenv("SPARKLE_LLM_MODEL_PATH") or config.llm.sparkle_llm_model_path,
         },
         "gemini_cli": {
             "enabled": bool(os.getenv("GEMINI_CLI_API_KEY") or config.llm.gemini_cli_api_key),
@@ -1135,10 +1135,10 @@ def load_config_from_env() -> ResearcherSystemConfig:
             return default_value
         return [item.strip() for item in value.split(separator) if item.strip()]
 
-    # Load LLM configuration (provider/model 미설정 => opencode + Kimi K 2.5)
-    _llm_provider = get_optional_env("LLM_PROVIDER", "opencode")
+    # Load LLM configuration (provider/model 미설정 => sparkle_llm + Kimi K 2.5)
+    _llm_provider = get_optional_env("LLM_PROVIDER", "sparkle_llm")
     if not _llm_provider or (isinstance(_llm_provider, str) and not _llm_provider.strip()):
-        _llm_provider = "opencode"
+        _llm_provider = "sparkle_llm"
 
     # Provider별 실제로 필요한 API 키만 필수로 요구하고,
     # 무관한 키는 optional로 처리한다 (Issue #470).
@@ -1154,23 +1154,23 @@ def load_config_from_env() -> ResearcherSystemConfig:
     def _provider_api_key() -> str:
         return os.getenv(_provider_api_key_env_name) or os.getenv("GOOGLE_API_KEY") or ""
 
-    if _llm_provider == "opencode":
+    if _llm_provider == "sparkle_llm":
         llm_config = LLMConfig(
-            provider="opencode",
-            primary_model="open_code",
+            provider="sparkle_llm",
+            primary_model="sparkle_llm",
             temperature=get_optional_env("LLM_TEMPERATURE", 0.2, float),
             max_tokens=get_optional_env("LLM_MAX_TOKENS", 8192, int),
             api_key=os.getenv("GOOGLE_API_KEY") or "",
-            planning_model="open_code",
-            reasoning_model="open_code",
-            verification_model="open_code",
-            generation_model="open_code",
-            compression_model="open_code",
+            planning_model="sparkle_llm",
+            reasoning_model="sparkle_llm",
+            verification_model="sparkle_llm",
+            generation_model="sparkle_llm",
+            compression_model="sparkle_llm",
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or "",
             budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
             enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
-            # None이면 open_code_agent.DEFAULT_MODEL이 단일 소스로 적용됨
-            open_code_model_path=get_optional_env("OPEN_CODE_MODEL_PATH"),
+            # None이면 sparkle_llm_agent.DEFAULT_MODEL이 단일 소스로 적용됨
+            sparkle_llm_model_path=get_optional_env("SPARKLE_LLM_MODEL_PATH"),
         )
     else:
         _primary_model = get_required_env("LLM_MODEL")

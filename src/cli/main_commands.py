@@ -86,9 +86,9 @@ async def handle_run_command(args, config):
     def _apply_runtime_overrides() -> None:
         model_override = getattr(args, "model", None)
         if model_override:
-            os.environ["OPEN_CODE_MODEL_PATH"] = model_override
-            if config.llm.provider == "opencode":
-                config.llm.open_code_model_path = model_override
+            os.environ["SPARKLE_LLM_MODEL_PATH"] = model_override
+            if config.llm.provider == "sparkle_llm":
+                config.llm.sparkle_llm_model_path = model_override
             else:
                 os.environ["LLM_MODEL"] = model_override
                 for key in (

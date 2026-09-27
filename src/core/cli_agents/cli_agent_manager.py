@@ -15,7 +15,7 @@ from .codex_agent import CodexCLIAgent
 from .computer_use_agent import ComputerUseAgent
 from .gemini_cli_agent import GeminiCLIAgent
 from .hermes_agent import HermesCLIAgent
-from .open_code_agent import OpenCodeAgent
+from .sparkle_llm_agent import SparkleLLMAgent
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class CLIAgentManager:
         """기본 CLI 에이전트들을 등록"""
         default_agents = {
             "claude_code": ClaudeCodeAgent,
-            "open_code": OpenCodeAgent,
+            "sparkle_llm": SparkleLLMAgent,
             "gemini_cli": GeminiCLIAgent,
             "cline_cli": ClineCLIAgent,
             "computer_use": ComputerUseAgent,
@@ -99,17 +99,17 @@ class CLIAgentManager:
             # 설정과 kwargs 병합
             config = self.agent_configs.get(name, {}).copy()
             config.update(kwargs)
-            # open_code: model_path 미설정 시 None으로 두어 OpenCodeAgent의
+            # sparkle_llm: model_path 미설정 시 None으로 두어 SparkleLLMAgent의
             # DEFAULT_MODEL(단일 소스)로 위임한다.
-            if name == "open_code" and not config.get("model_path"):
+            if name == "sparkle_llm" and not config.get("model_path"):
                 try:
                     from src.core.researcher_config import get_llm_config
 
-                    config["model_path"] = get_llm_config().open_code_model_path or os.getenv(
-                        "OPEN_CODE_MODEL_PATH"
+                    config["model_path"] = get_llm_config().sparkle_llm_model_path or os.getenv(
+                        "SPARKLE_LLM_MODEL_PATH"
                     )
                 except Exception:
-                    config["model_path"] = os.getenv("OPEN_CODE_MODEL_PATH")
+                    config["model_path"] = os.getenv("SPARKLE_LLM_MODEL_PATH")
 
             # 인스턴스 생성
             agent = agent_class(**config)
@@ -126,7 +126,7 @@ class CLIAgentManager:
         """에이전트 이름으로 클래스 찾기"""
         agent_classes = {
             "claude_code": ClaudeCodeAgent,
-            "open_code": OpenCodeAgent,
+            "sparkle_llm": SparkleLLMAgent,
             "gemini_cli": GeminiCLIAgent,
             "cline_cli": ClineCLIAgent,
             "computer_use": ComputerUseAgent,

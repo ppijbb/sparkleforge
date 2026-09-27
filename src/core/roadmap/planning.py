@@ -118,7 +118,7 @@ def build_fallback_roadmap(
         "",
         "## Validation",
         "- `./actionlint .github/workflows/sparkleforge-daily-roadmap.yml .github/workflows/gemini-assistant.yml .github/workflows/sparkleforge-auto-fix.yml .github/workflows/pr-merge-gate.yml`",
-        "- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_cli_entrypoints.py tests/test_open_code_agent_config.py tests/test_cli_result_handling.py`",
+        "- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_cli_entrypoints.py tests/test_sparkle_llm_agent_config.py tests/test_cli_result_handling.py`",
         "- `git diff --check`",
     ]
     return "\n".join(lines) + "\n"

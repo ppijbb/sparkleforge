@@ -2,7 +2,7 @@ from typing import Any, List
 
 """Base CLI Agent - CLI 기반 에이전트들의 공통 추상화 레이어
 
-모든 CLI 기반 에이전트(claudecode, opencode, gemini cli, cline cli 등)의
+모든 CLI 기반 에이전트(claudecode, sparkle_llm, gemini cli, cline cli 등)의
 공통 인터페이스를 정의하고 실행/결과 파싱을 표준화.
 """
 
@@ -308,7 +308,7 @@ class BaseCLIAgent(ABC):
         content (fix_issue.py) still need a safe number to call regardless of
         which concrete agent they got, so this generic default exists for
         agents that don't override it with a precise, model-aware value
-        (see OpenCodeAgent.context_window).
+        (see SparkleLLMAgent.context_window).
         """
         return 128_000
 

@@ -1,4 +1,4 @@
-"""Autofix: the OpenCode repair-loop that backs `.github/workflows/sparkleforge-auto-fix.yml`.
+"""Autofix: the SparkleForge repair-loop that backs `.github/workflows/sparkleforge-auto-fix.yml`.
 
 Retries `sparkleforge ci fix-issue` against an already-checked-out issue
 context, gated by an optional self-verify command (aborts immediately on

@@ -83,7 +83,7 @@ def test_list_candidate_issues_filters_by_label_and_open_pr(monkeypatch) -> None
     assert candidates == [1]
 
 
-def test_open_draft_pr_requires_opencode_generated_marker(monkeypatch) -> None:
+def test_open_draft_pr_requires_sparkleforge_generated_marker(monkeypatch) -> None:
     monkeypatch.setattr(github_adapter, "find_open_pr", lambda repo, branch, base: None)
 
     with pytest.raises(github_adapter.GitHubAdapterError):

@@ -8,7 +8,7 @@ from .claude_code_agent import ClaudeCodeAgent
 from .cli_agent_manager import CLIAgentManager, get_cli_agent_manager
 from .cline_cli_agent import ClineCLIAgent
 from .gemini_cli_agent import GeminiCLIAgent
-from .open_code_agent import OpenCodeAgent
+from .sparkle_llm_agent import SparkleLLMAgent
 
 __all__ = [
     "BaseCLIAgent",
@@ -17,7 +17,7 @@ __all__ = [
     "CLIAgentManager",
     "get_cli_agent_manager",
     "ClaudeCodeAgent",
-    "OpenCodeAgent",
+    "SparkleLLMAgent",
     "GeminiCLIAgent",
     "ClineCLIAgent",
 ]
