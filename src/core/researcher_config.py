@@ -8,6 +8,7 @@ Adaptive Research Depth.
 """
 
 import os
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -19,6 +20,8 @@ def get_default_session_quota():
 from typing import Any, Dict, List, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+logger = logging.getLogger(__name__)
 
 
 class TaskType(Enum):
@@ -1135,10 +1138,34 @@ def load_config_from_env() -> ResearcherSystemConfig:
             return default_value
         return [item.strip() for item in value.split(separator) if item.strip()]
 
-    # Load LLM configuration (provider/model 미설정 => sparkle_llm + Kimi K 2.5)
-    _llm_provider = get_optional_env("LLM_PROVIDER", "sparkle_llm")
+    # Backward compatibility for renamed environment variables and default provider
+    if not os.getenv("LLM_PROVIDER") and os.getenv("OPENCODE_PRIMARY"):
+        logger.warning("Deprecated environment variable OPENCODE_PRIMARY detected. Please use SPARKLE_LLM_PRIMARY instead.")
+    if not os.getenv("LLM_MODEL") and os.getenv("OPEN_CODE_MODEL_PATH"):
+        logger.warning("Deprecated environment variable OPEN_CODE_MODEL_PATH detected. Please use SPARKLE_LLM_MODEL_PATH instead.")
+    if not os.getenv("SPARKLEFORGE_VERIFY_COMMAND") and os.getenv("OPENCODE_VERIFY_COMMAND"):
+        logger.warning("Deprecated environment variable OPENCODE_VERIFY_COMMAND detected. Please use SPARKLEFORGE_VERIFY_COMMAND instead.")
+    if not os.getenv("SPARKLEFORGE_SELF_VERIFY_COMMAND") and os.getenv("OPENCODE_SELF_VERIFY_COMMAND"):
+        logger.warning("Deprecated environment variable OPENCODE_SELF_VERIFY_COMMAND detected. Please use SPARKLEFORGE_SELF_VERIFY_COMMAND instead.")
+
+    # Determine default provider: preserve "opencode" as default unless SPARKLEFORGE_MIGRATION_V2=1 is set,
+    # or unless explicit new env vars indicate the new tier.
+    _migration_v2 = get_optional_env("SPARKLEFORGE_MIGRATION_V2", False, bool)
+    _default_provider = "sparkle_llm" if _migration_v2 else "opencode"
+
+    _llm_provider = get_optional_env("LLM_PROVIDER", _default_provider)
     if not _llm_provider or (isinstance(_llm_provider, str) and not _llm_provider.strip()):
-        _llm_provider = "sparkle_llm"
+        _llm_provider = _default_provider
+
+    # Fallbacks for env vars
+    if not os.getenv("SPARKLE_LLM_PRIMARY") and os.getenv("OPENCODE_PRIMARY"):
+        os.environ["SPARKLE_LLM_PRIMARY"] = os.getenv("OPENCODE_PRIMARY")
+    if not os.getenv("SPARKLE_LLM_MODEL_PATH") and os.getenv("OPEN_CODE_MODEL_PATH"):
+        os.environ["SPARKLE_LLM_MODEL_PATH"] = os.getenv("OPEN_CODE_MODEL_PATH")
+    if not os.getenv("SPARKLEFORGE_VERIFY_COMMAND") and os.getenv("OPENCODE_VERIFY_COMMAND"):
+        os.environ["SPARKLEFORGE_VERIFY_COMMAND"] = os.getenv("OPENCODE_VERIFY_COMMAND")
+    if not os.getenv("SPARKLEFORGE_SELF_VERIFY_COMMAND") and os.getenv("OPENCODE_SELF_VERIFY_COMMAND"):
+        os.environ["SPARKLEFORGE_SELF_VERIFY_COMMAND"] = os.getenv("OPENCODE_SELF_VERIFY_COMMAND")
 
     # Provider별 실제로 필요한 API 키만 필수로 요구하고,
     # 무관한 키는 optional로 처리한다 (Issue #470).
@@ -1169,8 +1196,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or "",
             budget_limit=get_optional_env("BUDGET_LIMIT", 10.0, float),
             enable_cost_optimization=get_optional_env("ENABLE_COST_OPTIMIZATION", True, bool),
-            # None이면 sparkle_llm_agent.DEFAULT_MODEL이 단일 소스로 적용됨
-            sparkle_llm_model_path=get_optional_env("SPARKLE_LLM_MODEL_PATH"),
+            sparkle_llm_model_path=get_optional_env("SPARKLE_LLM_MODEL_PATH") or get_optional_env("OPEN_CODE_MODEL_PATH"),
         )
     else:
         _primary_model = get_required_env("LLM_MODEL")
