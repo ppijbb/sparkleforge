@@ -455,7 +455,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
     if not diff.strip():
         raise ValueError("OpenCode produced an empty patch.")
 
-    patch_path = Path("opencode.patch")
+    patch_path = Path("sparkleforge.patch")
     before_signature = repository_change_signature()
     patch_path.write_text(diff, encoding="utf-8")
 

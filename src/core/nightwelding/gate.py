@@ -29,7 +29,7 @@ REPRO_TEST_PATTERN = re.compile(r"^tests/(?:[^/]+/)*test_[^/]+\.py$")
 NON_REPRODUCIBLE_TITLE_PREFIXES = ("planning:", "design:", "rfc:", "spike:")
 
 # excluded when scanning `git status` for what the LLM's diff actually touched.
-_IGNORED_RUNTIME_FILES = {"opencode.patch"}
+_IGNORED_RUNTIME_FILES = {"sparkleforge.patch"}
 
 _MAX_WRITE_ATTEMPTS = 2
 _COLLECT_TIMEOUT_SECONDS = 120

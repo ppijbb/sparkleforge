@@ -30,11 +30,12 @@ temp
 test_results
 *.orig
 *.rej
-opencode-worker-error.log
-opencode.patch
-opencode-extra-context.md
-opencode-verify.log
-opencode-self-verify.log
+sparkleforge-worker-error.log
+sparkleforge.patch
+sparkleforge-single.patch
+sparkleforge-extra-context.md
+sparkleforge-verify.log
+sparkleforge-self-verify.log
 issue-context.md
 
 # CI/automation scratch state: written fresh by each workflow run, never

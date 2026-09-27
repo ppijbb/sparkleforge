@@ -339,7 +339,7 @@ def commit_changes(repo_root: Path, message: str) -> None:
     """Stage all changes (tracked modifications + untracked files) and commit.
 
     Never stages SparkleForge's own runtime scratch files (issue-context.md,
-    opencode.patch, logs, ...) -- they must not leak into a real repo's history.
+    sparkleforge.patch, logs, ...) -- they must not leak into a real repo's history.
     """
     _run(["git", "add", "-u"], cwd=repo_root, check=False)
     untracked = _run(

@@ -68,12 +68,12 @@ def run_autofix_repair_loop(
         )
         return result
 
-    extra_context_path = repo_root / "opencode-extra-context.md"
+    extra_context_path = repo_root / "sparkleforge-extra-context.md"
     extra_context_path.write_text("", encoding="utf-8")
-    worker_error_path = repo_root / "opencode-worker-error.log"
-    self_verify_log_path = repo_root / "opencode-self-verify.log"
-    verify_log_path = repo_root / "opencode-verify.log"
-    patch_path = repo_root / "opencode.patch"
+    worker_error_path = repo_root / "sparkleforge-worker-error.log"
+    self_verify_log_path = repo_root / "sparkleforge-self-verify.log"
+    verify_log_path = repo_root / "sparkleforge-verify.log"
+    patch_path = repo_root / "sparkleforge.patch"
 
     sparkleforge_entrypoint = Path(__file__).resolve().parents[3] / "main.py"
     if not sparkleforge_entrypoint.exists():
@@ -126,8 +126,8 @@ def run_autofix_repair_loop(
             continue
 
         # repository_change_signature() reads the excludes both this loop and the
-        # old bash step already agreed on (issue-context.md, opencode.patch,
-        # opencode-extra-context.md, opencode-verify.log, opencode-worker-error.log,
+        # old bash step already agreed on (issue-context.md, sparkleforge.patch,
+        # sparkleforge-extra-context.md, sparkleforge-verify.log, sparkleforge-worker-error.log,
         # *.orig/*.rej) -- reuse it instead of reimplementing the pathspec exclude list.
         changed = bool(patch_ops.repository_change_signature(cwd=repo_root))
         if not changed:

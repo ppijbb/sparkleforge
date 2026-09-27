@@ -49,7 +49,7 @@ def implement_until_green(
 
     issue_context_path = repo_root / "issue-context.md"
     issue_context_path.write_text(issue_context, encoding="utf-8")
-    extra_context_path = repo_root / "opencode-extra-context.md"
+    extra_context_path = repo_root / "sparkleforge-extra-context.md"
     extra_context_path.write_text("", encoding="utf-8")
 
     validator_script = Path(__file__).resolve().parents[3] / "scripts" / "validate_commit_messages.py"

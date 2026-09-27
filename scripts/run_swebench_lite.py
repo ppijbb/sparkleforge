@@ -5,7 +5,7 @@ checkout of its repo at `base_commit`, and `sparkleforge ci fix-issue`
 (src/core/ci/fix_issue.py) -- the same production entrypoint Nightwelding and
 `.github/workflows/sparkleforge-auto-fix.yml` use for real GitHub issues -- is
 invoked against it with the SWE-bench `problem_statement` as the issue
-context. Whatever `opencode.patch` it produces (or nothing, on failure)
+context. Whatever `sparkleforge.patch` it produces (or nothing, on failure)
 becomes that instance's prediction. A failed instance is recorded with an
 empty `model_patch` rather than skipped, so the run's resolved/unresolved
 counts honestly include it instead of quietly shrinking the sample.
@@ -98,7 +98,7 @@ def _generate_patch(checkout: Path, problem_statement: str, timeout: int) -> str
     finally:
         context_path.unlink(missing_ok=True)
 
-    patch_path = checkout / "opencode.patch"
+    patch_path = checkout / "sparkleforge.patch"
     if patch_path.exists():
         return patch_path.read_text(encoding="utf-8")
     return ""

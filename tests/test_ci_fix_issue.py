@@ -125,7 +125,7 @@ def test_apply_patch_rejects_partial_multifile_success(tmp_path, monkeypatch) ->
     monkeypatch.chdir(tmp_path)
     Path("README.md").write_text("old\n", encoding="utf-8")
 
-    patch = tmp_path / "opencode.patch"
+    patch = tmp_path / "sparkleforge.patch"
     patch.write_text(
         """diff --git a/README.md b/README.md
 --- a/README.md
@@ -159,7 +159,7 @@ def test_apply_patch_new_file_lands_at_correct_path_not_b_prefixed(tmp_path, mon
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "init", "--allow-empty"], cwd=tmp_path, check=True)
 
-    patch = tmp_path / "opencode.patch"
+    patch = tmp_path / "sparkleforge.patch"
     patch.write_text(
         """diff --git a/tests/test_foo.py b/tests/test_foo.py
 new file mode 100644
@@ -183,7 +183,7 @@ index 0000000..1111111
 def test_apply_patch_rejects_embedded_diff_prefix_paths(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
 
-    patch = tmp_path / "opencode.patch"
+    patch = tmp_path / "sparkleforge.patch"
     patch.write_text(
         """diff --git a/a/tests/test_bad_path.py b/a/tests/test_bad_path.py
 --- a/a/tests/test_bad_path.py

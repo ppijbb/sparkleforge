@@ -53,12 +53,12 @@ def repo_snapshot(cwd: Path | None = None) -> str:
 RUNTIME_SCRATCH_FILES = frozenset(
     {
         "issue-context.md",
-        "opencode.patch",
-        "opencode-single.patch",
-        "opencode-extra-context.md",
-        "opencode-verify.log",
-        "opencode-worker-error.log",
-        "opencode-self-verify.log",
+        "sparkleforge.patch",
+        "sparkleforge-single.patch",
+        "sparkleforge-extra-context.md",
+        "sparkleforge-verify.log",
+        "sparkleforge-worker-error.log",
+        "sparkleforge-self-verify.log",
     }
 )
 
@@ -387,7 +387,7 @@ def _apply_single_patch(diff_text: str, label: str = "", cwd: Path | None = None
     Returns (success, error_summary).
     """
     # Write to a temp file, inside `cwd` so a relative git-apply target resolves.
-    tmp = (cwd or Path.cwd()) / "opencode-single.patch"
+    tmp = (cwd or Path.cwd()) / "sparkleforge-single.patch"
     diff_text = _normalize_diff(diff_text)
     path_error = _validate_patch_paths(diff_text)
     if path_error:
