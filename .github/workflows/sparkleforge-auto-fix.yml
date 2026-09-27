@@ -333,7 +333,7 @@ jobs:
               --base "${{ steps.context.outputs.base_branch }}" \
               --head "${{ steps.context.outputs.branch }}" \
               --title "${{ steps.context.outputs.pr_title }}" \
-              --body "OpenCode-generated fix for ${{ steps.context.outputs.issue_url }}.
+              --body "SparkleForge-generated fix for ${{ steps.context.outputs.issue_url }}.
 
           $CLOSES_LINE
 

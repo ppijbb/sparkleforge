@@ -151,7 +151,7 @@ def test_open_draft_pr_returns_existing_pr_without_creating_a_new_one(monkeypatc
         base_branch="main",
         branch="nightwelding/1-123",
         title="fix: something",
-        body="OpenCode-generated fix.",
+        body="SparkleForge-generated fix.",
     )
 
     assert url == "https://github.com/acme/widgets/pull/99"
@@ -185,7 +185,7 @@ def test_publish_draft_change_targets_upstream_parent_when_repo_is_a_fork(monkey
         base_branch="main",
         branch="nightwelding/42-abc",
         title="fix: something",
-        body="OpenCode-generated fix.\n\nCloses #42",
+        body="SparkleForge-generated fix.\n\nCloses #42",
         issue_ref=42,
     )
 
@@ -225,7 +225,7 @@ def test_publish_draft_change_stays_same_repo_when_not_a_fork(monkeypatch) -> No
         base_branch="main",
         branch="nightwelding/7-abc",
         title="fix: something",
-        body="OpenCode-generated fix.\n\nCloses #7",
+        body="SparkleForge-generated fix.\n\nCloses #7",
         issue_ref=7,
     )
 

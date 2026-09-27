@@ -26,8 +26,6 @@ ISSUE_REF_RE = re.compile(r"#\d+")
 UPPERCASE_RE = re.compile(r"[A-Z]")
 
 BANNED_EXACT = {
-    "fix: apply opencode changes",
-    "chore: apply opencode changes",
     "fix: restore daily roadmap cli",
     "fix: restore daily roadmap generation",
     "fix: update automated fix",
