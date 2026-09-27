@@ -2,7 +2,7 @@ name: TODO Debt Issue Sync
 
 # Turns Critical/High-priority TODO/FIXME code comments (sparkleforge ci collect-todos)
 # into GitHub issues so they flow into the existing issue-driven auto-fix pipeline
-# (opencode-auto-fix.yml / nightwelding.yml) instead of only living in a local
+# (sparkleforge-auto-fix.yml / nightwelding.yml) instead of only living in a local
 # docs/todo_inventory.md snapshot. Medium/Low items stay report-only to avoid
 # flooding auto-fix with low-value or context-dependent comments.
 

@@ -117,7 +117,7 @@ def build_fallback_roadmap(
         "- [ ] No new duplicate daily-roadmap failure issue is created for the same day.",
         "",
         "## Validation",
-        "- `./actionlint .github/workflows/sparkleforge-daily-roadmap.yml .github/workflows/gemini-assistant.yml .github/workflows/opencode-auto-fix.yml .github/workflows/pr-merge-gate.yml`",
+        "- `./actionlint .github/workflows/sparkleforge-daily-roadmap.yml .github/workflows/gemini-assistant.yml .github/workflows/sparkleforge-auto-fix.yml .github/workflows/pr-merge-gate.yml`",
         "- `UV_CACHE_DIR=/tmp/uv-cache uv run pytest tests/test_cli_entrypoints.py tests/test_open_code_agent_config.py tests/test_cli_result_handling.py`",
         "- `git diff --check`",
     ]

@@ -3,7 +3,7 @@
 This does not reimplement patch generation: each instance is a real git
 checkout of its repo at `base_commit`, and `sparkleforge ci fix-issue`
 (src/core/ci/fix_issue.py) -- the same production entrypoint Nightwelding and
-`.github/workflows/opencode-auto-fix.yml` use for real GitHub issues -- is
+`.github/workflows/sparkleforge-auto-fix.yml` use for real GitHub issues -- is
 invoked against it with the SWE-bench `problem_statement` as the issue
 context. Whatever `opencode.patch` it produces (or nothing, on failure)
 becomes that instance's prediction. A failed instance is recorded with an

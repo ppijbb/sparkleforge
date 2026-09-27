@@ -1,7 +1,7 @@
 """OpenCode repair loop: retries `sparkleforge ci fix-issue` with self-verify/verify-command gating.
 
 1:1 relocation of the "OpenCode repair loop" bash step from
-.github/workflows/opencode-auto-fix.yml -- preserves its exact semantics,
+.github/workflows/sparkleforge-auto-fix.yml -- preserves its exact semantics,
 including a quirk that looks unintentional but is kept as-is: a failing
 self-verify command aborts the whole loop immediately (no retry), while a
 failing verify command retries up to max_iterations.

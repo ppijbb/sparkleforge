@@ -1,7 +1,7 @@
 name: Nightwelding Autonomous Implementation
 
 # Nightwelding retries the auto-fix-failed backlog overnight (issues the daytime
-# opencode-auto-fix.yml pipeline already tried and gave up on, and which its
+# sparkleforge-auto-fix.yml pipeline already tried and gave up on, and which its
 # own 30-minute sweep explicitly never retries automatically), gated by a
 # reproduce-first test that must go red before implementing and green before
 # a Draft PR opens. It never merges. All of the actual logic lives in

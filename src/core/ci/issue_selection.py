@@ -1,4 +1,4 @@
-"""Pick the next open issue for opencode-auto-fix.yml's scheduled sweep.
+"""Pick the next open issue for sparkleforge-auto-fix.yml's scheduled sweep.
 
 Moved verbatim from the workflow's "Resolve issue and branch" step: skip any
 open issue already carrying an auto-fix-pr-opened/auto-fix-merged/

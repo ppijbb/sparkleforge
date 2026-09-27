@@ -1,6 +1,6 @@
 """Derive a Conventional Commit type + subject from an issue title.
 
-Moved verbatim from opencode-auto-fix.yml's two sequential, independent
+Moved verbatim from sparkleforge-auto-fix.yml's two sequential, independent
 matches: a leading `[tag]` bracket first, then a bare/emoji `type:` prefix
 second (checked against whatever the bracket step produced, or the original
 title if there was no bracket).

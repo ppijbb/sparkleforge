@@ -2,7 +2,7 @@
 
 Moved from scripts/opencode_github_worker.py so GitHub Actions calls
 `sparkleforge ci fix-issue` instead of a standalone script. Reused by three
-callers: opencode-auto-fix.yml's repair loop (via src.core.autofix.runner),
+callers: sparkleforge-auto-fix.yml's repair loop (via src.core.autofix.runner),
 src.core.nightwelding.implement, and scripts/run_swebench_lite.py -- all three
 now invoke it as a subprocess via `main.py ci fix-issue`.
 
@@ -296,7 +296,7 @@ def _build_agent() -> BaseCLIAgent:
     targets, instead of hardcoding one class here.
 
     AUTOFIX_CLI_AGENT selects which one (default: open_code, the only one
-    with working credentials configured in opencode-auto-fix.yml today).
+    with working credentials configured in sparkleforge-auto-fix.yml today).
     Set it to "claude_code" or "codex" once ANTHROPIC_API_KEY/OPENAI_API_KEY
     and the corresponding CLI binary are available in the runner.
     """

@@ -1373,7 +1373,7 @@ async def handle_ci_command(args):
 
 
 async def handle_autofix_command(args):
-    """OpenCode repair-loop 커맨드 처리 (opencode-auto-fix.yml의 bash 재시도 루프를 내재화)."""
+    """SparkleForge repair-loop 커맨드 처리 (sparkleforge-auto-fix.yml의 bash 재시도 루프를 내재화)."""
     from pathlib import Path
 
     if args.autofix_command == "run":

@@ -1,7 +1,7 @@
 """Implementation repair loop: turn a red reproduction test green.
 
 Mirrors the retry loop in src/core/autofix/runner.py (which backs the
-"OpenCode repair loop" step in .github/workflows/opencode-auto-fix.yml) but
+"OpenCode repair loop" step in .github/workflows/sparkleforge-auto-fix.yml) but
 verifies against the reproduction test written by
 src/core/nightwelding/gate.py instead of a bare `compileall` check.
 
