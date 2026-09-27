@@ -114,8 +114,8 @@ class SparkleLLMAgent(BaseCLIAgent):
         self._last_backend = ""
         config = CLIAgentConfig(
             name="sparkle_llm",
-            command="sparkle_llm",
-            args=[],
+            command="sparkleforge",
+            args=["run"],
             env={},
             timeout=120,
             output_format="text",
