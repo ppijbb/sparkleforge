@@ -13,6 +13,7 @@ import os
 import pty
 import struct
 import termios
+import shutil
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -57,6 +58,20 @@ class BaseCLIAgent(ABC):
     def __init__(self, config: CLIAgentConfig):
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.{config.name}")
+        self._validate_command_exists()
+
+    def _validate_command_exists(self) -> None:
+        """Validate that the configured CLI command resolves to an executable on PATH or via absolute path."""
+        cmds = self.config.command if isinstance(self.config.command, list) else [str(self.config.command)]
+        if not cmds:
+            return
+        exe = cmds[0]
+        # If it's a python module invocation or similar path, skip strict shutil.which check if executable
+        if exe in ("python", "python3") or Path(exe).is_absolute() or Path(exe).exists():
+            return
+        if not shutil.which(exe):
+            self.logger.warning("Configured CLI binary %r for agent %r does not exist on PATH", exe, self.config.name)
+
 
     @abstractmethod
     async def execute_query(self, query: str, **kwargs) -> Dict[str, Any]:
