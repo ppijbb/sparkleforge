@@ -53,6 +53,14 @@ class BenchmarkResult:
             self.raw_output = {}
 
 
+FALLBACK_INDICATORS = [
+    "judge unavailable",
+    "fallback model",
+    "rule-based fallback",
+    "all fallback models failed",
+    "no available models",
+]
+
 class MetricsCollector:
     """Collects and analyzes various performance metrics."""
 
@@ -536,6 +544,53 @@ class BenchmarkAnalyzer:
         current_results: List[BenchmarkResult],
         previous_results: List[BenchmarkResult],
     ) -> List[Dict[str, Any]]:
+        """Check if a history entry has >50% fallback-judge checks.
+        
+        Args:
+            history_entry: A single entry from scenario_history.jsonl
+            
+        Returns:
+            True if >50% of scenario checks have fallback indicators in their reason
+        """
+        scenarios = history_entry.get("scenarios", {})
+        if not scenarios:
+            return False
+        
+        total_checks = 0
+        fallback_checks = 0
+        
+        for scenario_data in scenarios.values():
+            breakdown = scenario_data.get("breakdown", {})
+            for check_name, check_data in breakdown.items():
+                total_checks += 1
+                reason = check_data.get("reason", "").lower()
+                if any(indicator in reason for indicator in FALLBACK_INDICATORS):
+                    fallback_checks += 1
+        
+        if total_checks == 0:
+            return False
+        
+        fallback_ratio = fallback_checks / total_checks
+        return fallback_ratio > 0.5
+    
+    def filter_degraded_history(self, history_entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter out history entries that are tagged as infra_degraded.
+        
+        Args:
+            history_entries: List of history entries from scenario_history.jsonl
+            
+        Returns:
+            Filtered list excluding entries with >50% fallback-judge checks
+        """
+        filtered = []
+        for entry in history_entries:
+            if self.is_history_entry_degraded(entry):
+                logger.warning(f"Skipping degraded history entry from {entry.get('generated_at', 'unknown')}: "
+                             f">50% fallback-judge checks detected")
+                continue
+            filtered.append(entry)
+        return filtered
+
         """Detect performance regressions compared to previous results."""
         regressions = []
 
