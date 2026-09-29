@@ -113,6 +113,7 @@ Autonomous problem-solving contract:
         orchestrator: MultiModelOrchestrator | None = None,
         plan_first: bool = False,
     ):
+        from src.core.failure_memory import FailureMemory
         from src.core.llm_manager import MultiModelOrchestrator
 
         self.orchestrator = orchestrator or MultiModelOrchestrator()
@@ -141,6 +142,8 @@ Autonomous problem-solving contract:
             handler_registry=self._build_method_resolver_registry()
         )
         self.intent_guardrail = None
+        # Anti-stuck-loop (issue #1740): FailureMemory tracks failures & triggers backtracking / diagnostics
+        self.failure_memory = FailureMemory()
 
         # GreedyOverseerAgent wiring (issue #1038): monitor token budgets and
         # step limits. The single attribute is named ``overseer`` (matching the
@@ -582,10 +585,35 @@ Autonomous problem-solving contract:
                             "message": str(e),
                         }
                     )
+                    
+                    # Anti-stuck-loop & FailureMemory processing (issue #1740)
+                    self.failure_memory.record_failure(tool_name, arguments, str(e))
+                    if self.failure_memory.should_reflect():
+                        reflection_prompt = self.failure_memory.build_reflection_prompt()
+                        history.append({"role": "system", "content": reflection_prompt})
+                        logger.warning("[AgentLoop] FailureMemory triggered reflection mode after consecutive tool failures.")
+                    
+                    if self.failure_memory.should_rollback():
+                        logger.error("[AgentLoop] FailureMemory triggered working tree rollback due to repeated failures.")
+                        try:
+                            from src.core.shell_executor import run_shell_command
+                            rollback_res = run_shell_command("git checkout -- .")
+                            history.append({
+                                "role": "system",
+                                "content": f"Working tree rollback executed due to persistent failures: {rollback_res}"
+                            })
+                        except Exception as rb_err:
+                            logger.error("[AgentLoop] Rollback failed: %s", rb_err)
+                        self.failure_memory.reset_streak()
+
                     if self.mode_controller:
                         self.mode_controller.record_failure()
                     if self.mode_controller is not None and self.mode_controller.is_plan_first():
                         self.mode_controller.submit_plan(False, feedback="tool execution failed")
+
+                else:
+                    # If tool succeeded, record success to clear failure streak
+                    self.failure_memory.record_success(tool_name)
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
 

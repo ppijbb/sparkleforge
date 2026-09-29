@@ -50,6 +50,38 @@ def _skill_share_backend():
     share_dir = os.environ.get("SPARKLEFORGE_SKILL_MARKETPLACE_DIR", _DEFAULT_SKILL_SHARE_DIR)
     return LocalSkillShareBackend(share_dir)
 
+class InspectPathTool:
+    name = "inspect_path"
+    description = "Inspect the existence, type (file or directory), size, and permissions of a given path."
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Path to inspect"}
+        },
+        "required": ["path"]
+    }
+
+    async def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        path_str = arguments.get("path")
+        if not path_str:
+            return {"success": False, "error": "Path is required"}
+        p = Path(path_str)
+        if not p.exists():
+            return {"success": True, "exists": False, "path": str(p)}
+        return {
+            "success": True,
+            "exists": True,
+            "is_file": p.is_file(),
+            "is_dir": p.is_dir(),
+            "size": p.stat().st_size if p.is_file() else None,
+            "path": str(p)
+        }
+
+
+class ListAvailableToolsTool:
+    name = "list_available_tools"
+    description = "List all currently available tools and capabilities in the SparkleForge MCP hub."
+    parameters = {"type": "object", "properties": {}}
 
 if mcp is not None:
 
@@ -74,6 +106,8 @@ if mcp is not None:
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
     @mcp.tool()
+            InspectPathTool(),
+            ListAvailableToolsTool(),
     async def start_research(query: str) -> str:
         """Submit a SparkleForge research/coworker request and return immediately.
 
@@ -105,6 +139,13 @@ if mcp is not None:
         try:
             status = await get_job_status(job_id)
         except ValueError as e:
+                if name == "list_available_tools":
+                    all_tools = list(self.tools.keys())
+                    return {
+                        "success": True,
+                        "available_tools": all_tools,
+                        "count": len(all_tools)
+                    }
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
         except Exception as e:
             logger.error("[SparkleForgeMCPServer] get_report failed: %s", e, exc_info=True)
