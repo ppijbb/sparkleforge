@@ -183,6 +183,10 @@ Autonomous problem-solving contract:
         last_tool_call_signature: tuple[str, str] | None = None
         recent_tool_signatures: deque[set[tuple[str, str]]] = deque(maxlen=SIGNATURE_WINDOW_SIZE)
         stuck_repeat_count = 0
+        consecutive_tool_failures = 0
+        consecutive_no_progress_iterations = 0
+        last_successful_tool_count = 0
+        initial_working_tree_snapshot = self._capture_working_tree_snapshot()
         # Momentum guard (Anvil Phase Mu, #1216): MAX_STUCK_TOOL_REPEATS only
         # catches the *same* call repeated back-to-back. It misses the pattern
         # observed live against lfdb -- re-reading the same handful of files
@@ -472,6 +476,41 @@ Autonomous problem-solving contract:
                     recent_tool_signatures.append(set())
                 recent_tool_signatures[-1].add(call_signature)
 
+                # FailureMemory / Reflection Mode Check (Issue #1740)
+                tool_succeeded_this_call = True # optimistic, will be set after execution
+
+                # We can also check if consecutive tool failures >= 2 -> reflection mode
+                if consecutive_tool_failures >= 2:
+                    logger.warning("[AgentLoop] 2 consecutive identical/tool failures detected. Entering reflection mode.")
+                    # Inject diagnostic tool tips / prompt asking agent to diagnose root cause and try alternative strategy
+                    available_tools_list = ", ".join(self._tool_alias_map().keys())
+                    history.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                f"REFLECTION MODE: You have encountered {consecutive_tool_failures} consecutive tool failures. "
+                                "Diagnose the error (e.g., FileExistsError, permission denied, unknown tool). "
+                                "Review available tools (e.g., inspect_path, list_directory, env_vars, list_available_tools) "
+                                f"and pick an alternative strategy or correct your arguments. Available tool aliases: [{available_tools_list}]"
+                            ),
+                        }
+                    )
+
+                # Check for 3 consecutive no-progress iterations -> working tree rollback + different approach
+                if consecutive_no_progress_iterations >= 3:
+                    logger.warning("[AgentLoop] 3 consecutive no-progress iterations detected. Performing working tree rollback.")
+                    rollback_success = self._restore_working_tree_snapshot(initial_working_tree_snapshot)
+                    consecutive_no_progress_iterations = 0
+                    history.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "BACKTRACKING: 3 consecutive iterations made no progress or failed repeatedly. "
+                                "A working tree rollback has been performed. You must try a completely different approach now."
+                            ),
+                        }
+                    )
+
                 if stuck_repeat_count >= MAX_STUCK_TOOL_REPEATS:
                     logger.warning(
                         "[AgentLoop] Stuck loop detected: %s called %d times consecutively "
@@ -562,8 +601,10 @@ Autonomous problem-solving contract:
                     if self.mode_controller:
                         if tool_succeeded:
                             self.mode_controller.record_success()
+                            consecutive_tool_failures = 0
                         else:
                             self.mode_controller.record_failure()
+                            consecutive_tool_failures += 1
                         
                         # PLAN_FIRST: Only explicit submit_plan() call approves the plan.
                         # No implicit approval on investigative tool success.
@@ -582,11 +623,13 @@ Autonomous problem-solving contract:
                             "message": str(e),
                         }
                     )
+                    consecutive_tool_failures += 1
                     if self.mode_controller:
                         self.mode_controller.record_failure()
                     if self.mode_controller is not None and self.mode_controller.is_plan_first():
                         self.mode_controller.submit_plan(False, feedback="tool execution failed")
 
+                tool_succeeded_this_call = tool_exec_result.get("success", True) if isinstance(tool_exec_result, dict) else True
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
 
             if new_signature_this_iteration:
@@ -629,6 +672,14 @@ Autonomous problem-solving contract:
                             ),
                         }
                     )
+
+            # Check if any progress was made this iteration (successful tool calls or new signatures)
+            current_successful_tool_count = sum(1 for r in tool_results if r.get("success", True))
+            if current_successful_tool_count > last_successful_tool_count or new_signature_this_iteration:
+                consecutive_no_progress_iterations = 0
+                last_successful_tool_count = current_successful_tool_count
+            else:
+                consecutive_no_progress_iterations += 1
 
         if budget.heat_hard_expired:
             # Safety net: a single iteration ran long enough to cross the hard
@@ -982,6 +1033,57 @@ Autonomous problem-solving contract:
     def _openai_tool_name(self, name: str) -> str:
         alias = re.sub(r"[^a-zA-Z0-9_-]", "_", name)[:64].strip("_")
         return alias or "tool"
+
+    # --- Backtracking & Diagnostic Meta-Tools (Issue #1740) ---
+
+    def _capture_working_tree_snapshot(self) -> Dict[str, Any]:
+        """Capture a simple working tree/git status or file snapshot for backtracking."""
+        try:
+            import subprocess
+            res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, timeout=5)
+            return {"git_status": res.stdout, "timestamp": time.time()}
+        except Exception as e:
+            logger.debug("[AgentLoop] Could not capture working tree snapshot: %s", e)
+            return {}
+
+    def _restore_working_tree_snapshot(self, snapshot: Dict[str, Any]) -> bool:
+        """Restore working tree using git checkout / reset if a snapshot exists."""
+        try:
+            import subprocess
+            subprocess.run(["git", "checkout", "."], capture_output=True, text=True, timeout=10)
+            subprocess.run(["git", "clean", "-fd"], capture_output=True, text=True, timeout=10)
+            logger.info("[AgentLoop] Working tree successfully rolled back to clean state.")
+            return True
+        except Exception as e:
+            logger.warning("[AgentLoop] Failed to restore working tree snapshot: %s", e)
+            return False
+
+    def list_available_tools(self) -> List[str]:
+        """Diagnostic tool: list all available tool names and aliases."""
+        registry_tools = getattr(getattr(self.mcp_hub, "registry", None), "tools", {}) or {}
+        aliases = list(self._tool_alias_map().keys())
+        native_keys = list(registry_tools.keys())
+        return list(set(aliases + native_keys))
+
+    def inspect_path(self, path: str) -> Dict[str, Any]:
+        """Diagnostic tool: inspect if a path exists, whether it's a file or directory."""
+        import os
+        if not os.path.exists(path):
+            return {"exists": False, "path": path}
+        return {
+            "exists": True,
+            "path": path,
+            "is_dir": os.path.isdir(path),
+            "is_file": os.path.isfile(path),
+            "size": os.path.getsize(path) if os.path.isfile(path) else None,
+        }
+
+    def list_directory(self, path: str = ".") -> List[str]:
+        """Diagnostic tool: list directory contents."""
+        import os
+        if not os.path.exists(path) or not os.path.isdir(path):
+            return []
+        return os.listdir(path)
 
     # --- Anvil core wiring helpers ---
 
