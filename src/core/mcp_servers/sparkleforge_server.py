@@ -28,6 +28,8 @@ so MCP clients always get a structured response.
 import json
 import logging
 import os
+from pathlib import Path
+from typing import Dict, Any
 
 try:
     from fastmcp import FastMCP
@@ -106,8 +108,6 @@ if mcp is not None:
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
     @mcp.tool()
-            InspectPathTool(),
-            ListAvailableToolsTool(),
     async def start_research(query: str) -> str:
         """Submit a SparkleForge research/coworker request and return immediately.
 
@@ -139,13 +139,6 @@ if mcp is not None:
         try:
             status = await get_job_status(job_id)
         except ValueError as e:
-                if name == "list_available_tools":
-                    all_tools = list(self.tools.keys())
-                    return {
-                        "success": True,
-                        "available_tools": all_tools,
-                        "count": len(all_tools)
-                    }
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
         except Exception as e:
             logger.error("[SparkleForgeMCPServer] get_report failed: %s", e, exc_info=True)
