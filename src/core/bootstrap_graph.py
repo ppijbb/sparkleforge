@@ -167,6 +167,9 @@ class BootstrapGraph:
 
         op = ObservationPlane()
         op.start_iot_telemetry()
+        cleanup_callbacks = values.setdefault("_cleanup_callbacks", []) if '_cleanup_callbacks' in locals() else []
+        # Wait, inside stage methods `values` is not defined as local unless we pass or store it.
+        # Let's check how cleanup callbacks are registered cleanly or via a field/passed mechanism.
         try:
             metrics = await op.system.get_all_metrics()
         except Exception:
@@ -236,6 +239,7 @@ class BootstrapGraph:
         stage_results: list[BootstrapStageResult] = []
         values: dict[str, Any] = {}
         completed: set[str] = set()
+        cleanup_callbacks: list[Callable[[], Awaitable[None]]] = []
 
         for stage in self._default_stages():
             missing = [dep for dep in stage.depends_on if dep not in completed]
@@ -255,6 +259,8 @@ class BootstrapGraph:
             logger.info("Starting bootstrap stage: %s", stage.name)
             try:
                 payload = await asyncio.wait_for(stage.fn(), timeout=stage_timeout)
+                if stage.name == "observation_plane" and "observation_plane" in payload:
+                    cleanup_callbacks.append(payload["observation_plane"].stop_iot_telemetry)
                 duration_ms = (time.perf_counter() - started) * 1000
                 result = BootstrapStageResult(
                     name=stage.name,
@@ -277,10 +283,11 @@ class BootstrapGraph:
                 stage_results.append(result)
                 if stage.critical:
                     if "observation_plane" in values:
-                        try:
-                            await values["observation_plane"]["observation_plane"].stop_iot_telemetry()
-                        except Exception:
-                            pass
+                        for cb in cleanup_callbacks:
+                            try:
+                                await cb()
+                            except Exception:
+                                logger.exception("Cleanup callback failed", extra={"callback": cb.__qualname__})
                     return BootstrapResult(ok=False, stages=stage_results, values=values)
                 continue
             except Exception as e:
@@ -294,10 +301,11 @@ class BootstrapGraph:
                 stage_results.append(result)
                 if stage.critical:
                     if "observation_plane" in values:
-                        try:
-                            await values["observation_plane"]["observation_plane"].stop_iot_telemetry()
-                        except Exception:
-                            pass
+                        for cb in cleanup_callbacks:
+                            try:
+                                await cb()
+                            except Exception:
+                                logger.exception("Cleanup callback failed", extra={"callback": cb.__qualname__})
                     return BootstrapResult(ok=False, stages=stage_results, values=values)
                 continue
 
