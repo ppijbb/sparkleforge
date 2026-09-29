@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import time
+import asyncio
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class BootstrapStage:
@@ -229,6 +232,7 @@ class BootstrapGraph:
 
     async def run(self) -> BootstrapResult:
         """Run the startup graph sequentially and collect stage diagnostics."""
+        stage_timeout = 45.0
         stage_results: list[BootstrapStageResult] = []
         values: dict[str, Any] = {}
         completed: set[str] = set()
@@ -248,8 +252,9 @@ class BootstrapGraph:
                 continue
 
             started = time.perf_counter()
+            logger.info("Starting bootstrap stage: %s", stage.name)
             try:
-                payload = await stage.fn()
+                payload = await asyncio.wait_for(stage.fn(), timeout=stage_timeout)
                 duration_ms = (time.perf_counter() - started) * 1000
                 result = BootstrapStageResult(
                     name=stage.name,
@@ -259,6 +264,25 @@ class BootstrapGraph:
                 )
                 values[stage.name] = payload
                 completed.add(stage.name)
+            except asyncio.TimeoutError:
+                duration_ms = (time.perf_counter() - started) * 1000
+                err_msg = f"stage timed out after {stage_timeout}s"
+                logger.error("Bootstrap stage %s timed out after %.1fs", stage.name, stage_timeout)
+                result = BootstrapStageResult(
+                    name=stage.name,
+                    ok=False,
+                    duration_ms=duration_ms,
+                    error=err_msg,
+                )
+                stage_results.append(result)
+                if stage.critical:
+                    if "observation_plane" in values:
+                        try:
+                            await values["observation_plane"]["observation_plane"].stop_iot_telemetry()
+                        except Exception:
+                            pass
+                    return BootstrapResult(ok=False, stages=stage_results, values=values)
+                continue
             except Exception as e:
                 duration_ms = (time.perf_counter() - started) * 1000
                 result = BootstrapStageResult(
