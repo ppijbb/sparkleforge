@@ -114,11 +114,12 @@ requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-sparkleforge = "src.cli.entry:main_entry"
-sparkle = "src.cli.entry:main_entry"
+sparkleforge = "sparkleforge_bootstrap:main_entry"
+sparkle = "sparkleforge_bootstrap:main_entry"
 
 [tool.setuptools]
 packages = ["src", "configs", "scripts", "docs"]
+py-modules = ["sparkleforge_bootstrap"]
 
 [tool.setuptools.package-dir]
 "src" = "src"
