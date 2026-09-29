@@ -12,7 +12,11 @@ import os
 
 import requests
 
-DEFAULT_VISION_MODEL = os.getenv("CLI_UX_AUDIT_VISION_MODEL", "google/gemini-2.5-flash")
+# :free -- the previous default (google/gemini-2.5-flash) is a paid model this
+# project's free-tier OpenRouter key can't pay for (see issue #1761); this one
+# is NVIDIA + nano-sized + $0 on OpenRouter, in line with the project's own
+# lite-model bet rather than reaching for a bigger paid model.
+DEFAULT_VISION_MODEL = os.getenv("CLI_UX_AUDIT_VISION_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")
 
 
 def call_vision_judge(prompt_text: str, image_data_urls: list[str], *, model: str = DEFAULT_VISION_MODEL, timeout: int = 120) -> str:

@@ -1,6 +1,11 @@
 import pytest
 
-from src.core.roadmap.vision_judge import call_vision_judge
+from src.core.roadmap.vision_judge import DEFAULT_VISION_MODEL, call_vision_judge
+
+
+def test_default_model_is_free_tier_compatible():
+    # Regression for issue #1761: a paid default 402s for anyone on OpenRouter's free tier.
+    assert DEFAULT_VISION_MODEL.endswith(":free")
 
 
 def test_raises_without_api_key(monkeypatch):
