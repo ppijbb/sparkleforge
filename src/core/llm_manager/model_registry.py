@@ -619,19 +619,16 @@ class ModelRegistryMixin:
     def _load_cerebras_models(self):
         """Cerebras 모델 로딩 (api.cerebras.ai 직접 API, OpenAI 호환).
 
-        gemma-4-31b는 2026-07 기준 Cerebras 공개 엔드포인트에서 preview 등급이다
-        (zai-glm-4.7과 동급, gpt-oss-120b만 production 등급). Cerebras 자체 문서가
-        "preview 모델은 평가 목적으로만 사용하고 프로덕션에 쓰지 말 것"이라 명시하니,
-        rate limit이 낮거나(무료 티어 5 req/min) 예고 없이 내려갈 수 있음을 감안할 것.
-        멀티모달(텍스트+이미지) 지원이 필요해 프로덕션 모델 대신 선택된 상태.
-        inference-docs.cerebras.ai/models/overview, /models/gemma-4-31b 참고.
+        llama3.1-70b는 Cerebras에서 프로덕션 등급으로 제공되는 모델이다.
+        gemma-4-31b는 아카이브되어 404 에러를 반환하므로 교체함 (issue #1767).
+        inference-docs.cerebras.ai/models/overview 참고.
         """
         cerebras_models = [
             {
-                "name": "cerebras/gemma-4-31b",
-                "model_id": "gemma-4-31b",
-                "speed_rating": 8.5,  # ~1850 tok/s (gpt-oss-120b의 ~3000 tok/s보다 낮음)
-                "quality_rating": 8.0,
+                "name": "cerebras/llama3.1-70b",
+                "model_id": "llama3.1-70b",
+                "speed_rating": 8.0,  # 프로덕션 모델, 안정적 성능
+                "quality_rating": 9.0,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.RESEARCH,
