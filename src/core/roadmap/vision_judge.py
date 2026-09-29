@@ -12,7 +12,7 @@ import os
 
 import requests
 
-DEFAULT_VISION_MODEL = os.getenv("CLI_UX_AUDIT_VISION_MODEL", "google/gemini-2.5-flash")
+DEFAULT_VISION_MODEL = os.getenv("CLI_UX_AUDIT_VISION_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")
 
 
 def call_vision_judge(prompt_text: str, image_data_urls: list[str], *, model: str = DEFAULT_VISION_MODEL, timeout: int = 120) -> str:
