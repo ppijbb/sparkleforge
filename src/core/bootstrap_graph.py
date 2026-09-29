@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_STAGE_TIMEOUT_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -16,6 +22,10 @@ class BootstrapStage:
     fn: Callable[[], Awaitable[dict[str, Any]]]
     depends_on: tuple[str, ...] = ()
     critical: bool = True
+    # #1768: a stage whose coroutine never resolves (unbounded network call,
+    # unreleased lock) used to hang `run()` -- and therefore the whole CLI --
+    # forever, with no signal. Every stage now fails fast instead.
+    timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS
 
 
 @dataclass
@@ -247,9 +257,10 @@ class BootstrapGraph:
                     return BootstrapResult(ok=False, stages=stage_results, values=values)
                 continue
 
+            logger.info("Bootstrap stage starting: %s", stage.name)
             started = time.perf_counter()
             try:
-                payload = await stage.fn()
+                payload = await asyncio.wait_for(stage.fn(), timeout=stage.timeout_seconds)
                 duration_ms = (time.perf_counter() - started) * 1000
                 result = BootstrapStageResult(
                     name=stage.name,
@@ -259,6 +270,23 @@ class BootstrapGraph:
                 )
                 values[stage.name] = payload
                 completed.add(stage.name)
+            except TimeoutError:
+                duration_ms = (time.perf_counter() - started) * 1000
+                result = BootstrapStageResult(
+                    name=stage.name,
+                    ok=False,
+                    duration_ms=duration_ms,
+                    error=f"timed out after {stage.timeout_seconds:.0f}s",
+                )
+                stage_results.append(result)
+                if stage.critical:
+                    if "observation_plane" in values:
+                        try:
+                            await values["observation_plane"]["observation_plane"].stop_iot_telemetry()
+                        except Exception:
+                            pass
+                    return BootstrapResult(ok=False, stages=stage_results, values=values)
+                continue
             except Exception as e:
                 duration_ms = (time.perf_counter() - started) * 1000
                 result = BootstrapStageResult(
