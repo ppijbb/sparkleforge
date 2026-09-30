@@ -27,6 +27,11 @@ def _prioritize_repo_root() -> None:
 
 def main_entry() -> int:
     _prioritize_repo_root()
+    # If src/ does not exist (e.g. non-editable standard pip install where
+    # sparkleforge_bootstrap.py is located inside site-packages), skip
+    # prepending a non-existent or incorrect src path.
+    if not os.path.isdir(src_path):
+        return
 
     from src.cli.entry import main_entry as _main_entry
 
