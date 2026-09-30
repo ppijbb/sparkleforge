@@ -1,3 +1,4 @@
+# pyright: reportUnusedImport=false
 """Report management commands for SparkleForge CLI."""
 
 import logging
