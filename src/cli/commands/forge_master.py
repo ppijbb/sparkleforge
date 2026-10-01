@@ -1,6 +1,7 @@
 """Forge Master CLI command for SparkleForge REPL."""
 
 import logging
+
 from typing import List
 
 from src.core.forge_master import ForgeMasterController, ForgeMasterRouter
