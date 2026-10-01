@@ -138,8 +138,10 @@ class ForgeMasterRouter:
         if preferred_agent and preferred_agent in effective_pool:
             selected = preferred_agent
             reason = f"Explicitly preferred agent: {preferred_agent}"
+            is_explicit_preference = True
         else:
             selected, reason = self._pick_best_agent(relevance, effective_pool)
+            is_explicit_preference = False
 
         # 폴백은 이 작업과 실제로 관련 있다고 판단된 에이전트에만 한정
         # (관련성 매치가 하나도 없으면 불필요하게 다른 유료 에이전트로 확산시키지 않음).
@@ -151,8 +153,11 @@ class ForgeMasterRouter:
         else:
             fallbacks = self._relevant_fallbacks(selected, relevance)
 
-        # 맞춤 Goal 부여 생성
-        goal_text = self._build_tool_specific_goal(selected, task_description)
+        # 맞춤 Goal 부여 생성 (명시적 preferred_agent 경로에서는 에이전트 판단을 존중하여 템플릿 래핑 없이 원문 그대로 전달)
+        if is_explicit_preference:
+            goal_text = task_description
+        else:
+            goal_text = self._build_tool_specific_goal(selected, task_description)
 
         return ToolGoalAssignment(
             agent_name=selected,
