@@ -1,4 +1,4 @@
-"""도움말 명령어"""
+"""Help command."""
 
 from rich.console import Console
 from rich.panel import Panel
