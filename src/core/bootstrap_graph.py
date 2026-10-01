@@ -167,9 +167,6 @@ class BootstrapGraph:
 
         op = ObservationPlane()
         op.start_iot_telemetry()
-        cleanup_callbacks = values.setdefault("_cleanup_callbacks", []) if '_cleanup_callbacks' in locals() else []
-        # Wait, inside stage methods `values` is not defined as local unless we pass or store it.
-        # Let's check how cleanup callbacks are registered cleanly or via a field/passed mechanism.
         try:
             metrics = await op.system.get_all_metrics()
         except Exception:
