@@ -134,7 +134,26 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
           elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
-            ISSUE_NUMBER="${{ github.event.issue.number }}"
+            CANDIDATE_ISSUE_NUMBER="${{ github.event.issue.number }}"
+            if [ "${{ github.event_name }}" = "issues" ] && [ "${{ github.event.action }}" = "opened" -o "${{ github.event.action }}" = "reopened" ]; then
+              gh issue list \
+                --repo "${{ github.repository }}" \
+                --state open \
+                --limit 1000 \
+                --json number,labels > open-issue-candidates.json
+              gh pr list \
+                --repo "${{ github.repository }}" \
+                --state open \
+                --limit 1000 \
+                --json number,headRefName,body \
+                > open-pr-candidates.json
+              uv run sparkleforge ci select-issue \
+                --issues-file open-issue-candidates.json \
+                --open-prs-file open-pr-candidates.json
+              ISSUE_NUMBER=$(cat selected_issue.txt)
+            else
+              ISSUE_NUMBER="$CANDIDATE_ISSUE_NUMBER"
+            fi
           else
             gh issue list \
               --repo "${{ github.repository }}" \
