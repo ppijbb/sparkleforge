@@ -23,6 +23,8 @@ on:
     types: [created]
   schedule:
     - cron: "*/30 * * * *"
+  issues:
+    types: [opened, reopened, labeled]
 
 concurrency:
   group: >-
@@ -106,6 +108,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
+          set -euo pipefail
+          trap 'rm -f open-issue-candidates.json open-pr-candidates.json selected_issue.txt' EXIT
           TARGET_REPO="${{ github.event.inputs.target_repo }}"
           if [ -z "$TARGET_REPO" ]; then
             TARGET_REPO="${{ github.repository }}"
@@ -155,14 +159,14 @@ jobs:
             gh pr list \
               --repo "${{ github.repository }}" \
               --state open \
-              --limit 1000 \
+              --limit 100 \
               --json number,headRefName,body \
-              > open-pr-candidates.json
+              > open-pr-candidates.json || { echo "::error::Failed to list open PRs"; exit 1; }
             uv run sparkleforge ci select-issue \
               --issues-file open-issue-candidates.json \
-              --open-prs-file open-pr-candidates.json
-            ISSUE_NUMBER=$(cat selected_issue.txt)
-          elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
+              --open-prs-file open-pr-candidates.json || { echo "::error::Failed to select issue"; exit 1; }
+            ISSUE_NUMBER=$(cat selected_issue.txt 2>/dev/null || echo "")
+          elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ] || { [ "${{ github.event_name }}" = "issues" ] && { [ "${{ github.event.action }}" = "opened" ] || [ "${{ github.event.action }}" = "reopened" ] || [ "${{ github.event.label.name }}" = "auto-fix-requested" ] || [ "${{ github.event.label.name }}" = "triage-needed" ]; }; }; } || { [ "${{ github.event_name }}" = "issue_comment" ] && contains(github.event.comment.body, '@sparkleforge'); }; then
             ISSUE_NUMBER="${{ github.event.issue.number }}"
           else
             gh issue list \
@@ -173,13 +177,18 @@ jobs:
             gh pr list \
               --repo "${{ github.repository }}" \
               --state open \
-              --limit 1000 \
+              --limit 100 \
               --json number,headRefName,body \
-              > open-pr-candidates.json
+              > open-pr-candidates.json || { echo "::error::Failed to list open PRs"; exit 1; }
             uv run sparkleforge ci select-issue \
               --issues-file open-issue-candidates.json \
-              --open-prs-file open-pr-candidates.json
-            ISSUE_NUMBER=$(cat selected_issue.txt)
+              --open-prs-file open-pr-candidates.json || { echo "::error::Failed to select issue"; exit 1; }
+            ISSUE_NUMBER=$(cat selected_issue.txt 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "No fixable issue selected; exiting cleanly."
+            exit 0
           fi
 
           if [ -z "$ISSUE_NUMBER" ]; then
