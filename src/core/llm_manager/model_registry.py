@@ -619,19 +619,20 @@ class ModelRegistryMixin:
     def _load_cerebras_models(self):
         """Cerebras 모델 로딩 (api.cerebras.ai 직접 API, OpenAI 호환).
 
-        gemma-4-31b는 2026-07 기준 Cerebras 공개 엔드포인트에서 preview 등급이다
-        (zai-glm-4.7과 동급, gpt-oss-120b만 production 등급). Cerebras 자체 문서가
-        "preview 모델은 평가 목적으로만 사용하고 프로덕션에 쓰지 말 것"이라 명시하니,
-        rate limit이 낮거나(무료 티어 5 req/min) 예고 없이 내려갈 수 있음을 감안할 것.
-        멀티모달(텍스트+이미지) 지원이 필요해 프로덕션 모델 대신 선택된 상태.
-        inference-docs.cerebras.ai/models/overview, /models/gemma-4-31b 참고.
+        gemma-4-31b는 Cerebras 공개 엔드포인트에서 2026-09-03에 내려가고
+        (issue #1767: 이후 모든 호출이 404 model_archived로 즉시 실패, 폴백
+        캐스케이드로 매 히트마다 5분+ 낭비) qwen-3.8-27b로 대체됐다. 후자도
+        네이티브 멀티모달(텍스트+이미지+비디오, 내장 vision encoder)이라 원래
+        gemma-4-31b를 고른 이유(gpt-oss-120b엔 없는 멀티모달 지원)를 그대로
+        충족한다. `GET https://api.cerebras.ai/v1/models`로 실 가용 모델
+        목록을 직접 확인해서 골랐다 -- inference-docs.cerebras.ai/models/qwen-3.8-27b 참고.
         """
         cerebras_models = [
             {
-                "name": "cerebras/gemma-4-31b",
-                "model_id": "gemma-4-31b",
-                "speed_rating": 8.5,  # ~1850 tok/s (gpt-oss-120b의 ~3000 tok/s보다 낮음)
-                "quality_rating": 8.0,
+                "name": "cerebras/qwen-3.8-27b",
+                "model_id": "qwen-3.8-27b",
+                "speed_rating": 8.0,  # ~1850 tok/s (gpt-oss-120b의 ~3000 tok/s보다 낮음)
+                "quality_rating": 8.5,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.RESEARCH,
