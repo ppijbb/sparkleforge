@@ -135,7 +135,8 @@ class ForgeMasterRouter:
         relevance = self._score_relevance(task_description, required_caps, effective_pool)
 
         # 선호 에이전트가 존재하고 사용 가능한 경우 1순위 고려
-        if preferred_agent and preferred_agent in effective_pool:
+        explicit_choice = bool(preferred_agent and preferred_agent in effective_pool)
+        if explicit_choice:
             selected = preferred_agent
             reason = f"Explicitly preferred agent: {preferred_agent}"
         else:
@@ -151,8 +152,16 @@ class ForgeMasterRouter:
         else:
             fallbacks = self._relevant_fallbacks(selected, relevance)
 
-        # 맞춤 Goal 부여 생성
-        goal_text = self._build_tool_specific_goal(selected, task_description)
+        # 맞춤 Goal 부여 생성. #1781: 이 템플릿은 모듈 docstring이 명시한 대로
+        # agent_name 없는 비-에이전트 기본 경로용이지, 실제 에이전트(agent_loop의
+        # tool-call 턴)가 dispatch_batch_to_forge_master로 agent_name을 직접
+        # 골라 보낸 경우까지 덮어써서는 안 된다 -- 그 경우 task_description 자체가
+        # 이미 그 에이전트를 위한 지시이므로 그대로 넘긴다.
+        goal_text = (
+            task_description
+            if explicit_choice
+            else self._build_tool_specific_goal(selected, task_description)
+        )
 
         return ToolGoalAssignment(
             agent_name=selected,

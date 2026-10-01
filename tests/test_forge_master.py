@@ -32,6 +32,30 @@ def test_forge_master_router_capability_matching():
     assert assignment3.agent_name == "gemini_cli"
 
 
+def test_router_passes_through_task_text_unchanged_for_an_explicitly_chosen_agent():
+    """Regression for issue #1781.
+
+    When the real tool-calling agent explicitly picks agent_name (the
+    `preferred_agent` path -- e.g. via dispatch_batch_to_forge_master), the
+    per-agent static goal template must not overwrite its task text with an
+    unrelated task-type assumption (e.g. telling claude_code to "focus on
+    refactoring and diff integrity" for a pure read-only analysis task).
+    The static template is reserved for the heuristic, no-preferred_agent
+    default path only.
+    """
+    router = ForgeMasterRouter()
+    task = "정밀 분석하여 lock-free 보장이 실제로 구현되었는지 검증 (no code changes)"
+
+    explicit = router.route_task(task, preferred_agent="claude_code")
+    assert explicit.agent_name == "claude_code"
+    assert explicit.assigned_goal == task
+    assert "refactoring and diff integrity" not in explicit.assigned_goal
+
+    heuristic = router.route_task("Perform architectural refactoring of backend modules")
+    assert heuristic.agent_name == "claude_code"
+    assert "Claude Code" in heuristic.assigned_goal
+
+
 def test_router_fallbacks_are_relevance_gated_not_the_whole_pool():
     """Fallback allocation must reflect actual task fit, not just static baseline
     score, or every failure ends up cascading into claude_code/codex regardless
