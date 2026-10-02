@@ -8,6 +8,8 @@ async def help_command(console: Console):
     """도움말 표시."""
     help_text = """
 [bold cyan]SparkleForge CLI Commands[/bold cyan]
+SparkleForge: Where Ideas Sparkle and Get Forged
+Usage: sparkleforge run "Future of AI" # Run a research request
 
 [bold]Research:[/bold]
   research <query>              Execute research request
