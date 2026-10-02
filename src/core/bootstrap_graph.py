@@ -11,6 +11,11 @@ from typing import Any, Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
+# A local was previously hardcoded inline in `run()`, making it unreachable
+# for tests wanting to exercise the timeout path without a real 45s wait.
+DEFAULT_STAGE_TIMEOUT_SECONDS = 45.0
+
+
 @dataclass(frozen=True)
 class BootstrapStage:
     """One startup stage in the bootstrap graph."""
@@ -167,9 +172,6 @@ class BootstrapGraph:
 
         op = ObservationPlane()
         op.start_iot_telemetry()
-        cleanup_callbacks = values.setdefault("_cleanup_callbacks", []) if '_cleanup_callbacks' in locals() else []
-        # Wait, inside stage methods `values` is not defined as local unless we pass or store it.
-        # Let's check how cleanup callbacks are registered cleanly or via a field/passed mechanism.
         try:
             metrics = await op.system.get_all_metrics()
         except Exception:
@@ -235,7 +237,7 @@ class BootstrapGraph:
 
     async def run(self) -> BootstrapResult:
         """Run the startup graph sequentially and collect stage diagnostics."""
-        stage_timeout = 45.0
+        stage_timeout = DEFAULT_STAGE_TIMEOUT_SECONDS
         stage_results: list[BootstrapStageResult] = []
         values: dict[str, Any] = {}
         completed: set[str] = set()
