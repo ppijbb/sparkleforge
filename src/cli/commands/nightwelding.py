@@ -44,14 +44,14 @@ async def nightwelding_run_command(cli, args: List[str]):
     label = f"issue #{issue_number}" if issue_number else f"backlog '{backlog_label}'"
     with cli.console.status(f"[bold cyan]Nightwelding: running {label}...", spinner="dots"):
         try:
-            if issue_number:
-                items = [await run_nightwelding_issue(issue_number, max_iterations=max_iterations)]
-            else:
-                items = await run_nightwelding_sweep(
-                    backlog_label=backlog_label,
-                    max_per_run=max_per_run,
-                    max_iterations=max_iterations,
-                )
+             if issue_number:
+                 items = [await run_nightwelding_issue(issue_number, max_iterations=max_iterations)]
+             else:
+                 items = await run_nightwelding_sweep(
+                     backlog_label=backlog_label,
+                     max_per_run=max_per_run,
+                     max_iterations=max_iterations,
+                 )
         except Exception as e:
             cli.console.print(f"[red]❌ Nightwelding run failed: {e}[/red]")
             return
