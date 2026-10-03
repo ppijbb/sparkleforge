@@ -51,7 +51,8 @@ async def nightwelding_run_command(cli, args: List[str]):
                      backlog_label=backlog_label,
                      max_per_run=max_per_run,
                      max_iterations=max_iterations,
-                 )        except Exception as e:
+                 )
+        except Exception as e:
             cli.console.print(f"[red]❌ Nightwelding run failed: {e}[/red]")
             return
 
