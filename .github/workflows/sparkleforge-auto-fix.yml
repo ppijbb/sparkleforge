@@ -106,6 +106,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
+          set -euo pipefail
+          trap 'rm -f open-issue-candidates.json open-pr-candidates.json selected_issue.txt' EXIT
+
           TARGET_REPO="${{ github.event.inputs.target_repo }}"
           if [ -z "$TARGET_REPO" ]; then
             TARGET_REPO="${{ github.repository }}"
@@ -133,79 +136,86 @@ jobs:
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ISSUE_NUMBER="${{ github.event.inputs.issue_number }}"
-          elif [ "${{ github.event_name }}" = "issues" ] && { [ "${{ github.event.action }}" = "opened" ] || [ "${{ github.event.action }}" = "reopened" ]; }; then
-            # Only the plain opened/reopened auto-trigger gets this check --
-            # it fires immediately with no human intent beyond "an issue now
-            # exists", unlike an explicit `auto-fix-requested`/`triage-needed`
-            # label or an `@sparkleforge` comment mention (handled in the
-            # branch below), which are deliberate "fix/retry this now" asks
-            # that should never be silently skipped.
-            #
-            # Without this, filing an issue (or fixing it directly myself, by
-            # the same `fix/<number>-...` branch convention this check
-            # recognizes) raced this workflow into opening a redundant
-            # duplicate PR for work already in flight or already done --
-            # exactly what the scheduled sweep below already guards against
-            # via select_fixable_issue, just not on this trigger path.
-            CANDIDATE_ISSUE_NUMBER="${{ github.event.issue.number }}"
-            gh issue view "$CANDIDATE_ISSUE_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --json number,labels \
-              --jq '[.]' > open-issue-candidates.json
-            gh pr list \
-              --repo "${{ github.repository }}" \
-              --state open \
-              --limit 1000 \
-              --json number,headRefName,body \
-              > open-pr-candidates.json
-            uv run sparkleforge ci select-issue \
-              --issues-file open-issue-candidates.json \
-              --open-prs-file open-pr-candidates.json
-            ISSUE_NUMBER=$(cat selected_issue.txt)
-          elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
-            RAW_ISSUE_NUMBER="${{ github.event.issue.number }}"
-            # For explicit retry paths (comment with @sparkleforge or label auto-fix-requested / triage-needed),
-            # always proceed even if an open PR already exists.
-            # For pure automatic triggers (opened/reopened), apply the same dedup check as the scheduled sweep.
-            IS_EXPLICIT_RETRY="false"
-            if [ "${{ github.event_name }}" = "issue_comment" ] || \
-               [ "${{ github.event.action }}" = "labeled" ]; then
-              IS_EXPLICIT_RETRY="true"
-            fi
+          else
+            fetch_all_prs() {
+              local repo="$1"
+              gh pr list --repo "$repo" --state open --limit 100 --json number,headRefName,body > open-pr-candidates.json || { echo "::error::gh pr list failed"; exit 1; }
+              local page=2
+              while true; do
+                local next_prs
+                next_prs=$(gh pr list --repo "$repo" --state open --limit 100 --page "$page" --json number,headRefName,body 2>/dev/null || echo "[]")
+                if [ "$(echo "$next_prs" | jq length)" -eq 0 ]; then
+                  break
+                fi
+                node -e '
+                  const fs = require("fs");
+                  const existing = JSON.parse(fs.readFileSync("open-pr-candidates.json"));
+                  const batch = JSON.parse(process.argv[1]);
+                  fs.writeFileSync("open-pr-candidates.json", JSON.stringify(existing.concat(batch)));
+                ' "$next_prs" || break
+                page=$((page + 1))
+              done
+            }
 
-            if [ "$IS_EXPLICIT_RETRY" = "true" ]; then
-              ISSUE_NUMBER="$RAW_ISSUE_NUMBER"
-            else
-              gh issue view "$RAW_ISSUE_NUMBER" \
+            if [ "${{ github.event_name }}" = "issues" ] && { [ "${{ github.event.action }}" = "opened" ] || [ "${{ github.event.action }}" = "reopened" ]; }; then
+              # Only the plain opened/reopened auto-trigger gets this check --
+              # it fires immediately with no human intent beyond "an issue now
+              # exists", unlike an explicit `auto-fix-requested`/`triage-needed`
+              # label or an `@sparkleforge` comment mention (handled in the
+              # branch below), which are deliberate "fix/retry this now" asks
+              # that should never be silently skipped.
+              #
+              # Without this, filing an issue (or fixing it directly myself, by
+              # the same `fix/<number>-...` branch convention this check
+              # recognizes) raced this workflow into opening a redundant
+              # duplicate PR for work already in flight or already done --
+              # exactly what the scheduled sweep below already guards against
+              # via select_fixable_issue, just not on this trigger path.
+              CANDIDATE_ISSUE_NUMBER="${{ github.event.issue.number }}"
+              gh issue view "$CANDIDATE_ISSUE_NUMBER" \
                 --repo "${{ github.repository }}" \
-                --json number,labels > open-issue-candidates.json
-              gh pr list \
+                --json number,labels \
+                --jq '[.]' > open-issue-candidates.json || { echo "::error::gh issue view failed"; exit 1; }
+              fetch_all_prs "${{ github.repository }}"
+              uv run sparkleforge ci select-issue \
+                --issues-file open-issue-candidates.json \
+                --open-prs-file open-pr-candidates.json || { echo "::error::select-issue failed"; exit 1; }
+              ISSUE_NUMBER=$(cat selected_issue.txt 2>/dev/null || echo "")
+            elif [ "${{ github.event_name }}" = "issues" ] || [ "${{ github.event_name }}" = "issue_comment" ]; then
+              RAW_ISSUE_NUMBER="${{ github.event.issue.number }}"
+              # For explicit retry paths (comment with @sparkleforge or label auto-fix-requested / triage-needed),
+              # always proceed even if an open PR already exists.
+              # For pure automatic triggers (opened/reopened), apply the same dedup check as the scheduled sweep.
+              IS_EXPLICIT_RETRY="false"
+              if [ "${{ github.event_name }}" = "issue_comment" ] || \
+                 [ "${{ github.event.action }}" = "labeled" ]; then
+                IS_EXPLICIT_RETRY="true"
+              fi
+
+              if [ "$IS_EXPLICIT_RETRY" = "true" ]; then
+                ISSUE_NUMBER="$RAW_ISSUE_NUMBER"
+              else
+                gh issue view "$RAW_ISSUE_NUMBER" \
+                  --repo "${{ github.repository }}" \
+                  --json number,labels > open-issue-candidates.json || { echo "::error::gh issue view failed"; exit 1; }
+                fetch_all_prs "${{ github.repository }}"
+                uv run sparkleforge ci select-issue \
+                  --issues-file open-issue-candidates.json \
+                  --open-prs-file open-pr-candidates.json || { echo "::error::select-issue failed"; exit 1; }
+                ISSUE_NUMBER=$(cat selected_issue.txt 2>/dev/null || echo "")
+              fi
+            else
+              gh issue list \
                 --repo "${{ github.repository }}" \
                 --state open \
                 --limit 1000 \
-                --json number,headRefName,body \
-                > open-pr-candidates.json
+                --json number,labels > open-issue-candidates.json || { echo "::error::gh issue list failed"; exit 1; }
+              fetch_all_prs "${{ github.repository }}"
               uv run sparkleforge ci select-issue \
                 --issues-file open-issue-candidates.json \
-                --open-prs-file open-pr-candidates.json
-              ISSUE_NUMBER=$(cat selected_issue.txt)
+                --open-prs-file open-pr-candidates.json || { echo "::error::select-issue failed"; exit 1; }
+              ISSUE_NUMBER=$(cat selected_issue.txt 2>/dev/null || echo "")
             fi
-          else
-            gh issue list \
-              --repo "${{ github.repository }}" \
-              --state open \
-              --limit 1000 \
-              --json number,labels > open-issue-candidates.json
-            gh pr list \
-              --repo "${{ github.repository }}" \
-              --state open \
-              --limit 1000 \
-              --json number,headRefName,body \
-              > open-pr-candidates.json
-            uv run sparkleforge ci select-issue \
-              --issues-file open-issue-candidates.json \
-              --open-prs-file open-pr-candidates.json
-            ISSUE_NUMBER=$(cat selected_issue.txt)
           fi
 
           if [ -z "$ISSUE_NUMBER" ]; then
