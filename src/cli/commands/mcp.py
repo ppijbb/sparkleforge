@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def mcp_attach_command(cli, args: List[str]):
     """MCP 서버를 실행 중인 세션에 즉시 연결 (재시작 불필요)."""
     if not args:
-        cli.console.print("[red]Usage: mcp attach <name> [path/to/server.py][/red]")
+        cli.console.print("Usage: mcp attach <name> [path/to/server.py]", style="red")
         return
 
     name = args[0]
@@ -34,7 +34,7 @@ async def mcp_attach_command(cli, args: List[str]):
         server_path = MCPServerBuilder().server_dir / name / "server.py"
 
     if not server_path.exists():
-        cli.console.print(f"[red]❌ Server file not found: {server_path}[/red]")
+        cli.console.print(f"❌ Server file not found: {server_path}", style="red")
         return
 
     try:
@@ -46,17 +46,17 @@ async def mcp_attach_command(cli, args: List[str]):
             cli.console.print(f"[green]✅ Attached MCP server: {name}[/green]")
         else:
             cli.console.print(
-                f"[yellow]⚠️ Registered {name} but connection failed — check logs[/yellow]"
+                f"⚠️ Registered {name} but connection failed — check logs", style="yellow"
             )
     except Exception as e:
         logger.error(f"Failed to attach MCP server {name}: {e}", exc_info=True)
-        cli.console.print(f"[red]❌ Failed to attach {name}: {e}[/red]")
+        cli.console.print(f"❌ Failed to attach {name}: {e}", style="red")
 
 
 async def mcp_detach_command(cli, args: List[str]):
     """실행 중인 MCP 서버 연결을 즉시 해제 (재시작 불필요)."""
     if not args:
-        cli.console.print("[red]Usage: mcp detach <name>[/red]")
+        cli.console.print("Usage: mcp detach <name>", style="red")
         return
 
     name = args[0]
@@ -67,14 +67,14 @@ async def mcp_detach_command(cli, args: List[str]):
         hub = get_mcp_hub()
         known = set(hub.mcp_server_configs) | set(hub.mcp_sessions) | set(hub.fastmcp_clients)
         if name not in known:
-            cli.console.print(f"[yellow]⚠️ {name} is not currently attached[/yellow]")
+            cli.console.print(f"⚠️ {name} is not currently attached", style="yellow")
             return
 
         await hub._disconnect_from_mcp_server(name)
         cli.console.print(f"[green]✅ Detached MCP server: {name}[/green]")
     except Exception as e:
         logger.error(f"Failed to detach MCP server {name}: {e}", exc_info=True)
-        cli.console.print(f"[red]❌ Failed to detach {name}: {e}[/red]")
+        cli.console.print(f"❌ Failed to detach {name}: {e}", style="red")
 
 
 async def mcp_list_command(cli, args: List[str]):
@@ -86,7 +86,7 @@ async def mcp_list_command(cli, args: List[str]):
     connected = set(hub.mcp_sessions) | set(hub.fastmcp_clients)
 
     if not configured and not connected:
-        cli.console.print("[yellow]No MCP servers registered[/yellow]")
+        cli.console.print("No MCP servers registered", style="yellow")
         return
 
     table = Table(title="MCP Servers", show_header=True, header_style="bold cyan")
