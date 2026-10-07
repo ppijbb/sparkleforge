@@ -525,35 +525,37 @@ class ModelRegistryMixin:
         # 주요 GPT 모델들
         gpt_models = [
             {
-                "name": "gpt-5-mini",
-                "model_id": "gpt-5-mini",
-                "speed_rating": 8.0,
+                "name": "gpt-6-luna",
+                "model_id": "gpt-6-luna",
+                "speed_rating": 9.5,
                 "quality_rating": 8.5,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.VERIFICATION,
                     TaskType.RESEARCH,
+                    TaskType.PLANNING,
                 ],
             },
             {
-                "name": "gpt-5-nano",
-                "model_id": "gpt-5-nano",
-                "speed_rating": 7.0,
+                "name": "gpt-6-sol",
+                "model_id": "gpt-6-sol",
+                "speed_rating": 8.0,
                 "quality_rating": 9.5,
                 "capabilities": [
                     TaskType.DEEP_REASONING,
                     TaskType.ANALYSIS,
                     TaskType.SYNTHESIS,
+                    TaskType.CREATIVE,
                 ],
             },
             {
-                "name": "gpt-4o-mini",
-                "model_id": "gpt-4o-mini",
+                "name": "gpt-6.1-sol",
+                "model_id": "gpt-6.1-sol",
                 "speed_rating": 9.0,
-                "quality_rating": 7.0,
+                "quality_rating": 9.8,
                 "capabilities": [
-                    TaskType.PLANNING,
-                    TaskType.COMPRESSION,
+                    TaskType.DEEP_REASONING,
+                    TaskType.ANALYSIS,
                     TaskType.RESEARCH,
                 ],
             },
