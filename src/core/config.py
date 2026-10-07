@@ -119,7 +119,7 @@ ServerSpec = StdioServerSpec | HTTPServerSpec
 # is a single edit.
 DEFAULT_COUNCIL_MODELS: List[str] = ["gpt-5-mini", "anthropic/claude-haiku-4.5"]
 DEFAULT_CHAIRMAN_MODEL: str = "gpt-5-mini"
-ALLOWED_MINI_MODELS: tuple[str, ...] = ("gpt-4o-mini", "gpt-5-mini")
+ALLOWED_MINI_MODELS: tuple[str, ...] = ("gpt-4o-mini", "gpt-5-mini", "gpt-6-luna")
 
 
 def servers_to_mcp_config(
