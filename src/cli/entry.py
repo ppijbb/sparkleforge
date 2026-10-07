@@ -1,27 +1,3 @@
-<<<<<<< ours
-import sys
-import logging
-
-logger = logging.getLogger("sparkleforge.cli")
-
-def main():
-    # Check for --help or help command without printing banners upfront
-    if "--help" in sys.argv or "-h" in sys.argv or (len(sys.argv) > 1 and sys.argv[1] == "help"):
-        # Print clean help or defer banner
-        pass
-    else:
-        # Only log/print startup info if verbose or debug is enabled
-        if any(arg in sys.argv for arg in ("--verbose", "-v", "--debug")):
-            logger.debug("SparkleForge: Where Ideas Sparkle and Get Forged ⚒️✨")
-
-    # Import main entry/command handlers lazily or after arg checks if needed
-    from src.cli.main_commands import cli_main
-    cli_main()
-
-if __name__ == "__main__":
-    main()
-"""CLI entry point for the installed sparkleforge command."""
-
 import os
 import sys
 from pathlib import Path
@@ -96,26 +72,3 @@ def main_entry() -> None:
 
 if __name__ == "__main__":
     main_entry()
-=======
-import sys
-import logging
-
-logger = logging.getLogger("sparkleforge.cli")
-
-def main():
-    # Check for --help or help command without printing banners upfront
-    if "--help" in sys.argv or "-h" in sys.argv or (len(sys.argv) > 1 and sys.argv[1] == "help"):
-        # Print clean help or defer banner
-        pass
-    else:
-        # Only log/print startup info if verbose or debug is enabled
-        if any(arg in sys.argv for arg in ("--verbose", "-v", "--debug")):
-            logger.debug("SparkleForge: Where Ideas Sparkle and Get Forged ⚒️✨")
-
-    # Import main entry/command handlers lazily or after arg checks if needed
-    from src.cli.main_commands import cli_main
-    cli_main()
-
-if __name__ == "__main__":
-    main()
->>>>>>> theirs
