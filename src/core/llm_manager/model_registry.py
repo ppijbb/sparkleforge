@@ -417,6 +417,7 @@ class ModelRegistryMixin:
         # preview 슬롯이라 프로덕션에 부적합/단종. llama-3.1-8b-instant와
         # llama-3.3-70b-versatile도 2026-06-17 단종 공지가 나가 gpt-oss로 대체.
         valid_groq_models = [
+            "qwen/qwen3.8-27b",
             "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
             "groq/compound",
@@ -457,6 +458,21 @@ class ModelRegistryMixin:
         # 이전에 쓰던 llama-3.1-8b-instant/llama-3.3-70b-versatile은 단종 공지가
         # 나갔고 mixtral-8x7b-32768은 이미 오래전에 단종되어 gpt-oss로 교체.
         groq_models = [
+            {
+                "name": "qwen/qwen3.8-27b",
+                "model_id": "qwen/qwen3.8-27b",
+                "speed_rating": 9.2,
+                "quality_rating": 8.8,
+                "capabilities": [
+                    TaskType.GENERATION,
+                    TaskType.RESEARCH,
+                    TaskType.ANALYSIS,
+                    TaskType.DEEP_REASONING,
+                    TaskType.PLANNING,
+                    TaskType.CREATIVE,
+                ],
+                "context_limit_tokens": 131072,
+            },
             {
                 "name": "openai/gpt-oss-20b",
                 "model_id": "openai/gpt-oss-20b",
