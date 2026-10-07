@@ -639,7 +639,9 @@ class ModelRegistryMixin:
                     TaskType.ANALYSIS,
                     TaskType.PLANNING,
                     TaskType.DEEP_REASONING,
+                    TaskType.VERIFICATION,
                 ],
+                "context_limit_tokens": 64000,
             },
         ]
 
@@ -649,11 +651,12 @@ class ModelRegistryMixin:
                 provider="cerebras",
                 model_id=model_data["model_id"],
                 temperature=0.2,
-                max_tokens=4000,
+                max_tokens=8192,
                 cost_per_token=0.0,
                 speed_rating=model_data["speed_rating"],
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
+                context_limit_tokens=model_data.get("context_limit_tokens"),
             )
             logger.debug(f"Loaded Cerebras model: {model_data['name']} ({model_data['model_id']})")
 
