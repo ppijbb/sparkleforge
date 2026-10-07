@@ -77,7 +77,7 @@ class LLMConfig(BaseModel):
 
     # Gemini CLI settings
     gemini_cli_api_key: str | None = Field(default=None, description="Gemini CLI API key")
-    gemini_cli_model: str = Field(default="gemini-pro", description="Gemini CLI model")
+    gemini_cli_model: str = Field(default="gemini-flash-lite", description="Gemini CLI model")
 
     # Cline CLI settings
     cline_cli_config_path: str | None = Field(default=None, description="Cline CLI config path")

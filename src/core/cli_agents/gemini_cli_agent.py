@@ -19,7 +19,7 @@ class GeminiCLIAgent(BaseCLIAgent):
     - 다양한 작업 유형 지원
     """
 
-    def __init__(self, api_key: str | None = None, model: str = "gemini-pro"):
+    def __init__(self, api_key: str | None = None, model: str = "gemini-flash-lite"):
         config = CLIAgentConfig(
             name="gemini_cli",
             command="gemini",
@@ -45,11 +45,11 @@ class GeminiCLIAgent(BaseCLIAgent):
         Returns:
             표준화된 결과
         """
-        model = kwargs.get("model", "gemini-pro")
+        model = kwargs.get("model", "gemini-flash-lite")
 
         # Gemini CLI는 서브커맨드 없이 프롬프트를 위치 인자로만 받음
         args = []
-        if model != "gemini-pro":
+        if model != "gemini-flash-lite":
             args.extend(["--model", model])
         args.append(query)
 
@@ -80,7 +80,7 @@ class GeminiCLIAgent(BaseCLIAgent):
             "response": "Gemini 응답",
             "confidence": 0.85,
             "usage": {"input_tokens": 10, "output_tokens": 50},
-            "model": "gemini-pro"
+            "model": "gemini-flash-lite"
         }
         """
         if not result.success:
@@ -100,7 +100,7 @@ class GeminiCLIAgent(BaseCLIAgent):
                     "response": data.get("response", ""),
                     "confidence": data.get("confidence", 0.8),
                     "usage": data.get("usage", {}),
-                    "model": data.get("model", "gemini-pro"),
+                    "model": data.get("model", "gemini-flash-lite"),
                 }
 
             # 텍스트 출력 파싱
