@@ -169,28 +169,29 @@ class ModelRegistryMixin:
             capabilities=[TaskType.PLANNING, TaskType.COMPRESSION, TaskType.RESEARCH],
         )
 
-        # Gemini Pro (복잡한 추론, 분석)
+        # Gemini Pro (최신 프로덕션 추론 모델)
         self.models["gemini-pro"] = ModelConfig(
             name="gemini-pro",
             provider="google",
-            model_id="gemini-pro-latest",
+            model_id="gemini-3.8-pro",
             temperature=0.2,
             max_tokens=4000,
             cost_per_token=0.0005,
-            speed_rating=6.0,
-            quality_rating=9.0,
+            speed_rating=7.0,
+            quality_rating=9.5,
             capabilities=[
                 TaskType.DEEP_REASONING,
                 TaskType.ANALYSIS,
                 TaskType.SYNTHESIS,
+                TaskType.PLANNING,
             ],
         )
 
-        # Gemini Flash (균형잡힌 성능)
+        # Gemini Flash (균형 잡힌 고성능 멀티모달 모델)
         self.models["gemini-flash"] = ModelConfig(
             name="gemini-flash",
             provider="google",
-            model_id="gemini-3.5-flash-lite",
+            model_id="gemini-3.8-flash",
             temperature=0.1,
             max_tokens=2000,
             cost_per_token=0.0002,
@@ -693,7 +694,19 @@ class ModelRegistryMixin:
                     if genai is None:
                         continue
                     # Google Generative AI 클라이언트
-                    self.model_clients[model_name] = genai.GenerativeModel(model_config.model_id)
+                    # 지원되는 경우 thinking effort 등 추가 구성 파라미터 적용 (effort 설정 감지: low/medium/high)
+                    generation_config = {}
+                    effort_level = os.getenv("GEMINI_THINKING_EFFORT") or getattr(self.llm_config, "effort", None)
+                    if effort_level in ["low", "medium", "high"]:
+                        generation_config["thinking_config"] = {"thinking_effort": effort_level}
+
+                    if generation_config:
+                        self.model_clients[model_name] = genai.GenerativeModel(
+                            model_config.model_id,
+                            generation_config=generation_config
+                        )
+                    else:
+                        self.model_clients[model_name] = genai.GenerativeModel(model_config.model_id)
 
                     # LangChain 클라이언트 (선택적)
                     # See SAFETY_SETTINGS_BLOCK_NONE above: safety_settings is intentionally
