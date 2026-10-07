@@ -381,8 +381,9 @@ class ModelRegistryMixin:
 
         # 2. 알려진 검증된 무료 OpenRouter 기본 모델 후보군 (fallback diversity)
         default_candidates = [
-            "tencent/hy3:free",
+            "openrouter/free",
             "qwen/qwen3-coder:free",
+            "tencent/hy3:free",
             "deepseek/deepseek-r1:free",
         ]
         for m_id in default_candidates:
