@@ -522,13 +522,60 @@ class ModelRegistryMixin:
 
     def _load_openai_models(self):
         """OpenAI/GPT 모델 로딩."""
-        # 주요 GPT 모델들
+        # 주요 GPT 모델들 (GPT-6 패밀리 및 레거시 호환 모델)
         gpt_models = [
+            # 최신 GPT-6 라인업
+            {
+                "name": "gpt-6-luna",
+                "model_id": "gpt-6-luna",
+                "speed_rating": 9.5,
+                "quality_rating": 8.5,
+                "cost_per_token": 0.00005,  # 초저비용/고속 경량 모델 (mini 대체)
+                "max_tokens": 4000,
+                "capabilities": [
+                    TaskType.GENERATION,
+                    TaskType.VERIFICATION,
+                    TaskType.RESEARCH,
+                    TaskType.PLANNING,
+                    TaskType.COMPRESSION,
+                ],
+            },
+            {
+                "name": "gpt-6-sol",
+                "model_id": "gpt-6-sol",
+                "speed_rating": 8.0,
+                "quality_rating": 9.5,
+                "cost_per_token": 0.005,  # 고비용 심층 추론/분석 모델 (Luna 대비 100배)
+                "max_tokens": 8192,
+                "capabilities": [
+                    TaskType.DEEP_REASONING,
+                    TaskType.ANALYSIS,
+                    TaskType.SYNTHESIS,
+                    TaskType.CREATIVE,
+                ],
+            },
+            {
+                "name": "gpt-6.1-sol",
+                "model_id": "gpt-6.1-sol",
+                "speed_rating": 8.5,
+                "quality_rating": 9.8,
+                "cost_per_token": 0.008,  # 최상위 프론티어 코딩/분석 모델
+                "max_tokens": 8192,
+                "capabilities": [
+                    TaskType.DEEP_REASONING,
+                    TaskType.ANALYSIS,
+                    TaskType.RESEARCH,
+                    TaskType.PLANNING,
+                ],
+            },
+            # 기존 레거시 및 경량 호환 모델 (기존 기능/설정 보존)
             {
                 "name": "gpt-5-mini",
                 "model_id": "gpt-5-mini",
                 "speed_rating": 8.0,
                 "quality_rating": 8.5,
+                "cost_per_token": 0.0001,
+                "max_tokens": 2000,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.VERIFICATION,
@@ -540,6 +587,8 @@ class ModelRegistryMixin:
                 "model_id": "gpt-5-nano",
                 "speed_rating": 7.0,
                 "quality_rating": 9.5,
+                "cost_per_token": 0.00005,
+                "max_tokens": 2000,
                 "capabilities": [
                     TaskType.DEEP_REASONING,
                     TaskType.ANALYSIS,
@@ -551,6 +600,8 @@ class ModelRegistryMixin:
                 "model_id": "gpt-4o-mini",
                 "speed_rating": 9.0,
                 "quality_rating": 7.0,
+                "cost_per_token": 0.0001,
+                "max_tokens": 2000,
                 "capabilities": [
                     TaskType.PLANNING,
                     TaskType.COMPRESSION,
@@ -564,9 +615,9 @@ class ModelRegistryMixin:
                 name=model_data["name"],
                 provider="openai",
                 model_id=model_data["model_id"],
-                temperature=0.1,
-                max_tokens=2000,
-                cost_per_token=0.0001,  # GPT는 유료
+                temperature=model_data.get("temperature", 0.1),
+                max_tokens=model_data.get("max_tokens", 2000),
+                cost_per_token=model_data.get("cost_per_token", 0.0001),
                 speed_rating=model_data["speed_rating"],
                 quality_rating=model_data["quality_rating"],
                 capabilities=model_data["capabilities"],
