@@ -1,5 +1,3 @@
-"""CLI entry point for the installed sparkleforge command."""
-
 import os
 import sys
 from pathlib import Path
