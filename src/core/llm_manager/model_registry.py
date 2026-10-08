@@ -533,6 +533,7 @@ class ModelRegistryMixin:
                 "quality_rating": 8.5,
                 "cost_per_token": 0.00005,  # 초저비용/고속 경량 모델 (mini 대체)
                 "max_tokens": 4000,
+                "temperature": 0.1,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.VERIFICATION,
@@ -548,6 +549,7 @@ class ModelRegistryMixin:
                 "quality_rating": 9.5,
                 "cost_per_token": 0.005,  # 고비용 심층 추론/분석 모델 (Luna 대비 100배)
                 "max_tokens": 8192,
+                "temperature": 0.2,
                 "capabilities": [
                     TaskType.DEEP_REASONING,
                     TaskType.ANALYSIS,
@@ -562,6 +564,7 @@ class ModelRegistryMixin:
                 "quality_rating": 9.8,
                 "cost_per_token": 0.008,  # 최상위 프론티어 코딩/분석 모델
                 "max_tokens": 8192,
+                "temperature": 0.2,
                 "capabilities": [
                     TaskType.DEEP_REASONING,
                     TaskType.ANALYSIS,
@@ -577,6 +580,7 @@ class ModelRegistryMixin:
                 "quality_rating": 8.5,
                 "cost_per_token": 0.0001,
                 "max_tokens": 2000,
+                "temperature": 0.1,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.VERIFICATION,
@@ -588,8 +592,9 @@ class ModelRegistryMixin:
                 "model_id": "gpt-5-nano",
                 "speed_rating": 7.0,
                 "quality_rating": 9.5,
-                "cost_per_token": 0.00005,
+                "cost_per_token": 0.00005,  # Note: cost_per_token explicitly set to 0.00005 (migrated from implicit default 0.0001)
                 "max_tokens": 2000,
+                "temperature": 0.2,
                 "capabilities": [
                     TaskType.DEEP_REASONING,
                     TaskType.ANALYSIS,
@@ -603,6 +608,7 @@ class ModelRegistryMixin:
                 "quality_rating": 7.0,
                 "cost_per_token": 0.0001,
                 "max_tokens": 2000,
+                "temperature": 0.1,
                 "capabilities": [
                     TaskType.PLANNING,
                     TaskType.COMPRESSION,
