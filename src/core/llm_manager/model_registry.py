@@ -532,6 +532,7 @@ class ModelRegistryMixin:
                 "speed_rating": 9.5,
                 "quality_rating": 8.5,
                 "cost_per_token": 0.00005,  # 초저비용/고속 경량 모델 (mini 대체)
+                "temperature": 0.1,
                 "max_tokens": 4000,
                 "capabilities": [
                     TaskType.GENERATION,
@@ -547,6 +548,7 @@ class ModelRegistryMixin:
                 "speed_rating": 8.0,
                 "quality_rating": 9.5,
                 "cost_per_token": 0.005,  # 고비용 심층 추론/분석 모델 (Luna 대비 100배)
+                "temperature": 0.1,
                 "max_tokens": 8192,
                 "capabilities": [
                     TaskType.DEEP_REASONING,
@@ -561,6 +563,7 @@ class ModelRegistryMixin:
                 "speed_rating": 8.5,
                 "quality_rating": 9.8,
                 "cost_per_token": 0.008,  # 최상위 프론티어 코딩/분석 모델
+                "temperature": 0.1,
                 "max_tokens": 8192,
                 "capabilities": [
                     TaskType.DEEP_REASONING,
