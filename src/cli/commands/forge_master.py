@@ -54,7 +54,7 @@ async def forge_master_command(cli, args: List[str]):
         f"[cyan]⚡ [Forge Master] Task: '{query}' (Agent: {preferred_agent or 'Auto'})[/cyan]"
     )
 
-    controller = ForgeMasterController()
+    controller = ForgeMasterController()  # type: ignore[call-arg]
 
     with cli.console.status("[bold cyan]Forge Master orchestrating & auditing...", spinner="dots"):
         result = await controller.execute_task_with_master_control(
