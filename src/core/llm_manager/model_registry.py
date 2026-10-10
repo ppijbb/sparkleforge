@@ -418,8 +418,8 @@ class ModelRegistryMixin:
         # preview 슬롯이라 프로덕션에 부적합/단종. llama-3.1-8b-instant와
         # llama-3.3-70b-versatile도 2026-06-17 단종 공지가 나가 gpt-oss로 대체.
         valid_groq_models = [
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
+            "qwen3.8-27b",
             "groq/compound",
         ]
 
@@ -447,9 +447,9 @@ class ModelRegistryMixin:
         # Fallback은 Agent 서비스 안정성을 위해 필수적이지만, 명확한 로깅과 함께 최소한으로만 사용됩니다.
         logger.warning(
             f"Model ID {model_id} not a valid Groq model. "
-            f"Using minimal fallback for agent service stability: openai/gpt-oss-20b"
+            f"Using minimal fallback for agent service stability: qwen/qwen3.8-27b"
         )
-        return "openai/gpt-oss-20b"
+        return "qwen/qwen3.8-27b"
 
 
     def _load_groq_models(self):
@@ -459,35 +459,19 @@ class ModelRegistryMixin:
         # 나갔고 mixtral-8x7b-32768은 이미 오래전에 단종되어 gpt-oss로 교체.
         groq_models = [
             {
-                "name": "openai/gpt-oss-20b",
-                "model_id": "openai/gpt-oss-20b",
-                "speed_rating": 9.5,
-                "quality_rating": 8.0,
+                "name": "qwen/qwen3.8-27b",
+                "model_id": "qwen/qwen3.8-27b",
+                "speed_rating": 9.2,
+                "quality_rating": 8.8,
                 "capabilities": [
                     TaskType.GENERATION,
                     TaskType.RESEARCH,
                     TaskType.ANALYSIS,
-                    TaskType.CREATIVE,
-                ],
-                # Observed org-level Groq free-tier TPM limit for this model
-                # is 8000 (#1339: a 10238-token request got a deterministic
-                # 413 here). Lets the cascade skip it for oversized requests
-                # instead of retrying into the same 413.
-                "context_limit_tokens": 8000,
-            },
-            {
-                "name": "openai/gpt-oss-120b",
-                "model_id": "openai/gpt-oss-120b",
-                "speed_rating": 8.5,
-                "quality_rating": 9.0,
-                "capabilities": [
-                    TaskType.GENERATION,
-                    TaskType.RESEARCH,
-                    TaskType.ANALYSIS,
-                    TaskType.PLANNING,
                     TaskType.DEEP_REASONING,
+                    TaskType.PLANNING,
                     TaskType.CREATIVE,
                 ],
+                "context_limit_tokens": 131072,
             },
             {
                 # Groq의 자체 에이전틱 모델. 웹서치/코드실행 등 내장 툴을 모델이
