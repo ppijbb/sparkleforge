@@ -53,6 +53,7 @@ async def forge_master_command(cli, args: List[str]):
     cli.console.print(
         f"[cyan]⚡ [Forge Master] Task: '{query}' (Agent: {preferred_agent or 'Auto'})[/cyan]"
     )
+    logger.debug("Running system health check...")
 
     controller = ForgeMasterController()
 
