@@ -53,6 +53,9 @@ Usage: sparkleforge run "Future of AI" # Run a research request
   config set <key> <value>      Set configuration (process-global, not session-scoped)
   config get <key>              Get configuration value
 
+[bold]Health:[/bold]
+  health                        Run system health check
+
 [bold]Other:[/bold]
   help                          Show this help
   clear                         Clear screen
