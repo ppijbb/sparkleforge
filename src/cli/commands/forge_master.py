@@ -116,8 +116,7 @@ async def forge_master_batch_command(cli, args: List[str]):
 
     cli.console.print(f"[cyan]⚡ [Forge Master] Dispatching {len(tasks)} task(s)...[/cyan]")
 
-    with cli.console.status("[bold cyan]Forge Master orchestrating & auditing...", spinner="dots"):
-        batch_result = await _dispatch_batch_to_forge_master_tool(tasks)
+    batch_result = await _dispatch_batch_to_forge_master_tool(tasks)
 
     for i, (task, result) in enumerate(zip(tasks, batch_result["results"])):
         if result.get("success"):
