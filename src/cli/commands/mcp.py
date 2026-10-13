@@ -81,6 +81,8 @@ async def mcp_list_command(cli, args: List[str]):
     """현재 등록/연결된 MCP 서버 목록."""
     from src.core.mcp_integration import get_mcp_hub
 
+    verbose = "--verbose" in args or "-v" in args
+
     hub = get_mcp_hub()
     configured = set(hub.mcp_server_configs)
     connected = set(hub.mcp_sessions) | set(hub.fastmcp_clients)
@@ -88,6 +90,21 @@ async def mcp_list_command(cli, args: List[str]):
     if not configured and not connected:
         cli.console.print("No MCP servers registered", style="yellow")
         return
+
+    try:
+        from src.core.cli_agents.cli_agent_manager import get_cli_agent_manager
+        manager = get_cli_agent_manager()
+        status_dict = manager.get_status()
+        if status_dict:
+            if verbose:
+                cli.console.print("[yellow][WARN] CLI agents not enabled or failed to initialize[/yellow]")
+            cli.console.print("\nAvailable CLI Agents:")
+            for agent_name, st in status_dict.items():
+                if verbose or st.get("available"):
+                    ready_str = "[green][OK] Ready[/green]" if st.get("available") else "[red][FAIL] Not configured[/red]"
+                    cli.console.print(f"  - {agent_name}: {ready_str}")
+    except Exception:
+        pass
 
     table = Table(title="MCP Servers", show_header=True, header_style="bold cyan")
     table.add_column("Name", style="green")
