@@ -27,7 +27,7 @@ async def report_command(cli, args: List[str]):
                 res = await generate_daily_report(Path.cwd())
                 
             cli.console.print(f"[green]✅ Report successfully generated![/green]")
-            cli.console.print(f"[bold]Strict Score:[/bold] [yellow]{res['strict_score']:.1f} / 100[/yellow]")
+            cli.console.print(f"[bold]Strict Score:[/bold] [yellow]{res.get('strict_score', 0.0):.1f} / 100[/yellow]")
             cli.console.print(f"[bold]Total Attempts:[/bold] {res['metrics']['total_attempts']}")
             cli.console.print(f"[bold]Success Rate:[/bold] {res['metrics']['success_rate']:.1f}%")
         except Exception as e:
