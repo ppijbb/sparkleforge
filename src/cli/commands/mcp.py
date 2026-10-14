@@ -97,7 +97,7 @@ async def mcp_list_command(cli, args: List[str]):
         status_dict = manager.get_status()
         if status_dict:
             if verbose:
-                cli.console.print("[yellow][WARN] CLI agents not enabled or failed to initialize[/yellow]")
+                logger.warning("CLI agents not enabled or failed to initialize")
             cli.console.print("\nAvailable CLI Agents:")
             for agent_name, st in status_dict.items():
                 if verbose or st.get("available"):
