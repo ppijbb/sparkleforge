@@ -113,6 +113,8 @@ Autonomous problem-solving contract:
         orchestrator: MultiModelOrchestrator | None = None,
         plan_first: bool = False,
     ):
+        from collections import deque
+        from dataclasses import dataclass, field
         from src.core.llm_manager import MultiModelOrchestrator
 
         self.orchestrator = orchestrator or MultiModelOrchestrator()
@@ -141,6 +143,21 @@ Autonomous problem-solving contract:
             handler_registry=self._build_method_resolver_registry()
         )
         self.intent_guardrail = None
+
+        # FailureMemory & Backtracking Engine (issue #1740)
+        self.failure_memory = deque(maxlen=20)
+        self.consecutive_tool_failures = {}
+        self.consecutive_no_progress_iterations = 0
+        self.working_tree_snapshots = []
+
+        # Register diagnostic meta-tools or ensure hub can list available tools
+        try:
+            registry_tools = getattr(getattr(self.mcp_hub, "registry", None), "tools", {}) or {}
+            self.available_tools_list = list(registry_tools.keys())
+        except Exception:
+            self.available_tools_list = []
+
+        self._save_working_tree_snapshot("initial")
 
         # GreedyOverseerAgent wiring (issue #1038): monitor token budgets and
         # step limits. The single attribute is named ``overseer`` (matching the
@@ -216,6 +233,9 @@ Autonomous problem-solving contract:
         tools = self._get_openai_tools()
 
         system_message = self._build_autonomous_system_message(system_message)
+        
+        # Inject diagnostic/reflection capabilities instruction
+        system_message = self._enhance_system_message_with_failure_guidance(system_message)
 
         # Phase 6: Load persistent memory
         mem_context = self.memory.get_context_block()
@@ -559,6 +579,15 @@ Autonomous problem-solving contract:
                         if isinstance(tool_exec_result, dict)
                         else True
                     )
+                    # Handle tool errors returned as dict {"success": False, ...}
+                    if isinstance(tool_exec_result, dict) and tool_exec_result.get("success") is False:
+                        tool_succeeded = False
+                    
+                    tool_succeeded = (
+                        tool_exec_result.get("success", True)
+                        if isinstance(tool_exec_result, dict)
+                        else True
+                    )
                     if self.mode_controller:
                         if tool_succeeded:
                             self.mode_controller.record_success()
@@ -589,12 +618,55 @@ Autonomous problem-solving contract:
 
                 self._append_tool_result(history, tool_call, tool_name, tool_exec_result, tool_results)
 
+                # --- FailureMemory & Backtracking Engine (issue #1740) ---
+                is_failure = not tool_succeeded or "error" in tool_exec_result or not tool_exec_result.get("success", True)
+                if is_failure:
+                    err_msg = tool_exec_result.get("error") or tool_exec_result.get("message") or "Unknown tool error"
+                    self.failure_memory.append({"tool": tool_name, "args": arguments, "error": err_msg})
+                    self.consecutive_tool_failures[tool_name] = self.consecutive_tool_failures.get(tool_name, 0) + 1
+                    
+                    # After 2 consecutive identical or related tool failures -> reflection mode injection
+                    if self.consecutive_tool_failures[tool_name] >= 2:
+                        logger.warning(f"[AgentLoop] 2 consecutive failures for tool {tool_name}. Entering reflection mode.")
+                        history.append({
+                            "role": "system",
+                            "content": (
+                                f"REFLECTION MODE DIAGNOSIS: Tool `{tool_name}` has failed {self.consecutive_tool_failures[tool_name]} times consecutively. "
+                                f"Last error: {err_msg}. "
+                                f"Available tools/alternative strategies should be reviewed. "
+                                f"Use diagnostic tools (`inspect_path`, `list_directory`, `env_vars`, or `list_available_tools`) to diagnose root cause and try a different approach."
+                            )
+                        })
+                else:
+                    self.consecutive_tool_failures[tool_name] = 0
+
             if new_signature_this_iteration:
                 stagnant_iterations = 0
                 consecutive_stagnant_cycles = 0
+                self.consecutive_no_progress_iterations = 0
             else:
                 stagnant_iterations += 1
                 consecutive_stagnant_cycles += 1
+                self.consecutive_no_progress_iterations += 1
+                logger.warning(
+                    "[AgentLoop] No progress iteration count: %d",
+                    self.consecutive_no_progress_iterations,
+                )
+                
+                # After 3 consecutive no-progress iterations -> perform working tree rollback and try different approach
+                if self.consecutive_no_progress_iterations >= 3:
+                    logger.warning("[AgentLoop] 3 consecutive no-progress iterations reached! Performing working tree rollback.")
+                    rollback_success = self._rollback_working_tree()
+                    self.consecutive_no_progress_iterations = 0
+                    history.append({
+                        "role": "system",
+                        "content": (
+                            f"BACKTRACKING ENGINE TRIGGERED: 3 consecutive no-progress iterations detected. "
+                            f"Working tree rollback was {'successful' if rollback_success else 'attempted'}. "
+                            "You must now try a completely different approach or strategy to solve the user's task."
+                        )
+                    })
+
                 logger.warning(
                     "[AgentLoop] Zero-momentum iteration %d/%d: every tool call this "
                     "turn repeats a signature already seen earlier in the run",
@@ -892,6 +964,87 @@ Autonomous problem-solving contract:
         if system_message:
             return f"{system_message.strip()}\n\n{self.AUTONOMOUS_PROBLEM_SOLVING_CONTRACT.strip()}"
         return self.AUTONOMOUS_PROBLEM_SOLVING_CONTRACT.strip()
+
+    def _enhance_system_message_with_failure_guidance(self, system_message: str | None) -> str:
+        failure_guidance = """
+Diagnostic & Self-Reflection Capabilities (Anti-Stuck Loop):
+- You have access to diagnostic tools (`inspect_path`, `list_directory`, `env_vars`, `list_available_tools`).
+- If a tool execution fails (e.g., FileExistsError, permission denied, unknown tool), do NOT repeat the same failing action.
+- After 2 consecutive tool failures, enter reflection mode, diagnose the root cause, check available tools, and pick an alternative strategy.
+- After 3 consecutive no-progress iterations, a working tree rollback is automatically triggered and you must adopt a completely different approach.
+"""
+        if system_message:
+            return f"{system_message.strip()}\n\n{failure_guidance.strip()}"
+        return failure_guidance.strip()
+
+    def _save_working_tree_snapshot(self, tag: str = "checkpoint") -> None:
+        """Save filesystem snapshot / git stash checkpoint for backtracking."""
+        try:
+            import subprocess
+            # Check if git repo
+            res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, timeout=5)
+            if res.returncode == 0:
+                subprocess.run(["git", "add", "-A"], capture_output=True, timeout=5)
+                commit_res = subprocess.run(
+                    ["git", "commit", "-m", f"sparkleforge-snapshot-{tag}-{time.time()}", "--allow-empty"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if commit_res.returncode == 0:
+                    # get last commit hash
+                    h_res = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=3)
+                    if h_res.returncode == 0:
+                        self.working_tree_snapshots.append(h_res.stdout.strip())
+        except Exception as e:
+            logger.debug("[AgentLoop] Failed to save working tree snapshot: %s", e)
+
+    def _rollback_working_tree(self) -> bool:
+        """Rollback working tree to a previous stable snapshot."""
+        try:
+            import subprocess
+            if len(self.working_tree_snapshots) > 0:
+                target_commit = self.working_tree_snapshots[-1]
+                res = subprocess.run(["git", "reset", "--hard", target_commit], capture_output=True, text=True, timeout=5)
+                if res.returncode == 0:
+                    logger.info("[AgentLoop] Successfully rolled back working tree to snapshot %s", target_commit)
+                    return True
+            else:
+                # Fallback: git reset HEAD hard or clean
+                res = subprocess.run(["git", "reset", "--hard", "HEAD"], capture_output=True, text=True, timeout=5)
+                return res.returncode == 0
+        except Exception as e:
+            logger.warning("[AgentLoop] Working tree rollback failed: %s", e)
+        return False
+
+    def list_available_tools(self) -> List[str]:
+        """Meta-tool for tool availability introspection."""
+        try:
+            registry_tools = getattr(getattr(self.mcp_hub, "registry", None), "tools", {}) or {}
+            return list(registry_tools.keys())
+        except Exception:
+            return getattr(self, "available_tools_list", [])
+
+    def inspect_path(self, path: str) -> Dict[str, Any]:
+        """Diagnostic tool to inspect a file or directory path."""
+        import os
+        try:
+            exists = os.path.exists(path)
+            if not exists:
+                return {"success": False, "error": f"Path does not exist: {path}"}
+            is_dir = os.path.isdir(path)
+            is_file = os.path.isfile(path)
+            size = os.path.getsize(path) if is_file else None
+            contents = os.listdir(path) if is_dir else None
+            return {
+                "success": True,
+                "path": path,
+                "exists": True,
+                "is_directory": is_dir,
+                "is_file": is_file,
+                "size": size,
+                "directory_contents": contents,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     # Docker 샌드박스가 필요한 도구 (샌드박스 불가 시 노출 제외)
     SANDBOX_TOOLS = ("python_coder", "code_interpreter")
