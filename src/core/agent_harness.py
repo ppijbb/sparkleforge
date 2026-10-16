@@ -34,6 +34,53 @@ logger = logging.getLogger(__name__)
 DEFAULT_CHECKPOINT_DB_PATH = "data/checkpoints.db"
 
 
+class FailureMemory:
+    """Tracks tool execution failures and detects loops/stagnation."""
+
+    def __init__(self, max_history: int = 10):
+        self.history: list[Dict[str, Any]] = []
+        self.max_history = max_history
+        self.consecutive_failures = 0
+        self.no_progress_count = 0
+        self.last_tool_signature = None
+
+    def record_call(self, tool_name: str, args: Any, success: bool, error: str | None = None) -> None:
+        sig = (tool_name, str(args))
+        if sig == self.last_tool_signature and not success:
+            self.consecutive_failures += 1
+        elif not success:
+            self.consecutive_failures = 1
+            self.last_tool_signature = sig
+        else:
+            self.consecutive_failures = 0
+            self.no_progress_count = 0
+            self.last_tool_signature = None
+            return
+
+        if success:
+            self.no_progress_count = 0
+        else:
+            self.no_progress_count += 1
+
+        self.history.append({
+            "tool_name": tool_name,
+            "args": args,
+            "success": success,
+            "error": error,
+            "timestamp": time.time(),
+        })
+        if len(self.history) > self.max_history:
+            self.history.pop(0)
+
+    def needs_reflection(self) -> bool:
+        """After 2 consecutive identical tool failures, enter reflection mode."""
+        return self.consecutive_failures >= 2
+
+    def needs_rollback(self) -> bool:
+        """After 3 consecutive no-progress iterations, perform rollback."""
+        return self.no_progress_count >= 3
+
+
 class AgentHarness:
     """Agent Harness - 2026 표준 상태 머신 오케스트레이터"""
 
@@ -49,6 +96,7 @@ class AgentHarness:
         self.orchestrator = get_llm_orchestrator()
         self.graph = self._build_graph()
         self.dashboard = TaskDashboard()
+        self.failure_memory = FailureMemory()
 
     async def aclose(self) -> None:
         """Close the underlying SQLite connection."""
@@ -66,6 +114,9 @@ class AgentHarness:
             (lambda: None, "semantic_fs"), # SemanticFS is wired via ActuationPlane
             (register_forge_master_dispatch_tool, "dispatch_batch_to_forge_master"),
         ]
+        from src.core.tools.native_search import register_diagnostic_tools
+        registrars.append((register_diagnostic_tools, "diagnostic"))
+
         for func, name in registrars:
             try:
                 func()
