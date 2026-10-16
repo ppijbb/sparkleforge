@@ -52,6 +52,14 @@ def build(workspace: Path) -> Dict[str, Any]:
     (project / "requirements.in").write_text(f"{REQUIRED_PACKAGE}\n", encoding="utf-8")
 
     return {
+        "system_instruction": (
+            "You are setting up a development build environment for a Python project.\n"
+            "1. Create a '.env' file containing 'APP_ENV=development'.\n"
+            "2. Install or declare any required dependencies (like requests in requirements.txt or via uv/pip).\n"
+            "3. Verify the project runs successfully by executing python main.py.\n"
+            "4. Output a clear, structured markdown summary explaining each setup step taken "
+            "and verifying that the environment is fully operational."
+        ),
         "workspace": str(workspace),
         "project_dir": "project",
         "required_env": REQUIRED_ENV,
