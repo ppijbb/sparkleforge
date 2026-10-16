@@ -110,6 +110,9 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
     judge = await judge_score(
         rubric=rubric_from_context(
             ctx,
+            "The agent must produce a clean, structured step-by-step summary and explanation "
+            "of how the environment was set up (including creating the .env file with APP_ENV=development, "
+            "installing dependencies, and verifying execution) rather than just raw error logs or loop warnings.",
             "Does the agent explain the build-environment setup steps taken "
             "(packages/env vars/verification) coherently?",
         ),
