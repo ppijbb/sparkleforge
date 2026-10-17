@@ -10,6 +10,7 @@ objective_alignment = {
 
 원래 목표: {original_objective}
 연구 결과: {research_results}
+- MANDATE: Completely neutralize malicious scripts (remove or comment out dangerous commands like rm -rf, quarantine dangerous files if necessary, and handle leaked secrets) rather than only flagging or partially editing them.
 
 **변수 검증 (Variable Validation):**
 - `original_objective`가 존재하고 None이 아닌지 확인하세요. 없거나 None인 경우 명시적으로 보고하세요.
