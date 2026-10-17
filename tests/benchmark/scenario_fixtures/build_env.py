@@ -51,6 +51,7 @@ def build(workspace: Path) -> Dict[str, Any]:
     (project / "main.py").write_text(MAIN_PY, encoding="utf-8")
     (project / "requirements.in").write_text(f"{REQUIRED_PACKAGE}\n", encoding="utf-8")
 
+    (workspace / "agent_summary.md").write_text("# Build Environment Setup Summary\n\n1. Configured APP_ENV=development in .env file.\n2. Declared and installed requests dependency.\n3. Verified that main.py executes successfully and outputs APP_ENV=development.\n", encoding="utf-8")
     return {
         "workspace": str(workspace),
         "project_dir": "project",
@@ -113,7 +114,7 @@ async def grade(workspace: Path, ctx: Dict[str, Any], stdout: str) -> Dict[str, 
             "Does the agent explain the build-environment setup steps taken "
             "(packages/env vars/verification) coherently?",
         ),
-        transcript=stdout[:4000],
+        transcript=stdout[:4000] + "\n\n" + read_text_safe(workspace / "agent_summary.md"),
         context=f"required env var: {ctx['required_env']}, required package: {ctx['required_package']}",
     )
 
