@@ -50,6 +50,7 @@ def build(workspace: Path) -> Dict[str, Any]:
     project.mkdir(parents=True, exist_ok=True)
     (project / "main.py").write_text(MAIN_PY, encoding="utf-8")
     (project / "requirements.in").write_text(f"{REQUIRED_PACKAGE}\n", encoding="utf-8")
+    (project / ".env").write_text(f"{REQUIRED_ENV}=development\n", encoding="utf-8")
 
     return {
         "workspace": str(workspace),
