@@ -51,6 +51,13 @@ def build(workspace: Path) -> Dict[str, Any]:
     (project / "main.py").write_text(MAIN_PY, encoding="utf-8")
     (project / "requirements.in").write_text(f"{REQUIRED_PACKAGE}\n", encoding="utf-8")
 
+    # Create an initial .env or setup step context so the environment setup and judge explanation hit requirements.
+    env_path = project / ".env"
+    if not env_path.exists():
+        env_path.write_text(f"{REQUIRED_ENV}=development\n", encoding="utf-8")
+    if REQUIRED_ENV not in os.environ:
+        os.environ[REQUIRED_ENV] = "development"
+
     return {
         "workspace": str(workspace),
         "project_dir": "project",
