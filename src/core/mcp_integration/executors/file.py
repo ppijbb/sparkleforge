@@ -204,7 +204,7 @@ async def _execute_file_tool(tool_name: str, parameters: Dict[str, Any]) -> Tool
 
             path = Path(file_path)
             if path.parent.is_file():
-                path.parent.unlink()
+                raise NotADirectoryError(f"Cannot create parent directories for {file_path}: parent '{path.parent}' is an existing file.")
             path.parent.mkdir(parents=True, exist_ok=True)
             if path.is_dir():
                 raise IsADirectoryError(f"Cannot write file to a directory path: {file_path}")
