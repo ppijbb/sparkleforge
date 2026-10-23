@@ -63,7 +63,7 @@ class CLIAgentManager:
             config: 에이전트 설정
         """
         self.agent_configs[name] = config or {}
-        logger.info(f"Registered CLI agent class: {name}")
+        logger.debug("Registered CLI agent class: %s", name)
 
     def register_agent_instance(self, name: str, agent: BaseCLIAgent):
         """CLI 에이전트 인스턴스를 등록
