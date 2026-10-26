@@ -548,7 +548,10 @@ async def handle_mcp_command(args):
 
 async def handle_health_command(args):
     """시스템 헬스체크 커맨드 처리"""
-    logger.info("Running system health check...")
+    if sys.stdout.isatty():
+        print("Running system health check...")
+    else:
+        logger.info("Running system health check...")
 
     try:
         health_monitor = HealthMonitor()
@@ -557,11 +560,11 @@ async def handle_health_command(args):
         active_checks = await health_monitor.run_active_subsystem_checks()
         for name, check in active_checks.items():
             if check["ok"] is True:
-                logger.info(f"[OK] {name}: ok")
+                print(f"[OK] {name}: ok")
             elif check["ok"] is None:
-                logger.info(f"[SKIP] {name}: {check['detail']}")
+                print(f"[SKIP] {name}: {check['detail']}")
             else:
-                logger.warning(f"{name}: {check['detail']}")
+                print(f"[FAIL] {name}: {check['detail']}")
 
         if args.detailed:
             # 상세 헬스체크
@@ -572,18 +575,18 @@ async def handle_health_command(args):
             # 간단한 헬스체크
             is_healthy = await health_monitor.quick_health_check()
             if is_healthy:
-                logger.info("[OK] System is healthy")
+                print("[OK] System is healthy")
             else:
-                logger.error("System has issues")
+                print("[FAIL] System has issues")
                 return 1
 
         # 샌드박스가 기본적인 명령조차 실행하지 못하면 백엔드가 실질적으로 고장난 것
         if active_checks["sandbox_write"]["ok"] is False:
-            logger.error("Sandbox cannot execute commands")
+            print("[FAIL] Sandbox cannot execute commands")
             return 1
 
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        print(f"[FAIL] Health check failed: {e}")
         return 1
     return 0
 
