@@ -1463,7 +1463,7 @@ async def handle_cli_command(args):
 
     # CLI 에이전트 초기화
     if not initialize_cli_agents():
-        logger.warning("CLI agents not enabled or failed to initialize")
+        logger.debug("CLI agents not enabled or failed to initialize")
 
     cli_manager = get_cli_agent_manager()
 
