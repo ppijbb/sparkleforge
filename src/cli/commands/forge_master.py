@@ -129,6 +129,6 @@ async def forge_master_batch_command(cli, args: List[str]):
             )
 
     cli.console.print(
-        f"\n[bold]{batch_result['succeeded']}/{batch_result['total']} succeeded.[/bold] "
+        f"\n[bold]{batch_result.get('succeeded', 0)}/{batch_result.get('total', len(tasks))} succeeded.[/bold] "
         "(full detail logged, not printed)"
     )
