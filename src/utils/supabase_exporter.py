@@ -132,7 +132,7 @@ async def create_job(topic: str, user_id: Optional[str] = None) -> Optional[Dict
         return None
 
 
-FORGE_JOB_TTL_DAYS = 30
+FORGE_JOB_TTL_DAYS = int(os.environ.get("FORGE_JOB_TTL_DAYS", 30))
 _TERMINAL_JOB_STATUSES = {"completed", "failed"}
 
 

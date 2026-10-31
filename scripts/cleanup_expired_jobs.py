@@ -12,6 +12,7 @@ import argparse
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -35,41 +36,49 @@ def main() -> int:
 
     now_iso = datetime.now(timezone.utc).isoformat()
     try:
-        # PostgREST caps a single response at its configured max rows
-        # (commonly 1000); a run with more expired rows than that only
-        # deletes the first batch. This script is meant to run periodically
-        # (cron/scheduled workflow), so leftovers get caught by the next
-        # run rather than being silently lost -- not implementing full
-        # offset pagination here to keep this a simple batch utility.
-        expired = (
-            client.table("forge_jobs")
-            .select("id,status,expires_at")
-            .lt("expires_at", now_iso)
-            .execute()
-        )
+        total_deleted = 0
+        while True:
+            expired = (
+                client.table("forge_jobs")
+                .select("id,status,expires_at")
+                .lt("expires_at", now_iso)
+                .limit(1000)
+                .execute()
+            )
+            rows = expired.data or []
+            if not rows:
+                break
+
+            if not args.yes:
+                print(
+                    f"{len(rows)} expired forge_jobs row(s) would be deleted "
+                    "(dry run; pass --yes to delete)."
+                )
+                return 0
+
+            ids = [row["id"] for row in rows]
+            try:
+                res = client.table("forge_jobs").delete().in_("id", ids).execute()
+                # If delete response provides error or data, handle appropriately
+                if hasattr(res, "error") and res.error:
+                    print(f"Failed to delete expired forge_jobs rows: {res.error}", file=sys.stderr)
+                    return 1
+            except Exception as e:
+                print(f"Failed to delete expired forge_jobs rows: {e}", file=sys.stderr)
+                return 1
+            
+            total_deleted += len(ids)
+            if len(rows) < 1000:
+                break
+
+        if total_deleted == 0:
+            print("No expired forge_jobs rows.")
+        else:
+            print(f"Deleted {total_deleted} expired forge_jobs row(s).")
+        return 0
     except Exception as e:
         print(f"Failed to query expired forge_jobs rows: {e}", file=sys.stderr)
         return 1
-    rows = expired.data or []
-    if not rows:
-        print("No expired forge_jobs rows.")
-        return 0
-
-    if not args.yes:
-        print(
-            f"{len(rows)} expired forge_jobs row(s) would be deleted "
-            "(dry run; pass --yes to delete)."
-        )
-        return 0
-
-    ids = [row["id"] for row in rows]
-    try:
-        client.table("forge_jobs").delete().in_("id", ids).execute()
-    except Exception as e:
-        print(f"Failed to delete expired forge_jobs rows: {e}", file=sys.stderr)
-        return 1
-    print(f"Deleted {len(ids)} expired forge_jobs row(s).")
-    return 0
 
 
 if __name__ == "__main__":
