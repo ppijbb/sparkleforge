@@ -99,8 +99,12 @@ async def mcp_list_command(cli, args: List[str]):
             cli.console.print("\nAvailable CLI Agents:")
             for agent_name, st in status_dict.items():
                 is_available = st.get("available")
-                ready_str = "[green][OK] Ready[/green]" if is_available else "[dim]not configured[/dim]"
-                cli.console.print(f"  - {agent_name}: {ready_str}")
+                if cli.console.color_system is not None:
+                    ready_str = "[green][OK] Ready[/green]" if is_available else "[dim]not configured[/dim]"
+                    cli.console.print(f"  - {agent_name}: {ready_str}")
+                else:
+                    ready_str = "[OK] Ready" if is_available else "not configured"
+                    cli.console.print(f"  - {agent_name}: {ready_str}", highlight=False)
         elif not status_dict and verbose:
             logger.debug("CLI agents not enabled or failed to initialize")
     except Exception:
