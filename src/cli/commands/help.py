@@ -5,7 +5,7 @@ from rich.panel import Panel
 
 
 async def help_command(console: Console):
-    """도움말 표시."""
+    """Show help."""
     help_text = """
 [bold cyan]SparkleForge CLI Commands[/bold cyan]
 SparkleForge: Where Ideas Sparkle and Get Forged
