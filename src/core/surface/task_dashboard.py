@@ -117,11 +117,14 @@ class TaskDashboard:
             if parent_task_id and parent_task_id in self._tasks:
                 self._tasks[parent_task_id].children_task_ids.append(task.task_id)
             elif parent_task_id:
-                logger.debug(
-                    "Task %s submitted with parent_task_id=%s, but no such parent is "
-                    "registered -- it will render as a root in render_tree().",
+                # Parent doesn't exist: clear parent_task_id to avoid dangling reference.
+                # The child will render as a root (matching the log message intent).
+                logger.warning(
+                    "Task %s submitted with parent_task_id=%s, but no such parent exists; "
+                    "clearing parent_task_id so child renders as a root.",
                     task.task_id[:8], parent_task_id,
                 )
+                task.parent_task_id = None
         self._notify(task)
         logger.info("Task submitted: %s (%s)", name, task.task_id[:8])
         return task
@@ -209,11 +212,14 @@ class TaskDashboard:
     @staticmethod
     def _delegation_edges(tasks_objs: List[TaskRecord]) -> List[Dict[str, str]]:
         """Build delegator -> delegate edges for live multi-agent DAG views."""
-        return [
-            {"from": t.task_id, "to": child_id, "type": "delegates_to"}
-            for t in tasks_objs
-            for child_id in t.children_task_ids
-        ]
+        # Build a set of valid task IDs for O(1) existence checks.
+        valid_ids = {t.task_id for t in tasks_objs}
+        edges = []
+        for t in tasks_objs:
+            for child_id in t.children_task_ids:
+                if child_id in valid_ids:
+                    edges.append({"from": t.task_id, "to": child_id, "type": "delegates_to"})
+        return edges
 
     def snapshot(self) -> Dict[str, Any]:
         """Return a serializable snapshot of all tasks for surface consumers.
