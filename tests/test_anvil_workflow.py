@@ -19,6 +19,7 @@ sys.path.insert(0, project_root)
 
 from src.core.anvil.engine import AnvilTask, AnvilWorkflowEngine
 from src.core.anvil.skill_repository import Skill, SkillRepository
+from src.core.surface.task_dashboard import TaskDashboard, TaskRecord
 
 # =============================================================================
 # AnvilWorkflowEngine Tests
@@ -303,6 +304,26 @@ class TestSkillRepository:
         assert skill.metadata["version"] == "1.0"
         assert skill.metadata["author"] == "test"
 
+
+class TestTaskDashboardSessionViewEdges:
+    """TaskDashboard to_session_view edge filtering test for cross-session parent-child relationships."""
+
+    def test_cross_session_parent_edge_exclusion(self):
+        dashboard = TaskDashboard()
+        dashboard.reset()
+
+        # Parent task in session s2
+        parent = dashboard.submit(name="Parent", description="parent", agent_id="agent1", metadata={"session_id": "s2"})
+        # Child task in session s1, pointing to parent in s2
+        child = dashboard.submit(name="Child", description="child", agent_id="agent2", metadata={"session_id": "s1"}, parent_task_id=parent.task_id)
+
+        # Get session view for s1
+        view_s1 = dashboard.to_session_view("s1")
+        
+        # The edge from parent (s2) to child (s1) has 'from' not in s1, so it should be excluded.
+        assert len(view_s1["tasks"]) == 1
+        assert view_s1["tasks"][0]["task_id"] == child.task_id
+        assert view_s1["edges"] == []
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

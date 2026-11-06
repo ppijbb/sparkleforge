@@ -269,7 +269,7 @@ class TaskDashboard:
             edges = [
                 edge
                 for edge in self._delegation_edges(tasks_objs)
-                if edge["to"] in in_scope_ids
+                if edge["from"] in in_scope_ids and edge["to"] in in_scope_ids
             ]
 
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
