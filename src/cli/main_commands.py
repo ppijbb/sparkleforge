@@ -1135,18 +1135,26 @@ async def handle_nightwelding_command(args):
         from src.core.nightwelding.runner import run_nightwelding_digest
 
         try:
+            if getattr(args, "top_n", 10) <= 0 or getattr(args, "limit", 100) <= 0:
+                raise ValueError("Parameters top_n and limit must be greater than zero.")
             digest = run_nightwelding_digest(
-                label=args.label,
-                limit=args.limit,
-                top_n=args.top_n,
-                post_to_issue=args.post_to_issue,
+                label=getattr(args, "label", "nightwelding-queue"),
+                limit=getattr(args, "limit", 100),
+                top_n=getattr(args, "top_n", 10),
+                post_to_issue=getattr(args, "post_to_issue", None),
             )
-            if args.post_to_issue is not None:
-                logger.info(f"[OK] Nightwelding digest posted to issue #{args.post_to_issue}.")
+            post_target = getattr(args, "post_to_issue", None)
+            if post_target is not None:
+                check_proc = subprocess.run(["gh", "issue", "view", str(post_target)], capture_output=True, text=True, check=False)
+                if check_proc.returncode != 0:
+                    logger.error(f"Issue #{post_target} does not exist or cannot be accessed.")
+                    return 1
+                logger.info(f"[OK] Nightwelding digest posted to issue #{post_target}.")
             else:
                 from src.core.nightwelding.github_adapter import render_digest_markdown
-
-                print(render_digest_markdown(digest, top_n=args.top_n))
+                from rich.console import Console
+                console = Console(force_terminal=True)
+                console.print(render_digest_markdown(digest, top_n=getattr(args, "top_n", 10)))
         except Exception as e:
             logger.error(f"Nightwelding digest failed: {e}")
             return 1
