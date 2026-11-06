@@ -174,6 +174,7 @@ async def update_job_status(
 # Not used for billing or model routing. Source: Anthropic's published API
 # pricing for claude-opus-4, captured 2026-08 -- rates may drift over time;
 # this is a rough reference point, not a live-priced billing figure.
+# Source: https://openrouter.ai/models/anthropic/claude-opus-4 (pricing as of 2026-09-21)
 FRONTIER_PRICING: Dict[str, Dict[str, float]] = {
     "claude-opus-4": {"input": 15.00, "output": 75.00},
 }
@@ -209,7 +210,7 @@ async def update_session_tokens_and_cost(session_id: str) -> bool:
                 import json
                 try:
                     meta = json.loads(meta)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     meta = {}
             usage = meta.get("token_usage") or {}
             total_tokens += usage.get("total_tokens", 0)
