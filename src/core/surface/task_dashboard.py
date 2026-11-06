@@ -265,11 +265,11 @@ class TaskDashboard:
             # "from" is one of tasks_objs (it iterates `for t in tasks_objs`),
             # so "from" is always in in_scope_ids already -- only "to" (a
             # child possibly belonging to a different session) needs the
-            # scope check, to avoid referencing a task not in `tasks` above.
+            # scope check, and "from" also needs to be checked for cross-session parents.
             edges = [
                 edge
                 for edge in self._delegation_edges(tasks_objs)
-                if edge["to"] in in_scope_ids
+                if edge["from"] in in_scope_ids and edge["to"] in in_scope_ids
             ]
 
             counts: Dict[str, int] = {s.value: 0 for s in TaskStatus}
