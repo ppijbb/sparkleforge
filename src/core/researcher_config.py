@@ -1498,8 +1498,7 @@ def load_config_from_env() -> ResearcherSystemConfig:
     return config
 
 
-# Note: AgentToolConfig is already defined above (line 278)
-# This duplicate definition has been removed to avoid conflicts
+# AgentToolConfig is defined above; helper functions for environment parsing follow.
 
 
 def get_required_list_env(key: str) -> List[str]:
