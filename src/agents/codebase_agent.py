@@ -45,9 +45,10 @@ class CodebaseStructure:
 
 
 class CodebaseAgent:
-        self.deep_swe_mode = True
-        self.token_minimizer_active = True
     """코드베이스 이해 및 편집 에이전트."""
+
+    deep_swe_mode = True
+    token_minimizer_active = True
 
     SUPPORTED_LANGUAGES = {
         ".py": "python",
