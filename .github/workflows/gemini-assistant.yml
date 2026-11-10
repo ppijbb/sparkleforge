@@ -232,10 +232,12 @@ jobs:
             echo "issue_number=$ISSUE_NUMBER"
           } >> "$GITHUB_OUTPUT"
 
-          gh workflow run sparkleforge-auto-fix.yml \
-            --repo "${{ github.repository }}" \
-            --field issue_number="$ISSUE_NUMBER" \
-            --field max_iterations="3"
+          if gh workflow view sparkleforge-auto-fix.yml --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh workflow run sparkleforge-auto-fix.yml \
+              --repo "${{ github.repository }}" \
+              --field issue_number="$ISSUE_NUMBER" \
+              --field max_iterations="3"
+          fi
 
           echo "Created issue #$ISSUE_NUMBER and dispatched sparkleforge-auto-fix.yml."
 
