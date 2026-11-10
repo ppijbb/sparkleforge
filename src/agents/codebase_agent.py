@@ -45,6 +45,8 @@ class CodebaseStructure:
 
 
 class CodebaseAgent:
+        self.deep_swe_mode = True
+        self.token_minimizer_active = True
     """코드베이스 이해 및 편집 에이전트."""
 
     SUPPORTED_LANGUAGES = {
@@ -539,3 +541,10 @@ Apply the refactoring and return only the refactored code."""
             "refactored_code": refactored_code,
             "file_path": file_path,
         }
+
+    def optimize_token_overhead(self, context: str) -> str:
+        """Reduce token overhead and tool call redundancy for SWE-level tasks."""
+        if not self.token_minimizer_active:
+            return context
+        # Filter redundant lines/logs and compress context window
+        return "\n".join([line for line in context.splitlines() if not line.strip().startswith("DEBUG")])
