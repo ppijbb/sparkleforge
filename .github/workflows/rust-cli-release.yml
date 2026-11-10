@@ -1,0 +1,94 @@
+name: SparkleForge CLI Cross-Platform Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build binary for ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary_name: sparkleforge-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            binary_name: sparkleforge-linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_name: sparkleforge-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: sparkleforge-macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: sparkleforge-windows-amd64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install PyInstaller and dependencies
+        run: |
+          uv pip install --system pyinstaller pyproject.toml
+
+      - name: Build standalone binary with PyInstaller
+        shell: bash
+        run: |
+          mkdir -p dist
+          # Bundle main entry point as a single executable binary
+          pyinstaller --onefile --name "${{ matrix.binary_name }}" src/cli/entry.py
+          
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/${{ matrix.binary_name }}*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Prepare release assets
+        run: |
+          ls -R artifacts/
+          mkdir -p release_assets
+          cp artifacts/sparkleforge-* release_assets/ || true
+
+      - name: Create GitHub Release and Upload Assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" != v* ]]; then
+            TAG="v0.1.0-nightly"
+          fi
+          
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "SparkleForge CLI $TAG" \
+            --notes "Automated single-binary cross-platform release for SparkleForge." \
+            release_assets/*
+diff --git a/scripts/install.sh b/scripts/install.sh
