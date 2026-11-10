@@ -82,6 +82,9 @@ jobs:
               --body-file gemini-review-feedback.md
           done
 
+  # PR #1913: Skip heavy code-review, issue-triage, and merge-decision steps in non-SparkleForge/non-relevant PRs
+  # or when disabled for rust-cli client-core migration context, or run conditionally.
+
   # 1단계: 코드 변경점 리뷰 (SparkleForge 오케스트레이터 호출)
   code-review:
     if: >-
