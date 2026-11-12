@@ -12,7 +12,7 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "build": "webpack --mode production",
-    "install:sparkleforge": "uv sync || pip install -e .",
+    "install:sparkleforge": "if uv sync; then echo 'Installed via uv'; else echo 'uv sync failed, falling back to pip...'; pip install -e .; fi",
     "setup": "npm run install:sparkleforge && npm install"
   },
   "keywords": [

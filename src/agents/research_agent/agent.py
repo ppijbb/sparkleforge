@@ -81,15 +81,15 @@ class ResearchAgent(
     def _initialize_llm(self):
         """Initialize the LLM client."""
         try:
-            api_key = os.getenv("GEMINI_API_KEY")
+            api_key = os.getenv("SPARKLEFORGE_API_KEY") or os.getenv("GEMINI_API_KEY")
             if not api_key:
-                logger.warning("Gemini API key not found. Research functionality will be limited.")
+                logger.warning("API key not found. Research functionality will be limited.")
                 return None
 
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-3.5-flash-lite")
+            model = genai.GenerativeModel("gemini-1.5-flash")
             logger.info(
-                "LLM initialized for ResearchAgent with model: gemini-3.5-flash-lite"
+                "LLM initialized for ResearchAgent with model: gemini-1.5-flash"
             )
             return model
         except Exception as e:

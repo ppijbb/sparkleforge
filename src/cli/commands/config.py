@@ -10,6 +10,11 @@ from rich.panel import Panel
 
 from src.core import researcher_config
 from src.core.autonomous_orchestrator import _autopilot_mode_enabled
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 
 logger = logging.getLogger(__name__)
 

@@ -16,6 +16,10 @@ if [ "$OS" = "Darwin" ]; then
     fi
     
     echo "Syncing dependencies..."
+    if [ ! -f "pyproject.toml" ]; then
+        echo "Error: pyproject.toml not found. Please run this script from the repository root."
+        exit 1
+    fi
     uv sync
     
     if [ ! -f .env ]; then
@@ -165,7 +169,16 @@ install_sparkleforge_cli() {
     fi
     
     if command_exists "uv"; then
-        uv sync
+        if [ ! -f "pyproject.toml" ]; then
+            print_error "pyproject.toml not found. Please run from repository root or generate project files first."
+            exit 1
+        fi
+        if uv sync; then
+            print_success "SparkleForge CLI installed via uv"
+        else
+            print_warning "uv sync failed. Falling back to pip..."
+            pip install -e .
+        fi
         print_success "SparkleForge CLI installed via uv"
     elif command_exists "pip"; then
         pip install -e .
