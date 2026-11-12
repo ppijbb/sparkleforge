@@ -54,14 +54,18 @@ def main_entry() -> None:
     load_dotenv(override=True)
 
     project_root = Path(__file__).resolve().parent.parent.parent
-    # Do NOT chdir here (issue #1222): the installed sparkleforge/sparkle
-    # command must operate on the caller's cwd, like git/npx/eslint do.
-    # SparkleForge's own state (db/logs/.env/etc.) is already resolved via
-    # the `project_root` computed from __file__ in main.py and
-    # autonomous_research_system.py, so it stays package-relative regardless
-    # of where this is invoked from.
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+    # Runtime Isolation & CWD Workspace / Session Binding (Issue #1908)
+    # Isolate sys.path so external PYTHONPATH pollution from other projects (e.g. RTM)
+    # does not leak into SparkleForge, while anchoring the project runtime root and
+    # ensuring local session/history storage binds to the current working directory (CWD).
+    cwd = Path.cwd().resolve()
+    if str(cwd) not in sys.path:
+        sys.path.insert(0, str(cwd))
+    # Clean up foreign 'src' or package entries from sys.path if they belong to other roots
+    sys.path = [p for p in sys.path if not p or Path(p).resolve() == cwd or Path(p).resolve() == project_root or not (Path(p).resolve() / "src").exists() or Path(p).resolve().name == "sparkleforge"]
+
+    os.environ["SPARKLEFORGE_WORKSPACE_ROOT"] = str(cwd)
+    os.environ.setdefault("SPARKLEFORGE_SESSION_DB", str(cwd / ".sparkleforge" / "session.db"))
 
     _inject_stdin_query_for_run()
 

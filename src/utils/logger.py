@@ -423,7 +423,7 @@ def setup_default_logging(
         use_colors=use_colors,
     )
     setup_logger(
-        "gemini_cli_integration",
+        "sparkleforge_cli_integration",
         log_level=log_level,
         console_output=console_output,
         use_colors=use_colors,

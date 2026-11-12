@@ -325,6 +325,18 @@ EXAMPLES:
             default=None,
             help="Enable or disable autonomous execution without interactive prompts (true/false)",
         )
+        command_parser.add_argument(
+            "--output",
+            "-o",
+            default=argparse.SUPPRESS,
+            help="Output file path for research results",
+        )
+        command_parser.add_argument(
+            "--format",
+            choices=["json", "yaml", "txt", "markdown", "md"],
+            default=argparse.SUPPRESS,
+            help="Output format for research results",
+        )
 
     # run 커맨드
     run_parser = subparsers.add_parser("run", help="Execute research request")
@@ -785,7 +797,7 @@ EXAMPLES:
     )
     parser.add_argument(
         "--format",
-        choices=["json", "yaml", "txt"],
+        choices=["json", "yaml", "txt", "markdown", "md"],
         default="json",
         help="Output format for research results",
     )

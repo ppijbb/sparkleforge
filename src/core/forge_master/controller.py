@@ -1,7 +1,7 @@
 """Forge Master Controller - Central Master Controller for External AI Agents
 
 SparkleForge 중앙 에이전트 OS의 주 제어 장치.
-외부 AI CLI 도구(Claude Code, Codex, Gemini CLI, Hermes 등)를 상시(24/7) 관제하고,
+외부 AI CLI 도구(Claude Code, Codex, SparkleForge CLI, Hermes 등)를 상시(24/7) 관제하고,
 토큰 최소화, 세션 및 문맥 유지, 적대적 검증 게이트를 통합 총괄함.
 
 이 컨트롤러는 선택된 에이전트가 실패했다고 해서 코드가 알아서 다른 CLI로
