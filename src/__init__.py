@@ -1,7 +1,7 @@
-"""Local Researcher - Main Package
+"""SparkleForge - Main Package
 
-This package provides the core functionality for the Local Researcher system,
-integrating Gemini CLI with Open Deep Research for local research automation.
+This package provides the core functionality for the SparkleForge system,
+integrating SparkleForge CLI with autonomous multi-agent research and engineering workflows.
 """
 
 __version__ = "1.0.0"

@@ -78,7 +78,7 @@ jobs:
   # --print-trend tests/benchmark/baselines/scenario_history.jsonl) instead of
   # inferred from a single point-in-time pass/fail gate. Opens a chore/ branch
   # PR rather than pushing straight to main, so the existing
-  # auto-merge-ready-fix-prs automation (gemini-assistant.yml) merges it once
+  # auto-merge-ready-fix-prs automation (sparkleforge-assistant.yml) merges it once
   # checks pass -- reuses the already-proven merge path instead of new
   # direct-to-protected-branch push logic.
   record-history:

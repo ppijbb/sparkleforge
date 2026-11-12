@@ -16,9 +16,8 @@ cd local_researcher_project
 ./scripts/setup.sh
 
 # 또는 수동 설정
-npm install
-pip install -r requirements.txt
-npm install -g @google/gemini-cli
+uv sync
+pip install -e .
 ```
 
 ### 3. API 키 설정

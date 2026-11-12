@@ -7,8 +7,8 @@ from .base_cli_agent import BaseCLIAgent, CLIAgentConfig, CLIExecutionResult
 from .claude_code_agent import ClaudeCodeAgent
 from .cli_agent_manager import CLIAgentManager, get_cli_agent_manager
 from .cline_cli_agent import ClineCLIAgent
-from .gemini_cli_agent import GeminiCLIAgent
 from .sparkle_llm_agent import SparkleLLMAgent
+from .sparkleforge_cli_agent import SparkleForgeCLIAgent
 
 __all__ = [
     "BaseCLIAgent",
@@ -18,6 +18,6 @@ __all__ = [
     "get_cli_agent_manager",
     "ClaudeCodeAgent",
     "SparkleLLMAgent",
-    "GeminiCLIAgent",
+    "SparkleForgeCLIAgent",
     "ClineCLIAgent",
 ]

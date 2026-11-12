@@ -1,7 +1,7 @@
 """Forge Master Router - Capability Matrix & Tool Goal Assigner
 
 SparkleForge 중앙 하네스가 작업의 특성과 토큰 예산을 평가하여
-최적의 외부 CLI 도구(Claude Code, Codex, Gemini CLI, Hermes 등)를 선택하고
+최적의 외부 CLI 도구(Claude Code, Codex, SparkleForge CLI, Hermes 등)를 선택하고
 도구별 맞춤 Goal을 부여하는 동적 라우팅 시스템
 
 이 라우터는 최종 결정권자가 아니다. 어떤 CLI 에이전트를 쓸지는 실제로 태스크를
@@ -51,7 +51,7 @@ class ForgeMasterRouter:
             "local": True,
             "priority": 2,
         },
-        "gemini_cli": {
+        "sparkleforge_cli": {
             "strengths": ["large_context", "doc_search", "multimodal", "broad_synthesis"],
             "score": 0.88,
             "cost_tier": "low",
@@ -172,8 +172,8 @@ class ForgeMasterRouter:
             return f"[Claude Code Dedicated Goal] Focus strictly on code refactoring and diff integrity: {task_description}"
         elif agent_name == "codex":
             return f"[Codex Dedicated Goal] Generate clean, concise code with syntax precision: {task_description}"
-        elif agent_name == "gemini_cli":
-            return f"[Gemini CLI Dedicated Goal] Synthesize wide context and document insights efficiently: {task_description}"
+        elif agent_name == "sparkleforge_cli":
+            return f"[SparkleForge CLI Dedicated Goal] Synthesize wide context and document insights efficiently: {task_description}"
         elif agent_name == "hermes":
             return f"[Hermes Dedicated Goal] Execute autonomous workflow step-by-step: {task_description}"
         else:
@@ -209,7 +209,7 @@ class ForgeMasterRouter:
                 match += 1.0
             elif any(k in desc_lower for k in ["generate", "snippet", "function", "fix syntax"]) and agent == "codex":
                 match += 1.0
-            elif any(k in desc_lower for k in ["search", "document", "explain", "large"]) and agent == "gemini_cli":
+            elif any(k in desc_lower for k in ["search", "document", "explain", "large"]) and agent == "sparkleforge_cli":
                 match += 1.0
             elif any(k in desc_lower for k in ["workflow", "agentic", "hermes", "domain"]) and agent == "hermes":
                 match += 1.0

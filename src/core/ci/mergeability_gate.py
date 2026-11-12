@@ -1,4 +1,4 @@
-"""Mechanical mergeability gate shared by gemini-assistant.yml's
+"""Mechanical mergeability gate shared by sparkleforge-assistant.yml's
 merge-decision and auto-merge-ready-fix-prs jobs.
 
 Before this, both jobs independently computed "is this PR actually ready to

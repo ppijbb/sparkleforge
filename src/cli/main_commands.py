@@ -235,8 +235,55 @@ def parse_heat_duration(duration: str) -> float:
     return value * units[unit]
 
 
+def _write_cli_output_file(
+    result: Dict[str, Any],
+    content: str,
+    output_path: str,
+    output_format: str | None = None,
+) -> None:
+    """Persist CLI `run` / `query` results to `--output` in the requested `--format`."""
+    from pathlib import Path
+
+    dest = Path(output_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    fmt = (output_format or "").strip().lower()
+    if not fmt:
+        suffix_map = {
+            ".json": "json",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".md": "markdown",
+            ".markdown": "markdown",
+            ".txt": "txt",
+        }
+        fmt = suffix_map.get(dest.suffix.lower(), "markdown")
+
+    if fmt == "json":
+        payload = json.dumps(result, indent=2, ensure_ascii=False, default=str)
+        dest.write_text(payload, encoding="utf-8")
+        return
+
+    if fmt == "yaml":
+        import yaml
+
+        payload = yaml.dump(result, default_flow_style=False, allow_unicode=True)
+        dest.write_text(payload, encoding="utf-8")
+        return
+
+    if content.strip():
+        dest.write_text(
+            content if content.endswith("\n") else f"{content}\n",
+            encoding="utf-8",
+        )
+
+
 async def _execute_coworker_goal(
-    goal: str, heat_seconds: float | None = None, force_coworker: bool = True
+    goal: str,
+    heat_seconds: float | None = None,
+    force_coworker: bool = True,
+    output_path: str | None = None,
+    output_format: str | None = None,
 ) -> int:
     """목표를 실행하는 공통 경로.
 
@@ -308,13 +355,19 @@ async def _execute_coworker_goal(
     # returns {"success": False, "error": ...} instead of raising, so this
     # was falling through to `return 0` unconditionally -- a rate-limited or
     # otherwise failed run exited clean with no visible error at all.
+    from src.cli.cli_result import extract_cli_result_content
+
     if not result.get("success", True):
         error_message = result.get("error") or "coworker session failed for an unknown reason"
         logger.error(f"Coworker session failed: {error_message}")
         print(f"[FAIL] Coworker session failed: {error_message}")
         return 1
 
-    print(result.get("content", ""))
+    content = extract_cli_result_content(result)
+    print(content)
+
+    if output_path:
+        _write_cli_output_file(result, content, output_path, output_format)
 
     heat_report = result.get("metadata", {}).get("heat_report")
     if heat_report:
