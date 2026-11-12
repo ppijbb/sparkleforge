@@ -45,6 +45,9 @@ def test_run_entrypoint_accepts_workflow_max_tokens_flag() -> None:
     assert result.returncode == 0
     assert "--max-tokens" in result.stdout
     assert "--model" in result.stdout
+    assert "--output" in result.stdout
+    assert "--format" in result.stdout
+    assert "markdown" in result.stdout
 
 
 def test_daily_roadmap_workflow_uses_supported_cli_command() -> None:
@@ -147,3 +150,91 @@ def test_report_generator_history_prunes_to_cap(tmp_path, monkeypatch) -> None:
     assert len(final_history) == report_generator.MAX_HISTORY_ENTRIES
     assert final_history[0]["index"] == 5
     assert final_history[-1]["index"] == 9
+
+
+def test_run_command_writes_markdown_and_json_output_files(tmp_path, monkeypatch) -> None:
+    import asyncio
+    from types import SimpleNamespace
+    from src.cli.commands import work as work_cmd
+
+    md_path = tmp_path / "sparkleforge-roadmap.md"
+    json_path = tmp_path / "sparkleforge-roadmap.json"
+
+    async def fake_execute(*args, **kwargs):
+        return {
+            "success": True,
+            "final_synthesis": {"content": "# Roadmap Title\n\n## Why now\nBecause."},
+        }
+
+    monkeypatch.setattr(
+        "src.core.agent_orchestrator.get_orchestrator",
+        lambda: SimpleNamespace(execute=fake_execute),
+    )
+
+    rc_md = asyncio.run(
+        work_cmd.work_command_from_query(
+            SimpleNamespace(query="daily prompt", output=str(md_path), format="markdown"),
+            force_coworker=False,
+        )
+    )
+    assert rc_md == 0
+    assert md_path.read_text(encoding="utf-8") == "# Roadmap Title\n\n## Why now\nBecause.\n"
+
+    rc_json = asyncio.run(
+        work_cmd.work_command_from_query(
+            SimpleNamespace(query="daily prompt", output=str(json_path), format="json"),
+            force_coworker=False,
+        )
+    )
+    assert rc_json == 0
+    loaded = json.loads(json_path.read_text(encoding="utf-8"))
+    assert loaded["success"] is True
+    assert loaded["final_synthesis"]["content"].startswith("# Roadmap Title")
+
+
+def test_entry_run_accepts_daily_roadmap_output_and_markdown_flags(tmp_path, monkeypatch) -> None:
+    import main as root_main
+    from src.cli import entry
+
+    out_path = tmp_path / "roadmap.md"
+    captured = {}
+
+    async def fake_handle_run(args, cfg):
+        captured["query"] = args.query
+        captured["output"] = getattr(args, "output", None)
+        captured["format"] = getattr(args, "format", None)
+        captured["task"] = getattr(args, "task", None)
+        return 0
+
+    monkeypatch.setattr(root_main, "handle_run_command", fake_handle_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "entry.py",
+            "run",
+            "--max-tokens",
+            "4096",
+            "--model",
+            "google/gemini-3.5-flash-lite",
+            "--output",
+            str(out_path),
+            "--task",
+            "SparkleForge Daily Roadmap",
+            "--format",
+            "markdown",
+        ],
+    )
+    monkeypatch.setattr(sys, "stdin", StringIO("roadmap brief from stdin\n"))
+
+    try:
+        entry.main_entry()
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    assert captured == {
+        "query": "roadmap brief from stdin",
+        "output": str(out_path),
+        "format": "markdown",
+        "task": "SparkleForge Daily Roadmap",
+    }

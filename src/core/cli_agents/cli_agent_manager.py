@@ -13,9 +13,9 @@ from .claude_code_agent import ClaudeCodeAgent
 from .cline_cli_agent import ClineCLIAgent
 from .codex_agent import CodexCLIAgent
 from .computer_use_agent import ComputerUseAgent
-from .gemini_cli_agent import GeminiCLIAgent
 from .hermes_agent import HermesCLIAgent
 from .sparkle_llm_agent import SparkleLLMAgent
+from .sparkleforge_cli_agent import SparkleForgeCLIAgent
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class CLIAgentManager:
         default_agents = {
             "claude_code": ClaudeCodeAgent,
             "sparkle_llm": SparkleLLMAgent,
-            "gemini_cli": GeminiCLIAgent,
+            "sparkleforge_cli": SparkleForgeCLIAgent,
             "cline_cli": ClineCLIAgent,
             "computer_use": ComputerUseAgent,
             "codex": CodexCLIAgent,
@@ -63,7 +63,7 @@ class CLIAgentManager:
             config: 에이전트 설정
         """
         self.agent_configs[name] = config or {}
-        logger.info(f"Registered CLI agent class: {name}")
+        logger.debug("Registered CLI agent class: %s", name)
 
     def register_agent_instance(self, name: str, agent: BaseCLIAgent):
         """CLI 에이전트 인스턴스를 등록
@@ -127,7 +127,7 @@ class CLIAgentManager:
         agent_classes = {
             "claude_code": ClaudeCodeAgent,
             "sparkle_llm": SparkleLLMAgent,
-            "gemini_cli": GeminiCLIAgent,
+            "sparkleforge_cli": SparkleForgeCLIAgent,
             "cline_cli": ClineCLIAgent,
             "computer_use": ComputerUseAgent,
             "codex": CodexCLIAgent,

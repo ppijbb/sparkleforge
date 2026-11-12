@@ -20,7 +20,7 @@ async def forge_master_command(cli, args: List[str]):
         cli.console.print(
             "[red]Usage: forge-master <query> [--agent AGENT] [--persistent] [--persona PERSONA][/red]"
         )
-        cli.console.print("Available: claude_code, codex, gemini_cli, hermes, sparkle_llm, cline_cli")
+        cli.console.print("Available: claude_code, codex, sparkleforge_cli, hermes, sparkle_llm, cline_cli")
         cli.console.print("Personas: ponytail, caveman, blacksmith")
         return
 
@@ -129,6 +129,6 @@ async def forge_master_batch_command(cli, args: List[str]):
             )
 
     cli.console.print(
-        f"\n[bold]{batch_result['succeeded']}/{batch_result['total']} succeeded.[/bold] "
+        f"\n[bold]{batch_result.get('succeeded', 0)}/{batch_result.get('total', len(tasks))} succeeded.[/bold] "
         "(full detail logged, not printed)"
     )

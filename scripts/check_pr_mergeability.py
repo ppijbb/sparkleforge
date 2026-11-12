@@ -4,7 +4,7 @@
 Deliberately callable without the full `sparkleforge` bootstrap: `main.py`
 runs BootstrapGraph's full init (database, MCP hub, telemetry, automation,
 memory) unconditionally for every invocation, including `ci` subcommands.
-That's fine for a single LLM judgment call, but gemini-assistant.yml's
+That's fine for a single LLM judgment call, but sparkleforge-assistant.yml's
 auto-merge-ready-fix-prs job calls this mechanical (non-LLM) check once per
 matching PR in a loop of up to 100 -- paying a full bootstrap per PR there
 risks the job exceeding its 15-minute schedule interval and getting

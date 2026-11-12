@@ -8,7 +8,7 @@ assignees: ''
 ---
 
 ## 🐛 Bug Description
-A clear and concise description of what the bug is.
+A clear and concise description of the bug.
 
 ## 🛠️ Reproduction Steps
 1. Go to '...'

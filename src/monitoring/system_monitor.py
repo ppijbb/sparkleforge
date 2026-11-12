@@ -123,7 +123,7 @@ class HealthMonitor:
         # Callbacks
         self.alert_callbacks: List[Callable[[Alert], None]] = []
 
-        logger.info("Health Monitor initialized with 8 innovations support")
+        logger.debug("Health Monitor initialized with 8 innovations support")
 
     async def start_monitoring(self):
         """Start real-time monitoring with production-grade reliability."""

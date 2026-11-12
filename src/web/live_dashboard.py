@@ -33,6 +33,7 @@ DASHBOARD_URL = "https://sparkleforge.streamlit.app"
 FALLBACK_METRICS: Dict[str, Any] = {
     "mttm_minutes": 141.08,
     "auto_merge_rate": 0.667,
+    "token_savings": 0.92,
 }
 
 
@@ -48,7 +49,7 @@ def _safe_select(table: str, columns: str = "*", limit: int = 100) -> List[Dict[
     try:
         response = client.table(table).select(columns).limit(limit).execute()
         return list(response.data or [])
-    except Exception as exc:  # pragma: no cover - dashboard must stay live
+    except (Exception) as exc:  # pragma: no cover - dashboard must stay live
         logger.warning("Supabase select on %s failed: %s", table, exc)
         return []
 
@@ -101,7 +102,7 @@ def _fetch_ci_token_metrics() -> Dict[str, Any]:
             import json
             try:
                 meta = json.loads(meta)
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 meta = {}
         usage = meta.get("token_usage") or {}
         total_tokens += usage.get("total_tokens", 0)
@@ -123,14 +124,20 @@ def _fetch_cost_metrics(days: int = 7) -> Dict[str, Any]:
     correctness requirement -- consistent with _fetch_ci_token_metrics'
     all-time limit=1000 above; neither paginates.
     """
-    rows = _safe_select("sparkleforge_history_events", "metadata,created_at", limit=2000)
-    if len(rows) >= 2000:
-        logger.warning(
-            "_fetch_cost_metrics hit its row limit (2000); the %d-day cost ticker "
-            "may be undercounting.",
-            days,
-        )
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    client = get_supabase_client()
+    rows = []
+    if client is not None:
+        logger.warning(
+            "_fetch_cost_metrics querying last %d days of history events", days
+        )
+        try:
+            response = client.table("sparkleforge_history_events").select("metadata,created_at").gte("created_at", cutoff.isoformat()).limit(5000).execute()
+            rows = list(response.data or [])
+        except (Exception) as exc:
+            logger.warning("Failed to fetch cost metrics from Supabase: %s", exc)
+            rows = []
+
     total_actual = 0.0
     total_frontier = 0.0
     request_count = 0
@@ -139,13 +146,11 @@ def _fetch_cost_metrics(days: int = 7) -> Dict[str, Any]:
         if not created_at:
             continue
         try:
-            # Python 3.11+ fromisoformat() parses a "Z" suffix natively
-            # (this project requires >=3.11); no manual "+00:00" swap needed.
-            if datetime.fromisoformat(created_at) < cutoff:
+            if datetime.fromisoformat(created_at.replace("Z", "+00:00")) < cutoff:
                 continue
-        except ValueError:
-            # Can't verify this row is inside the 7-day window -- exclude it
-            # rather than risk counting stale/out-of-window cost data.
+        except (ValueError, TypeError):
+            # Can't verify this row is inside the window -- exclude it
+            # rather than risk counting stale or malformed cost data.
             continue
         meta = r.get("metadata") or {}
         if isinstance(meta, str):

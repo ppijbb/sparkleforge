@@ -264,10 +264,10 @@ def _is_cli_agent(model_name: str) -> bool:
     """모델 이름이 CLI 에이전트인지 확인"""
     cli_agents = {
         "claude_code",
-        "gemini_cli",
+        "sparkleforge_cli",
         "cline_cli",
         "claudecode",
-        "gemini-cli",
+        "sparkleforge-cli",
         "cline-cli",
     }
     return model_name.lower() in cli_agents

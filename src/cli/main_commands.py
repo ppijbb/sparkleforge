@@ -235,8 +235,55 @@ def parse_heat_duration(duration: str) -> float:
     return value * units[unit]
 
 
+def _write_cli_output_file(
+    result: Dict[str, Any],
+    content: str,
+    output_path: str,
+    output_format: str | None = None,
+) -> None:
+    """Persist CLI `run` / `query` results to `--output` in the requested `--format`."""
+    from pathlib import Path
+
+    dest = Path(output_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    fmt = (output_format or "").strip().lower()
+    if not fmt:
+        suffix_map = {
+            ".json": "json",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".md": "markdown",
+            ".markdown": "markdown",
+            ".txt": "txt",
+        }
+        fmt = suffix_map.get(dest.suffix.lower(), "markdown")
+
+    if fmt == "json":
+        payload = json.dumps(result, indent=2, ensure_ascii=False, default=str)
+        dest.write_text(payload, encoding="utf-8")
+        return
+
+    if fmt == "yaml":
+        import yaml
+
+        payload = yaml.dump(result, default_flow_style=False, allow_unicode=True)
+        dest.write_text(payload, encoding="utf-8")
+        return
+
+    if content.strip():
+        dest.write_text(
+            content if content.endswith("\n") else f"{content}\n",
+            encoding="utf-8",
+        )
+
+
 async def _execute_coworker_goal(
-    goal: str, heat_seconds: float | None = None, force_coworker: bool = True
+    goal: str,
+    heat_seconds: float | None = None,
+    force_coworker: bool = True,
+    output_path: str | None = None,
+    output_format: str | None = None,
 ) -> int:
     """목표를 실행하는 공통 경로.
 
@@ -308,13 +355,19 @@ async def _execute_coworker_goal(
     # returns {"success": False, "error": ...} instead of raising, so this
     # was falling through to `return 0` unconditionally -- a rate-limited or
     # otherwise failed run exited clean with no visible error at all.
+    from src.cli.cli_result import extract_cli_result_content
+
     if not result.get("success", True):
         error_message = result.get("error") or "coworker session failed for an unknown reason"
         logger.error(f"Coworker session failed: {error_message}")
         print(f"[FAIL] Coworker session failed: {error_message}")
         return 1
 
-    print(result.get("content", ""))
+    content = extract_cli_result_content(result)
+    print(content)
+
+    if output_path:
+        _write_cli_output_file(result, content, output_path, output_format)
 
     heat_report = result.get("metadata", {}).get("heat_report")
     if heat_report:
@@ -548,7 +601,10 @@ async def handle_mcp_command(args):
 
 async def handle_health_command(args):
     """시스템 헬스체크 커맨드 처리"""
-    logger.info("Running system health check...")
+    if sys.stdout.isatty():
+        print("Running system health check...")
+    else:
+        logger.info("Running system health check...")
 
     try:
         health_monitor = HealthMonitor()
@@ -557,11 +613,11 @@ async def handle_health_command(args):
         active_checks = await health_monitor.run_active_subsystem_checks()
         for name, check in active_checks.items():
             if check["ok"] is True:
-                logger.info(f"[OK] {name}: ok")
+                print(f"[OK] {name}: ok")
             elif check["ok"] is None:
-                logger.info(f"[SKIP] {name}: {check['detail']}")
+                print(f"[SKIP] {name}: {check['detail']}")
             else:
-                logger.warning(f"{name}: {check['detail']}")
+                print(f"[FAIL] {name}: {check['detail']}")
 
         if args.detailed:
             # 상세 헬스체크
@@ -572,18 +628,18 @@ async def handle_health_command(args):
             # 간단한 헬스체크
             is_healthy = await health_monitor.quick_health_check()
             if is_healthy:
-                logger.info("[OK] System is healthy")
+                print("[OK] System is healthy")
             else:
-                logger.error("System has issues")
+                print("[FAIL] System has issues")
                 return 1
 
         # 샌드박스가 기본적인 명령조차 실행하지 못하면 백엔드가 실질적으로 고장난 것
         if active_checks["sandbox_write"]["ok"] is False:
-            logger.error("Sandbox cannot execute commands")
+            print("[FAIL] Sandbox cannot execute commands")
             return 1
 
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        print(f"[FAIL] Health check failed: {e}")
         return 1
     return 0
 
@@ -1132,18 +1188,26 @@ async def handle_nightwelding_command(args):
         from src.core.nightwelding.runner import run_nightwelding_digest
 
         try:
+            if getattr(args, "top_n", 10) <= 0 or getattr(args, "limit", 100) <= 0:
+                raise ValueError("Parameters top_n and limit must be greater than zero.")
             digest = run_nightwelding_digest(
-                label=args.label,
-                limit=args.limit,
-                top_n=args.top_n,
-                post_to_issue=args.post_to_issue,
+                label=getattr(args, "label", "nightwelding-queue"),
+                limit=getattr(args, "limit", 100),
+                top_n=getattr(args, "top_n", 10),
+                post_to_issue=getattr(args, "post_to_issue", None),
             )
-            if args.post_to_issue is not None:
-                logger.info(f"[OK] Nightwelding digest posted to issue #{args.post_to_issue}.")
+            post_target = getattr(args, "post_to_issue", None)
+            if post_target is not None:
+                check_proc = subprocess.run(["gh", "issue", "view", str(post_target)], capture_output=True, text=True, check=False)
+                if check_proc.returncode != 0:
+                    logger.error(f"Issue #{post_target} does not exist or cannot be accessed.")
+                    return 1
+                logger.info(f"[OK] Nightwelding digest posted to issue #{post_target}.")
             else:
                 from src.core.nightwelding.github_adapter import render_digest_markdown
-
-                print(render_digest_markdown(digest, top_n=args.top_n))
+                from rich.console import Console
+                console = Console(force_terminal=True)
+                console.print(render_digest_markdown(digest, top_n=getattr(args, "top_n", 10)))
         except Exception as e:
             logger.error(f"Nightwelding digest failed: {e}")
             return 1
@@ -1460,7 +1524,7 @@ async def handle_cli_command(args):
 
     # CLI 에이전트 초기화
     if not initialize_cli_agents():
-        logger.warning("CLI agents not enabled or failed to initialize")
+        logger.debug("CLI agents not enabled or failed to initialize")
 
     cli_manager = get_cli_agent_manager()
 

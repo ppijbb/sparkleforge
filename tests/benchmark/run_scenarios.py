@@ -492,6 +492,7 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
         f"[scenario-eval] comparing against conclusive history entry from "
         f"{prior_report.get('generated_at')} (skipped inconclusive entries)"
     )
+    regression_exit = 0
     regression_exit = _compare_scenarios(report["scenarios"], prior_report.get("scenarios", {}))
 
     # Stagnation gate: count meaningful improvements (Δ ≥ 0.03) across the

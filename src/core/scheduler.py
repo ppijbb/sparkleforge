@@ -737,10 +737,43 @@ def register_scheduler_tools() -> None:
         schedules = scheduler.list_schedules(enabled_only=enabled_only, tags=tags)
         return [s.to_dict() for s in schedules]
 
+    def create_scheduled_task(
+        name: str,
+        cron_expression: str,
+        user_query: str,
+        enabled: bool = True,
+        metadata: Dict[str, Any] | None = None,
+        tags: List[str] | None = None,
+        max_runs: int | None = None,
+        timeout_seconds: int | None = None,
+    ) -> Dict[str, Any]:
+        """Alias for create_automation_task to support alternative tool naming."""
+        return create_automation_task(name, cron_expression, user_query, enabled, metadata, tags, max_runs, timeout_seconds)
+
     create_metadata = ToolMetadata(
         name="create_automation_task",
         description=(
-            "Register a cron-based automation task with the SparkleForge "
+            "Register a cron-based automation task (also known as a scheduled task) "
+            "with the SparkleForge Scheduler. Returns the created schedule configuration."
+        ),
+        parameters={
+            "name": {"type": "string"},
+            "cron_expression": {"type": "string"},
+            "user_query": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "metadata": {"type": "object"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "max_runs": {"type": "integer"},
+            "timeout_seconds": {"type": "integer"},
+        },
+        category=ToolCategory.UTILITY,
+        tags=["scheduler", "automation"],
+        source="local",
+    )
+    create_scheduled_metadata = ToolMetadata(
+        name="create_scheduled_task",
+        description=(
+            "Register a scheduled automation task with the SparkleForge "
             "Scheduler. Returns the created schedule configuration."
         ),
         parameters={
@@ -766,6 +799,7 @@ def register_scheduler_tools() -> None:
         source="local",
     )
     registry.register(create_metadata, create_automation_task, create_automation_task)
+    registry.register(create_scheduled_metadata, create_scheduled_task, create_scheduled_task)
     registry.register(list_metadata, list_automation_tasks, list_automation_tasks)
 
 

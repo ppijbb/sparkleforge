@@ -6,7 +6,7 @@ GitHub Actions workflows and src/core/ci/fix_issue.py already do.
 
 The PR body always contains the literal substring "SparkleForge-generated" and
 branches always use the "nightwelding/" prefix — both are load-bearing for
-staying Draft-only forever: gemini-assistant.yml's `code-review` job (and,
+staying Draft-only forever: sparkleforge-assistant.yml's `code-review` job (and,
 transitively, `merge-decision`, which needs `code-review` to succeed) skips
 any PR whose body contains that substring, and its separate
 `auto-merge-ready-fix-prs` scheduled sweep only matches `fix/`/`chore/`
@@ -52,7 +52,16 @@ class GitHubAdapter(BaseNightweldingAdapter):
 
     def __init__(self, repo: str | None = None, repo_root: Path | None = None):
         self.repo = repo
-        self.repo_root = Path(repo_root or Path.cwd())
+        if repo_root is not None:
+            self.repo_root = Path(repo_root)
+        else:
+            try:
+                res = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True)
+                top = res.stdout.strip()
+                self.repo_root = Path(top) if top else Path.cwd()
+            except Exception:
+                logger.warning("Could not determine git root via rev-parse; falling back to cwd().")
+                self.repo_root = Path.cwd()
 
     def _get_repo(self) -> str:
         if self.repo:
@@ -391,10 +400,7 @@ def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
 
 
 _FILE_PATH_RE = re.compile(
-    r"`("
-    r"[\w\-./]*\.(?:py|ts|tsx|js|jsx|md|yml|yaml|json|toml|cfg|ini|sh|sql|go|rs|gitignore|dockerignore|env)"
-    r"|(?:[\w\-./]*/)?(?:Dockerfile|Makefile|LICENSE|Procfile)"
-    r")(?::\d+(?:-\d+)?)?`"
+    r"[\"'`]?([^\s`\"']+\.[^\s`\"']+)[\"'`]?(:?\d+(?:-\d+)?)?"
 )
 
 
@@ -429,6 +435,8 @@ def fetch_nightwelding_issues(
         ]
     )
     raw_issues = json.loads(proc.stdout or "[]")
+    if proc.returncode != 0:
+        raise GitHubAdapterError(f"Failed to fetch issues from gh: {proc.stderr.strip()}")
     issues: List[NightweldingIssue] = []
     for raw in raw_issues:
         labels = [entry["name"] for entry in raw.get("labels", [])]
@@ -463,8 +471,9 @@ def _file_changed_since(repo_root: Path, file_path: str, since_iso: str) -> bool
     """
     if not (repo_root / file_path).exists():
         return False
+    normalized_since = since_iso.replace("Z", "+00:00") if isinstance(since_iso, str) else since_iso
     proc = _run(
-        ["git", "log", f"--since={since_iso}", "--oneline", "--", file_path],
+        ["git", "log", f"--since={normalized_since}", "--oneline", "--", file_path],
         cwd=repo_root,
         check=False,
     )
@@ -482,7 +491,13 @@ def build_digest(issues: List[NightweldingIssue], repo_root: Path) -> Nightweldi
     """
     groups_by_file: Dict[str, DigestGroup] = {}
     for issue in issues:
-        root_file = issue.files_touched[0] if issue.files_touched else "(no file identified)"
+        chosen_file = "(no file identified)"
+        if issue.files_touched:
+            # Rank by frequency or pick the one appearing most often or fallback to first
+            counts = {f: issue.body.count(f) for f in issue.files_touched}
+            sorted_files = sorted(issue.files_touched, key=lambda f: (-counts.get(f, 0), len(f)))
+            chosen_file = sorted_files[0]
+        root_file = chosen_file
         group = groups_by_file.setdefault(root_file, DigestGroup(root_file=root_file))
         group.issues.append(issue)
         if root_file != "(no file identified)" and _file_changed_since(

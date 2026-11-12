@@ -1,4 +1,4 @@
-## 📝 Description
+## 📝 Description 
 Provide a brief summary of the changes and the motivation behind them.
 
 ## ✅ Checklist
@@ -18,4 +18,4 @@ Provide a brief summary of the changes and the motivation behind them.
 Fixes #(issue number)
 
 ## 🧐 AI Review Summary (Auto-populated)
-<!-- The Gemini Assistant will fill this section -->
+<!-- SparkleForge Assistant will fill this section -->
