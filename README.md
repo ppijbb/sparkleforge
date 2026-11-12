@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-API-orange.svg)](https://openrouter.ai/)
-[![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash%20Lite-purple.svg)](https://ai.google.dev/)
+[![Gemini](https://img.shields.io/badge/Gemini-3.5%20Flash%20Lite-purple.svg)](https://ai.google.dev/)
 [![Live Telemetry](https://img.shields.io/badge/live%20telemetry-SparkleForge-ff69b4.svg)](https://sparkleforge.streamlit.app)
 [![Dashboard](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sparkleforge.streamlit.app)
 
@@ -35,7 +35,7 @@ Unlike traditional research tools, SparkleForge simulates a **team of master cra
 - Python 3.10+
 - OpenRouter API key ([Get one here](https://openrouter.ai/))
 
-### Automated Installation (Recommended)
+### Automated Installation & Virtual Environment Setup
 
 ```bash
 # Clone the repository
