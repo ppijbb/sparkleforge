@@ -27,9 +27,9 @@ def test_forge_master_router_capability_matching():
     assignment2 = router.route_task("Generate helper functions and fix syntax")
     assert assignment2.agent_name == "codex"
 
-    # Search task -> Gemini CLI
+    # Search task -> SparkleForge CLI
     assignment3 = router.route_task("Search large context documentation and explain setup")
-    assert assignment3.agent_name == "gemini_cli"
+    assert assignment3.agent_name == "sparkleforge_cli"
 
 
 def test_router_fallbacks_are_relevance_gated_not_the_whole_pool():
@@ -38,21 +38,21 @@ def test_router_fallbacks_are_relevance_gated_not_the_whole_pool():
     of whether the task ever needed them."""
     router = ForgeMasterRouter()
 
-    # A gemini-shaped task shouldn't fall back to claude_code/codex just because
+    # A sparkleforge_cli-shaped task shouldn't fall back to claude_code/codex just because
     # they happen to have the highest static capability scores in the matrix.
     search_assignment = router.route_task(
         "Search large context documentation and explain setup"
     )
-    assert search_assignment.agent_name == "gemini_cli"
+    assert search_assignment.agent_name == "sparkleforge_cli"
     assert "claude_code" not in search_assignment.fallback_agents
     assert "codex" not in search_assignment.fallback_agents
 
     # Same when the agent is pinned explicitly rather than auto-selected.
     pinned_assignment = router.route_task(
         "In one short paragraph, explain what a binary search algorithm does.",
-        preferred_agent="gemini_cli",
+        preferred_agent="sparkleforge_cli",
     )
-    assert pinned_assignment.agent_name == "gemini_cli"
+    assert pinned_assignment.agent_name == "sparkleforge_cli"
     assert pinned_assignment.fallback_agents == []
 
     # A refactor-shaped task shouldn't get codex/gemini as noise fallbacks either.
@@ -199,11 +199,11 @@ async def test_controller_does_not_auto_switch_agents_on_critical_failure():
     ) as mock_execute:
         result = await controller.execute_task_with_master_control(
             task_query="Perform architectural refactoring of backend modules",
-            preferred_agent="gemini_cli",
+            preferred_agent="sparkleforge_cli",
         )
 
     assert result["success"] is False
-    assert result["last_agent_used"] == "gemini_cli"
+    assert result["last_agent_used"] == "sparkleforge_cli"
     assert result["attempts"] == 1
 
     # Every attempted call must target the one explicitly chosen agent - no
@@ -211,7 +211,7 @@ async def test_controller_does_not_auto_switch_agents_on_critical_failure():
     # query would score them as relevant fallback_candidates.
     assert mock_execute.await_count == 1
     called_agent = mock_execute.await_args.kwargs.get("agent_name")
-    assert called_agent == "gemini_cli"
+    assert called_agent == "sparkleforge_cli"
     assert "claude_code" in result["fallback_candidates"]
 
 
@@ -279,7 +279,7 @@ async def test_dispatch_batch_to_forge_master_executes_each_task_with_its_chosen
             {
                 "tasks": [
                     {"agent_name": "codex", "task_query": "Write an add function"},
-                    {"agent_name": "gemini_cli", "task_query": "Summarize the README"},
+                    {"agent_name": "sparkleforge_cli", "task_query": "Summarize the README"},
                 ]
             },
         )
@@ -287,10 +287,10 @@ async def test_dispatch_batch_to_forge_master_executes_each_task_with_its_chosen
     assert result["success"] is True
     assert result["total"] == 2
     assert result["succeeded"] == 2
-    assert {r["agent_used"] for r in result["results"]} == {"codex", "gemini_cli"}
+    assert {r["agent_used"] for r in result["results"]} == {"codex", "sparkleforge_cli"}
     assert mock_execute.await_count == 2
     called_agents = {c.kwargs.get("agent_name") for c in mock_execute.await_args_list}
-    assert called_agents == {"codex", "gemini_cli"}
+    assert called_agents == {"codex", "sparkleforge_cli"}
 
 
 @pytest.mark.asyncio
@@ -337,14 +337,14 @@ async def test_dispatch_batch_to_forge_master_reuses_session_per_agent_and_close
                 "tasks": [
                     {"agent_name": "codex", "task_query": "task A"},
                     {"agent_name": "codex", "task_query": "task B"},
-                    {"agent_name": "gemini_cli", "task_query": "task C"},
+                    {"agent_name": "sparkleforge_cli", "task_query": "task C"},
                 ]
             },
         )
 
     assert result["success"] is True
     # One session created per distinct agent_name in the batch, not per task.
-    assert sorted(created_for_agents) == ["codex", "gemini_cli"]
+    assert sorted(created_for_agents) == ["codex", "sparkleforge_cli"]
     # Every session the batch created got closed once it finished.
     assert len(closed_ids) == 2
     assert controller.session_manager.sessions == {}

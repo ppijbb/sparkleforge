@@ -39,7 +39,7 @@ def test_log_batch_manifest_writes_one_structured_line(caplog):
     results = [
         {"success": True, "agent_used": "codex", "master_verdict": "PASSED",
          "adversarial_audit": {"skepticism_score": 0.2}},
-        {"success": False, "last_agent_used": "gemini_cli", "master_verdict": "REJECTED"},
+        {"success": False, "last_agent_used": "sparkleforge_cli", "master_verdict": "REJECTED"},
     ]
 
     with caplog.at_level(logging.INFO, logger="src.core.forge_master.tools"):
@@ -49,7 +49,7 @@ def test_log_batch_manifest_writes_one_structured_line(caplog):
     manifest = json.loads(caplog.records[0].message.split("forge_master batch manifest: ", 1)[1])
     assert manifest[0]["agent_used"] == "codex"
     assert manifest[0]["success"] is True
-    assert manifest[1]["agent_used"] == "gemini_cli"
+    assert manifest[1]["agent_used"] == "sparkleforge_cli"
     assert manifest[1]["success"] is False
 
 

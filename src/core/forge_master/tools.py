@@ -7,7 +7,7 @@
 기존 라우팅/세션/적대적 검증 파이프라인을 그대로 거치며, asyncio.gather로만
 동시 실행된다 (실패해도 다른 에이전트로 자동 전환하지 않음 - 그 판단도
 호출한 에이전트의 몫). 서비스/에이전트 계층엔 이 tool 하나만 노출되고,
-개별 CLI 에이전트(claude_code, codex, gemini_cli, ...)는 forgemaster 뒤에 숨는다.
+개별 CLI 에이전트(claude_code, codex, sparkleforge_cli, ...)는 forgemaster 뒤에 숨는다.
 """
 
 import asyncio
@@ -300,7 +300,7 @@ def register_forge_master_dispatch_tool() -> None:
             description=(
                 "Hand off a batch of coding tasks to ForgeMaster, which routes "
                 "each one to an external CLI agent (claude_code, codex, "
-                "gemini_cli, hermes, sparkle_llm, cline_cli) and runs them "
+                "sparkleforge_cli, hermes, sparkle_llm, cline_cli) and runs them "
                 "concurrently. You must choose agent_name yourself per task "
                 "based on the task and each agent's described strengths - this "
                 "tool does not pick or switch agents for you, and will not "

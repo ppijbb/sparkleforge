@@ -155,21 +155,23 @@ setup_python_venv() {
     pip install --upgrade pip
 }
 
-# Function to install Gemini CLI
-install_gemini_cli() {
-    print_status "Installing Gemini CLI..."
+# Function to install SparkleForge CLI
+install_sparkleforge_cli() {
+    print_status "Installing SparkleForge CLI..."
     
-    if command_exists "gemini"; then
-        print_warning "Gemini CLI is already installed"
+    if command_exists "sparkleforge"; then
+        print_warning "SparkleForge CLI is already installed"
         return
     fi
     
-    # Try to install via npm
-    if command_exists "npm"; then
-        npm install -g @google/gemini-cli
-        print_success "Gemini CLI installed via npm"
+    if command_exists "uv"; then
+        uv sync
+        print_success "SparkleForge CLI installed via uv"
+    elif command_exists "pip"; then
+        pip install -e .
+        print_success "SparkleForge CLI installed via pip"
     else
-        print_error "npm not found. Please install Node.js first."
+        print_error "uv/pip not found. Please install Python 3.11+ first."
         exit 1
     fi
 }
@@ -305,16 +307,16 @@ try {
 }
 "
     
-    # Test Gemini CLI
-    if command_exists "gemini"; then
-        gemini --version > /dev/null 2>&1
+    # Test SparkleForge CLI
+    if command_exists "sparkleforge"; then
+        sparkleforge --help > /dev/null 2>&1
         if [ $? -eq 0 ]; then
-            print_success "Gemini CLI: OK"
+            print_success "SparkleForge CLI: OK"
         else
-            print_error "Gemini CLI: FAILED"
+            print_error "SparkleForge CLI: FAILED"
         fi
     else
-        print_error "Gemini CLI: NOT INSTALLED"
+        print_error "SparkleForge CLI: NOT INSTALLED"
     fi
     
     print_success "Installation test completed"
@@ -397,7 +399,7 @@ main() {
         install_node_dependencies
         setup_python_venv
         install_python_dependencies
-        install_gemini_cli
+        install_sparkleforge_cli
     fi
     
     # Setup configuration
@@ -412,15 +414,15 @@ main() {
     
     echo ""
     echo "=========================================="
-    print_success "Local Researcher setup completed!"
+    print_success "SparkleForge setup completed!"
     echo "=========================================="
     echo ""
     echo "Next steps:"
     echo "1. Configure your API keys in the .env file"
-    echo "2. Run: gemini research 'your research topic'"
+    echo "2. Run: sparkleforge run 'your research topic'"
     echo "3. Check the documentation for more information"
     echo ""
-    echo "For help, run: gemini help"
+    echo "For help, run: sparkleforge --help"
 }
 
 # Run main function

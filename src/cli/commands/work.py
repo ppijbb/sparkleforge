@@ -183,7 +183,10 @@ async def work_command_from_query(args, force_coworker: bool = True):
     from src.cli.main_commands import _execute_coworker_goal
 
     return await _execute_coworker_goal(
-        getattr(args, "query", "") or "", force_coworker=force_coworker
+        getattr(args, "query", "") or "",
+        force_coworker=force_coworker,
+        output_path=getattr(args, "output", None),
+        output_format=getattr(args, "format", None),
     )
 
 def _display_action_proposals(cli, state):

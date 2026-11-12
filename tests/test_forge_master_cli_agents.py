@@ -7,6 +7,7 @@ import pytest
 from src.core.cli_agents.cli_agent_manager import get_cli_agent_manager
 from src.core.cli_agents.codex_agent import CodexCLIAgent
 from src.core.cli_agents.hermes_agent import HermesCLIAgent
+from src.core.cli_agents.sparkleforge_cli_agent import SparkleForgeCLIAgent
 
 
 def test_cli_agent_manager_registration():
@@ -16,7 +17,39 @@ def test_cli_agent_manager_registration():
     assert "codex" in available
     assert "hermes" in available
     assert "claude_code" in available
-    assert "gemini_cli" in available
+    assert "sparkleforge_cli" in available
+    assert "gemini_cli" not in available
+
+
+@pytest.mark.asyncio
+async def test_sparkleforge_cli_agent_instantiation_and_execute():
+    agent = SparkleForgeCLIAgent(api_key="test-key", model="google/gemini-3.5-flash-lite")
+    assert agent.config.name == "sparkleforge_cli"
+    assert agent.config.command == "sparkleforge"
+
+    captured_commands = []
+
+    async def fake_execute_command(command, input_text=None):
+        captured_commands.append(list(command))
+        return type(
+            "Result",
+            (),
+            {
+                "success": True,
+                "output": '{"response": "ok", "confidence": 0.92}',
+                "error": "",
+                "exit_code": 0,
+                "execution_time": 0.2,
+            },
+        )()
+
+    with patch.object(agent, "_execute_command", new=AsyncMock(side_effect=fake_execute_command)):
+        result = await agent.execute_query("Summarize architecture")
+
+    assert result["success"] is True
+    assert result["response"] == "ok"
+    assert result["metadata"]["agent"] == "sparkleforge_cli"
+    assert captured_commands[0][:2] == ["sparkleforge", "run"]
 
 
 @pytest.mark.asyncio
