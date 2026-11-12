@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Any, Dict
@@ -215,6 +216,15 @@ class AgentHarness:
             logger.info("[Harness/HIL] User responses processed")
             return state
 
+        # 비대화형 / 오토파일럿 환경의 autonomous 모드에서는 모호성 감지 LLM 호출을 건너뜀
+        autopilot_enabled = os.getenv("SPARKLEFORGE_AUTOPILOT_MODE", "").strip().lower() == "true"
+        non_interactive = os.getenv("SPARKLEFORGE_CLI_INTERACTIVE", "").strip().lower() == "false"
+        if interaction_mode == "autonomous" and (autopilot_enabled or non_interactive):
+            logger.info(
+                "[Harness/HIL] Skipping ambiguity detection in autopilot/non-interactive mode"
+            )
+            return state
+
         # Ambiguity 감지
         from src.core.human_clarification_handler import get_clarification_handler
 
@@ -348,6 +358,7 @@ class AgentHarness:
                     self.anvil_engine.register_handler(capability, resolved.handler)
 
             self.anvil_engine.reset()
+            anvil_dashboard_ids: Dict[str, str] = {}
             for td in anvil_tasks:
                 anvil_task = AnvilTask(
                     task_id=td.get("task_id", ""),
@@ -356,25 +367,29 @@ class AgentHarness:
                     metadata=td,
                 )
                 self.anvil_engine.add_task(anvil_task)
-                dashboard_task_id = self.dashboard.submit(
+                dashboard_record = self.dashboard.submit(
                     name=anvil_task.name,
                     description=anvil_task.handler,
                     agent_id="anvil_engine",
-                    metadata={"session_id": session_id, "task_id": anvil_task.task_id}
+                    metadata={"session_id": session_id, "task_id": anvil_task.task_id},
                 )
+                anvil_dashboard_ids[anvil_task.task_id] = dashboard_record.task_id
 
-                anvil_results = await self.anvil_engine.execute(context=state["context"])
+            anvil_results = await self.anvil_engine.execute(context=state["context"])
             logger.info(
                 f"[Harness] Anvil engine processed {len(anvil_tasks)} tasks: {anvil_results.get('status')}"
             )
 
             # Anvil 결과를 tasks에 반영
             for td in anvil_tasks:
-                if anvil_task.task_id in self.anvil_engine.tasks:
-                    at = self.anvil_engine.tasks[anvil_task.task_id]
+                tid = td.get("task_id", "")
+                if tid in self.anvil_engine.tasks:
+                    at = self.anvil_engine.tasks[tid]
                     td["result"] = at.result
                     td["status"] = at.status
-                    self.dashboard.complete(dashboard_task_id, result=at.result)
+                    dash_id = anvil_dashboard_ids.get(tid)
+                    if dash_id:
+                        self.dashboard.complete(dash_id, result=at.result)
 
         # --- ForgeMaster 경로: codebase_agent 라우트는 프론티어 LLM 전에
         # 로컬 CLI 에이전트 함대(ForgeMaster)로 먼저 시도한다. 성공한 태스크는
@@ -393,19 +408,21 @@ class AgentHarness:
             self._update_session_tasks(state, legacy_tasks, status="running")
             self._record_execution_signal(anvil_tasks + legacy_tasks)
             agent_assignments = {}
+            legacy_dashboard_ids: list[str] = []
             for task in legacy_tasks:
                 agent_id = task.get("task_id")
                 # LLM이 태스크 성격에 맞는 전문가 에이전트 선정 (async)
                 assigned_agent = await self.router.assign_agent_for_task(task)
                 agent_assignments[agent_id] = assigned_agent
                 logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
-                dashboard_task_id = self.dashboard.submit(
+                dashboard_record = self.dashboard.submit(
                     name=task.get("description", "Legacy Task"),
                     description=task.get("description", ""),
                     agent_id=assigned_agent,
-                    metadata={"session_id": session_id, "task_id": agent_id}
+                    metadata={"session_id": session_id, "task_id": agent_id},
                 )
-                self.dashboard.start(dashboard_task_id)
+                self.dashboard.start(dashboard_record.task_id)
+                legacy_dashboard_ids.append(dashboard_record.task_id)
 
             executor = ParallelAgentExecutor()
 
@@ -424,7 +441,10 @@ class AgentHarness:
                     if i < len(legacy_tasks):
                         legacy_tasks[i]["result"] = res.get("result")
                         legacy_tasks[i]["status"] = res.get("status")
-                        self.dashboard.complete(dashboard_task_id, result=res.get("result"))
+                        if i < len(legacy_dashboard_ids):
+                            self.dashboard.complete(
+                                legacy_dashboard_ids[i], result=res.get("result")
+                            )
                 self._update_session_tasks(state, legacy_tasks)
 
         # 태스크 목록 재합성

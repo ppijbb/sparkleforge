@@ -30,4 +30,8 @@ def build_sqlite_checkpointer(db_path: str) -> AsyncSqliteSaver:
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
     conn = aiosqlite.connect(db_path)
+    # Prevent unclosed aiosqlite worker threads from blocking CLI process shutdown if an early abort skips aclose().
+    worker_thread = getattr(conn, "_thread", None)
+    if worker_thread is not None and not worker_thread.is_alive():
+        worker_thread.daemon = True
     return AsyncSqliteSaver(conn)

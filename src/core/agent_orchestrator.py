@@ -228,3 +228,16 @@ def get_orchestrator(config=None) -> AgentOrchestrator:
     if _orchestrator is None:
         _orchestrator = AgentOrchestrator(config=config)
     return _orchestrator
+
+
+async def aclose_orchestrator() -> None:
+    """Close and clear the cached global orchestrator's async resources (if initialized)."""
+    global _orchestrator
+    if _orchestrator is None:
+        return
+    orch = _orchestrator
+    _orchestrator = None
+    try:
+        await orch.harness.aclose()
+    except Exception as e:
+        logger.debug("Ignoring orchestrator close error: %s", e)
