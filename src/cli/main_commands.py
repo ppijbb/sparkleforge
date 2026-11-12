@@ -87,6 +87,7 @@ async def handle_run_command(args, config):
         model_override = getattr(args, "model", None)
         if model_override:
             os.environ["SPARKLE_LLM_MODEL_PATH"] = model_override
+            os.environ["SPARKLEFORGE_EXPLICIT_MODEL"] = model_override
             if config.llm.provider == "sparkle_llm":
                 config.llm.sparkle_llm_model_path = model_override
             else:
