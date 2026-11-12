@@ -3,8 +3,7 @@
 /**
  * Local Researcher CLI - Main Entry Point
  * 
- * This is the main entry point for the Local Researcher CLI that integrates
- * with Gemini CLI for seamless research operations.
+ * This is the main entry point for the SparkleForge CLI wrapper.
  */
 
 const { program } = require('commander');
@@ -272,10 +271,10 @@ class MainCLI {
             throw new Error(`Python ${requiredPythonVersion} or higher is required. Current: ${pythonVersion}`);
         }
         
-        // Check Gemini CLI
-        const geminiInstalled = await this.checkGeminiCLI();
-        if (!geminiInstalled) {
-            throw new Error('Gemini CLI is not installed. Please install it first.');
+        // Check SparkleForge CLI
+        const sparkleforgeInstalled = await this.checkSparkleForgeCLI();
+        if (!sparkleforgeInstalled) {
+            throw new Error('SparkleForge CLI is not installed. Please install it first.');
         }
     }
     
@@ -309,10 +308,10 @@ class MainCLI {
     }
     
     async testIntegration() {
-        // Test Gemini CLI integration
-        const geminiTest = await this.testGeminiCLI();
-        if (!geminiTest) {
-            throw new Error('Gemini CLI integration test failed');
+        // Test SparkleForge CLI integration
+        const sparkleforgeTest = await this.testSparkleForgeCLI();
+        if (!sparkleforgeTest) {
+            throw new Error('SparkleForge CLI integration test failed');
         }
         
         // Test Open Deep Research integration
@@ -426,18 +425,18 @@ class MainCLI {
         }
     }
     
-    async checkGeminiCLI() {
+    async checkSparkleForgeCLI() {
         try {
-            await this.runCommand('gemini', ['--version']);
+            await this.runCommand('sparkleforge', ['--help']);
             return true;
         } catch (error) {
             return false;
         }
     }
     
-    async testGeminiCLI() {
+    async testSparkleForgeCLI() {
         try {
-            await this.runCommand('gemini', ['--help']);
+            await this.runCommand('sparkleforge', ['--help']);
             return true;
         } catch (error) {
             return false;

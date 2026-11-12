@@ -6,7 +6,7 @@ GitHub Actions workflows and src/core/ci/fix_issue.py already do.
 
 The PR body always contains the literal substring "SparkleForge-generated" and
 branches always use the "nightwelding/" prefix — both are load-bearing for
-staying Draft-only forever: gemini-assistant.yml's `code-review` job (and,
+staying Draft-only forever: sparkleforge-assistant.yml's `code-review` job (and,
 transitively, `merge-decision`, which needs `code-review` to succeed) skips
 any PR whose body contains that substring, and its separate
 `auto-merge-ready-fix-prs` scheduled sweep only matches `fix/`/`chore/`

@@ -2,7 +2,7 @@ from typing import Any, List
 
 """Base CLI Agent - CLI 기반 에이전트들의 공통 추상화 레이어
 
-모든 CLI 기반 에이전트(claudecode, sparkle_llm, gemini cli, cline cli 등)의
+모든 CLI 기반 에이전트(claudecode, sparkle_llm, sparkleforge_cli, cline cli 등)의
 공통 인터페이스를 정의하고 실행/결과 파싱을 표준화.
 """
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Extract linked issue numbers from closing/refs keywords in PR/issue text.
 
-Moved out of gemini-assistant.yml, where this exact grep pipeline was
+Moved out of sparkleforge-assistant.yml, where this exact grep pipeline was
 copy-pasted 3x (route-gemini-review-feedback, auto-merge-ready-fix-prs,
 post-pr-merge-cleanup jobs). Kept as a small stdlib-only script rather than
 a `sparkleforge ci` subcommand deliberately: this is mechanical extraction

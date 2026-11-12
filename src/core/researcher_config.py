@@ -75,9 +75,9 @@ class LLMConfig(BaseModel):
     # SparkleLLM settings
     sparkle_llm_model_path: str | None = Field(default=None, description="SparkleLLM model path")
 
-    # Gemini CLI settings
-    gemini_cli_api_key: str | None = Field(default=None, description="Gemini CLI API key")
-    gemini_cli_model: str = Field(default="gemini-pro", description="Gemini CLI model")
+    # SparkleForge CLI settings
+    sparkleforge_cli_api_key: str | None = Field(default=None, description="SparkleForge CLI API key")
+    sparkleforge_cli_model: str = Field(default="google/gemini-3.5-flash-lite", description="SparkleForge CLI model")
 
     # Cline CLI settings
     cline_cli_config_path: str | None = Field(default=None, description="Cline CLI config path")
@@ -920,10 +920,12 @@ def get_cli_agents_config() -> Dict[str, Any]:
             "enabled": True,
             "model_path": os.getenv("SPARKLE_LLM_MODEL_PATH") or config.llm.sparkle_llm_model_path,
         },
-        "gemini_cli": {
-            "enabled": bool(os.getenv("GEMINI_CLI_API_KEY") or config.llm.gemini_cli_api_key),
-            "api_key": os.getenv("GEMINI_CLI_API_KEY") or config.llm.gemini_cli_api_key,
-            "model": os.getenv("GEMINI_CLI_MODEL", config.llm.gemini_cli_model),
+        "sparkleforge_cli": {
+            "enabled": bool(
+                os.getenv("SPARKLEFORGE_CLI_API_KEY") or config.llm.sparkleforge_cli_api_key
+            ),
+            "api_key": os.getenv("SPARKLEFORGE_CLI_API_KEY") or config.llm.sparkleforge_cli_api_key,
+            "model": os.getenv("SPARKLEFORGE_CLI_MODEL", config.llm.sparkleforge_cli_model),
         },
         "cline_cli": {
             "enabled": bool(os.getenv("CLINE_CLI_CONFIG_PATH") or config.llm.cline_cli_config_path),

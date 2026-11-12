@@ -12,13 +12,13 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "build": "webpack --mode production",
-    "install:gemini": "npm install -g @google/gemini-cli",
-    "setup": "npm run install:gemini && npm install && pip install -r requirements.txt"
+    "install:sparkleforge": "uv sync || pip install -e .",
+    "setup": "npm run install:sparkleforge && npm install"
   },
   "keywords": [
     "research",
     "ai",
-    "gemini",
+    "sparkleforge",
     "cli",
     "local",
     "automation"
@@ -26,7 +26,6 @@
   "author": "Local Researcher Team",
   "license": "MIT",
   "dependencies": {
-    "@google/gemini-cli": "^1.0.0",
     "commander": "^11.1.0",
     "inquirer": "^9.2.12",
     "chalk": "^5.3.0",

@@ -26,7 +26,7 @@ _SECRET_CONFIG_KEYS = frozenset(
         "api_key",
         "openrouter_api_key",
         "claude_code_api_key",
-        "gemini_cli_api_key",
+        "sparkleforge_cli_api_key",
         "password",
         "secret",
         "token",
