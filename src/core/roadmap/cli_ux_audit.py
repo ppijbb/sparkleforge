@@ -8,6 +8,9 @@ second, parallel issue-assembly path.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
+
 # Representative surface sampled by `sparkleforge report cli-ux-audit-prompt`.
 # Cheap, side-effect-free, no network/API calls -- just what a human runs first.
 DEFAULT_AUDIT_COMMANDS: tuple[tuple[str, ...], ...] = (
@@ -15,6 +18,48 @@ DEFAULT_AUDIT_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("sparkleforge", "health"),
     ("sparkleforge", "cli", "list"),
 )
+
+# Live end-to-end query command audited when LLM credentials are available so
+# CLI UX QA catches real runtime crashes (e.g., TaskRecord errors, dead model
+# 404s, noisy provider fallback spam) instead of only static help/health checks.
+E2E_AUDIT_COMMANDS: tuple[tuple[str, ...], ...] = (
+    (
+        "sparkleforge",
+        "--query",
+        "Say OK and summarize SparkleForge in one sentence",
+        "--model",
+        "google/gemini-3.5-flash-lite",
+        "--depth",
+        "quick",
+        "--autopilot",
+        "true",
+    ),
+)
+
+_LLM_API_KEY_ENV_VARS: tuple[str, ...] = (
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+)
+
+
+def has_live_llm_credentials(env: Mapping[str, str] | None = None) -> bool:
+    """Return True when at least one non-empty LLM API key is configured."""
+    source = os.environ if env is None else env
+    return any(bool((source.get(key) or "").strip()) for key in _LLM_API_KEY_ENV_VARS)
+
+
+def get_audit_commands(
+    include_e2e: bool | None = None,
+    env: Mapping[str, str] | None = None,
+) -> tuple[tuple[str, ...], ...]:
+    """Return the CLI commands to capture under PTY for UX & E2E auditing."""
+    use_e2e = has_live_llm_credentials(env) if include_e2e is None else include_e2e
+    if use_e2e:
+        return DEFAULT_AUDIT_COMMANDS + E2E_AUDIT_COMMANDS
+    return DEFAULT_AUDIT_COMMANDS
 
 
 def build_cli_ux_audit_prompt(today: str, transcripts: dict[str, str]) -> str:
@@ -32,7 +77,12 @@ CLAUDE.md's CLI UX rule for this repository: "treat noisy/confusing terminal out
 
 {rendered}
 
-Judge these transcripts and the attached screenshots against that rule. Look for: DEBUG/internal logging leaking to stdout, output printed before argparse has resolved the subcommand, stack traces or tracebacks on ordinary non-error paths, inconsistent or missing formatting, unrenderable/garbled glyphs visible in the screenshots, and anything a first-time user would find confusing, broken-looking, or noisy.
+Judge these transcripts and the attached screenshots against that rule. Look for:
+- Non-zero exit codes (`[exit != 0]`), timeouts, Python tracebacks, or `[FAIL]` runtime crashes (such as unhandled exceptions or `TaskRecord` / serialization errors) on normal `--query` or subcommand flows
+- Provider/model fallback spam (`402`, `404`, `429` rate limit / billing / missing model errors) or noisy warnings (`[WARN]`) cluttering first-run output
+- DEBUG/internal logging leaking to stdout or output printed before argparse has resolved the subcommand
+- Interactive prompts or hangs when running non-interactively (`--autopilot true`)
+- Inconsistent or missing formatting, unrenderable/garbled glyphs visible in the screenshots, and anything a first-time user would find confusing, broken-looking, or noisy.
 
 If you find nothing actionable, output exactly: NO_ACTIONABLE_CLI_UX_ISSUES
 

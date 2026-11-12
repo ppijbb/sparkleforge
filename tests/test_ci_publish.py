@@ -74,6 +74,7 @@ def test_commit_pushes_and_opens_new_pr(repo, monkeypatch):
     assert result.pr_url == "https://github.com/acme/widgets/pull/1"
     assert gh_calls, "expected gh pr create to run"
     assert "--label" in gh_calls[0] and "automated" in gh_calls[0]
+    assert "--force" not in gh_calls[0]
 
 
 def test_reuses_already_open_pr_instead_of_creating_duplicate(repo, monkeypatch):

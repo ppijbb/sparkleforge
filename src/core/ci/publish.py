@@ -75,7 +75,6 @@ def commit_push_and_open_pr(
             "--head", branch,
             "--title", pr_title,
             "--body", pr_body,
-            "--force",
             "--json", "url",
             "--jq", ".url",
         ]
