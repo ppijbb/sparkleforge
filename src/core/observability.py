@@ -1,4 +1,51 @@
 """Langfuse observability for LangChain/LangGraph tracing.
+import json
+import time
+from typing import Dict, Any, List, Optional
+
+class DecisionTraceRecorder:
+    def __init__(self, session_id: str, log_path: Optional[str] = None):
+        self.session_id = session_id
+        self.log_path = log_path or f"results/traces/{session_id}.jsonl"
+        self.traces: List[Dict[str, Any]] = []
+
+    def record_turn(
+        self,
+        turn_index: int,
+        context_slice_ids: List[str],
+        candidate_scores: Dict[str, float],
+        rejection_reasons: Dict[str, str],
+        latency_ms: float,
+        tokens_in: int,
+        tokens_out: int,
+        layer_breakdown: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
+        entry = {
+            "turn_index": turn_index,
+            "timestamp": time.time(),
+            "context_slice_ids": context_slice_ids,
+            "candidate_scores": candidate_scores,
+            "rejection_reasons": rejection_reasons,
+            "latency_ms": latency_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "layer_breakdown": layer_breakdown or {}
+        }
+        self.traces.append(entry)
+        return entry
+
+    def get_flamegraph_summary(self) -> Dict[str, Any]:
+        total_latency = sum(t["latency_ms"] for t in self.traces)
+        layers: Dict[str, float] = {}
+        for t in self.traces:
+            for layer, ms in t.get("layer_breakdown", {}).items():
+                layers[layer] = layers.get(layer, 0.0) + ms
+        return {
+            "session_id": self.session_id,
+            "total_latency_ms": total_latency,
+            "layers": layers,
+            "turns_count": len(self.traces)
+        }
 
 Uses environment variables only (no hardcoded keys):
 - LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY: required to enable tracing.
