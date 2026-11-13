@@ -9,7 +9,6 @@ async def help_command(console: Console):
     help_text = """
 [bold cyan]SparkleForge CLI Commands[/bold cyan]
 SparkleForge: Where Ideas Sparkle and Get Forged
-Usage: sparkleforge run "Future of AI" # Run a research request
 
 [bold]Research:[/bold]
   research <query>              Execute research request
