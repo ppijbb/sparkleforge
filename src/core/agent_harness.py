@@ -49,6 +49,7 @@ class AgentHarness:
         self.orchestrator = get_llm_orchestrator()
         self.graph = self._build_graph()
         self.dashboard = TaskDashboard()
+        self.error_signature_buffer = []  # sliding ring buffer (window=5) for metacognitive loop breaker
 
     async def aclose(self) -> None:
         """Close the underlying SQLite connection."""
@@ -396,6 +397,24 @@ class AgentHarness:
             for task in legacy_tasks:
                 agent_id = task.get("task_id")
                 # LLM이 태스크 성격에 맞는 전문가 에이전트 선정 (async)
+                # --- Metacognitive Loop Breaker & Strategy-Pivot Engine ---
+                err_sig = task.get("error") or task.get("result") or "unknown_error"
+                hyp_hash = hash(str(task.get("description", "")) + str(task.get("dependencies", "")))
+                # Simple diff ratio estimation based on task description or output length changes
+                diff_ratio = float(len(str(task.get("result", "")))) / max(1.0, float(len(str(task.get("description", "")))))
+                
+                self.error_signature_buffer.append((err_sig, hyp_hash, diff_ratio))
+                if len(self.error_signature_buffer) > 5:
+                    self.error_signature_buffer.pop(0)
+                
+                # Check for >= 2 consecutive identical failure classes (PATCH_LOOP)
+                if len(self.error_signature_buffer) >= 2:
+                    recent = self.error_signature_buffer[-2:]
+                    if recent[0][0] == recent[1][0] and recent[0][1] == recent[1][1]:
+                        logger.warning(f"[Harness/Metacognitive] Detected repeating failure signature / patch loop! Triggering strategy pivot: PATCH_LOOP -> MINIMAL_REPRO -> BISECT -> ESCALATE")
+                        task["status"] = "failed"
+                        task["error"] = "Metacognitive loop breaker triggered: automatic strategy-pivot ESCALATE due to repetitive identical failure."
+                
                 assigned_agent = await self.router.assign_agent_for_task(task)
                 agent_assignments[agent_id] = assigned_agent
                 logger.info(f"[Harness] Task {agent_id} assigned to: {assigned_agent}")
