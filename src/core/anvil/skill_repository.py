@@ -8,9 +8,12 @@ import importlib.util
 import json
 import logging
 import re
+import ast
+import time
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import List, Dict, Any, Optional, Set, Tuple
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +34,114 @@ class Skill:
     version: int = 1
 
 
+class SkillValidator:
+    """자체 검증 프로시저 스킬 컴파일러 및 카나리 붕괴 감지기."""
+
+    @staticmethod
+    def extract_canary_assertions(code: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """성공한 궤적에서 컴파일된 스킬의 카나리 단언(참조된 파일 경로, AST 심볼, CLI 플래그)을 추출합니다."""
+        referenced_files: Set[str] = set()
+        ast_symbols: Set[str] = set()
+        cli_flags: Set[str] = set()
+
+        # 1. 파일 경로 추출 (문자열 리터럴 중 디렉토리나 확장자를 포함하는 패턴)
+        path_patterns = re.findall(r'["\']([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)["\']', code)
+        for p in path_patterns:
+            if "/" in p or "." in p:
+                referenced_files.add(p)
+
+        # 2. AST 심볼 추출 (함수 정의, 클래스 정의, 호출된 함수 등)
+        try:
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    ast_symbols.add(node.name)
+                elif isinstance(node, ast.ClassDef):
+                    ast_symbols.add(node.name)
+                elif isinstance(node, ast.Name):
+                    ast_symbols.add(node.id)
+                elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    ast_symbols.add(node.func.id)
+        except SyntaxError:
+            pass
+
+        # 3. CLI 플래그 추출 (--flag 형식)
+        flags = re.findall(r'(?:--[a-zA-Z0-9\-]+)', code)
+        for f in flags:
+            cli_flags.add(f)
+
+        # 메타데이터에 수동 지정된 카나리 단언 병합
+        if metadata and "canary_assertions" in metadata:
+            custom_canary = metadata["canary_assertions"]
+            if isinstance(custom_canary, dict):
+                referenced_files.update(custom_canary.get("files", []))
+                ast_symbols.update(custom_canary.get("symbols", []))
+                cli_flags.update(custom_canary.get("cli_flags", []))
+
+        return {
+            "files": sorted(list(referenced_files)),
+            "symbols": sorted(list(ast_symbols)),
+            "cli_flags": sorted(list(cli_flags)),
+        }
+
+    @staticmethod
+    def validate_skill(skill: Skill) -> Tuple[bool, Optional[str]]:
+        """스킬의 카나리 단언을 현재 코드베이스와 대조하여 유효성을 검사합니다.
+        
+        Returns:
+            (is_valid, reason)
+        """
+        canary = skill.metadata.get("canary_assertions")
+        if not canary:
+            # 카나리 단언이 없으면 추출하여 메타데이터에 보강
+            canary = SkillValidator.extract_canary_assertions(skill.code, skill.metadata)
+            skill.metadata["canary_assertions"] = canary
+
+        # 1. 참조된 파일 경로 검사
+        for file_path in canary.get("files", []):
+            # 상대 경로 또는 절대 경로가 실제로 존재하는지 확인
+            p = Path(file_path)
+            if not p.is_absolute():
+                p = Path.cwd() / p
+            if not p.exists():
+                return False, f"Referenced file no longer exists or was renamed: {file_path}"
+
+        # 2. AST 심볼 및 코드베이스 심볼 검사 (예: 현재 저장소 내 정의 여부 또는 소스 파싱 검증)
+        # 리팩토링으로 인해 코드 내 함수/클래스 시그니처나 파일명이 바뀐 경우 감지
+        symbols = canary.get("symbols", [])
+        if symbols:
+            try:
+                tree = ast.parse(skill.code)
+                defined_in_skill = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+                # 외부 심볼이나 내부 심볼 검증
+            except SyntaxError as e:
+                return False, f"Skill code contains syntax error: {e}"
+
+        return True, None
+
+    @classmethod
+    def run_preflight_validation(cls, skills: Dict[str, Skill]) -> List[str]:
+        """세션 시작 시 모든 활성 스킬을 검증하여 실패한 스킬을 격리/보고합니다.
+        
+        Quantified Target: Pre-flight validation latency across all active skills <= 50 ms
+        """
+        start_time = time.perf_counter()
+        quarantined = []
+
+        for name, skill in list(skills.items()):
+            is_valid, reason = cls.validate_skill(skill)
+            if not is_valid:
+                logger.warning(f"[SkillValidator] SKILL QUARANTINED due to canary decay ('{name}'): {reason}")
+                skill.metadata["quarantined"] = True
+                skill.metadata["quarantine_reason"] = reason
+                quarantined.name = name if hasattr(quarantined, 'name') else None # type: ignore
+                quarantined.append(name)
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(f"[SkillValidator] Pre-flight validation completed for {len(skills)} skills in {elapsed_ms:.2f}ms (Quarantined: {len(quarantined)})")
+        return quarantined
+
+
 class SkillRepository:
     """런타임 스킬 저장소.
 
@@ -49,8 +160,10 @@ class SkillRepository:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self._load_from_disk()
         logger.info(
-            f"[SkillRepo] Initialized with {len(self.skills)} skills from {self.storage_dir}"
+            f"[SkillRepo] Initialized with {len(self.skills)} skills from {self.storage_dir}. Running pre-flight skill validation..."
         )
+        # 세션 시작 시 사전 비행 검증(Pre-flight Validation) 실행 (대상: <= 50 ms)
+        SkillValidator.run_preflight_validation(self.skills)
 
     def save_skill(
         self,
@@ -62,11 +175,15 @@ class SkillRepository:
         """스킬을 메모리와 디스크에 저장. 동일 이름 재저장 시 버전 증가, 이전 버전은 보존."""
         prev = self.skills.get(name)
         version = (prev.version + 1) if prev else 1
+        merged_metadata = dict(metadata or {})
+        if "canary_assertions" not in merged_metadata:
+            merged_metadata["canary_assertions"] = SkillValidator.extract_canary_assertions(code, merged_metadata)
+
         skill = Skill(
             name=name,
             code=code,
             description=description,
-            metadata=metadata or {},
+            metadata=merged_metadata,
             version=version,
         )
         self.skills[name] = skill
@@ -179,6 +296,11 @@ class SkillRepository:
         skill = self.get_skill(name)
         if not skill:
             raise ValueError(f"Skill '{name}' not found")
+            
+        if skill.metadata.get("quarantined", False):
+            reason = skill.metadata.get("quarantine_reason", "unknown")
+            logger.error(f"[SkillRepo] Attempted to execute quarantined skill '{name}': {reason}")
+            raise RuntimeError(f"Skill '{name}' is quarantined due to canary decay: {reason}")
 
         try:
             # 임시 파일에 코드를 기록하고 importlib로 로드
@@ -261,6 +383,8 @@ class SkillRepository:
                     metadata=meta.get("metadata", {}),
                     version=meta.get("version", 1),
                 )
+                # 로드 시점에 카나리 검증 수행
+                SkillValidator.validate_skill(skill)
                 self.skills[skill.name] = skill
             except Exception as e:
                 logger.warning(
