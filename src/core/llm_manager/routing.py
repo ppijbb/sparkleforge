@@ -6,9 +6,10 @@ Split out of the former monolithic llm_manager.py (issue #582).
 import logging
 import os
 import time
-from typing import List
+import threading
+from typing import List, Optional
 
-from src.core.llm_manager.types import TaskType
+from src.core.llm_manager.types import ModelConfig, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,9 @@ class RoutingMixin:
     """Provider rotation order, rate-limit bookkeeping, and select_model."""
 
     # Provider별 rate limit 쿨다운 (초). NIM 429는 순간 동시성 제한이라 짧게 잡는다.
+    _routing_lock = threading.Lock()
+    _resolved_google_models_lock = threading.Lock()
+    _resolved_google_models_cache = set()
     PROVIDER_RATE_LIMIT_COOLDOWN = {"nvidia": 30}
     DEFAULT_RATE_LIMIT_COOLDOWN = 300
 
@@ -82,6 +86,55 @@ class RoutingMixin:
         self, task_type: TaskType, complexity: float = 5.0, budget: float = None
     ) -> str:
         """작업에 최적 모델 선택 - Provider 로테이션: OpenRouter -> Groq -> Cerebras."""
+        with self._routing_lock:
+            return self._select_model_unlocked(task_type, complexity, budget)
+
+    def _resolve_configured_model_key(self, configured: str) -> str:
+        """Dynamically resolve Google model IDs and register them thread-safely if needed."""
+        if not configured:
+            return configured
+        if configured in self.models:
+            return configured
+
+        # Handle dynamic Google / Gemini model id references
+        if "gemini" in configured.lower() or "google" in configured.lower():
+            with self._resolved_google_models_lock:
+                if configured in self.models:
+                    return configured
+                # Determine base config or default google config
+                base_google_config = None
+                for name, cfg in self.models.items():
+                    if cfg.provider == "google":
+                        base_google_config = cfg
+                        break
+                
+                if base_google_config is None:
+                    base_google_config = ModelConfig(
+                        name=configured,
+                        provider="google",
+                        cost_per_token=0.00001,
+                        capabilities=list(TaskType),
+                        context_window=1000000,
+                    )
+                
+                new_config = ModelConfig(
+                    name=configured,
+                    provider="google",
+                    cost_per_token=base_google_config.cost_per_token,
+                    capabilities=list(set(base_google_config.capabilities + list(TaskType))),
+                    context_window=base_google_config.context_window,
+                )
+                
+                # Create a shallow or deep copy of models dict or lock the registry mutation
+                updated_models = dict(self.models)
+                updated_models[configured] = new_config
+                self.models = updated_models
+                return configured
+        return configured
+
+    def _select_model_unlocked(
+        self, task_type: TaskType, complexity: float = 5.0, budget: float = None
+    ) -> str:
         if budget is None:
             budget = self.llm_config.budget_limit
 
@@ -93,6 +146,7 @@ class RoutingMixin:
             TaskType.GENERATION: self.llm_config.generation_model,
             TaskType.COMPRESSION: self.llm_config.compression_model,
         }.get(task_type) or self.llm_config.primary_model
+        configured = self._resolve_configured_model_key(configured)
         if configured in self.models and not self._is_provider_rate_limited(
             self.models[configured].provider
         ):
@@ -163,7 +217,7 @@ class RoutingMixin:
         # 해당 Provider에 모델이 없으면 다음 Provider 시도
         remaining_providers = [p for p in available_providers if p != selected_provider]
         if remaining_providers:
-            return self.select_model(task_type, complexity, budget)
+            return self._select_model_unlocked(task_type, complexity, budget)
 
         # 모든 Provider 실패 시 폴백: Gemini 모델 사용
         gemini_models = [name for name in suitable_models if self.models[name].provider == "google"]
