@@ -58,6 +58,9 @@ jobs:
         id: audit
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
+          SPARKLEFORGE_CLI_INTERACTIVE: 'false'
         run: |
           TODAY="$(TZ=Asia/Seoul date +%Y-%m-%d)"
           echo "today=$TODAY" >> "$GITHUB_OUTPUT"
@@ -164,3 +167,13 @@ jobs:
             --field issue_number="${{ steps.create_issue.outputs.issue_number }}" \
             --field max_iterations="${{ github.event.inputs.max_iterations || '3' }}"
           echo "Issue #${{ steps.create_issue.outputs.issue_number }} was created and dispatched to sparkleforge-auto-fix.yml."
+
+      - name: Upload CLI UX audit logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-ux-audit-logs
+          path: |
+            cli-ux-audit-result.md
+            cli-ux-audit-error.log
+          if-no-files-found: ignore

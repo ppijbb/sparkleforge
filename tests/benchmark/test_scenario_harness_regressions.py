@@ -227,3 +227,11 @@ def test_compare_to_history_does_not_block_merge_when_no_regression(tmp_path):
     assert exit_code == 0
     assert current_report["stagnation_detected"] is True
 
+
+def test_check_min_score_enforces_quality_floor(capsys):
+    assert run_scenarios.check_min_score({"overall_score": 0.24}, 0.50) == 1
+    captured = capsys.readouterr()
+    assert "QUALITY GATE FAILED" in captured.err
+
+    assert run_scenarios.check_min_score({"overall_score": 0.72}, 0.50) == 0
+
