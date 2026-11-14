@@ -333,6 +333,7 @@ class ProviderAdaptersMixin:
         # finish_reason 체크 및 안전한 응답 처리
         finish_reason = None
         finish_reason_int = None
+        reason_name = ""
         has_valid_part = False
 
         # 먼저 candidates와 parts 확인
@@ -349,36 +350,41 @@ class ProviderAdaptersMixin:
                             has_valid_part = True
                             break
 
-            # finish_reason이 enum인 경우 숫자로 변환
+            # finish_reason이 enum/int/str인 경우 이름 및 코드 정규화
+            # Note: In Gemini FinishReason, 1=STOP, 2=MAX_TOKENS (valid partial output), 3=SAFETY.
+            reason_name = ""
             if finish_reason is not None:
                 try:
-                    # FinishReason enum인 경우
-                    if hasattr(finish_reason, "value"):
+                    if hasattr(finish_reason, "name"):
+                        reason_name = str(finish_reason.name).upper()
+                    if hasattr(finish_reason, "value") and isinstance(finish_reason.value, int):
                         finish_reason_int = finish_reason.value
-                    elif hasattr(finish_reason, "name"):
-                        # SAFETY = 2
-                        if "SAFETY" in finish_reason.name or "SAFETY" in str(finish_reason):
-                            finish_reason_int = 2
-                    # 숫자인 경우
                     elif isinstance(finish_reason, int):
                         finish_reason_int = finish_reason
-                    # 문자열인 경우
                     elif isinstance(finish_reason, str):
-                        if "SAFETY" in finish_reason.upper() or finish_reason == "2":
-                            finish_reason_int = 2
+                        reason_name = reason_name or finish_reason.upper()
+                        if finish_reason.isdigit():
+                            finish_reason_int = int(finish_reason)
                 except Exception:
-                    # 변환 실패 시 그대로 사용
                     finish_reason_int = finish_reason if isinstance(finish_reason, int) else None
 
-        # finish_reason이 2 (SAFETY)이거나 유효한 Part가 없는 경우
-        if (
-            finish_reason_int == 2
-            or (finish_reason is not None and ("SAFETY" in str(finish_reason).upper()))
-            or not has_valid_part
-        ):
-            if finish_reason_int == 2 or (
-                finish_reason is not None and ("SAFETY" in str(finish_reason).upper())
-            ):
+        blocked_reason_names = (
+            "SAFETY",
+            "BLOCKLIST",
+            "PROHIBITED_CONTENT",
+            "SPII",
+            "IMAGE_SAFETY",
+            "IMAGE_PROHIBITED_CONTENT",
+        )
+        is_safety_blocked = (
+            any(tok in reason_name for tok in blocked_reason_names)
+            or (finish_reason is not None and any(tok in str(finish_reason).upper() for tok in blocked_reason_names))
+            or (not reason_name and finish_reason_int == 3)
+        )
+
+        # 안전 필터로 차단되었거나 유효한 Part가 없는 경우
+        if is_safety_blocked or not has_valid_part:
+            if is_safety_blocked:
                 logger.warning(
                     f"Gemini API safety filter triggered (finish_reason={finish_reason}). Returning empty content."
                 )

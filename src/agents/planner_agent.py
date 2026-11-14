@@ -129,6 +129,19 @@ class PlannerAgent:
 
         return {"plan": plan, "tasks": formatted_tasks}
 
+    @staticmethod
+    def _extract_task_list(parsed: Any) -> List[Dict[str, Any]] | None:
+        """Normalize a decoded JSON payload into a non-empty list of task dicts."""
+        if isinstance(parsed, list):
+            dicts = [item for item in parsed if isinstance(item, dict)]
+            return dicts if dicts else None
+        if isinstance(parsed, dict):
+            tasks = parsed.get("tasks")
+            if isinstance(tasks, list):
+                dicts = [item for item in tasks if isinstance(item, dict)]
+                return dicts if dicts else None
+        return None
+
     def _parse_tasks(self, content: str, user_query: str) -> List[Dict[str, Any]]:
         """LLM 응답에서 태스크 리스트를 파싱합니다.
 
@@ -137,27 +150,31 @@ class PlannerAgent:
         if not content:
             raise ValueError("LLM returned empty content for task decomposition")
 
-        # JSON 배열 또는 객체 추출 시도
-        # 배열 먼저 시도
-        array_match = re.search(r"\[[\s\S]*\]", content)
-        if array_match:
+        # 1. Fenced code blocks first so prose with [brackets] around the block doesn't pollute parsing.
+        fenced_blocks = re.findall(r"```(?:json)?\s*([\s\S]*?)```", content, re.IGNORECASE)
+        for block in fenced_blocks:
+            stripped = block.strip()
+            if not stripped:
+                continue
             try:
-                tasks = json.loads(array_match.group())
-                if isinstance(tasks, list) and len(tasks) > 0:
+                tasks = self._extract_task_list(json.loads(stripped))
+                if tasks:
                     return tasks
             except json.JSONDecodeError:
                 pass
 
-        # 객체에서 "tasks" 키 추출
-        obj_match = re.search(r"\{[\s\S]*\}", content)
-        if obj_match:
+        # 2. Balanced JSON scan via JSONDecoder.raw_decode at every `[` or `{` start.
+        decoder = json.JSONDecoder()
+        for idx, ch in enumerate(content):
+            if ch not in "[{":
+                continue
             try:
-                parsed = json.loads(obj_match.group())
-                tasks = parsed.get("tasks", [])
-                if isinstance(tasks, list) and len(tasks) > 0:
-                    return tasks
+                parsed, _ = decoder.raw_decode(content[idx:])
             except json.JSONDecodeError:
-                pass
+                continue
+            tasks = self._extract_task_list(parsed)
+            if tasks:
+                return tasks
 
         raise ValueError(
             f"Failed to parse task decomposition from LLM response (length={len(content)})"

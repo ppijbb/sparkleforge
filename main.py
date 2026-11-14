@@ -946,8 +946,17 @@ EXAMPLES:
     def _exit_code(rc: int | None) -> int:
         return 0 if rc is None else int(rc)
 
+    async def _shutdown_cached_orchestrator() -> None:
+        try:
+            from src.core.agent_orchestrator import aclose_orchestrator
+
+            await aclose_orchestrator()
+        except Exception:
+            pass
+
     # --query로 run/query 실행한 경우 여기서 종료 (이중 초기화·빈 워크플로우 요약 방지)
     if cmd in ("run", "query") and getattr(args, "query", None):
+        await _shutdown_cached_orchestrator()
         return _exit_code(cli_rc)
 
     # 한 번만 실행하고 AutonomousResearchSystem 등 무거운 초기화로 넘어가면 안 되는 명령
@@ -955,6 +964,7 @@ EXAMPLES:
         {"health", "mcp", "tools", "docker", "setup", "cli", "web", "interactive", "work", "session", "actions", "approve", "deny", "report", "nightwelding", "ci", "autofix"}
     )
     if cmd in _STANDALONE_CLI:
+        await _shutdown_cached_orchestrator()
         return _exit_code(cli_rc)
 
     # --query가 있으면 쿼리만 실행하고 종료. query 없을 때만 TLI(REPL) 진입
