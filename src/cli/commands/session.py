@@ -1,4 +1,29 @@
 """세션 관리 명령어"""
+# Session command inspector updates
+
+def inspect_session(session_id: str) -> str:
+    """Render a layer-by-layer flamegraph and decision tree for a session trace."""
+    import os, json
+    path = f"results/traces/{session_id}.jsonl"
+    if not os.path.exists(path):
+        return f"No decision trace found for session {session_id} at {path}"
+    
+    lines = []
+    with open(path, "r") as f:
+        for line in f:
+            if line.strip():
+                lines.append(json.loads(line))
+                
+    output = [f"=== SparkleForge Flamegraph & Decision Tree Inspector: {session_id} ==="]
+    total_time = sum(t.get("latency_ms", 0.0) for t in lines)
+    output.append(f"Total Wall Time: {total_time:.2f} ms across {len(lines)} turns\n")
+    
+    for t in lines:
+        output.append(f"Turn {t.get('turn_index')}: {t.get('latency_ms', 0):.2f} ms (In: {t.get('tokens_in', 0)} tok, Out: {t.get('tokens_out', 0)} tok)")
+        for layer, ms in t.get("layer_breakdown", {}).items():
+            pct = (ms / max(total_time, 1.0)) * 100
+            output.append(f"  - {layer}: {ms:.2f} ms ({pct:.1f}%)")
+    return "\n".join(output)
 
 import logging
 from datetime import datetime
