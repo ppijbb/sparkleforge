@@ -1,3 +1,27 @@
+import unittest
+from src.core.llm_manager.entry import BlastRadiusScorer, ModelHealthRegistry, route_llm_request
+
+class TestValueOfInformationRouter(unittest.TestCase):
+    def test_blast_radius_scoring(self):
+        scorer = BlastRadiusScorer()
+        low_score = scorer.score("What is 2+2?")
+        high_score = scorer.score("Please refactor security critical patch and deploy execution plan", {"is_production": True})
+        self.assertLess(low_score, 0.4)
+        self.assertGreaterEqual(high_score, 0.8)
+
+    def test_model_health_registry(self):
+        registry = ModelHealthRegistry()
+        self.assertTrue(registry.is_healthy("gpt-dead"))
+        registry.record_failure("gpt-dead", 404)
+        self.assertFalse(registry.is_healthy("gpt-dead"))
+
+    def test_routing_decisions(self):
+        candidates = ["google/gemini-3.5-flash-lite", "anthropic/claude-3-opus", "openai/gpt-4o"]
+        low_route = route_llm_request("Hello world", candidates)
+        self.assertEqual(low_route["strategy"], "single_low_cost")
+        
+        high_route = route_llm_request("Fix core security bug and patch production", candidates, {"is_production": True})
+        self.assertEqual(high_route["strategy"], "dual_counterfactual_disagreement")
 """Issue #1339: the cascade tried fallback models without checking whether
 the request would even fit the model's known TPM/context limit, so an
 oversized request against a small-limit fallback (e.g. Groq's

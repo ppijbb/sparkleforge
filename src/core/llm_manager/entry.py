@@ -1,3 +1,79 @@
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
+class BlastRadiusScorer:
+    """Estimates the blast radius / risk level of an LLM prompt or decision step."""
+    def score(self, prompt: str, context: dict = None) -> float:
+        context = context or {}
+        risk = 0.1
+        lower_prompt = prompt.lower()
+        if any(keyword in lower_prompt for keyword in ["fix", "patch", "delete", "write", "refactor", "deploy", "execute", "security"]):
+            risk += 0.5
+        if len(prompt) > 2000:
+            risk += 0.2
+        if context.get("is_production") or context.get("high_risk"):
+            risk += 0.3
+        return min(1.0, risk)
+
+class ModelHealthRegistry:
+    """Tracks model availability and pre-filters dead endpoints (402, 404, 429)."""
+    def __init__(self):
+        self.disabled_models = set()
+        self.failure_timestamps = {}
+
+    def is_healthy(self, model_name: str) -> bool:
+        if model_name in self.disabled_models:
+            # Re-enable after 10 minutes for retry
+            if time.time() - self.failure_timestamps.get(model_name, 0) > 600:
+                self.disabled_models.remove(model_name)
+                return True
+            return False
+        return True
+
+    def record_failure(self, model_name: str, status_code: int = None):
+        if status_code in [402, 404, 429]:
+            self.disabled_models.add(model_name)
+            self.failure_timestamps[model_name] = time.time()
+            logger.warning(f"Model {model_name} disabled due to status code {status_code}")
+
+model_health_registry = ModelHealthRegistry()
+blast_radius_scorer = BlastRadiusScorer()
+
+def route_llm_request(prompt: str, candidates: list, context: dict = None):
+    """
+    Value-of-information router with counterfactual disagreement escalation.
+    Routes low-risk steps to low-cost models, and high-risk steps to dual heterogeneous models
+    with disagreement escalation.
+    """
+    risk = blast_radius_scorer.score(prompt, context)
+    healthy_candidates = [c for c in candidates if model_health_registry.is_healthy(c)]
+    if not healthy_candidates:
+        healthy_candidates = candidates # Fallback to all if all marked dead
+
+    # Low risk: use fast/cheap model (e.g., gemini-3.5-flash-lite or first healthy candidate)
+    if risk < 0.4:
+        chosen = next((c for c in healthy_candidates if "flash-lite" in c or "flash" in c), healthy_candidates[0])
+        return {"model": chosen, "strategy": "single_low_cost", "risk": risk}
+
+    # High risk: select 2 heterogeneous models if available
+    if len(healthy_candidates) >= 2:
+        model_a = healthy_candidates[0]
+        model_b = next((c for c in healthy_candidates[1:] if c != model_a), healthy_candidates[1])
+        return {
+            "model": model_a,
+            "secondary_model": model_b,
+            "strategy": "dual_counterfactual_disagreement",
+            "risk": risk
+        }
+
+    return {
+        "model": healthy_candidates[0],
+        "strategy": "single_fallback",
+        "risk": risk
+    }
+
 """Public entry points: get_llm_orchestrator singleton, execute_llm_task, CLI-agent support.
 
 Split out of the former monolithic llm_manager.py (issue #582). This is the
