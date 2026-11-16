@@ -54,6 +54,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 from src.core.guard.action_journal import ActionJournal
 from src.core.guard.anomaly_detector import AnomalyDetector
 from src.core.guard.capability_manager import CapabilityManager
+from src.core.guard.taint_tracker import TaintTracker, get_taint_tracker
 
 if TYPE_CHECKING:
     from src.core.anvil.intent_guardrail import IntentGuardrail
@@ -95,10 +96,12 @@ class InvocationGateway:
         action_journal: ActionJournal | None = None,
         identity_manager: "AgentIdentityManager | None" = None,
         anomaly_detector: AnomalyDetector | None = None,
+        taint_tracker: TaintTracker | None = None,
     ):
         self.capability_manager = capability_manager or CapabilityManager()
         self.action_journal = action_journal or ActionJournal()
         self.anomaly_detector = anomaly_detector or AnomalyDetector()
+        self.taint_tracker = taint_tracker or get_taint_tracker()
         if identity_manager is not None:
             self.identity_manager = identity_manager
         else:
@@ -206,6 +209,12 @@ class InvocationGateway:
         if any(a.severity == "critical" for a in anomalies):
             allowed = False
             reasons.append(f"critical anomaly detected: {anomalies[-1].reason}")
+
+        # TaintTracker behavioral semantic firewall check for taint flow and prompt injection / exfiltration
+        flow_allowed, flow_reason = self.taint_tracker.check_flow(target, metadata, required_capability)
+        if not flow_allowed:
+            allowed = False
+            reasons.append(flow_reason)
 
         if intent_guardrail is not None:
             try:
