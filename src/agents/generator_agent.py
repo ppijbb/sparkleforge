@@ -53,6 +53,7 @@ class GeneratorAgent:
         # 합친 내용
         combined_result = "\n".join(outputs)
 
+        final_output = combined_result
         # 모든 파이썬 코드 블록 추출
         python_blocks = re.findall(
             r"```python\s+(.*?)\s+```", combined_result, re.DOTALL | re.IGNORECASE
