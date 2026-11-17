@@ -185,6 +185,7 @@ jobs:
       - name: Run SparkleForge research
         id: research
         env:
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
@@ -199,7 +200,7 @@ jobs:
           set +e
           timeout 10m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-3.5-flash-lite \
             --output sparkleforge-roadmap.md --task "SparkleForge Daily Roadmap" \
-            --format markdown \
+            --format markdown --depth quick --autopilot true \
             < daily-roadmap-prompt.md > sparkleforge-roadmap-console.log \
             2> sparkleforge-roadmap-error.log
           RC=$?
@@ -239,6 +240,18 @@ jobs:
           else
             echo "status=generated" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Upload roadmap diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-roadmap-diagnostics
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            sparkleforge-roadmap.md
+            sparkleforge-roadmap-console.log
+            sparkleforge-roadmap-error.log
 
       - name: Create GitHub issue
         id: create_issue
