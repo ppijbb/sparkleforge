@@ -51,7 +51,7 @@ async def forge_master_command(cli, args: List[str]):
         return
 
     cli.console.print(
-        f"[cyan]⚡ [Forge Master] Task: '{query}' (Agent: {preferred_agent or 'Auto'})[/cyan]"
+        f"[cyan]* [Forge Master] Task: '{query}' (Agent: {preferred_agent or 'Auto'})[/cyan]"
     )
 
     controller = ForgeMasterController()
@@ -67,13 +67,13 @@ async def forge_master_command(cli, args: List[str]):
     if result.get("success"):
         agent_used = result.get("agent_used")
         verdict = result.get("master_verdict")
-        cli.console.print(f"\n[green]✅ Master Verdict: {verdict} (Agent: {agent_used})[/green]")
+        cli.console.print(f"\n[green]+ Master Verdict: {verdict} (Agent: {agent_used})[/green]")
         audit_fb = result.get("adversarial_audit", {}).get("feedback")
         cli.console.print(f"[bold]Adversarial Audit Feedback:[/bold] {audit_fb}")
         cli.console.print(f"[bold]Token Metrics:[/bold] {result.get('token_metrics')}")
         cli.console.print(f"\n[bold]Output Response:[/bold]\n{result.get('response')}")
     else:
-        cli.console.print(f"\n[red]❌ Forge Master Failed: {result.get('error')}[/red]")
+        cli.console.print(f"\n[red]X Forge Master Failed: {result.get('error')}[/red]")
 
 
 async def forge_master_batch_command(cli, args: List[str]):
@@ -114,7 +114,7 @@ async def forge_master_batch_command(cli, args: List[str]):
         for q in queries
     ]
 
-    cli.console.print(f"[cyan]⚡ [Forge Master] Dispatching {len(tasks)} task(s)...[/cyan]")
+    cli.console.print(f"[cyan]* [Forge Master] Dispatching {len(tasks)} task(s)...[/cyan]")
 
     batch_result = await _dispatch_batch_to_forge_master_tool(tasks)
 
@@ -122,10 +122,12 @@ async def forge_master_batch_command(cli, args: List[str]):
         if result.get("success"):
             cli.console.print(
                 f"[green]✅ [{i}] {task['agent_name']}: {result.get('master_verdict')}[/green]"
+                f"[green]+ [{i}] {task['agent_name']}: {result.get('master_verdict')}[/green]"
             )
         else:
             cli.console.print(
                 f"[red]❌ [{i}] {task['agent_name']}: {result.get('error', 'failed')}[/red]"
+                f"[red]X [{i}] {task['agent_name']}: {result.get('error', 'failed')}[/red]"
             )
 
     cli.console.print(
