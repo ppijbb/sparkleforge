@@ -367,7 +367,7 @@ async def fix_issue(issue_context_path: Path, extra_context_path: Path | None = 
         "Never output both a diff and a decomposition, and no other prose, markdown narration, or tool calls. "
         "The diff context lines must match the file exactly."
     )
-    max_llm_attempts = 3
+    max_llm_attempts = 5
     for llm_attempt in range(max_llm_attempts):
         is_final_attempt = llm_attempt == max_llm_attempts - 1
         prompt = build_prompt(
