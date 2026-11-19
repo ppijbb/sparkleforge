@@ -49,6 +49,11 @@ def main_entry() -> None:
     """Run the repository-level CLI entry point from an installed script."""
     os.environ.setdefault("SPARKLEFORGE_ENV", "development")
 
+    # Configure quiet boot env vars or logging policy very early
+    from src.cli.ui.logging_policy import apply_quiet_boot_logging, attach_startup_noise_filters
+    apply_quiet_boot_logging()
+    attach_startup_noise_filters()
+
     # Load .env file before any other logic to ensure consistent config
     from dotenv import load_dotenv
     load_dotenv(override=True)
