@@ -195,4 +195,5 @@ addopts = '-m "not slow" --dist=loadgroup'
 testpaths = ["tests"]
 markers = [
     "slow: exercises real network/LLM calls and can hang without API credentials; excluded by default, run with -m slow",
+    "security: security regressions and shell injection guards",
 ]
