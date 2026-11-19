@@ -77,8 +77,19 @@ class ChatModeFilter(logging.Filter):
 def find_console_handler():
     """Return the RichConsoleHandler on the root logger, if any."""
     from src.cli.ui.console_log_handler import RichConsoleHandler
+    try:
+        from _pytest.logging import LogCaptureHandler
+    except ImportError:
+        try:
+            from pytest import LogCaptureHandler
+        except ImportError:
+            LogCaptureHandler = None
 
     for handler in logging.getLogger().handlers:
         if isinstance(handler, RichConsoleHandler):
+            return handler
+        if LogCaptureHandler and isinstance(handler, LogCaptureHandler):
+            return handler
+        if hasattr(handler, "capture") and handler.__class__.__name__ == "LogCaptureHandler":
             return handler
     return None
