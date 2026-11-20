@@ -186,7 +186,6 @@ jobs:
         id: research
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
           SPARKLEFORGE_CLI_INTERACTIVE: 'false'
@@ -197,6 +196,11 @@ jobs:
           SPARKLEFORGE_ENV: ${{ vars.SPARKLEFORGE_ENV || 'production' }}
         run: |
           set +e
+          if [ -n "${{ secrets.GOOGLE_API_KEY }}" ]; then
+            export GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY }}"
+          elif [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            export GOOGLE_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+          fi
           timeout 10m uv run python -m src.cli.entry run --max-tokens 4096 --model google/gemini-3.5-flash-lite \
             --output sparkleforge-roadmap.md --task "SparkleForge Daily Roadmap" \
             --format markdown \
