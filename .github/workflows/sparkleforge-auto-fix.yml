@@ -305,7 +305,6 @@ jobs:
         if: steps.context.outputs.skip != 'true'
         working-directory: ${{ steps.context.outputs.target_path }}
         env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SPARKLE_LLM_PRIMARY: ${{ vars.SPARKLE_LLM_PRIMARY || 'google' }}
@@ -317,6 +316,13 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           set +e
+          if [[ -n "${{ secrets.GOOGLE_API_KEY }}" ]]; then
+            export GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY }}"
+          elif [[ -n "${{ secrets.GEMINI_API_KEY }}" ]]; then
+            export GOOGLE_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+          else
+            echo "::warning::Neither GOOGLE_API_KEY nor GEMINI_API_KEY secret is set."
+          fi
           uv run sparkleforge autofix run \
             --issue-context issue-context.md \
             --commit-title "${{ steps.context.outputs.commit_title }}" \
