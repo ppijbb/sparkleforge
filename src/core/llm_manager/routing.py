@@ -5,10 +5,11 @@ Split out of the former monolithic llm_manager.py (issue #582).
 
 import logging
 import os
+import threading
 import time
 from typing import List
 
-from src.core.llm_manager.types import TaskType
+from src.core.llm_manager.types import ModelConfig, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,8 @@ class RoutingMixin:
     """Provider rotation order, rate-limit bookkeeping, and select_model."""
 
     # Provider별 rate limit 쿨다운 (초). NIM 429는 순간 동시성 제한이라 짧게 잡는다.
+    _routing_lock = threading.RLock()
+    _resolved_google_models_lock = threading.RLock()
     PROVIDER_RATE_LIMIT_COOLDOWN = {"nvidia": 30}
     DEFAULT_RATE_LIMIT_COOLDOWN = 300
 
@@ -79,9 +82,92 @@ class RoutingMixin:
 
 
     def select_model(
-        self, task_type: TaskType, complexity: float = 5.0, budget: float = None
+        self, task_type: TaskType, complexity: float = 5.0, budget: float | None = None
     ) -> str:
         """작업에 최적 모델 선택 - Provider 로테이션: OpenRouter -> Groq -> Cerebras."""
+        with self._routing_lock:
+            return self._select_model_unlocked(task_type, complexity, budget)
+
+    @staticmethod
+    def _match_registered_model_key(
+        models: dict, configured: str, provider_hint: str, bare_id: str
+    ) -> str | None:
+        """Return an existing model key matching configured name or model_id."""
+        if configured in models:
+            return configured
+        for key, cfg in models.items():
+            if cfg.model_id == configured:
+                return key
+            if cfg.model_id == bare_id and (
+                not provider_hint or cfg.provider == provider_hint
+            ):
+                return key
+        return None
+
+    def _resolve_configured_model_key(self, configured: str | None) -> str | None:
+        """Resolve configured model IDs thread-safely via copy-on-write."""
+        if not configured:
+            return configured
+
+        provider_hint = ""
+        bare_id = configured
+        if "/" in configured:
+            provider_hint, bare_id = configured.split("/", 1)
+            provider_hint = provider_hint.strip().lower()
+
+        matched = self._match_registered_model_key(
+            self.models, configured, provider_hint, bare_id
+        )
+        if matched is not None:
+            return matched
+
+        # Handle dynamic Google / Gemini model id references only when Google is loaded
+        if (
+            provider_hint == "google"
+            or "gemini" in bare_id.lower()
+            or "google" in configured.lower()
+        ):
+            with self._resolved_google_models_lock:
+                models = self.models
+                matched = self._match_registered_model_key(
+                    models, configured, provider_hint, bare_id
+                )
+                if matched is not None:
+                    return matched
+
+                base_google_config = next(
+                    (cfg for cfg in models.values() if cfg.provider == "google"),
+                    None,
+                )
+                if base_google_config is None:
+                    return configured
+
+                new_config = ModelConfig(
+                    name=configured,
+                    provider="google",
+                    model_id=bare_id,
+                    temperature=base_google_config.temperature,
+                    max_tokens=base_google_config.max_tokens,
+                    cost_per_token=base_google_config.cost_per_token,
+                    speed_rating=base_google_config.speed_rating,
+                    quality_rating=base_google_config.quality_rating,
+                    capabilities=list(
+                        dict.fromkeys([*base_google_config.capabilities, *TaskType])
+                    ),
+                    context_limit_tokens=base_google_config.context_limit_tokens,
+                )
+
+                # Copy-on-write replacement prevents concurrent iterators from seeing
+                # partial mutations or dictionary-size-changed errors.
+                updated_models = dict(models)
+                updated_models[configured] = new_config
+                self.models = updated_models
+                return configured
+        return configured
+
+    def _select_model_unlocked(
+        self, task_type: TaskType, complexity: float = 5.0, budget: float | None = None
+    ) -> str:
         if budget is None:
             budget = self.llm_config.budget_limit
 
@@ -93,6 +179,7 @@ class RoutingMixin:
             TaskType.GENERATION: self.llm_config.generation_model,
             TaskType.COMPRESSION: self.llm_config.compression_model,
         }.get(task_type) or self.llm_config.primary_model
+        configured = self._resolve_configured_model_key(configured)
         if configured in self.models and not self._is_provider_rate_limited(
             self.models[configured].provider
         ):
@@ -163,7 +250,7 @@ class RoutingMixin:
         # 해당 Provider에 모델이 없으면 다음 Provider 시도
         remaining_providers = [p for p in available_providers if p != selected_provider]
         if remaining_providers:
-            return self.select_model(task_type, complexity, budget)
+            return self._select_model_unlocked(task_type, complexity, budget)
 
         # 모든 Provider 실패 시 폴백: Gemini 모델 사용
         gemini_models = [name for name in suitable_models if self.models[name].provider == "google"]
