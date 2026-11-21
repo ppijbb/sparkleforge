@@ -1665,7 +1665,7 @@ async def handle_report_command(args):
         from zoneinfo import ZoneInfo
 
         from src.core.cli_agents.base_cli_agent import BaseCLIAgent, CLIAgentConfig
-        from src.core.roadmap.cli_ux_audit import DEFAULT_AUDIT_COMMANDS, build_cli_ux_audit_prompt
+        from src.core.roadmap.cli_ux_audit import build_cli_ux_audit_prompt, get_audit_commands
 
         class _AuditRunner(BaseCLIAgent):
             async def execute_query(self, query, **kwargs):
@@ -1675,10 +1675,10 @@ async def handle_report_command(args):
                 raise NotImplementedError
 
         today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
-        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=60))
+        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=120))
 
         transcripts = {}
-        for command in DEFAULT_AUDIT_COMMANDS:
+        for command in get_audit_commands():
             result = await runner._execute_command_pty(list(command))
             label = " ".join(command)
             transcripts[label] = (
@@ -1696,7 +1696,7 @@ async def handle_report_command(args):
         from zoneinfo import ZoneInfo
 
         from src.core.cli_agents.base_cli_agent import BaseCLIAgent, CLIAgentConfig
-        from src.core.roadmap.cli_ux_audit import DEFAULT_AUDIT_COMMANDS, build_cli_ux_audit_prompt
+        from src.core.roadmap.cli_ux_audit import build_cli_ux_audit_prompt, get_audit_commands
         from src.core.roadmap.terminal_render import png_to_data_url, render_transcript_to_png
         from src.core.roadmap.vision_judge import call_vision_judge
 
@@ -1708,11 +1708,11 @@ async def handle_report_command(args):
                 raise NotImplementedError
 
         today = getattr(args, "today", None) or datetime.datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
-        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=60))
+        runner = _AuditRunner(CLIAgentConfig(name="cli_ux_audit", command="sparkleforge", timeout=120))
 
         transcripts = {}
         image_urls = []
-        for command in DEFAULT_AUDIT_COMMANDS:
+        for command in get_audit_commands():
             result = await runner._execute_command_pty(list(command))
             label = " ".join(command)
             transcripts[label] = (
