@@ -255,25 +255,25 @@ async def main():
         description="SparkleForge - Autonomous Multi-Agent Research System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-SparkleForge: Where Ideas Sparkle and Get Forged ⚒️✨
+SparkleForge: Where Ideas Sparkle and Get Forged
 
 EXAMPLES:
-  # 연구 실행
-  %(prog)s run "인공지능의 미래 전망"
+  # Run a research request
+  %(prog)s run "Future of AI"
 
-  # 웹 대시보드 시작
+  # Start web dashboard
   %(prog)s web
 
-  # 시스템 헬스체크
+  # Run system health check
   %(prog)s health
 
-  # MCP 서버 상태 확인
+  # Check MCP server status
   %(prog)s mcp status
 
-  # 도구 목록 확인
+  # List available tools
   %(prog)s tools list
 
-  # Docker 서비스 관리
+  # Manage Docker services
   %(prog)s docker up
         """,
     )
