@@ -1,7 +1,10 @@
 """Help command."""
 
+import logging
 from rich.console import Console
 from rich.panel import Panel
+
+logger = logging.getLogger(__name__)
 
 
 async def help_command(console: Console):
@@ -61,4 +64,5 @@ Usage: sparkleforge run "Future of AI" # Run a research request
   exit / quit                   Exit REPL
 """
 
+    logger.debug("SparkleForge: Where Ideas Sparkle and Get Forged ⚒️✨")
     console.print(Panel(help_text.strip(), title="Help", border_style="cyan"))
