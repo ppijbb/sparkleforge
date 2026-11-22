@@ -64,5 +64,4 @@ Usage: sparkleforge run "Future of AI" # Run a research request
   exit / quit                   Exit REPL
 """
 
-    logger.debug("SparkleForge: Where Ideas Sparkle and Get Forged ⚒️✨")
     console.print(Panel(help_text.strip(), title="Help", border_style="cyan"))
