@@ -35,9 +35,20 @@ jobs:
         run: |
           uv sync
 
+      - name: Set Google API Key with fallback
+        run: |
+          if [[ -n "${{ secrets.GOOGLE_API_KEY }}" ]]; then
+            echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" >> $GITHUB_ENV
+          elif [[ -n "${{ secrets.GEMINI_API_KEY }}" ]]; then
+            echo "GOOGLE_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> $GITHUB_ENV
+          else
+            echo "::error::Neither GOOGLE_API_KEY nor GEMINI_API_KEY secret is set"
+            exit 1
+          fi
+        shell: bash
+
       - name: Generate Daily Report
         env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
