@@ -1,167 +1,170 @@
-# SparkleForge ⚒️✨
+# SparkleForge
 
 <p align="center">
   <img src="docs/banner.jpg" alt="SparkleForge" width="100%" />
 </p>
 
-[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![OpenRouter](https://img.shields.io/badge/OpenRouter-API-orange.svg)](https://openrouter.ai/)
-[![Gemini](https://img.shields.io/badge/Gemini-3.5%20Flash%20Lite-purple.svg)](https://ai.google.dev/)
-[![Live Telemetry](https://img.shields.io/badge/live%20telemetry-SparkleForge-ff69b4.svg)](https://sparkleforge.streamlit.app)
-[![Dashboard](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sparkleforge.streamlit.app)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![FastMCP](https://img.shields.io/badge/MCP-FastMCP%203.4+-007acc.svg)](https://github.com/jlowin/fastmcp)
+[![Live Telemetry](https://img.shields.io/badge/telemetry-live-2ea44f.svg)](https://sparkleforge.streamlit.app)
 
-> **Where Ideas Sparkle and Get Forged** ⚒️✨
-> 
-> A revolutionary, production-ready multi-agent system that forges sparkling insights through real-time collaboration, creative AI, and continuous 24/7 autonomous research.
+SparkleForge is an autonomous multi-agent research and engineering runtime built on **Anvil**, a capability-gated execution layer. It combines a LangGraph research and coworker pipeline, a multi-host Model Context Protocol (MCP) server with an embedded control board UI, an HTTP task API, and **Nightwelding**, a reproduce-first GitHub issue repair daemon tuned for low-cost and free model tiers (`gemini-3.5-flash-lite`, `gemini-3.1-flash-lite-preview`, `gpt-5-nano`, and OpenRouter `:free` models).
 
-## 🔥 What Makes SparkleForge Special?
+---
 
-Unlike traditional research tools, SparkleForge simulates a **team of master craftsmen** working together in a digital forge. Watch as multiple AI agents collaborate like skilled artisans, forging raw information into pure knowledge. With the new **24x7 Autonomous Deep Research** capabilities, SparkleForge can investigate complex topics continuously without supervision, maintaining strict memory limits to avoid context bloat.
+## Architecture Overview
 
-### Key Features
+SparkleForge separates domain orchestration from runtime governance across two layers:
 
-- ⚒️ **Multi-Agent Forge**: 5+ specialized AI craftsmen working together.
-- 🕒 **24x7 Continuous Research**: Autonomous deep research mode that runs continuously with intermediate reporting.
-- 🧠 **Creative Synthesis**: AI generates novel solutions by combining ideas across domains.
-- 🔍 **Source Validation**: Every claim is verified with internal and external credibility scores.
-- 📚 **Constant-Size Memory**: Two-tier memory tracking that avoids context explosion during long-running sessions.
-- ⚡ **High-Performance Parallelism**: True parallel agent task execution with smart concurrency.
+```text
++----------------------------------------------------------------------+
+| Surface Plane        CLI REPL, MCP App board (ui://), notifications  |
++----------------------------------------------------------------------+
+| Guard Plane          Capability grants, gVisor (runsc) sandbox,      |
+|                      HITL checkpoints, credential vault, audit log   |
++----------------------------------------------------------------------+
+| Anvil Core           DAG workflow engine, mode controller,           |
+|                      intent guardrail, skill distiller & repository  |
++----------------------------------------------------------------------+
+| Research & Coworker  LangGraph state machine: analysis -> planning   |
+| Orchestrator         -> execution -> verification -> synthesis       |
+|                      -> two-tier memory compression                  |
++----------------------------------------------------------------------+
+| Actuate & Observe    Shell/OS execution, semantic file watcher,      |
+|                      event bus, resource snapshots, IoT telemetry    |
++----------------------------------------------------------------------+
+| Nightwelding         Reproduce-first repair worker (failing test     |
+|                      -> implementation -> draft PR, never merges)    |
++----------------------------------------------------------------------+
+```
 
-## 🚀 Quick Start
+### Core Subsystems
+
+- **Two-Tier Bounded Memory**: Long-running research sessions maintain an evolving hierarchical summary alongside a fixed-capacity recent fact log instead of appending raw transcripts indefinitely.
+- **Reactive Background Scheduling**: External and asynchronous jobs suspend LLM invocations until completion events arrive, avoiding idle polling token burn.
+- **Capability-Gated Execution (Anvil)**: Tool and OS actions pass through `src/core/guard/` capability checks, an append-only action journal, and human-in-the-loop (HITL) approval gates when intent or risk thresholds require review.
+- **Reproduce-First Issue Repair (Nightwelding)**: Automated repair runs write a failing reproduction test before modifying target code and open draft pull requests for human review rather than merging autonomously.
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for module-level boundaries and [`docs/ANVIL_PLAN.md`](docs/ANVIL_PLAN.md) for milestone history.
+
+---
+
+## Installation
 
 ### Prerequisites
 
-- Python 3.10+
-- OpenRouter API key ([Get one here](https://openrouter.ai/))
+- Python `3.11` or newer
+- [`uv`](https://docs.astral.sh/uv/) package manager
+- At least one LLM API key (`GOOGLE_API_KEY`, `OPENROUTER_API_KEY`, or `NVIDIA_API_KEY`)
 
-### Automated Installation & Virtual Environment Setup
+### Quick Setup (Python Environment Only)
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/sparkleforge.git
+git clone https://github.com/ppijbb/sparkleforge.git
 cd sparkleforge
 
-# Run the installation script
-./install.sh
-
-# Set up environment
-# Edit .env with your OpenRouter API key
+uv sync
+cp env.example .env
 ```
 
-On Linux, `./install.sh` installs Docker and registers the gVisor `runsc`
-runtime used by SparkleForge's safe code execution path. Code execution runs in
-short-lived containers with network, memory, CPU, PID, privilege, and filesystem
-limits.
+Edit `.env` to configure your provider and model tier:
 
-On macOS, `./install.sh` automatically detects the OS, skips Linux-specific
-container dependencies, verifies `uv` installation, runs `uv sync`, and
-initializes the environment.
+```dotenv
+LLM_PROVIDER=google
+LLM_MODEL=google/gemini-3.5-flash-lite
+GOOGLE_API_KEY=your_api_key_here
+```
 
-### Basic Usage (PC-first; web + mobile cross-platform access tracked in #1136)
+### System & Sandbox Setup (`install.sh`)
 
 ```bash
-# Launch the interactive agent session (Claude Code / Codex CLI-style REPL)
-sparkleforge
-
-# Inside the session, just talk to it naturally:
-#   > Latest AI trends in 2025
-#   > keep researching quantum machine learning algorithms every 3 hours
-
-# One-shot query without entering the REPL
-sparkleforge run "Latest AI trends in 2025"
-
-# Headless mode for scripts/pipelines (no interactive session)
-sparkleforge --prompt "Comprehensive systematic review of quantum machine learning algorithms"
+./install.sh
 ```
 
-Embedding SparkleForge in your own Python pipeline (no subprocess) is also
-possible via `src/sdk.py`:
+- **Linux**: Installs Docker, downloads and verifies the gVisor `runsc` runtime, registers `runsc` with Docker, and validates container isolation (`--network none`, read-only root filesystem, CPU/memory/PID limits). Run `uv sync` afterward if not already initialized.
+- **macOS**: Verifies `uv`, runs `uv sync`, and creates `.env` from `env.example`. Linux-specific `runsc` installation is skipped; Docker Desktop remains optional.
+
+---
+
+## CLI Usage
+
+`pyproject.toml` registers both `sparkleforge` and `sparkle` console scripts (`uv run sparkleforge` works without manually activating `.venv`).
+
+```bash
+# Start the interactive session
+uv run sparkleforge
+
+# Run a single research request
+uv run sparkleforge run "Compare KV-cache quantization methods published in 2026"
+
+# Run a repository or engineering task in coworker mode
+uv run sparkleforge work "Audit timeout handling across src/core/mcp_servers"
+
+# Resume the most recent session or a specific session ID
+uv run sparkleforge run --continue "Summarize latency trade-offs in a table"
+uv run sparkleforge run --session session_20261127_120000 "Export citations"
+
+# Non-interactive headless execution with structured output
+uv run sparkleforge --prompt "Survey WebAssembly component model runtimes" \
+  --output-format json \
+  --output report.json
+```
+
+### Runtime & Governance Commands
+
+```bash
+uv run sparkleforge health        # Check environment, provider, and runtime health
+uv run sparkleforge mcp status    # Inspect configured MCP tool servers
+uv run sparkleforge tools list    # List available research and system tools
+uv run sparkleforge session       # Inspect saved sessions
+uv run sparkleforge actions       # List pending HITL actions (approve / deny)
+uv run sparkleforge nightwelding  # Run or inspect reproduce-first issue repair
+```
+
+---
+
+## Python SDK
+
+Embed SparkleForge directly inside an existing Python process via [`src/sdk.py`](src/sdk.py) without spawning CLI subprocesses:
 
 ```python
 import asyncio
-from src.sdk import run
+from src.sdk import get_job_status, get_report, run, submit_job
 
-result = asyncio.run(run("Latest AI trends in 2025"))
+
+async def main() -> None:
+    # Blocking in-process execution
+    result = await run("Evaluate SQLite WAL contention under concurrent readers")
+
+    # Non-blocking background job execution
+    job_id = await submit_job("Compare Rust async runtimes for embedded Linux")
+    status = await get_job_status(job_id)
+    if status.status == "completed":
+        report = await get_report(job_id)
+
+
+asyncio.run(main())
 ```
 
-The `sparkleforge` command above is the primary interface. A Streamlit
-web dashboard also exists as a secondary, browser-based surface:
+Background jobs persist locally to `~/.sparkleforge/sdk_jobs.json` (configurable via `SPARKLEFORGE_SDK_JOB_STORE`, 30-day TTL on terminal jobs) so completed reports survive single-worker process restarts, and mirror automatically to Supabase when credentials are configured.
+
+---
+
+## MCP Server, Control Board UI, and IDE Plugins
+
+While internal modules under `src/core/mcp_servers/` provide tools to SparkleForge's own agents, `src/core/mcp_servers/sparkleforge_server.py` exposes SparkleForge itself as an outward-facing MCP server (`scripts/run_mcp_server.sh`). External coding agents and IDEs can delegate background research, inspect Nightwelding queues, query local skills, and open the interactive Swarm control board.
+
+### Install as a Plugin
+
+Repository root manifests support Claude Code (`.claude-plugin/`), Antigravity (`plugin.json` and `mcp_config.json`), Codex (`.codex-plugin/plugin.json`), and Gemini CLI (`gemini-extension.json`), paired with the `skills/sparkleforge/SKILL.md` workflow guide.
 
 ```bash
-streamlit run src/web/streamlit_app.py
+# Claude Code
+/plugin install sparkleforge --marketplace https://github.com/ppijbb/sparkleforge.git
 ```
 
-### 📡 Live Public Telemetry Dashboard
-
-Watch SparkleForge's real-world agent reliability and performance live: **[SparkleForge Live Telemetry](https://sparkleforge.streamlit.app)** (`src/web/live_dashboard.py`). The public Streamlit app streams MTTM (141.08 min), Autonomous Auto-Merge Rate (66.7%), Zero-Cost Reactive Scheduler token savings (92%), and active agent execution logs straight from Supabase tables populated by `src/utils/supabase_exporter.py`.
-
-## ⚒️ The Forge Process
-
-### 1. **Raw Material Collection & Broad Search**
-- Multiple AI agents scour the web and academic databases simultaneously.
-- Real-time streaming maps out knowledge gaps and required follow-up queries.
-
-### 2. **Heating & Melting** (Data Processing)
-- Information is processed, analyzed, and subjected to hierarchical summary compression.
-- Evolving summaries track overarching progress without losing fidelity.
-
-### 3. **Forging & Shaping** (24x7 Synthesis)
-- Creative AI agents hammer ideas together over multiple iterative rounds.
-- Progress is reported incrementally, discarding redundant context while maintaining a constant-size persistent memory buffer.
-
-### 4. **Polishing & Finishing** (Final Output)
-- Findings are compiled into an executive summary with verified citations.
-- SparkleForge flags uncertainty or remaining gaps with explicit notes.
-
-## 📱 Web + Mobile Cross-Platform Access (#1136)
-
-SparkleForge is currently a single-surface tool: `streamlit run
-src/web/streamlit_app.py` owns both UI rendering and orchestration, and there is
-no mobile client. Issue [#1136](https://github.com/ppijbb/sparkleforge/issues/1136)
-proposes making web + mobile access a deliberate, co-equal design goal —
-"모두 연동되고 모두 서비스 가능한" (everything interconnected, everything
-serviceable) — rather than retrofitting mobile later.
-
-The agreed direction (before any implementation) is to **decouple a thin API
-layer** behind which run-trigger, status, and report-read operations live, with
-Streamlit becoming one API consumer. A responsive web client (and later a mobile
-client) consumes the same API, so forge state (runs, reports, agent status) has
-a single source of truth shared consistently across clients instead of each
-client reimplementing its own view.
-
-Non-goals for #1136: no implementation yet, and no native mobile app work should
-start until the API/service boundary is resolved, since every other candidate
-approach (responsive PWA, mobile-as-monitor-only, read-only status page) depends
-on it. See the issue for the full candidate-approaches discussion.
-
-**First shipped slice** ([#1564](https://github.com/ppijbb/sparkleforge/issues/1564)):
-a minimal read-only status/report API, for deployments with Supabase configured
-(the same tables `src/web/live_dashboard.py` already reads for the public
-telemetry dashboard):
-
-```bash
-STATUS_API_TOKEN=... uvicorn src.web.status_api:app --port 8502
-```
-
-- `GET /jobs/{job_id}/status` — a `forge_jobs` row
-- `GET /reports/{report_id}` — a `reports` row
-
-Both routes require `Authorization: Bearer <STATUS_API_TOKEN>`; without the
-env var set, they reject every request instead of serving data unguarded.
-
-This covers hosted/Supabase-backed deployments only, not purely local runs —
-run-trigger and a Supabase-free local mode are still open.
-
-## 🔌 Use SparkleForge as an MCP Server / Claude Code Plugin ([#1551](https://github.com/ppijbb/sparkleforge/issues/1551))
-
-SparkleForge's 12 internal FastMCP servers (`src/core/mcp_servers/*.py`) are
-tools its own agents consume. `sparkleforge_server.py` is different: it exposes
-SparkleForge *itself* as one outward-facing MCP server, so an external MCP
-host — a separate Claude Code session, Codex CLI, Claude Desktop — can attach
-and drive it as tools, without shelling out to the `sparkleforge`/`sparkle` CLI.
-
-**Attach via `.mcp.json`** (any MCP-compatible host, run from the repo root):
+### Attach via `.mcp.json`
 
 ```json
 {
@@ -174,128 +177,73 @@ and drive it as tools, without shelling out to the `sparkleforge`/`sparkle` CLI.
 }
 ```
 
-**Or install as a plugin (Claude Code, Antigravity, Codex, Gemini CLI)**:
+### Exposed MCP Tools and UI Resources
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `ui://sparkleforge/board.html` | MCP App Resource | Interactive Swarm roster, task inbox, and Nightwelding status board (`text/html;profile=mcp-app`). |
+| `open_board` | Tool | Opens the control board UI (including Antigravity side-pane and global entrypoints) and returns a snapshot summary. |
+| `run_task(prompt)` | Tool | Runs a one-shot request in-process and returns the structured JSON result. |
+| `start_research(query)` | Tool | Submits a non-blocking background job and returns `{"job_id": "..."}` immediately. |
+| `get_report(job_id)` | Tool | Polls job state (`pending`, `running`, `completed`, `failed`) and returns the finished report payload. |
+| `cancel_task(job_id)` | Tool | Cancels an active task or background job. |
+| `nightwelding_status()` | Tool | Lists local Nightwelding queue items from `~/.sparkleforge/nightwelding/queue.json`. |
+| `search_skills(query)` / `get_skill(skill_id)` | Tool | Searches and retrieves skill bundles from `~/.sparkleforge/skill_marketplace` (override via `SPARKLEFORGE_SKILL_MARKETPLACE_DIR`). |
+
+---
+
+## HTTP Task & Status API
+
+[`src/web/status_api.py`](src/web/status_api.py) provides a bearer-authenticated Starlette service for submitting tasks and polling status from remote clients without exposing provider or database credentials.
 
 ```bash
-# Claude Code (one-step install via HTTPS/GitHub slug)
-/plugin install sparkleforge --marketplace ppijbb/sparkleforge
+STATUS_API_TOKEN=replace-with-strong-token \
+  uv run uvicorn src.web.status_api:app --port 8502
 ```
 
-Tools exposed:
+Every route requires `Authorization: Bearer <STATUS_API_TOKEN>`. If `STATUS_API_TOKEN` is unset, the service fails closed with `503 Service Unavailable`.
 
-| Tool | What it does |
-|---|---|
-| `run_task(prompt)` | Blocking one-shot: runs a request and waits for the result. |
-| `start_research(query)` / `get_report(job_id)` | Non-blocking job model for anything that might exceed a client's request timeout. |
-| `nightwelding_status()` | Lists this machine's tracked Nightwelding auto-fix items. |
-| `search_skills(query)` / `get_skill(skill_id)` | Query the skill marketplace's local share directory. |
+| Endpoint | Backing Store | Description |
+| :--- | :--- | :--- |
+| `POST /tasks` | Local `sdk_jobs.json` (+ Supabase mirror) | Submits `{"prompt": "..."}` and returns `202 Accepted` with `job_id`. Run `uvicorn` with a single worker in local mode. |
+| `GET /tasks/{job_id}/status` | Local `sdk_jobs.json` (+ Supabase mirror) | Returns current execution state and submission timestamp. |
+| `GET /tasks/{job_id}/report` | Local `sdk_jobs.json` (+ Supabase mirror) | Returns the completed report (`409` while running, `500` on failure). |
+| `GET /jobs/{job_id}/status` | Supabase `forge_jobs` | Reads hosted job state when Supabase is configured. |
+| `GET /reports/{report_id}` | Supabase `reports` | Reads hosted report rows when Supabase is configured. |
 
-Requires `fastmcp` (`pip install fastmcp`); the server degrades to unavailable
-(not a crash) if it isn't installed. v1 is local-process attach only, per
-#1551's non-goals — no hosted/multi-tenant service.
+Public hosted telemetry from Supabase-backed runs is published at [sparkleforge.streamlit.app](https://sparkleforge.streamlit.app) (`src/web/live_dashboard.py`).
 
-`search_skills`/`get_skill` read from `~/.sparkleforge/skill_marketplace` by
-default; override with `SPARKLEFORGE_SKILL_MARKETPLACE_DIR`.
+---
 
-## ✨ Core Innovations
+## Verification and Benchmarks
 
-### 1. **24x7 Continuous Research Engine**
-- A robust engine modeled after continuous experimentation systems.
-- Employs **Zero-Cost Monitoring** logic to pause LLM invocations when awaiting long-running external tasks or tasks requiring human observation.
-- Automatically pushes intermediate reports to the user.
+SparkleForge separates structural governance checks from empirical capability benchmarks so neither can mask regressions in the other:
 
-### 2. **Two-Tier Constant-Size Memory**
-- As research continues over numerous rounds, typical LLMs suffer context bloat. SparkleForge prevents this by aggressively compressing outputs and strictly maintaining an *Evolving Summary Report* alongside a bounded list of recent findings.
+- **Continuous OS-Plane Integrity**: [`tests/test_os_plane_integrity.py`](tests/test_os_plane_integrity.py) exercises capability grants, action journaling, task dashboard hooks, and session quotas through production constructors on every pull request in [`.github/workflows/pr-merge-gate.yml`](.github/workflows/pr-merge-gate.yml).
+- **Scenario Evaluation (`24.0%` latest adjusted pass rate)**: [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md) is verified in CI by `python scripts/generate_benchmark_report.py --check` directly from [`tests/benchmark/baselines/scenario_history.jsonl`](tests/benchmark/baselines/scenario_history.jsonl) across five scenarios (`system_cleanup`, `scheduled_summary`, `semantic_search`, `security_scan`, `build_env`).
+- **SWE-bench Lite (`0 / 6` on current sampled subset)**: [`docs/SWEBENCH_REPORT.md`](docs/SWEBENCH_REPORT.md) records weekly runs ([`.github/workflows/swebench-weekly.yml`](.github/workflows/swebench-weekly.yml)) of the production `fix-issue` entrypoint scored by the unmodified upstream `swebench.harness.run_evaluation` CLI. Empty-patch and evaluation failures are recorded as-is while low-cost fault-localization and test-time scaling harnesses are being hardened.
+- **Operational Telemetry**: Reactive scheduling eliminates idle LLM polling during asynchronous waits (measured up to `92%` token reduction on background-heavy runs). Initial self-hosted CI repair runs recorded `141.08 min` mean time to merge (`2 / 3` PRs on an `N=3` sample); automated cross-run error remediation over `agent_error_contexts` is schema-defined but not yet instrumented in `src/`.
 
-### 3. **Universal Tool Forge (MCP Integration)**
-- Integrates seamlessly with over 100+ tools using the Model Context Protocol (MCP).
-- Out-of-the-box support for DDG search, arXiv document fetching, and local context integration.
+---
 
-### 4. **Parallel Execution System**
-- Dispatches independent research vectors to separate parallel workers.
-- Yields a measured 6.0x speed improvement over single-agent sequential execution.
+## Documentation
 
-### 5. **Quality Control & Fallbacks**
-- Dynamic validation through `completeness`, `depth`, `source diversity`, `factual accuracy`, and `coherence` markers.
-- Implements circuit breaker patterns and exponential backoffs for robust production-grade stability.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): System planes, orchestrator flow, and security boundaries
+- [`docs/ANVIL_PLAN.md`](docs/ANVIL_PLAN.md): Anvil execution layer phase history and roadmap
+- [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md): Reproducible scenario scores, momentum checks, and operational metrics
+- [`docs/SWEBENCH_REPORT.md`](docs/SWEBENCH_REPORT.md): Weekly upstream SWE-bench Lite evaluation log
+- [`CLAUDE.md`](CLAUDE.md) & [`SPARKLEFORGE.md`](SPARKLEFORGE.md): Repository conventions, development rules, and pull request checks
 
-## 📊 Quantified Benchmarks & SOTA Comparison
+---
 
-SparkleForge is engineered to achieve **SOTA-level agent performance (85~90%+ resolution rates)** on free or low-cost LLM tiers (e.g. Gemini 2.5 Flash Lite, Qwen 3.5/3.6) by substituting raw LLM scale with an **Autonomous OS-Loop Architecture** (Zero-Cost Reactive Scheduler + Bounded Fact Memory + Self-Healing Reflection Loop).
+## Contributing
 
-### 🥊 SOTA Benchmark Comparison Table (July 2026)
+Contributions are welcome. Review [`CLAUDE.md`](CLAUDE.md) and [`.github/workflows/pr-merge-gate.yml`](.github/workflows/pr-merge-gate.yml) before opening a pull request. Commit subjects must follow lowercase conventional commit format (`feat(scope): summary`, validated by [`scripts/validate_commit_messages.py`](scripts/validate_commit_messages.py)).
 
-| Agent / Model System | SWE-bench Pro / Verified Resolve Rate | Token Cost Efficiency | Long-Horizon Memory Management |
-| :--- | :---: | :---: | :--- |
-| **Claude Opus 5** *(Anthropic)* | **79.2% (Pro)** / **92.5%+ (Verified)** | High Cost (Continuous Polling) | Unbounded Context Bloat |
-| **GPT-5.5 / o3** *(OpenAI)* | **74.5% (Pro)** / **88.7% (Verified)** | High Cost (Continuous Polling) | Unbounded Context Bloat |
-| **Qwen 3.8 Max** *(Alibaba)* | **72.8% (Pro)** / **87.5% (Verified)** | Cloud MoE Cost | MoE Context Window |
-| **Qwen 3.6 (27B / 35B)** | **65.0% (Pro)** / **77.2% (Verified)** | Medium Cost | Bounded Context |
-| **SparkleForge OS Loop** *(Free-LLM Tier)* | **66.7% (N=3 PR Merge Rate)**<br>**100.0% Research Quality** | **100% Token Efficiency**<br>*(92%+ Cost Reduction)* | **Two-Tier Constant-Size Memory**<br>*(Evolving Summary + Bounded Fact)* |
+## Acknowledgments
 
-### 🛢️ Supabase-Backed Historical Error Context Engine
+SparkleForge draws architectural ideas from the open-source agent and research ecosystem, including **auto-deep-researcher-24x7** (continuous execution and bounded memory), **LangGraph & Open Deep Research** (cyclic state-machine workflows), **LightMem** (hierarchical context compression), and **OpenManus** (modular multi-agent tool orchestration).
 
-Rather than relying on transient CI test runs, SparkleForge logs un-truncated execution failures, stack traces, failed tool calls, and workspace states to Supabase (`agent_error_contexts` table). The agent retrieves these historical contexts to analyze root causes of performance drops and autonomously remediate structural regressions:
+## License
 
-- **Historical Error Logging**: Full stack traces and tool execution contexts stored persistently.
-- **Root-Cause Context Analysis**: Diagnostic engine parses historical errors to pinpoint exact tool-binding or logic gaps.
-- **Autonomous Remediation**: Feeds error contexts into the `research_planner` for targeted self-repair.
-
-### Empirical Operational Metrics
-
-- **Mean Time to Merge (MTTM)**: **141.08 min** (2h 21m) from PR creation to unattended merge.
-- **Autonomous Merge Rate**: **66.7%** (2 / 3 PRs) validated and merged by CI harnesses.
-- **Zero-Cost Idle Rate**: **100% Token Efficiency** (zero LLM token consumption awaiting async background tasks).
-- **Research Quality Pass Rate**: see [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md) §3 -- generated from `tests/benchmark/baselines/scenario_history.jsonl`, not hand-typed.
-
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments & Inspiration
-
-SparkleForge builds upon the massive strides made by the open-source community. Core inspirations include:
-- **auto-deep-researcher-24x7**: For continuous execution, zero-cost monitoring, and memory bounding concepts.
-- **LangGraph & Open Deep Research**: For state machine coordination and cyclic research flows.
-- **LightMem**: For hierarchical compression and efficient context retrieval over long horizons.
-- **OpenManus**: For flexible multi-agent foundation architecture.
-
-## 🚀 Anvil: The Agentic OS Layer
-
-SparkleForge is built on top of **Anvil**, an OS-shaped execution layer for
-agents (observe / actuate / guard / surface planes, capability-based
-permissions, a workflow scheduler, and a self-healing Nightwelding daemon).
-Anvil has shipped through Phase Σ (structural integrity & autonomy), with a
-141-min mean-time-to-merge and zero-cost waiting during async tool execution.
-See [`docs/ANVIL_PLAN.md`](docs/ANVIL_PLAN.md) for the phase history,
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current architecture,
-and [`docs/BENCHMARK_REPORT.md`](docs/BENCHMARK_REPORT.md) for empirical
-benchmarks including the 92% token cost reduction during async tool execution.
-
-The governance claim above is continuously checked, not just documented:
-[`tests/test_os_plane_integrity.py`](tests/test_os_plane_integrity.py) drives
-the real capability-grant, action-journal, task-dashboard, and session-control
-entry points through their actual production constructors on every PR (see
-the `pytest` job in
-[`.github/workflows/pr-merge-gate.yml`](.github/workflows/pr-merge-gate.yml)).
-A green run means the OS-plane guarantees hold today, not merely that they
-once passed a manual audit (issue #715).
-
-Separately, [`docs/SWEBENCH_REPORT.md`](docs/SWEBENCH_REPORT.md) tracks a
-different kind of proof: a weekly run of the real `fix-issue` path against
-the official [SWE-bench Lite](https://www.swebench.com/) dataset, scored by
-the unmodified upstream `swebench.harness.run_evaluation` CLI (see
-[`.github/workflows/swebench-weekly.yml`](.github/workflows/swebench-weekly.yml)
-and `scripts/run_swebench_lite.py`) — a third-party-defined benchmark and
-harness, not a self-reported number.
+Released under the [MIT License](https://opensource.org/licenses/MIT) (`pyproject.toml`).
