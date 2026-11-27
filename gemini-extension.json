@@ -1,0 +1,14 @@
+{
+  "name": "sparkleforge",
+  "version": "1.0.0",
+  "description": "Run SparkleForge autonomous research jobs, check Nightwelding status, and query local skills via MCP.",
+  "mcpServers": {
+    "sparkleforge": {
+      "command": "bash",
+      "args": ["${extensionPath}/scripts/run_mcp_server.sh"],
+      "env": {
+        "SPARKLEFORGE_HOME": "${extensionPath}"
+      }
+    }
+  }
+}

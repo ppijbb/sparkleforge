@@ -167,15 +167,19 @@ and drive it as tools, without shelling out to the `sparkleforge`/`sparkle` CLI.
 {
   "mcpServers": {
     "sparkleforge": {
-      "command": "python",
-      "args": ["-m", "src.core.mcp_servers.sparkleforge_server"]
+      "command": "bash",
+      "args": ["scripts/run_mcp_server.sh"]
     }
   }
 }
 ```
 
-**Or install as a Claude Code plugin** — `.claude-plugin/plugin.json` bundles
-the same server for that install path.
+**Or install as a plugin (Claude Code, Antigravity, Codex, Gemini CLI)**:
+
+```bash
+# Claude Code (one-step install via HTTPS/GitHub slug)
+/plugin install sparkleforge --marketplace ppijbb/sparkleforge
+```
 
 Tools exposed:
 

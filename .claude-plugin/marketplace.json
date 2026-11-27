@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sparkleforge",
+  "description": "SparkleForge autonomous research, Nightwelding queue inspection, and skill marketplace integration.",
+  "owner": {
+    "name": "ppijbb",
+    "url": "https://github.com/ppijbb"
+  },
+  "plugins": [
+    {
+      "name": "sparkleforge",
+      "source": "./",
+      "description": "Run SparkleForge autonomous research jobs, check Nightwelding status, and query local skills via MCP.",
+      "category": "productivity",
+      "author": {
+        "name": "ppijbb",
+        "url": "https://github.com/ppijbb"
+      },
+      "homepage": "https://github.com/ppijbb/sparkleforge"
+    }
+  ]
+}
