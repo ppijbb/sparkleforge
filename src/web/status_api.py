@@ -219,7 +219,10 @@ async def submit_task(request: Request) -> JSONResponse:
         return JSONResponse({"error": "'prompt' (string) is required"}, status_code=400)
 
     session_id = body.get("session_id", "default_session")
-    job_id = await sdk_submit_job(prompt, session_id=session_id) if "session_id" in body.__code__.co_varnames if hasattr(sdk_submit_job, "__code__") else await sdk_submit_job(prompt)
+    # sdk_submit_job doesn't accept session_id parameter yet; pass prompt only
+    job_id = await sdk_submit_job(prompt)
+    # TODO: when sdk_submit_job supports session_id, pass it through
+    # job_id = await sdk_submit_job(prompt, session_id=session_id)
     _control_store.save_task(job_id, {"job_id": job_id, "session_id": session_id, "prompt": prompt, "topic": prompt, "status": "running", "submitted_at": time.time()})
     _control_store.add_event(job_id, "status", {"status": "running", "message": "Task submitted"})
     return JSONResponse({"job_id": job_id, "status": "running"}, status_code=202)
@@ -378,7 +381,11 @@ async def task_artifacts(request: Request) -> JSONResponse:
         if "patch" in result:
             artifacts.append({"type": "patch", "content": result["patch"]})
         if "diff" in result:
-            artifacts.append({"type": "diff", "content":
+            artifacts.append({"type": "diff", "content": result["diff"]})
+    return JSONResponse({"job_id": job_id, "artifacts": artifacts})
+
+
+def _service_unavailable(detail: str) -> JSONResponse:
 def _service_unavailable(detail: str) -> JSONResponse:
     # Generic message on purpose -- doesn't confirm/deny *why* to an
     # unauthenticated caller (config missing vs. a live query failing are
