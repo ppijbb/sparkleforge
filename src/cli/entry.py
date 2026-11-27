@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 
+from src.cli.ui.logging_policy import QUIET_BOOT_ENV_VARS
+
 _RUN_OPTIONS_WITH_VALUES = {
     "--output",
     "-o",
@@ -14,6 +16,26 @@ _RUN_OPTIONS_WITH_VALUES = {
     "--depth",
     "--autopilot",
 }
+
+
+def is_verbose_argv(argv: list[str] | None = None) -> bool:
+    """Return True when --verbose or -v is present in CLI arguments."""
+    args = sys.argv if argv is None else argv
+    return any(arg in ("--verbose", "-v") for arg in args)
+
+
+def configure_quiet_boot_env(argv: list[str] | None = None) -> bool:
+    """Set quiet-boot environment variables unless --verbose/-v is passed.
+
+    Returns:
+        True if quiet-boot env vars were applied, False when verbose mode is active.
+    """
+    if is_verbose_argv(argv):
+        return False
+
+    for key, value in QUIET_BOOT_ENV_VARS.items():
+        os.environ.setdefault(key, value)
+    return True
 
 
 def _run_command_has_query(argv: list[str]) -> bool:
@@ -74,7 +96,18 @@ def main_entry() -> None:
 
     _inject_stdin_query_for_run()
 
+    quiet_boot = configure_quiet_boot_env(sys.argv)
+
     from main import main_entry as repository_main_entry
+    from src.cli.ui.logging_policy import (
+        apply_quiet_boot_logging,
+        remove_startup_noise_filters,
+    )
+
+    if quiet_boot:
+        apply_quiet_boot_logging()
+    else:
+        remove_startup_noise_filters()
 
     repository_main_entry()
 
