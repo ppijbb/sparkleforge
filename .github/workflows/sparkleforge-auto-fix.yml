@@ -220,7 +220,7 @@ jobs:
 
           if [ -z "$ISSUE_NUMBER" ]; then
             echo "No eligible open issue was found. Open issues with auto-fix-pr-opened, auto-fix-merged, auto-fix-failed, or an already-linked open fix PR are skipped."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "### SparkleForge Auto Fix: No eligible open issue found" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 

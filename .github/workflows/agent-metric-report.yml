@@ -46,7 +46,7 @@ jobs:
           uv run python main.py report generate || EXIT=$?
           exit "${EXIT:-0}"
 
-      - name: Expose Report to Job Summary
+      - name: Expose Report to Job Summary & Check Thresholds
         run: |
           REPORT_FILE=$(find results/agent_reports/ -name "report_*.md" | sort | tail -n 1)
           if [ -f "$REPORT_FILE" ]; then
@@ -54,6 +54,7 @@ jobs:
           else
             echo "No report file found" >> "$GITHUB_STEP_SUMMARY"
           fi
+          uv run python -c "from src.cli.commands.report import evaluate_report_thresholds; evaluate_report_thresholds()"
 
       - name: Upload agent report artifacts
         if: always()
