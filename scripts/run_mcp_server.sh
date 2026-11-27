@@ -5,11 +5,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SPARKLEFORGE_HOME:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}}}"
 
 if [ -f "${REPO_ROOT}/.env" ]; then
-  # Export only necessary env vars explicitly to avoid leaking all secrets via set -a
-  export OPENROUTER_API_KEY ANTHROPIC_API_KEY GITHUB_TOKEN GOOGLE_API_KEY GEMINI_API_KEY NVIDIA_API_KEY SPARKLE_LLM_API_KEY
-  set -o allexport
-  . "${REPO_ROOT}/.env" >/dev/null 2>&1 || true
-  set +o allexport
+  while IFS='=' read -r key value; do
+    # Skip comments and empty lines
+    case "$key" in
+      '#'* | '') continue ;;
+    es:
+    # Remove leading/trailing whitespace or quotes from key/value if needed
+    key=$(echo "$key" | tr -d '[:space:]')
+    value=$(echo "$value" | sed -E 's/^[[:space:]]*["\x27]?//; s/["\x27]?[[:space:]]*$//')
+    if [ -n "$key" ]; then
+      export "$key"="$value"
+    fi
+  done < <(grep -v '^#' "${REPO_ROOT}/.env" | grep '=')
 fi
 
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -25,7 +32,7 @@ pick_python() {
     "$(command -v python3 2>/dev/null || true)" \
     "$(command -v python 2>/dev/null || true)"; do
     if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
-      if "${candidate}" -c "import mcp" >/dev/null 2>&1; then
+      if "${candidate}" -c "import mcp, fastmcp" >/dev/null 2>&1; then
         printf '%s\n' "${candidate}"
         return 0
       fi
@@ -39,7 +46,7 @@ if PYTHON_BIN="$(pick_python)"; then
 fi
 
 if [ -f "${REPO_ROOT}/pyproject.toml" ] && command -v uv >/dev/null 2>&1; then
-  if uv run --quiet --project "${REPO_ROOT}" python -c "import mcp" >/dev/null 2>&1; then
+  if uv run --quiet --project "${REPO_ROOT}" python -c "import mcp, fastmcp" >/dev/null 2>&1; then
     exec uv run --quiet --project "${REPO_ROOT}" python -m src.core.mcp_servers.sparkleforge_server
   fi
 fi
