@@ -386,7 +386,6 @@ async def task_artifacts(request: Request) -> JSONResponse:
 
 
 def _service_unavailable(detail: str) -> JSONResponse:
-def _service_unavailable(detail: str) -> JSONResponse:
     # Generic message on purpose -- doesn't confirm/deny *why* to an
     # unauthenticated caller (config missing vs. a live query failing are
     # both just "try again later" from outside).
