@@ -103,8 +103,12 @@ async def mcp_list_command(cli, args: List[str]):
                     ready_str = "[green][OK] Ready[/green]" if is_available else "[dim]not configured[/dim]"
                     cli.console.print(f"  - {agent_name}: {ready_str}")
                 else:
-                    ready_str = "Ready" if is_available else "not configured"
-                    cli.console.print(f"  - {agent_name}: [{ready_str}]", highlight=False)
+                    status_text = "Ready" if is_available else "not configured"
+                    cli.console.print(
+                        f"  - {agent_name}: [{status_text}]",
+                        style="none",
+                        highlight=False,
+                    )
         elif not status_dict and verbose:
             logger.debug("CLI agents not enabled or failed to initialize")
     except Exception:
@@ -118,4 +122,9 @@ async def mcp_list_command(cli, args: List[str]):
         status = "[green]connected[/green]" if name in connected else "[dim]registered[/dim]"
         table.add_row(name, status)
 
-    cli.console.print(table)
+    if cli.console.color_system is not None:
+        cli.console.print(table)
+    else:
+        from rich.plain import PlainTextRenderer
+        # Print without rich color tags when color_system is disabled / non-TTY
+        cli.console.print(table, soft_wrap=True)

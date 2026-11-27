@@ -122,12 +122,10 @@ async def forge_master_batch_command(cli, args: List[str]):
         if result.get("success"):
             cli.console.print(
                 f"[green]✅ [{i}] {task['agent_name']}: {result.get('master_verdict')}[/green]"
-                f"[green]+ [{i}] {task['agent_name']}: {result.get('master_verdict')}[/green]"
             )
         else:
             cli.console.print(
                 f"[red]❌ [{i}] {task['agent_name']}: {result.get('error', 'failed')}[/red]"
-                f"[red]X [{i}] {task['agent_name']}: {result.get('error', 'failed')}[/red]"
             )
 
     cli.console.print(

@@ -48,6 +48,11 @@ def _inject_stdin_query_for_run() -> None:
 def main_entry() -> None:
     """Run the repository-level CLI entry point from an installed script."""
     os.environ.setdefault("SPARKLEFORGE_ENV", "development")
+    os.environ.setdefault("SPARKLEFORGE_QUIET_BOOT", "1")
+
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+
 
     # Load .env file before any other logic to ensure consistent config
     from dotenv import load_dotenv

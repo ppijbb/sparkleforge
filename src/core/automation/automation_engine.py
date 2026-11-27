@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import os
+import time
+from datetime import datetime, time as dtime
 from typing import Any, Callable, Dict, List, Optional
 
+from src.core.anvil.mode_controller import ExecutionMode
 from src.core.observe.event_bus import EventBus
 from src.core.scheduler import (
     ScheduleConfig,
@@ -48,10 +52,97 @@ class AutomationEngine:
         self._initialized = True
         self._event_subscriptions = {}
         
+        # Heartbeat daemon state
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._heartbeat_running = False
+        self._heartbeat_interval = 10.0  # seconds
+        self._active_hours_start = dtime(8, 0)
+        self._active_hours_end = dtime(22, 0)
+        self._active_hours_enforced = True
+
         # Wrap scheduler callback for chains and multi-agent routing
         self._orig_callback = self.scheduler.execution_callback
         self.scheduler.set_execution_callback(self._wrapped_execution_callback)
+        
+        # Start heartbeat daemon
+        self.start_heartbeat_daemon()
         logger.info("✅ Automation Engine successfully initialized and hooked into Scheduler")
+
+    def start_heartbeat_daemon(self, interval_seconds: float = 10.0):
+        """Start the background heartbeat daemon checking HEARTBEAT.md and active hours."""
+        if self._heartbeat_running:
+            return
+        self._heartbeat_interval = interval_seconds
+        self._heartbeat_running = True
+        try:
+            loop = asyncio.get_running_loop()
+            self._heartbeat_task = loop.create_task(self._heartbeat_loop())
+        except RuntimeError:
+            # No running event loop yet
+            pass
+
+    def stop_heartbeat_daemon(self):
+        """Stop the background heartbeat daemon."""
+        self._heartbeat_running = False
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+
+    def set_active_hours(self, start_hour: int, start_min: int, end_hour: int, end_min: int, enforce: bool = True):
+        """Configure active hours for quiet-window enforcement."""
+        self._active_hours_start = dtime(start_hour, start_min)
+        self._active_hours_end = dtime(end_hour, end_min)
+        self._active_hours_enforced = enforce
+
+    def is_within_active_hours(self) -> bool:
+        """Check if current time is within active hours."""
+        if not self._active_hours_enforced:
+            return True
+        now_time = datetime.now().time()
+        if self._active_hours_start <= self._active_hours_end:
+            return self._active_hours_start <= now_time <= self._active_hours_end
+        else:
+            # Over-midnight range
+            return now_time >= self._active_hours_start or now_time <= self._active_hours_end
+
+    async def _heartbeat_loop(self):
+        """Background loop executing HEARTBEAT.md checklist tasks respecting activeHours."""
+        logger.info("AutomationEngine: Heartbeat daemon started.")
+        while self._heartbeat_running:
+            try:
+                if self.is_within_active_hours():
+                    await self.tick_heartbeat()
+                else:
+                    logger.debug("AutomationEngine: Outside activeHours. Heartbeat muted.")
+            except Exception as e:
+                logger.error(f"AutomationEngine: Error in heartbeat loop: {e}")
+            await asyncio.sleep(self._heartbeat_interval)
+
+    async def tick_heartbeat(self) -> Dict[str, Any]:
+        """Parse HEARTBEAT.md if present and run pending checklist items."""
+        heartbeat_path = "HEARTBEAT.md"
+        checklist_items = []
+        if os.path.exists(heartbeat_path):
+            try:
+                with open(heartbeat_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line_s = line.strip()
+                        if line_s.startswith("- [ ]") or line_s.startswith("* [ ]"):
+                            checklist_items.append(line_s[5:].strip())
+            except Exception as e:
+                logger.warning(f"Failed to parse {heartbeat_path}: {e}")
+
+        results = []
+        for item in checklist_items:
+            logger.info(f"Heartbeat checklist item running: {item}")
+            try:
+                res = await self._wrapped_execution_callback(f"Heartbeat task: {item}", "heartbeat-session")
+                results.append({"item": item, "status": "success", "result": res})
+            except Exception as e:
+                logger.error(f"Heartbeat task failed [{item}]: {e}")
+                results.append({"item": item, "status": "failed", "error": str(e)})
+
+        return {"checked": len(checklist_items), "results": results}
 
     def set_execution_callback(self, callback: Callable[[str, str], Any]):
         """Set the original executor query callback."""

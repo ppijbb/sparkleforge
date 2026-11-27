@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sparkleforge": {
+      "command": "bash",
+      "args": ["${PLUGIN_ROOT}/scripts/run_mcp_server.sh"],
+      "env": {
+        "SPARKLEFORGE_HOME": "${PLUGIN_ROOT}"
+      }
+    }
+  }
+}

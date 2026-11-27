@@ -1,7 +1,10 @@
 """Help command."""
 
+import logging
 from rich.console import Console
 from rich.panel import Panel
+
+logger = logging.getLogger(__name__)
 
 
 async def help_command(console: Console):
