@@ -446,3 +446,42 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
         return persisted.get("result")
 
     return None
+
+
+def list_jobs() -> list[Dict[str, Any]]:
+    """Return a list of all known jobs from memory and the local persistent store."""
+    job_store = _load_job_store()
+    combined: Dict[str, Dict[str, Any]] = dict(job_store)
+    for jid, job in _jobs.items():
+        combined[jid] = job.copy()
+        if jid in _job_tasks and combined[jid].get("status") == "running":
+            combined[jid]["status"] = "running"
+    return list(combined.values())
+
+
+def cancel_job(job_id: str) -> bool:
+    """Cancel an active in-process task or update its status to failed/cancelled."""
+    task = _job_tasks.get(job_id)
+    cancelled_any = False
+    if task and not task.done():
+        task.cancel()
+        cancelled_any = True
+
+    if job_id in _jobs:
+        _jobs[job_id]["status"] = "failed"
+        _jobs[job_id]["error"] = "Cancelled by user"
+        _persist_job(job_id)
+        cancelled_any = True
+
+    job_store = _load_job_store()
+    if job_id in job_store:
+        job_store[job_id]["status"] = "failed"
+        job_store[job_id]["error"] = "Cancelled by user"
+        with _job_store_file_lock:
+            _JOB_STORE_PATH.write_text(json.dumps(job_store), encoding="utf-8")
+        cancelled_any = True
+
+    return cancelled_any
+
+def steer_job(job_id: str, action: str, message: str = "") -> bool:
+    return job_id in _jobs or job_id in _load_job_store()

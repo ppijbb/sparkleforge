@@ -103,12 +103,96 @@ async function refreshSnapshot() {
   try {
     const res = await window.parent.postMessage({ jsonrpc: "2.0", method: "tools/call", params: { name: "board_snapshot", arguments: {} }, id: 1 }, "*");
     // If hosted inside MCP App bridge:
-  } catch (e) {}
+  } catch (e) {
+    console.error(e);
+  }
 }
+
+let pendingRequests = new Map();
+let nextId = 1;
+
+window.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (!msg) return;
+  if (msg.id && pendingRequests.has(msg.id)) {
+    const { resolve, reject } = pendingRequests.get(msg.id);
+    pendingRequests.delete(msg.id);
+    if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+    else resolve(msg.result);
+  }
+});
+
+function callTool(name, args = {}) {
+  return new Promise((resolve, reject) => {
+    const id = nextId++;
+    pendingRequests.set(id, { resolve, reject });
+    window.parent.postMessage({ jsonrpc: "2.0", method: "tools/call", params: { name, arguments: args }, id }, "*");
+    setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        pendingRequests.delete(id);
+        reject(new Error("Timeout calling tool " + name));
+      }
+    }, 10000);
+  });
+}
+
+async function updateBoard() {
+  try {
+    const res = await callTool("board_snapshot");
+    let data = res;
+    if (typeof res === "string") {
+      data = JSON.parse(res);
+    } else if (res && res.content && res.content[0] && res.content[0].text) {
+      data = JSON.parse(res.content[0].text);
+    }
+    
+    // Render Roster
+    const workers = data.workers || [];
+    let rosterHtml = `<h3>Swarm Workers (${workers.length})</h3><ul>`;
+    for (const w of workers) {
+      rosterHtml += `<li><strong>${w.name}</strong>: <span class="badge ${w.status}">${w.status}</span></li>`;
+    }
+    rosterHtml += `</ul>`;
+    document.getElementById('roster-content').innerHTML = rosterHtml;
+
+    // Render Feed & Jobs
+    const jobs = data.jobs || [];
+    let feedHtml = `<h3>Active Jobs (${jobs.length})</h3>`;
+    if (jobs.length === 0) {
+      feedHtml += '<p>No active tasks in inbox.</p>';
+    } else {
+      for (const j of jobs) {
+        feedHtml += `<div class="card"><strong>ID:</strong> ${j.job_id || j.id}<br><strong>Status:</strong> <span class="badge ${j.status}">${j.status}</span><br><strong>Topic:</strong> ${j.topic || j.prompt || ''}<br>`;
+        feedHtml += `<button class="action-btn" onclick="cancelJob('${j.job_id || j.id}')">Cancel</button>`;
+        feedHtml += `</div>`;
+      }
+    }
+    document.getElementById('feed-content').innerHTML = feedHtml;
+
+    // Render Nightwelding
+    const nw = data.nightwelding || [];
+    let nwHtml = `<h3>Nightwelding Queue (${nw.length})</h3>`;
+    if (nw.length === 0) {
+      nwHtml += '<p>Nightwelding queue idle.</p>';
+    } else {
+      for (const item of nw) {
+        nwHtml += `<div class="card"><strong>Issue #${item.issue_number}</strong>: <span class="badge ${item.status}">${item.status}</span> (${item.branch || 'main'})</div>`;
+      }
+    }
+    document.getElementById('nightwelding-content').innerHTML = nwHtml;
+  } catch (e) {
+    console.error("Failed to refresh board snapshot:", e);
+  }
+}
+
+async function cancelJob(jobId) {
+  await callTool("cancel_task", { job_id: jobId });
+  await updateBoard();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById('roster-content').innerHTML = '<p>Active Coordinator & Workers: Online (Model tier: auto)</p>';
-  document.getElementById('feed-content').innerHTML = '<p>No active tasks in inbox.</p>';
-  document.getElementById('nightwelding-content').innerHTML = '<p>Nightwelding queue idle.</p>';
+  updateBoard();
+  setInterval(updateBoard, 5000);
 });
 </script>
 </body>
@@ -134,8 +218,14 @@ document.addEventListener("DOMContentLoaded", () => {
     )
     async def open_board(args: dict | None = None) -> dict:
         """Open the interactive board UI and return board snapshot summary."""
-        from src.sdk import get_job_status
-        snapshot = {"status": "ok", "workers": [], "jobs": []}
+        from src.sdk import list_jobs
+        from src.core.nightwelding.models import NightweldingQueue
+        jobs = list_jobs()
+        try:
+            nw_items = [item.to_dict() for item in NightweldingQueue().list()]
+        except Exception:
+            nw_items = []
+        snapshot = {"status": "ok", "workers": [{"name": "coordinator", "status": "working"}], "jobs": jobs, "nightwelding": nw_items}
         return {
             "content": [{"type": "text", "text": json.dumps(snapshot, ensure_ascii=False)}],
             "structuredContent": snapshot,
@@ -144,13 +234,28 @@ document.addEventListener("DOMContentLoaded", () => {
     @mcp.tool(visibility=["app"])
     async def board_snapshot() -> str:
         """Get live swarm roster and task snapshot for the board UI."""
-        payload = {"workers": [{"name": "coordinator", "status": "working"}], "jobs": []}
+        from src.sdk import list_jobs
+        from src.core.nightwelding.models import NightweldingQueue
+        jobs = list_jobs()
+        try:
+            nw_items = [item.to_dict() for item in NightweldingQueue().list()]
+        except Exception:
+            nw_items = []
+        payload = {"workers": [{"name": "coordinator", "status": "working"}], "jobs": jobs, "nightwelding": nw_items}
         return json.dumps(payload, ensure_ascii=False)
 
     @mcp.tool(visibility=["app"])
     async def steer_task(job_id: str, action: str, message: str = "") -> str:
         """Steer, approve, or reject a paused task."""
         try:
+            from src.sdk import steer_job
+            success = steer_job(job_id, action, message=message)
+            if not success:
+                # Fallback / record in job metadata if needed
+                from src.sdk import _jobs, _persist_job
+                if job_id in _jobs:
+                    _jobs[job_id]["steering_action"] = {"action": action, "message": message}
+                    _persist_job(job_id)
             return json.dumps({"success": True, "job_id": job_id, "action": action}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
@@ -159,7 +264,11 @@ document.addEventListener("DOMContentLoaded", () => {
     async def cancel_task(job_id: str) -> str:
         """Cancel an active task or job."""
         try:
-            return json.dumps({"success": True, "job_id": job_id}, ensure_ascii=False)
+            from src.sdk import cancel_job
+            success = cancel_job(job_id)
+            if success:
+                return json.dumps({"success": True, "job_id": job_id}, ensure_ascii=False)
+            return json.dumps({"success": False, "error": f"Job or task {job_id} not found or already terminal"}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
