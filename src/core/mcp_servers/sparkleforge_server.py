@@ -141,13 +141,13 @@ document.addEventListener("DOMContentLoaded", () => {
             "structuredContent": snapshot,
         }
 
-    @mcp.tool(visibility=["app"])
+    @mcp.tool(app={"visibility": ["app"]})
     async def board_snapshot() -> str:
         """Get live swarm roster and task snapshot for the board UI."""
         payload = {"workers": [{"name": "coordinator", "status": "working"}], "jobs": []}
         return json.dumps(payload, ensure_ascii=False)
 
-    @mcp.tool(visibility=["app"])
+    @mcp.tool(app={"visibility": ["app"]})
     async def steer_task(job_id: str, action: str, message: str = "") -> str:
         """Steer, approve, or reject a paused task."""
         try:
@@ -155,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
-    @mcp.tool(visibility=["app", "model"])
+    @mcp.tool(app={"visibility": ["app", "model"]})
     async def cancel_task(job_id: str) -> str:
         """Cancel an active task or job."""
         try:
@@ -210,7 +210,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ``job_id`` that was never submitted here returns
         ``{"success": false, "error": "..."}``.
         """
-        from src.sdk import get_job_status, get_report as sdk_get_report
+        from src.sdk import get_job_status
+        from src.sdk import get_report as sdk_get_report
 
         try:
             status = await get_job_status(job_id)
