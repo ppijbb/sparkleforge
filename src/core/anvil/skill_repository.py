@@ -51,6 +51,50 @@ class SkillRepository:
         logger.info(
             f"[SkillRepo] Initialized with {len(self.skills)} skills from {self.storage_dir}"
         )
+        self._load_open_skill_packages()
+
+    def _load_open_skill_packages(self) -> None:
+        """Scan project skills/ directories for SKILL.md packages supporting lazy metadata-only loading."""
+        try:
+            root = self.storage_dir.parent.parent
+            skills_dir = root / "skills"
+            if skills_dir.is_dir():
+                for skill_dir in skills_dir.iterdir():
+                    if not skill_dir.is_dir():
+                        continue
+                    skill_md = skill_dir / "SKILL.md"
+                    if skill_md.is_file():
+                        name = skill_dir.name
+                        metadata = self._parse_skill_md_frontmatter(skill_md)
+                        skill_name = metadata.get("name") or name
+                        # Load metadata only into memory; keep code/body lazy
+                        if skill_name not in self.skills:
+                            self.skills[skill_name] = Skill(
+                                name=skill_name,
+                                code="",  # Lazy loaded on demand
+                                description=metadata.get("description", ""),
+                                metadata={"lazy": True, "skill_md_path": str(skill_md), **metadata},
+                            )
+        except Exception as e:
+            logger.warning(f"[SkillRepo] Failed to load open skill packages: {e}")
+
+    def _parse_skill_md_frontmatter(self, skill_md_path: Path) -> Dict[str, Any]:
+        """Parse frontmatter from SKILL.md for metadata-only boot budget."""
+        try:
+            content = skill_md_path.read_text(encoding="utf-8")
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    frontmatter_raw = parts[1].strip()
+                    meta: Dict[str, Any] = {}
+                    for line in frontmatter_raw.splitlines():
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            meta[k.strip()] = v.strip().strip("'\"")
+                    return meta
+        except Exception:
+            pass
+        return {}
 
     def save_skill(
         self,
@@ -126,7 +170,18 @@ class SkillRepository:
 
     def get_skill(self, name: str) -> Skill | None:
         """이름으로 스킬 조회."""
-        return self.skills.get(name)
+        skill = self.skills.get(name)
+        if skill and not skill.code and skill.metadata.get("lazy"):
+            # Lazy load full body/instructions on demand
+            skill_md_path = skill.metadata.get("skill_md_path")
+            if skill_md_path and Path(skill_md_path).is_file():
+                try:
+                    full_content = Path(skill_md_path).read_text(encoding="utf-8")
+                    skill.code = full_content
+                    logger.info(f"[SkillRepo] Lazy-loaded full instructions for skill '{name}'")
+                except Exception as e:
+                    logger.warning(f"[SkillRepo] Failed to lazy-load skill body for '{name}': {e}")
+        return skill
 
     def list_skills(self) -> List[str]:
         """등록된 모든 스킬 이름 반환."""

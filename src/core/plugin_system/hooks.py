@@ -1,6 +1,6 @@
 """Lifecycle hooks (hooks.json) and HookRunner.
 
-Hooks run at PreTaskRun, PostTaskRun, PreToolUse, PostToolUse.
+Hooks run at SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreSkillShellCommand, SubagentStop, PreTaskRun, PostTaskRun.
 Command-type hooks run a script with env SPARKLEFORGE_PLUGIN_ROOT and optional stdin JSON.
 """
 
@@ -21,10 +21,14 @@ logger = logging.getLogger(__name__)
 class HookPhase(str, Enum):
     """Hook lifecycle phases."""
 
+    SessionStart = "SessionStart"
+    UserPromptSubmit = "UserPromptSubmit"
     PreTaskRun = "PreTaskRun"
     PostTaskRun = "PostTaskRun"
     PreToolUse = "PreToolUse"
     PostToolUse = "PostToolUse"
+    PreSkillShellCommand = "PreSkillShellCommand"
+    SubagentStop = "SubagentStop"
 
 
 @dataclass
@@ -107,6 +111,33 @@ class HookRunner:
             return True
         parts = [p.strip() for p in matcher.split("|") if p.strip()]
         return any(tool_name == p or (p in tool_name) for p in parts)
+
+    async def run_session_start(self, session_id: str) -> None:
+        """Run all SessionStart hooks."""
+        context = {
+            "session_id": session_id,
+            "phase": HookPhase.SessionStart.value,
+        }
+        for proot, _cfg, entry in self._get_hooks_for_phase(HookPhase.SessionStart):
+            hooks_list = entry.get("hooks") or []
+            for h in hooks_list:
+                if h.get("type") == "command" and h.get("command"):
+                    cmd = self._expand_command(h["command"], proot)
+                    await self._run_command_hook(cmd, proot, context)
+
+    async def run_user_prompt_submit(self, session_id: str, prompt: str) -> None:
+        """Run all UserPromptSubmit hooks."""
+        context = {
+            "session_id": session_id,
+            "prompt": prompt,
+            "phase": HookPhase.UserPromptSubmit.value,
+        }
+        for proot, _cfg, entry in self._get_hooks_for_phase(HookPhase.UserPromptSubmit):
+            hooks_list = entry.get("hooks") or []
+            for h in hooks_list:
+                if h.get("type") == "command" and h.get("command"):
+                    cmd = self._expand_command(h["command"], proot)
+                    await self._run_command_hook(cmd, proot, context)
 
     async def run_pre_task_run(self, session_id: str, task_description: str | None = None) -> None:
         """Run all PreTaskRun hooks."""
@@ -191,6 +222,42 @@ class HookRunner:
                 if h.get("type") == "command" and h.get("command"):
                     cmd = self._expand_command(h["command"], proot)
                     await self._run_command_hook(cmd, proot, context)
+
+    async def run_pre_skill_shell_command(self, skill_name: str, command_str: str, session_id: str = "") -> bool:
+        """Run PreSkillShellCommand hooks. Return False (or block if exit_code == 2) to cancel."""
+        context = {
+            "session_id": session_id,
+            "skill_name": skill_name,
+            "command": command_str,
+            "phase": HookPhase.PreSkillShellCommand.value,
+        }
+        for proot, _cfg, entry in self._get_hooks_for_phase(HookPhase.PreSkillShellCommand):
+            hooks_list = entry.get("hooks") or []
+            for h in hooks_list:
+                if h.get("type") == "command" and h.get("command"):
+                    cmd = self._expand_command(h["command"], proot)
+                    exit_code = await self._run_command_hook(cmd, proot, context, wait=True)
+                    if exit_code == 2:
+                        return False
+        return True
+
+    async def run_subagent_stop(self, subagent_id: str, result_summary: str = "", session_id: str = "") -> bool:
+        """Run SubagentStop hooks. Return False if exit_code == 2 to block stopping/resuming."""
+        context = {
+            "session_id": session_id,
+            "subagent_id": subagent_id,
+            "result_summary": result_summary,
+            "phase": HookPhase.SubagentStop.value,
+        }
+        for proot, _cfg, entry in self._get_hooks_for_phase(HookPhase.SubagentStop):
+            hooks_list = entry.get("hooks") or []
+            for h in hooks_list:
+                if h.get("type") == "command" and h.get("command"):
+                    cmd = self._expand_command(h["command"], proot)
+                    exit_code = await self._run_command_hook(cmd, proot, context, wait=True)
+                    if exit_code == 2:
+                        return False
+        return True
 
     async def _run_command_hook(
         self,
