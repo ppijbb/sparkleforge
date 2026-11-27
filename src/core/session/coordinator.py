@@ -21,6 +21,45 @@ class NodeStatus(str, Enum):
     ONLINE = "online"
     OFFLINE = "offline"
 
+    async def delegate_task(
+        self,
+        task_id: Optional[str] = None,
+        context_id: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        tid = task_id or f"task_{uuid.uuid4().hex[:8]}"
+        cid = context_id or f"ctx_{uuid.uuid4().hex[:8]}"
+        pl = payload or {}
+        prompt = pl.get("message") or pl.get("prompt") or "Execute delegated task"
+
+        self.session_states[tid] = {
+            "task_id": tid,
+            "context_id": cid,
+            "status": "running",
+            "payload": pl,
+        }
+
+        try:
+            from src.sdk import run
+            res = await run(prompt)
+            self.session_states[tid]["status"] = "completed"
+            self.session_states[tid]["result"] = res
+            return {"task_id": tid, "context_id": cid, "status": "completed", "result": res}
+        except Exception as e:
+            self.session_states[tid]["status"] = "failed"
+            self.session_states[tid]["error"] = str(e)
+            raise
+
+    def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        return self.session_states.get(task_id)
+
+    async def cancel_task(self, task_id: str) -> bool:
+        st = self.session_states.get(task_id)
+        if not st:
+            return False
+        st["status"] = "cancelled"
+        return True
+
 
 class CoordinatorNode:
     """Coordinator Node managing multiple Worker Nodes, pairing, heartbeat, and failover."""
