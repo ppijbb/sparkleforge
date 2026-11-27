@@ -6,6 +6,7 @@ exact target symbols and call-site slices capped by an explicit token budget (<=
 
 import ast
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
@@ -151,7 +152,3 @@ class ASTFaultLocalizer:
             "within_budget": current_tokens <= self.token_budget,
             "latency_ms": elapsed_ms,
         }
-
-
-import re
-diff --git a/tests/test_ast_fault_localizer.py b/tests/test_ast_fault_localizer.py
