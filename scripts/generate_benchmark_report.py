@@ -38,6 +38,7 @@ SWEBENCH_PATH = Path("docs/SWEBENCH_REPORT.md")
 
 BEGIN_MARKER = "<!-- BEGIN GENERATED: scripts/generate_benchmark_report.py -->"
 END_MARKER = "<!-- END GENERATED -->"
+TERMINAL_BENCH_HISTORY_PATH = Path("tests/benchmark/baselines/terminal_bench_history.jsonl")
 
 SWEBENCH_RUN_RE = re.compile(
     r"^## (?P<date>\d{4}-\d{2}-\d{2}) — run `(?P<run_id>[^`]+)`\n"
@@ -65,6 +66,19 @@ def load_swebench_runs(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
     return [m.groupdict() for m in SWEBENCH_RUN_RE.finditer(path.read_text(encoding="utf-8"))]
+
+
+def load_terminal_bench_runs(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    runs = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            try:
+                runs.append(json.loads(line))
+            except Exception:
+                pass
+    return runs
 
 
 def total_duration_s(entry: dict[str, Any]) -> float:
@@ -164,6 +178,7 @@ def render_block(
     scenario_entry: Optional[dict[str, Any]],
     swebench_runs: list[dict[str, str]],
     momentum: Optional[dict[str, Any]] = None,
+    terminal_bench_runs: Optional[list[dict[str, Any]]] = None,
 ) -> str:
     lines = [BEGIN_MARKER, ""]
     lines.append(
@@ -209,6 +224,29 @@ def render_block(
         lines.extend(render_momentum(momentum))
 
     lines.append("")
+    lines.append("#### Terminal-Bench Cost-Normalized Pareto Metrics")
+    lines.append("")
+    if not terminal_bench_runs:
+        lines.append("No recorded Terminal-Bench runs yet.")
+    else:
+        lines.append("| Model ID | Resolve Rate | Median Tokens | Cost / Solve ($) |")
+        lines.append("| :--- | :---: | ---: | ---: |")
+        # Group by model_id
+        by_model: dict[str, list[dict[str, Any]]] = {}
+        for r in terminal_bench_runs:
+            mid = r.get("model_id", "unknown")
+            by_model.setdefault(mid, []).append(r)
+        for mid, runs in by_model.items():
+            total = len(runs)
+            resolved = sum(1 for r in runs if r.get("resolved"))
+            resolve_rate = (resolved / total * 100) if total else 0.0
+            tokens = sorted([(r.get("input_tokens", 0) + r.get("output_tokens", 0)) for r in runs])
+            median_tokens = tokens[total // 2] if total else 0
+            costs = [r.get("estimated_cost_usd", 0.0) for r in runs if r.get("resolved")]
+            cost_per_solve = (sum(costs) / len(costs)) if costs else 0.0
+            lines.append(f"| {mid} | {resolve_rate:.1f}% ({resolved}/{total}) | {median_tokens:,} | ${cost_per_solve:.4f} |")
+
+    lines.append("")
     lines.append(END_MARKER)
     return "\n".join(lines)
 
@@ -233,8 +271,9 @@ def main() -> int:
     scenario_entries = load_conclusive_scenario_entries(HISTORY_PATH)
     scenario_entry = scenario_entries[-1] if scenario_entries else None
     swebench_runs = load_swebench_runs(SWEBENCH_PATH)
+    terminal_bench_runs = load_terminal_bench_runs(TERMINAL_BENCH_HISTORY_PATH)
     momentum = compute_momentum(scenario_entries, swebench_runs)
-    block = render_block(scenario_entry, swebench_runs, momentum)
+    block = render_block(scenario_entry, swebench_runs, momentum, terminal_bench_runs)
 
     existing = REPORT_PATH.read_text(encoding="utf-8")
     updated = splice(existing, block)

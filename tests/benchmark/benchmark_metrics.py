@@ -10,6 +10,11 @@ import json
 import logging
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    steps_taken: int = 0
+    cost_per_resolved_task_usd: float = 0.0
 from datetime import datetime
 import statistics
 import re
@@ -32,6 +37,11 @@ class MetricResult:
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+        input_tokens=results_data.get("input_tokens", 0),
+        output_tokens=results_data.get("output_tokens", 0),
+        estimated_cost_usd=results_data.get("estimated_cost_usd", 0.0),
+        steps_taken=results_data.get("steps_taken", 0),
+        cost_per_resolved_task_usd=results_data.get("cost_per_resolved_task_usd", 0.0),
 
 
 @dataclass
