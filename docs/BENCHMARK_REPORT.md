@@ -1,71 +1,40 @@
-# SparkleForge Generic Agent OS: Quantified Technical Benchmark & Performance Report 📊
+# SparkleForge Technical Benchmark and Evaluation Report
 
-**Date**: July 27, 2026  
-**Version**: v2.1.0  
-**Repository**: [ppijbb/sparkleforge](https://github.com/ppijbb/sparkleforge)  
+**Repository**: [ppijbb/sparkleforge](https://github.com/ppijbb/sparkleforge)
 
 ---
 
-## 🚀 Executive Summary
+## Overview
 
-SparkleForge is a **production-ready, 24x7 autonomous Generic Agent OS** designed for multi-agent collaboration, continuous deep research, and automated self-repair.
-
-This benchmark report presents empirical performance metrics collected from real-world repository operations, CI/CD automated fix pipelines, scenario-based acceptance scoring, and SOTA comparison analysis.
+This report tracks empirical operational metrics, multi-axis momentum checks, and automated benchmark results for SparkleForge and the Anvil execution layer. Numbers in Section 3 are generated directly from [`tests/benchmark/baselines/scenario_history.jsonl`](../tests/benchmark/baselines/scenario_history.jsonl) and [`docs/SWEBENCH_REPORT.md`](SWEBENCH_REPORT.md) via `scripts/generate_benchmark_report.py` and verified in CI (`--check`) on every pull request.
 
 ---
 
-## 🥊 SOTA Benchmark Comparison Matrix (July 2026)
+## 1. Operational Runtime Metrics
 
-| Agent / Model System | SWE-bench Pro / Verified Resolve Rate | Token Cost Efficiency | Historical Error Remediation |
-| :--- | :---: | :---: | :--- |
-| **Claude Opus 5** *(Anthropic)* | **79.2% (Pro)** / **92.5%+ (Verified)** | High Cost (Continuous Polling) | None (Transient Run Only) |
-| **GPT-5.5 / o3** *(OpenAI)* | **74.5% (Pro)** / **88.7% (Verified)** | High Cost (Continuous Polling) | None (Transient Run Only) |
-| **Qwen 3.8 Max** *(Alibaba)* | **72.8% (Pro)** / **87.5% (Verified)** | Cloud MoE Cost | None (Transient Run Only) |
-| **Qwen 3.6 (27B / 35B)** | **65.0% (Pro)** / **77.2% (Verified)** | Medium Cost | None |
-| **SparkleForge OS Loop** *(Free-LLM Tier)* | **66.7% (N=3 PR Merge Rate)**<br>Research Pass Rate: see §3 below (generated) | **100% Token Efficiency**<br>*(92%+ Cost Reduction)* | **Supabase Historical Context Engine**<br>*(`agent_error_contexts` Table)* |
-
----
-
-## 📊 Key Quantitative Benchmark Metrics
-
-### 1. Unattended PR Merge & Self-Repair Pipeline
-
-| Metric | Measured Value | Description |
+| Metric | Measured Value | Data Source & Scope |
 | :--- | :--- | :--- |
-| **Mean Time to Merge (MTTM)** | **141.08 min** (2h 21m) | Average time from PR creation to merge without human intervention |
-| **Autonomous Merge Rate** | **66.7%** (2 / 3 PRs) | Ratio of PRs automatically validated and merged by CI harnesses |
-| **Implementation Accuracy** | **85.0% ~ 100%** | Measured accuracy across benchmark tasks (Scenario history & code repair) |
-| **Zero-Cost Idle Rate** | **100% Token Efficiency** | Zero LLM token consumption while awaiting long-running async background tasks |
-
-Research Pass Rate and SWE-bench Lite results moved to §3 below — generated
-from `tests/benchmark/baselines/scenario_history.jsonl` and
-`docs/SWEBENCH_REPORT.md` by `scripts/generate_benchmark_report.py`, not
-hand-typed (Anvil Phase Μ-4, issue #1220).
-
+| **Mean Time to Merge (MTTM)** | **141.08 min** (2h 21m) | Average elapsed time from PR creation to merge across the initial `N=3` unattended CI sample |
+| **Unattended CI Merge Rate** | **66.7%** (2 / 3 PRs) | Share of PRs validated and merged in the initial `N=3` self-hosted CI sample |
+| **Async Wait Token Overhead** | **0 idle polling tokens** | Reactive scheduler suspends LLM calls while awaiting external background jobs (up to 92% token reduction on async-heavy workflows) |
+| **Memory Footprint Growth** | **Bounded (2-tier)** | Evolving hierarchical summary plus capped active fact log across multi-hour runs |
 
 ---
 
-### 2. Agentic Momentum (Recovery, Step Efficiency, Context Reuse)
+## 2. Agentic Momentum (Recovery, Step Efficiency, Context Reuse)
 
-Resolve rate and token cost say whether a task finished cheaply. They say
-nothing about whether the agent kept making forward progress on the way
-there — recovered from a failed attempt, converged in a reasonable number of
-steps, or reused a diagnosis it already made once. This section is the one
-place those numbers live; each row either has a formula and a data source,
-or is marked as not yet measured. No unsourced numbers.
+Task completion and token cost alone do not show whether an agent recovers cleanly from intermediate errors or reuses prior diagnostics. Every metric below lists either its concrete data source or its current instrumentation blocker.
 
 | Metric | Value | Formula / Data Source |
 | :--- | :--- | :--- |
-| **MTTM** | **141.08 min** (2h 21m) | PR merge timestamp − PR creation timestamp, averaged (see §1 above) |
-| **Recovery Rate** | *Not yet instrumented* | `resolved / (resolved + pending + analyzing)` over `agent_error_contexts.remediation_status` (`supabase_schema.sql:79-94`). Blocked: no code under `src/` currently writes or reads this table. |
-| **Step Efficiency** | *Not yet instrumented* | Orchestrator stage-completions per resolved task vs. per failed task, from the `▶ orchestrator stage completed: {node_name}` log line (`src/core/autonomous_orchestrator.py:257`) against the ~12-stage pipeline ceiling. Logging landed in #1240 (2026-08-06) — too recent for a baseline sample. |
-| **Historical Remediation Reuse Rate** | *Not yet instrumented* | % of resolved errors whose fix matched a prior `agent_error_contexts` row by `(error_type, scenario_name)` instead of being re-diagnosed cold. Same blocker as Recovery Rate. |
-
-Tracked in #1246.
+| **MTTM** | **141.08 min** (2h 21m) | Average `(merged_at - created_at)` on unattended PR runs (see Section 1) |
+| **Recovery Rate** | *Not yet instrumented* | `resolved / (resolved + pending + analyzing)` over `agent_error_contexts.remediation_status` (`supabase_schema.sql:79-94`). Blocked until runtime code under `src/` writes and updates rows in this table. |
+| **Step Efficiency** | *Not yet instrumented* | Orchestrator stage completions per resolved task vs. failed task from `orchestrator stage completed` telemetry (`src/core/autonomous_orchestrator.py`) against the 12-stage ceiling. Baseline sample accumulation in progress. |
+| **Historical Remediation Reuse Rate** | *Not yet instrumented* | Share of resolved errors matching a prior `agent_error_contexts` entry by `(error_type, scenario_name)`. Blocked on the same table instrumentation as Recovery Rate. |
 
 ---
 
-### 3. Scenario Eval & SWE-bench Results
+## 3. Scenario Eval & SWE-bench Results
 
 <!-- BEGIN GENERATED: scripts/generate_benchmark_report.py -->
 
@@ -97,40 +66,11 @@ No divergence detected across the three tracked axes.
 
 ---
 
-## ⚙️ Core Architecture Innovations
+## 4. Verification & Reproducibility
 
-### 1. 24x7 Continuous Research & Zero-Cost Monitoring
-- **Mechanism**: Traditional agent frameworks poll LLMs repeatedly while waiting for external processes. SparkleForge introduces a **Zero-Cost Reactive Scheduler** that pauses LLM API calls completely until external task triggers arrive.
-- **Impact**: Reduces LLM API operational costs by up to **92%** during background execution phases.
+All benchmark and governance checks map to committed scripts and workflows in this repository:
 
-### 2. Two-Tier Constant-Size Memory Buffer
-- **Mechanism**: Long-running research tasks suffer from exponential context bloat. SparkleForge prevents context explosion by maintaining:
-  1. An **Evolving Summary Report** (hierarchical compressed knowledge).
-  2. A **Bounded Fact Log** (strictly capped active context).
-- **Impact**: Guarantees constant memory consumption regardless of task run duration (exercised up to 24+ consecutive hours).
-
----
-
-## 🎯 Verification & Integrity Statement
-
-All data points in this benchmark report are directly verifiable via the repository's open CI/CD execution logs and commit history:
-- Scenario Evaluation Logs: [tests/benchmark/baselines/scenario_history.jsonl](../tests/benchmark/baselines/scenario_history.jsonl)
-- Automated Workflows: [.github/workflows/scenario-eval.yml](../.github/workflows/scenario-eval.yml) & [.github/workflows/sparkleforge-auto-fix.yml](../.github/workflows/sparkleforge-auto-fix.yml)
-
-The performance numbers above measure *speed and cost*; they say nothing about
-whether the governance layer (capability grants, action journal, task
-dashboard, session control) that makes autonomous self-repair safe to run
-unattended is actually live. That claim is checked separately and
-continuously by [`tests/test_os_plane_integrity.py`](../tests/test_os_plane_integrity.py)
-in the `pytest` job of [`pr-merge-gate.yml`](../.github/workflows/pr-merge-gate.yml)
-— see issue #910 and `docs/ANVIL_PLAN.md` §3 for the audit history behind it.
-
-Separately, the N=3-sample MTTM/merge-rate figures above are self-reported
-by this repository's own CI (issue #909). [`docs/SWEBENCH_REPORT.md`](SWEBENCH_REPORT.md)
-is the externally-defined counterpart: a weekly run of the same real
-`fix-issue` path against the official SWE-bench Lite dataset, scored by the
-unmodified upstream `swebench.harness.run_evaluation` CLI rather than
-anything this repo computes itself.
-
----
-*Generated by SparkleForge Autonomous Agent OS Analysis Pipeline.*
+- **Scenario Evaluation Logs**: [`tests/benchmark/baselines/scenario_history.jsonl`](../tests/benchmark/baselines/scenario_history.jsonl) and [`.github/workflows/scenario-eval.yml`](../.github/workflows/scenario-eval.yml)
+- **Generated Report Check**: `python scripts/generate_benchmark_report.py --check` in [`.github/workflows/pr-merge-gate.yml`](../.github/workflows/pr-merge-gate.yml)
+- **OS-Plane Governance Suite**: [`tests/test_os_plane_integrity.py`](../tests/test_os_plane_integrity.py) verifies capability grants, action journaling, task dashboard hooks, and session quotas through production constructors on every pull request
+- **External Benchmark Suite**: [`docs/SWEBENCH_REPORT.md`](SWEBENCH_REPORT.md) and [`.github/workflows/swebench-weekly.yml`](../.github/workflows/swebench-weekly.yml) evaluate `scripts/run_swebench_lite.py` via the unmodified upstream `swebench.harness.run_evaluation` CLI
