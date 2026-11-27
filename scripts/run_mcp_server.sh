@@ -5,10 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SPARKLEFORGE_HOME:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}}}"
 
 if [ -f "${REPO_ROOT}/.env" ]; then
-  set -a
+  # Load selectively or source without exporting all secrets to child processes
+  export OPENROUTER_API_KEY ANTHROPIC_API_KEY GITHUB_TOKEN GOOGLE_API_KEY GEMINI_API_KEY NVIDIA_API_KEY SPARKLE_LLM_API_KEY
   # shellcheck disable=SC1090
-  . "${REPO_ROOT}/.env" >/dev/null 2>&1 || true
-  set +a
+  . "${REPO_ROOT}/.env" >/dev/null 2>&1
 fi
 
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -21,7 +21,6 @@ pick_python() {
     "${SPARKLEFORGE_PYTHON:-}" \
     "${REPO_ROOT}/.venv/bin/python" \
     "${REPO_ROOT}/venv/bin/python" \
-    "${HOME}/miniconda3/bin/python" \
     "$(command -v python3 2>/dev/null || true)" \
     "$(command -v python 2>/dev/null || true)"; do
     if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
