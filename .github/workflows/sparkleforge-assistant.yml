@@ -7,6 +7,7 @@ on:
     types: [submitted]
   schedule:
     - cron: "*/15 * * * *"
+    - cron: "0 */6 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -370,7 +371,7 @@ jobs:
             --state open \
             --limit 100 \
             --json number,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,statusCheckRollup,body \
-            --jq '.[] | select((.headRefName | startswith("fix/")) or (.headRefName | startswith("chore/"))) | @base64' |
+            --jq '.[] | select((.headRefName | startswith("fix/")) or (.headRefName | startswith("chore/")) or (.headRefName | startswith("feat/"))) | @base64' |
           while read -r encoded; do
             [ -n "$encoded" ] || continue
             PR=$(echo "$encoded" | base64 -d)

@@ -309,7 +309,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SPARKLE_LLM_PRIMARY: ${{ vars.SPARKLE_LLM_PRIMARY || 'google' }}
-          SPARKLE_LLM_MODEL_PATH: ${{ vars.SPARKLE_LLM_MODEL_PATH || 'deepseek/deepseek-v4-flash-0731:free' }}
+           SPARKLE_LLM_MODEL_PATH: ${{ vars.SPARKLE_LLM_MODEL_PATH || 'google/gemini-3.5-flash-lite' }}
           # Optional: when set, the repair loop's per-attempt/per-backend history
           # is persisted to Supabase (see src/utils/sparkleforge_history.py).
           # Absent secrets leave this entirely inert -- no behavior change.
@@ -530,8 +530,8 @@ jobs:
             --reason "completed" || true
 
       - name: Requeue issue after PR check failure
-        # A PR got opened but its checks failed (or merge errored out). The
-        # generic failure handler below marks the issue auto-fix-failed,
+        # A PR got opened but its checks failed (or merge errored out).
+        # Circuit breaker: limit automated retries to prevent retry thrashing.
         # which select_fixable_issue() (src/core/ci/issue_selection.py)
         # treats as a permanent skip -- the issue then sits forever until a
         # human manually clears the label (see PR #1512 "unblock PR 1507").
@@ -547,6 +547,11 @@ jobs:
             --repo "${{ github.repository }}" \
             --json labels --jq '[.labels[].name] | contains(["auto-fix-requeued"])')
 
+          ATTEMPT_COUNT=$(gh issue view "${{ steps.context.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --json comments \
+            --jq '[.comments[].body | select(contains("SparkleForge auto-fix"))] | length')
+
           CHECKS_SUMMARY=$(gh pr checks "${{ steps.pr.outputs.pr_number }}" \
             --repo "${{ github.repository }}" 2>&1 || true)
 
@@ -561,22 +566,28 @@ jobs:
           # auto-fix-requeued label; a repeatedly-failing fix falls through
           # to the terminal auto-fix-failed path below instead of looping
           # forever on cron. Raise the cap if that proves too eager.
-          #
+          # Also check accumulated attempt counts (max 3 circuit breaker).
           # Failure/CI-check detail is never posted as an issue comment -- it's
           # an internal diagnostic, not something to surface on a real repo's
           # issue thread. It goes to the job summary only; labels are the only
           # GitHub-visible signal.
-          if [ "$ALREADY_REQUEUED" = "true" ]; then
+          if [ "$ALREADY_REQUEUED" = "true" ] || [ "${ATTEMPT_COUNT:-0}" -ge 3 ]; then
             echo "requeue=false" >> "$GITHUB_OUTPUT"
             {
               echo "### Nightwelding/auto-fix: PR checks failed (no further retry)"
               echo
-              echo "Automated fix PR ${{ steps.pr.outputs.pr_url }} failed its checks again after one automated retry. Not requeuing further -- needs a human."
+              echo "Automated fix PR ${{ steps.pr.outputs.pr_url }} failed its checks and reached the maximum retry/failure limit (3 attempts). Applying needs-decomposition / stopping retry thrashing."
               echo
               echo '```text'
               echo "$CHECKS_SUMMARY"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+            gh label create needs-decomposition \
+              --repo "${{ github.repository }}" \
+              --color B60205 \
+              --description "Exceeded maximum retry attempts; requires decomposition." \
+              --force >/dev/null 2>&1 || true
+            gh issue edit "${{ steps.context.outputs.issue_number }}" --repo "${{ github.repository }}" --add-label needs-decomposition || true
           else
             echo "requeue=true" >> "$GITHUB_OUTPUT"
             gh label create auto-fix-requeued \
