@@ -541,6 +541,20 @@ def compare_to_history(report: Dict[str, Any], history_path: Path) -> int:
     return regression_exit
 
 
+def check_min_score(report: Dict[str, Any], min_score: float) -> int:
+    """Return non-zero when overall_score falls below the configured QA floor."""
+    overall = float(report.get("overall_score", 0.0) or 0.0)
+    if overall < min_score:
+        print(
+            f"[scenario-eval] QUALITY GATE FAILED: overall_score={overall:.3f} "
+            f"is below minimum required score {min_score:.3f}.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"[scenario-eval] quality gate passed: overall_score={overall:.3f} >= {min_score:.3f}")
+    return 0
+
+
 def append_history(report: Dict[str, Any], history_path: Path) -> None:
     """Append this run's report as one line to an append-only JSONL history file."""
     # Guard the history append: never record runs that never executed against an
@@ -667,6 +681,7 @@ async def _main() -> int:
     parser.add_argument("--append-history", help="Path to a JSONL history file to append this run's report to")
     parser.add_argument("--print-trend", help="Path to a JSONL history file; print overall_score over time and exit")
     parser.add_argument("--json-out", help="Path to write the run's JSON report (default: tests/benchmark/reports/scenario_report_<ts>.json)")
+    parser.add_argument("--min-score", type=float, default=None, help="Minimum required overall_score; exits non-zero if overall_score < min_score")
     parser.add_argument("--parallel", action="store_true", help="Run scenarios concurrently instead of one at a time (risks provider rate-limit contention)")
     args = parser.parse_args()
 
@@ -712,7 +727,9 @@ async def _main() -> int:
     if args.compare_to_history:
         exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
     if args.history:
-        exit_code = compare_to_history(report, Path(args.compare_to_history)) or exit_code
+        exit_code = compare_to_history(report, Path(args.history)) or exit_code
+    if args.min_score is not None:
+        exit_code = check_min_score(report, args.min_score) or exit_code
 
     # Aggregate critical infrastructure failures: if any scenario experienced a
     # total model collapse, the runner must exit non-zero so CI gates catch it.
