@@ -1,10 +1,9 @@
-import os
 import json
+import os
 import subprocess
 import sys
 from io import StringIO
 from pathlib import Path
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,6 +25,34 @@ def test_module_entrypoint_prints_help() -> None:
     assert result.returncode == 0
     assert "SparkleForge - Autonomous Multi-Agent Research System" in result.stdout
     assert "run" in result.stdout
+
+
+def test_module_entrypoint_help_epilog_is_pure_ascii() -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "src.cli.entry", "--help"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.isascii()
+    assert "SparkleForge: Where Ideas Sparkle and Get Forged" in result.stdout
+    for example in (
+        'run "Future of AI"',
+        "web",
+        "health",
+        "mcp status",
+        "tools list",
+        "docker up",
+    ):
+        assert example in result.stdout
 
 
 def test_run_entrypoint_accepts_workflow_max_tokens_flag() -> None:
@@ -155,6 +182,7 @@ def test_report_generator_history_prunes_to_cap(tmp_path, monkeypatch) -> None:
 def test_run_command_writes_markdown_and_json_output_files(tmp_path, monkeypatch) -> None:
     import asyncio
     from types import SimpleNamespace
+
     from src.cli.commands import work as work_cmd
 
     md_path = tmp_path / "sparkleforge-roadmap.md"
