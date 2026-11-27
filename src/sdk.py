@@ -446,3 +446,44 @@ async def get_report(job_id: str) -> Optional[Dict[str, Any]]:
         return persisted.get("result")
 
     return None
+
+def list_jobs() -> list[Dict[str, Any]]:
+    """Return a list of all known in-process and persisted jobs."""
+    all_jobs: Dict[str, Dict[str, Any]] = {}
+    job_store = _load_job_store()
+    for jid, jdata in job_store.items():
+        all_jobs[jid] = dict(jdata)
+    for jid, jdata in _jobs.items():
+        all_jobs[jid] = dict(jdata)
+    return list(all_jobs.values())
+
+
+async def cancel_job(job_id: str) -> bool:
+    """Cancel an active in-process job/task by job_id."""
+    task = _job_tasks.get(job_id)
+    if task and not task.done():
+        task.cancel()
+        if job_id in _jobs:
+            _jobs[job_id]["status"] = "failed"
+            _jobs[job_id]["error"] = "Cancelled by user"
+            _jobs[job_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+            await asyncio.to_thread(_persist_job, job_id)
+        _job_tasks.pop(job_id, None)
+        return True
+    if job_id in _jobs and _jobs[job_id].get("status") in ("pending", "running"):
+        _jobs[job_id]["status"] = "failed"
+        _jobs[job_id]["error"] = "Cancelled by user"
+        _jobs[job_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        await asyncio.to_thread(_persist_job, job_id)
+        return True
+    return False
+
+
+async def steer_job(job_id: str, action: str, message: str = "") -> bool:
+    """Record or forward steering action for a job."""
+    job = _jobs.get(job_id)
+    if job is not None:
+        job["steering_action"] = {"action": action, "message": message, "at": datetime.now(timezone.utc).isoformat()}
+        await asyncio.to_thread(_persist_job, job_id)
+        return True
+    return True
