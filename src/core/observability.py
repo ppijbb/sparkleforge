@@ -12,8 +12,11 @@ Security:
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Dict, Generator, List
 
 from src.core.input_router import (
@@ -25,6 +28,75 @@ from src.core.input_router import (
     TRACE_TURN_ID,
     get_trace_context,
 )
+
+
+class DecisionTraceRecorder:
+    """Record structured per-turn decision traces and flamegraph summaries."""
+
+    def __init__(
+        self,
+        session_id: str,
+        log_path: str | None = None,
+        auto_flush: bool = False,
+    ) -> None:
+        self.session_id = session_id
+        self.log_path = log_path or f"results/traces/{session_id}.jsonl"
+        self.auto_flush = auto_flush
+        self.traces: List[Dict[str, Any]] = []
+
+    def record_turn(
+        self,
+        turn_index: int,
+        context_slice_ids: List[str],
+        candidate_scores: Dict[str, float],
+        rejection_reasons: Dict[str, str],
+        latency_ms: float,
+        tokens_in: int,
+        tokens_out: int,
+        layer_breakdown: Dict[str, float] | None = None,
+    ) -> Dict[str, Any]:
+        """Record a single turn's decision trace and optional layer timing breakdown."""
+        entry: Dict[str, Any] = {
+            "turn_index": turn_index,
+            "timestamp": time.time(),
+            "context_slice_ids": context_slice_ids,
+            "candidate_scores": candidate_scores,
+            "rejection_reasons": rejection_reasons,
+            "latency_ms": latency_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "layer_breakdown": layer_breakdown or {},
+        }
+        self.traces.append(entry)
+        if self.auto_flush:
+            self._write_entries([entry], mode="a")
+        return entry
+
+    def _write_entries(self, entries: List[Dict[str, Any]], mode: str) -> None:
+        target = Path(self.log_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open(mode, encoding="utf-8") as fh:
+            for entry in entries:
+                fh.write(json.dumps(entry) + "\n")
+
+    def save(self) -> str:
+        """Write all recorded traces to ``self.log_path`` as JSONL."""
+        self._write_entries(self.traces, mode="w")
+        return self.log_path
+
+    def get_flamegraph_summary(self) -> Dict[str, Any]:
+        """Aggregate wall-clock latency and per-layer totals across recorded turns."""
+        total_latency = sum(t.get("latency_ms", 0.0) for t in self.traces)
+        layers: Dict[str, float] = {}
+        for t in self.traces:
+            for layer, ms in t.get("layer_breakdown", {}).items():
+                layers[layer] = layers.get(layer, 0.0) + ms
+        return {
+            "session_id": self.session_id,
+            "total_latency_ms": total_latency,
+            "layers": layers,
+            "turns_count": len(self.traces),
+        }
 
 _LANGFUSE_ENABLED: bool | None = None
 

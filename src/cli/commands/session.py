@@ -1,14 +1,58 @@
 """세션 관리 명령어"""
 
+import json
 import logging
-from datetime import datetime
-from typing import List
 import shutil
+from datetime import datetime
+from pathlib import Path
+from typing import List
 
 from rich.panel import Panel
 from rich.table import Table
 
 logger = logging.getLogger(__name__)
+
+
+def inspect_session(session_id: str, trace_dir: str = "results/traces") -> str:
+    """Render a layer-by-layer flamegraph and decision tree for a session trace."""
+    if not session_id or "/" in session_id or "\\" in session_id or ".." in session_id:
+        return f"Invalid session ID: {session_id}"
+
+    path = Path(trace_dir) / f"{session_id}.jsonl"
+    if not path.exists():
+        return f"No decision trace found for session {session_id} at {path}"
+
+    lines = []
+    with path.open(encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                lines.append(json.loads(line))
+
+    output = [f"=== SparkleForge Flamegraph & Decision Tree Inspector: {session_id} ==="]
+    total_time = sum(t.get("latency_ms", 0.0) for t in lines)
+    output.append(f"Total Wall Time: {total_time:.2f} ms across {len(lines)} turns\n")
+
+    for t in lines:
+        output.append(
+            f"Turn {t.get('turn_index')}: {t.get('latency_ms', 0):.2f} ms "
+            f"(In: {t.get('tokens_in', 0)} tok, Out: {t.get('tokens_out', 0)} tok)"
+        )
+        for layer, ms in t.get("layer_breakdown", {}).items():
+            pct = (ms / total_time) * 100 if total_time > 0 else 0.0
+            output.append(f"  - {layer}: {ms:.2f} ms ({pct:.1f}%)")
+        context_slices = t.get("context_slice_ids") or []
+        if context_slices:
+            output.append(f"  - context_slices: {', '.join(str(s) for s in context_slices)}")
+        candidate_scores = t.get("candidate_scores") or {}
+        if candidate_scores:
+            scores_text = ", ".join(f"{k}={v}" for k, v in candidate_scores.items())
+            output.append(f"  - candidate_scores: {scores_text}")
+        rejection_reasons = t.get("rejection_reasons") or {}
+        if rejection_reasons:
+            reasons_text = "; ".join(f"{k}: {v}" for k, v in rejection_reasons.items())
+            output.append(f"  - rejections: {reasons_text}")
+    return "\n".join(output)
+
 
 def _format_activity(value) -> str:
     """last_activity/created_at 값을 datetime 또는 문자열 모두에서 안전하게 포맷."""
@@ -478,3 +522,17 @@ async def session_cost_command(cli, args: List[str]):
     except Exception as e:
         logger.error(f"Failed to get session cost: {e}", exc_info=True)
         cli.console.print(f"[red]❌ Failed to get session cost: {e}[/red]")
+
+
+async def session_inspect_command(cli, args: List[str]):
+    """Render flamegraph and decision trace for a session."""
+    if not args:
+        cli.console.print("[red]Usage: session inspect <session_id>[/red]")
+        return
+
+    session_id = args[0]
+    try:
+        cli.console.print(inspect_session(session_id))
+    except Exception as e:
+        logger.error(f"Failed to inspect session: {e}", exc_info=True)
+        cli.console.print(f"[red]❌ Failed to inspect session: {e}[/red]")
