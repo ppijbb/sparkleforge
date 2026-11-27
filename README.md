@@ -1,4 +1,4 @@
-# SparkleForge ⚒️✨
+# SparkleForge ⚒️✨ 
 
 <p align="center">
   <img src="docs/banner.jpg" alt="SparkleForge" width="100%" />
