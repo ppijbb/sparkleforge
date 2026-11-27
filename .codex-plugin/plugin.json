@@ -1,0 +1,29 @@
+{
+  "name": "sparkleforge",
+  "version": "1.0.0",
+  "description": "Run SparkleForge autonomous research jobs, check Nightwelding status, and query local skills via MCP.",
+  "author": {
+    "name": "ppijbb",
+    "url": "https://github.com/ppijbb"
+  },
+  "homepage": "https://github.com/ppijbb/sparkleforge",
+  "repository": "https://github.com/ppijbb/sparkleforge",
+  "license": "MIT",
+  "keywords": ["research", "agents", "mcp", "automation"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SparkleForge",
+    "shortDescription": "Autonomous research and Nightwelding MCP integration",
+    "longDescription": "Delegate background research jobs, check Nightwelding queue state, and query reusable local skills via SparkleForge MCP.",
+    "developerName": "ppijbb",
+    "category": "Productivity",
+    "capabilities": ["Instructions", "MCP tools"],
+    "websiteURL": "https://github.com/ppijbb/sparkleforge",
+    "defaultPrompt": [
+      "Start a background SparkleForge research job on this topic.",
+      "Check Nightwelding queue status and summarize any failures.",
+      "Search local SparkleForge skills matching this task."
+    ],
+    "brandColor": "#F59E0B"
+  }
+}

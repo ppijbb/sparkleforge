@@ -1,14 +1,19 @@
 {
   "name": "sparkleforge",
-  "description": "Run SparkleForge research/coworker requests as a tool from another Claude Code session (Anvil Phase B-1).",
   "version": "1.0.0",
-  "author": { "name": "ppijbb" },
+  "description": "Run SparkleForge autonomous research jobs, check Nightwelding status, and query local skills via MCP.",
+  "author": {
+    "name": "ppijbb",
+    "url": "https://github.com/ppijbb"
+  },
+  "repository": "https://github.com/ppijbb/sparkleforge",
+  "license": "MIT",
   "mcpServers": {
     "sparkleforge": {
-      "command": "python",
-      "args": ["-m", "src.core.mcp_servers.sparkleforge_server"],
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run_mcp_server.sh"],
       "env": {
-        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}"
+        "SPARKLEFORGE_HOME": "${CLAUDE_PLUGIN_ROOT}"
       }
     }
   }

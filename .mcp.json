@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "sparkleforge": {
-      "command": "python",
-      "args": ["-m", "src.core.mcp_servers.sparkleforge_server"]
+      "command": "bash",
+      "args": ["scripts/run_mcp_server.sh"]
     }
   }
 }
