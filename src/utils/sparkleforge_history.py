@@ -31,6 +31,8 @@ from typing import Any, Dict, Optional
 
 from src.utils.supabase_exporter import get_supabase_client
 
+import sqlite3
+
 logger = logging.getLogger(__name__)
 
 _queue: "queue.Queue" = queue.Queue()
@@ -40,6 +42,116 @@ _stop_event = threading.Event()
 
 _BATCH_MAX_SIZE = 25
 _BATCH_MAX_WAIT_S = 2.0
+
+
+def get_local_error_ledger_path() -> Path:
+    path = Path("storage/error_contexts.db")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_local_connection() -> sqlite3.Connection:
+    db_path = get_local_error_ledger_path()
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS agent_error_contexts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            scenario_name TEXT,
+            error_type TEXT,
+            error_message TEXT,
+            execution_context TEXT,
+            remediation_status TEXT DEFAULT 'pending',
+            resolution_summary TEXT,
+            commit_or_patch_hash TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def _write_local_error_context(payload: Dict[str, Any]) -> int:
+    conn = get_local_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO agent_error_contexts 
+        (session_id, scenario_name, error_type, error_message, execution_context, remediation_status)
+        VALUES (?, ?, ?, ?, ?, 'pending')
+        """,
+        (
+            payload.get("session_id"),
+            payload.get("scenario_name"),
+            payload.get("error_type"),
+            payload.get("error_message"),
+            json.dumps(payload.get("execution_context", {})),
+        ),
+    )
+    conn.commit()
+    row_id = cursor.lastrowid
+    conn.close()
+    return row_id
+
+
+def mark_error_resolved(error_id: int | str, resolution_summary: str, commit_or_patch_hash: Optional[str] = None) -> None:
+    """Transition remediation_status to 'resolved' and link fix locally and in queue for Supabase."""
+    conn = get_local_connection()
+    try:
+        conn.execute(
+            """
+            UPDATE agent_error_contexts
+            SET remediation_status = 'resolved', resolution_summary = ?, commit_or_patch_hash = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (resolution_summary, commit_or_patch_hash, error_id),
+        )
+        conn.commit()
+    except Exception as e:
+        logger.debug("Failed to mark local error resolved: %s", e)
+    finally:
+        conn.close()
+
+    client = get_supabase_client()
+    if client:
+        try:
+            client.table("agent_error_contexts").update({
+                "remediation_status": "resolved",
+                "resolution_summary": resolution_summary,
+                "commit_or_patch_hash": commit_or_patch_hash,
+            }).eq("id", error_id).execute()
+        except Exception as e:
+            logger.debug("Failed to update error status in Supabase: %s", e)
+
+
+def compute_ledger_metrics() -> Dict[str, Any]:
+    conn = get_local_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM agent_error_contexts")
+        total = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT COUNT(*) FROM agent_error_contexts WHERE remediation_status = 'resolved'")
+        resolved = cursor.fetchone()[0] or 0
+        recovery_rate = (resolved / total * 100.0) if total > 0 else 0.0
+        
+        cursor.execute("SELECT COUNT(*) FROM agent_error_contexts WHERE resolution_summary IS NOT NULL AND resolution_summary != ''")
+        reused = cursor.fetchone()[0] or 0
+        reuse_rate = (reused / resolved * 100.0) if resolved > 0 else (0.0 if total == 0 else 0.0)
+        
+        return {
+            "total_errors": total,
+            "resolved_errors": resolved,
+            "recovery_rate": recovery_rate,
+            "reuse_rate": reuse_rate,
+        }
+    except Exception as e:
+        logger.debug("Failed to compute ledger metrics: %s", e)
+        return {"total_errors": 0, "resolved_errors": 0, "recovery_rate": 0.0, "reuse_rate": 0.0}
+    finally:
+        conn.close()
 
 
 def _ensure_worker() -> None:
@@ -91,6 +203,8 @@ def _worker_loop() -> None:
                     client.table("sparkleforge_history_events").insert(payload).execute()
                 elif kind == "error_context":
                     client.table("agent_error_contexts").insert(payload).execute()
+                    # Also ensure local ledger has it
+                    _write_local_error_context(payload)
             except Exception as e:
                 logger.debug("Failed to write sparkleforge history (%s): %s", kind, e)
 
@@ -179,16 +293,19 @@ def log_error_context(
     never block on network I/O and never see an exception from this module.
     """
     _ensure_worker()
+    payload_dict = {
+        "session_id": session_id,
+        "scenario_name": scenario_name,
+        "error_type": error_type,
+        "error_message": error_message,
+        "execution_context": execution_context or {},
+    }
+    _write_local_error_context(payload_dict)
+
     _queue.put(
         (
             "error_context",
-            {
-                "session_id": session_id,
-                "scenario_name": scenario_name,
-                "error_type": error_type,
-                "error_message": error_message,
-                "execution_context": execution_context or {},
-            },
+            payload_dict,
         )
     )
 
@@ -203,7 +320,25 @@ def fetch_recent_patch_failures(issue_number: str, limit: int = 1) -> list:
     """
     client = get_supabase_client()
     if not client:
-        return []
+        # Fallback to local SQLite ledger
+        conn = get_local_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT error_message, execution_context, created_at FROM agent_error_contexts
+                WHERE error_type = 'PatchApplyFailure' AND json_extract(execution_context, '$.issue_number') = ?
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (str(issue_number), limit),
+            )
+            rows = cursor.fetchall()
+            return [{"error_message": r[0], "execution_context": json.loads(r[1] or "{}"), "created_at": r[2]} for r in rows]
+        except Exception as e:
+            logger.debug("Failed to fetch local patch failures: %s", e)
+            return []
+        finally:
+            conn.close()
     try:
         resp = (
             client.table("agent_error_contexts")

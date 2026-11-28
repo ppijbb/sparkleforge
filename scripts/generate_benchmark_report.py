@@ -172,6 +172,8 @@ def render_block(
         "-- editing between the markers above/below gets overwritten on the next run._"
     )
     lines.append("")
+    from src.core.memory.procedural_compiler import render_report_metrics_section
+    lines.extend(render_report_metrics_section())
 
     if scenario_entry is None:
         lines.append(
